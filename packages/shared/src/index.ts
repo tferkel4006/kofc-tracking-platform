@@ -7,3 +7,4 @@ export * from './planning';
 export * from './messaging';
 export * from './presentation';
 export * from './theme';
+export * from './permissions';

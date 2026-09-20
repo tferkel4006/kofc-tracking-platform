@@ -3,13 +3,25 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "gen:db": "node ../../scripts/gen-db-assets.mjs",
     "gen:db:check": "node ../../scripts/gen-db-assets.mjs --check",
-    "typecheck": "tsc --noEmit",
-    "build": "echo 'Skipping Next.js framework build until Sprint 4 scaffolding pass completes'"
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "~16.3.5",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.0.0",
+    "@types/react": "~19.2.0",
+    "@types/react-dom": "~19.2.0",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.0.0"
   }
 }

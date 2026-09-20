@@ -10,11 +10,16 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "jsx": "preserve",
+    "allowJs": false,
+    "incremental": true,
+    "jsx": "react-jsx",
+    "plugins": [{ "name": "next" }],
     "baseUrl": ".",
     "paths": {
+      "@/*": ["./*"],
       "@kofc/shared": ["../../packages/shared/src/index.ts"]
     }
   },
-  "include": ["services/**/*.ts"]
+  "include": ["next-env.d.ts", "app/**/*", "components/**/*", "lib/**/*", "services/**/*.ts", ".next/types/**/*.ts", ".next/dev/types/**/*.ts"],
+  "exclude": ["node_modules"]
 }

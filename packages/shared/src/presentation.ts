@@ -6,7 +6,7 @@
 // =========================================================================
 import type { ShiftFeedItem, ThreadMessage } from './contract';
 import { daysBetween } from './planning';
-import { assertValidHours, HOURS_STEP, subtractMonths, toIsoDate } from './rules';
+import { assertValidHours, BusinessRuleError, HOURS_STEP, subtractMonths, toIsoDate } from './rules';
 import type { Council, Member, Shift } from './types';
 
 /** Shifts starting within this many days are shown in Secondary Red. */
@@ -233,4 +233,15 @@ export function memberDropdownOptions(
     .map((m) => ({ value: m.id, council: councilName.get(m.CouncilID) ?? '', last: m.MemberLastName, first: m.MemberFirstName }))
     .sort((a, b) => a.council.localeCompare(b.council) || a.last.localeCompare(b.last) || a.first.localeCompare(b.first))
     .map((m) => ({ value: m.value, label: `${m.last}, ${m.first} – ${m.council}` }));
+}
+
+// ---- errors ----------------------------------------------------------------
+
+/**
+ * A business-rule message is already written for people and carries the offending values, so it is shown
+ * as is. Anything else gets a prefix so the person can tell an unexpected failure from a refused request.
+ */
+export function describeError(err: unknown): string {
+  if (err instanceof BusinessRuleError) return err.message;
+  return `Something went wrong: ${err instanceof Error ? err.message : String(err)}`;
 }

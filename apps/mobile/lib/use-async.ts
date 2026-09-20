@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
-import { BusinessRuleError } from '@kofc/shared';
+import { describeError } from '@kofc/shared';
 
-/** A business-rule message is already written for people, with the offending values in it. Anything else gets context. */
-export function describeError(err: unknown): string {
-  if (err instanceof BusinessRuleError) return err.message;
-  return `Something went wrong: ${err instanceof Error ? err.message : String(err)}`;
-}
+export { describeError };
 
 export interface AsyncState<T> {
   data: T | undefined;

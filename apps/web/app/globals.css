@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/*
+ * Knights of Columbus theme. The colour and font values are the same ones packages/shared/src/theme.ts
+ * exports for the mobile app (tests/web-theme.test.ts fails if they drift apart).
+ *
+ * `--color-*: initial` removes Tailwind's default palette, so an off-brand class such as bg-blue-500 does
+ * not compile: every colour in the portal is one of the tokens below.
+ *   navy  - shell frames, headers, navigation, buttons, text
+ *   brand-red - urgency, required alerts, no-show tallies
+ *   gold  - priority milestones and selection markers (a fill or bar, never text on white: ~2.3:1)
+ *   white - every content surface
+ */
+@theme {
+  --color-*: initial;
+  --color-navy: #002855;
+  --color-brand-red: #C8102E;
+  --color-gold: #D6A420;
+  --color-white: #FFFFFF;
+  --color-muted: #4A5568;
+  --color-line: #C9D1DC;
+
+  --font-sans: Arial, sans-serif;
+  --font-serif: Georgia, "Times New Roman", serif;
+}
+
+@layer base {
+  html {
+    font-family: Arial, sans-serif;
+    background-color: #FFFFFF;
+  }
+  body {
+    background-color: #FFFFFF;
+    color: var(--color-navy);
+  }
+  /* Visible keyboard focus on every surface: navy on white, gold on navy (both 6:1 or better). */
+  :focus-visible {
+    outline: 3px solid var(--color-navy);
+    outline-offset: 2px;
+  }
+  [data-surface="navy"] :focus-visible,
+  [data-surface="navy"]:focus-visible {
+    outline-color: var(--color-gold);
+  }
+  input[type="checkbox"] {
+    accent-color: var(--color-navy);
+    width: 1rem;
+    height: 1rem;
+  }
+}
