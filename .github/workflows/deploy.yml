@@ -33,11 +33,11 @@ jobs:
         env:
           DATABASE_URL: "sqlserver://mock-staging-server:1433;database=mock;"
 
-      - name: Setup Expo EAS for Mobile Compilation
-        uses: expo/expo-github-action@v9
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+#      - name: Setup Expo EAS for Mobile Compilation
+#       uses: expo/expo-github-action@v9
+#        with:
+#          eas-version: latest
+#          token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Run Expo Lint and Type-Checks
         run: |
