@@ -16,7 +16,7 @@ export function createRemoteDataService(): DataService {
   return {
     init: notImplemented('init'),
     reset: notImplemented('reset'),
-    auth: { signIn: notImplemented('auth.signIn') },
+    auth: { signIn: notImplemented('auth.signIn'), signUp: notImplemented('auth.signUp') },
     lookups: { list: notImplemented('lookups.list') },
     councils: { list: notImplemented('councils.list'), get: notImplemented('councils.get') },
     members: {
@@ -25,6 +25,15 @@ export function createRemoteDataService(): DataService {
       listByCouncil: notImplemented('members.listByCouncil'),
       listRoles: notImplemented('members.listRoles'),
     },
+    events: {
+      get: notImplemented('events.get'),
+      getShift: notImplemented('events.getShift'),
+      listShiftsBetween: notImplemented('events.listShiftsBetween'),
+      listSignups: notImplemented('events.listSignups'),
+      signupForShift: notImplemented('events.signupForShift'),
+    },
+    eventTime: { logHours: notImplemented('eventTime.logHours') },
+    activityTime: { logHours: notImplemented('activityTime.logHours') },
     meetings: {
       get: notImplemented('meetings.get'),
       listUpcoming: notImplemented('meetings.listUpcoming'),

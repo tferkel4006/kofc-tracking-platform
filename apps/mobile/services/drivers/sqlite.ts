@@ -2,9 +2,23 @@
 // The schema and seed statements are generated from Schema.sql / Seed.sql by
 // scripts/gen-db-assets.mjs. Nothing outside /services may import this file.
 import * as SQLite from 'expo-sqlite';
+import {
+  assertActivityDateAllowed,
+  assertPasswordAcceptable,
+  assertShiftHasRoom,
+  assertShiftReportAllowed,
+  assertValidHours,
+  BusinessRuleError,
+  isSha256Hex,
+  UNREGISTERED_PASSWORD,
+} from '@kofc/shared';
 import type {
+  ActivityTime,
   Council,
   DataService,
+  Event as CouncilEvent,
+  EventSignup,
+  EventTime,
   LookupRowMap,
   LookupTableName,
   Meeting,
@@ -16,9 +30,19 @@ import type {
   NewMeeting,
   Role,
   SessionUser,
+  Shift,
 } from '@kofc/shared';
 import { SCHEMA_STATEMENTS, SEED_STATEMENTS } from '../generated/schema.sqlite';
-import { buildDevMeetings, DEV_COUNCIL_NUMBER, toIsoDate, type DevMeetingTypeName } from '../seed-dev';
+import { sha256Hex } from '../password';
+import {
+  buildDevEvents,
+  buildDevMeetings,
+  DEV_ACTIVITY,
+  DEV_COUNCIL_NUMBER,
+  DEV_UNREGISTERED_MEMBER,
+  toIsoDate,
+  type DevMeetingTypeName,
+} from '../seed-dev';
 
 const DB_NAME = 'kofc.db';
 /** Bump when Schema.sql changes; stored in PRAGMA user_version. Migrations are a later concern. */
@@ -36,8 +60,18 @@ const LOOKUP_TABLES: Record<LookupTableName, true> = {
   MeetingType: true,
 };
 
-/** Dev stub: plaintext comparison, as seeded. Phase 3 replaces this with SHA-256. */
-const passwordMatches = (stored: string, supplied: string) => stored === supplied;
+/** Credentials.Password holds a SHA-256 hex digest; a not-yet-registered member's placeholder never matches. */
+const passwordMatches = async (stored: string, supplied: string) =>
+  stored !== UNREGISTERED_PASSWORD && stored === (await sha256Hex(supplied));
+
+const SIGN_IN_SELECT = `
+  SELECT c.[id] AS credentialId, c.[Password] AS password, c.[Username] AS username,
+         m.[id] AS memberId, m.[CouncilID] AS councilId,
+         m.[MemberFirstName] AS firstName, m.[MemberLastName] AS lastName,
+         t.[Type] AS memberType
+    FROM [Credentials] c
+    JOIN [Member] m ON m.[CredentialID] = c.[id]
+    JOIN [MemberType] t ON t.[id] = m.[MemberTypeID]`;
 
 const ACTIVE_MEMBER_FILTER = `
   m.[CouncilID] = ?
@@ -54,8 +88,18 @@ interface SignInRow {
   memberType: SessionUser['memberType'];
 }
 
+export interface SqliteDataServiceOptions {
+  /** Clock used for seeding and the history-window rules. Tests pin it. Default: real time. */
+  now?: () => Date;
+}
+
 export class SqliteDataService implements DataService {
   private opening: Promise<SQLite.SQLiteDatabase> | null = null;
+  private readonly now: () => Date;
+
+  constructor(options: SqliteDataServiceOptions = {}) {
+    this.now = options.now ?? (() => new Date());
+  }
 
   // ---- lifecycle ---------------------------------------------------------
 
@@ -101,7 +145,10 @@ export class SqliteDataService implements DataService {
     await db.withTransactionAsync(async () => {
       for (const statement of SCHEMA_STATEMENTS) await db.execAsync(statement);
       for (const statement of SEED_STATEMENTS) await db.execAsync(statement);
+      await this.hashSeededPasswords(db);
+      await this.seedDevMemberAndActivity(db);
       await this.seedDevMeetings(db);
+      await this.seedDevEvents(db);
       await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
     });
   }
@@ -114,8 +161,111 @@ export class SqliteDataService implements DataService {
     if (!council) throw new Error(`Seed.sql did not create Council ${DEV_COUNCIL_NUMBER}`);
     const types = await db.getAllAsync<{ id: number; Type: DevMeetingTypeName }>('SELECT [id], [Type] FROM [MeetingType]');
     const typeIds = Object.fromEntries(types.map((t) => [t.Type, t.id])) as Record<DevMeetingTypeName, number>;
-    for (const { meeting, invite } of buildDevMeetings(council.id, typeIds)) {
+    for (const { meeting, invite } of buildDevMeetings(council.id, typeIds, this.now())) {
       await this.insertMeeting(db, meeting, invite);
+    }
+  }
+
+  /** Seed.sql stores dev passwords in plaintext; hash them so signIn only ever sees digests. */
+  private async hashSeededPasswords(db: SQLite.SQLiteDatabase): Promise<void> {
+    const rows = await db.getAllAsync<{ id: number; Password: string }>('SELECT [id], [Password] FROM [Credentials]');
+    for (const { id, Password } of rows) {
+      if (Password === UNREGISTERED_PASSWORD || isSha256Hex(Password)) continue;
+      await db.runAsync('UPDATE [Credentials] SET [Password] = ? WHERE [id] = ?', [await sha256Hex(Password), id]);
+    }
+  }
+
+  /** A pre-provisioned member with a placeholder Credentials row, plus one council activity. */
+  private async seedDevMemberAndActivity(db: SQLite.SQLiteDatabase): Promise<void> {
+    const council = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Council] WHERE [CouncilNumber] = ?', [
+      DEV_COUNCIL_NUMBER,
+    ]);
+    const template = council
+      ? await db.getFirstAsync<{ DegreeID: number }>(
+          'SELECT [DegreeID] FROM [Member] WHERE [CouncilID] = ? ORDER BY [id] LIMIT 1',
+          [council.id],
+        )
+      : null;
+    if (!council || !template) throw new Error(`Seed.sql did not create Council ${DEV_COUNCIL_NUMBER} with members`);
+    const m = DEV_UNREGISTERED_MEMBER;
+    const cred = await db.runAsync('INSERT INTO [Credentials] ([Username], [Password]) VALUES (?, ?)', [
+      m.Email,
+      UNREGISTERED_PASSWORD,
+    ]);
+    await db.runAsync(
+      `INSERT INTO [Member] ([CouncilID], [MemberNumber], [MemberFirstName], [MemberLastName], [Phone],
+                             [StreetAddress1], [City], [State], [ZipCode], [Email], [DateOfBirth],
+                             [StatusID], [DegreeID], [MemberTypeID], [CredentialID])
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+               (SELECT [id] FROM [MemberStatus] WHERE [Status] = 'Active'), ?,
+               (SELECT [id] FROM [MemberType] WHERE [Type] = 'Member'), ?)`,
+      [
+        council.id,
+        m.MemberNumber,
+        m.MemberFirstName,
+        m.MemberLastName,
+        m.Phone,
+        m.StreetAddress1,
+        m.City,
+        m.State,
+        m.ZipCode,
+        m.Email,
+        m.DateOfBirth,
+        template.DegreeID,
+        cred.lastInsertRowId,
+      ],
+    );
+    await db.runAsync(
+      `INSERT INTO [Activities] ([ActivityName], [ActivityDescription], [CategoryID], [CouncilID])
+       VALUES (?, ?, (SELECT [id] FROM [Category] WHERE [Category] = 'Service'), ?)`,
+      [DEV_ACTIVITY.ActivityName, DEV_ACTIVITY.ActivityDescription, council.id],
+    );
+  }
+
+  private async seedDevEvents(db: SQLite.SQLiteDatabase): Promise<void> {
+    const council = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Council] WHERE [CouncilNumber] = ?', [
+      DEV_COUNCIL_NUMBER,
+    ]);
+    const owner = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Member] WHERE [Email] = ?', [
+      'testadmin@kofc.org',
+    ]);
+    const category = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Category] WHERE [Category] = ?', [
+      'Service',
+    ]);
+    if (!council || !owner || !category) throw new Error('Seed.sql is missing the test council, admin or Service category');
+    for (const { event, shifts } of buildDevEvents(this.now())) {
+      const ev = await db.runAsync(
+        `INSERT INTO [Event] ([EventName], [EventDescription], [OwnerID], [StartDate], [EndDate], [Location], [CategoryID])
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [event.EventName, event.EventDescription, owner.id, event.StartDate, event.EndDate, event.Location, category.id],
+      );
+      await db.runAsync('INSERT INTO [EventCouncils] ([EventID], [CouncilID]) VALUES (?, ?)', [
+        ev.lastInsertRowId,
+        council.id,
+      ]);
+      for (const { shift, signedUp } of shifts) {
+        const sh = await db.runAsync(
+          `INSERT INTO [Shift] ([ShiftName], [ShiftDescription], [ShiftDate], [StartTime], [EndTime], [EventID],
+                                [MinNumberVolunteers], [NumberVolunteersSignedUp])
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            shift.ShiftName,
+            shift.ShiftDescription,
+            shift.ShiftDate,
+            shift.StartTime,
+            shift.EndTime,
+            ev.lastInsertRowId,
+            shift.MinNumberVolunteers,
+            signedUp.length,
+          ],
+        );
+        for (const email of signedUp) {
+          await db.runAsync(
+            'INSERT INTO [EventSignup] ([ShiftID], [MemberID], [NoShow]) VALUES (?, (SELECT [id] FROM [Member] WHERE [Email] = ?), 0)',
+            [sh.lastInsertRowId, email],
+          );
+        }
+      }
     }
   }
 
@@ -124,32 +274,68 @@ export class SqliteDataService implements DataService {
   auth: DataService['auth'] = {
     signIn: async (username, password) => {
       const db = await this.ready();
-      const row = await db.getFirstAsync<SignInRow>(
-        `SELECT c.[id] AS credentialId, c.[Password] AS password, c.[Username] AS username,
-                m.[id] AS memberId, m.[CouncilID] AS councilId,
-                m.[MemberFirstName] AS firstName, m.[MemberLastName] AS lastName,
-                t.[Type] AS memberType
-           FROM [Credentials] c
-           JOIN [Member] m ON m.[CredentialID] = c.[id]
-           JOIN [MemberType] t ON t.[id] = m.[MemberTypeID]
-          WHERE c.[Username] = ? COLLATE NOCASE`,
-        [username],
-      );
-      if (!row || !passwordMatches(row.password, password)) return null;
-      const roles = await this.rolesFor(db, row.memberId);
-      return {
-        credentialId: row.credentialId,
-        memberId: row.memberId,
-        councilId: row.councilId,
-        username: row.username,
-        firstName: row.firstName,
-        lastName: row.lastName,
-        memberType: row.memberType,
-        roles: roles.map((r) => r.Role),
-        isOfficer: roles.some((r) => r.Officer === 1),
-      };
+      const row = await db.getFirstAsync<SignInRow>(`${SIGN_IN_SELECT} WHERE c.[Username] = ? COLLATE NOCASE`, [username]);
+      if (!row || !(await passwordMatches(row.password, password))) return null;
+      return this.buildSession(db, row);
+    },
+
+    signUp: async (email, password) => {
+      assertPasswordAcceptable(password);
+      const hash = await sha256Hex(password);
+      const db = await this.ready();
+      let credentialId = 0;
+      await db.withTransactionAsync(async () => {
+        const member = await db.getFirstAsync<{ id: number; Email: string; CredentialID: number }>(
+          'SELECT [id], [Email], [CredentialID] FROM [Member] WHERE [Email] = ? COLLATE NOCASE',
+          [email.trim()],
+        );
+        if (!member) {
+          throw new BusinessRuleError(
+            'MEMBER_NOT_FOUND',
+            `No member record has the email ${email.trim()}. Contact your council admin to be added.`,
+            { email },
+          );
+        }
+        // The WHERE clause makes claiming the placeholder atomic: a second signUp changes nothing.
+        const res = await db.runAsync(
+          'UPDATE [Credentials] SET [Password] = ?, [Username] = ? WHERE [id] = ? AND [Password] = ?',
+          [hash, member.Email, member.CredentialID, UNREGISTERED_PASSWORD],
+        );
+        if (res.changes === 0) {
+          const cred = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Credentials] WHERE [id] = ?', [
+            member.CredentialID,
+          ]);
+          throw cred
+            ? new BusinessRuleError('ALREADY_REGISTERED', `${member.Email} has already registered. Sign in instead.`, {
+                memberId: member.id,
+              })
+            : new BusinessRuleError(
+                'CREDENTIALS_MISSING',
+                `Member ${member.id} has no Credentials row (CredentialID ${member.CredentialID}).`,
+                { memberId: member.id },
+              );
+        }
+        credentialId = member.CredentialID;
+      });
+      const row = await db.getFirstAsync<SignInRow>(`${SIGN_IN_SELECT} WHERE c.[id] = ?`, [credentialId]);
+      return this.buildSession(db, row!);
     },
   };
+
+  private async buildSession(db: SQLite.SQLiteDatabase, row: SignInRow): Promise<SessionUser> {
+    const roles = await this.rolesFor(db, row.memberId);
+    return {
+      credentialId: row.credentialId,
+      memberId: row.memberId,
+      councilId: row.councilId,
+      username: row.username,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      memberType: row.memberType,
+      roles: roles.map((r) => r.Role),
+      isOfficer: roles.some((r) => r.Officer === 1),
+    };
+  }
 
   // ---- lookups / councils / members -------------------------------------
 
@@ -202,6 +388,147 @@ export class SqliteDataService implements DataService {
         WHERE mr.[MemberID] = ? ORDER BY r.[id]`,
       [memberId],
     );
+  }
+
+  // ---- events, shifts and time logs -------------------------------------
+
+  events: DataService['events'] = {
+    get: async (id) => {
+      const db = await this.ready();
+      return (await db.getFirstAsync<CouncilEvent>('SELECT * FROM [Event] WHERE [id] = ?', [id])) ?? null;
+    },
+
+    getShift: async (id) => {
+      const db = await this.ready();
+      return (await db.getFirstAsync<Shift>('SELECT * FROM [Shift] WHERE [id] = ?', [id])) ?? null;
+    },
+
+    listShiftsBetween: async (fromDate, toDate) => {
+      const db = await this.ready();
+      return db.getAllAsync<Shift>(
+        'SELECT * FROM [Shift] WHERE [ShiftDate] BETWEEN ? AND ? ORDER BY [ShiftDate], [StartTime], [id]',
+        [fromDate, toDate],
+      );
+    },
+
+    listSignups: async (shiftId) => {
+      const db = await this.ready();
+      return db.getAllAsync<EventSignup>('SELECT * FROM [EventSignup] WHERE [ShiftID] = ? ORDER BY [id]', [shiftId]);
+    },
+
+    signupForShift: async (memberId, shiftId) => {
+      const db = await this.ready();
+      let signupId = 0;
+      await db.withTransactionAsync(async () => {
+        const shift = await this.requireShift(db, shiftId);
+        await this.requireMember(db, memberId);
+        const dup = await db.getFirstAsync<{ id: number }>(
+          'SELECT [id] FROM [EventSignup] WHERE [ShiftID] = ? AND [MemberID] = ?',
+          [shiftId, memberId],
+        );
+        if (dup) {
+          throw new BusinessRuleError(
+            'ALREADY_SIGNED_UP',
+            `Member ${memberId} is already signed up for shift "${shift.ShiftName}" (id ${shiftId}).`,
+            { memberId, shiftId },
+          );
+        }
+        assertShiftHasRoom(shift);
+        // The WHERE clause re-checks the cap in the same statement, so two racing signups cannot both take the last seat.
+        const res = await db.runAsync(
+          `UPDATE [Shift] SET [NumberVolunteersSignedUp] = [NumberVolunteersSignedUp] + 1
+            WHERE [id] = ? AND [NumberVolunteersSignedUp] < [MinNumberVolunteers]`,
+          [shiftId],
+        );
+        if (res.changes === 0) {
+          assertShiftHasRoom(await this.requireShift(db, shiftId));
+          throw new Error(`Could not reserve a seat on shift ${shiftId}`);
+        }
+        const ins = await db.runAsync('INSERT INTO [EventSignup] ([ShiftID], [MemberID], [NoShow]) VALUES (?, ?, 0)', [
+          shiftId,
+          memberId,
+        ]);
+        signupId = ins.lastInsertRowId;
+      });
+      return (await db.getFirstAsync<EventSignup>('SELECT * FROM [EventSignup] WHERE [id] = ?', [signupId]))!;
+    },
+  };
+
+  eventTime: DataService['eventTime'] = {
+    logHours: async (memberId, shiftId, hours, notes) => {
+      assertValidHours(hours);
+      const db = await this.ready();
+      let timeId = 0;
+      await db.withTransactionAsync(async () => {
+        const shift = await this.requireShift(db, shiftId);
+        await this.requireMember(db, memberId);
+        assertShiftReportAllowed(shift.ShiftDate, this.now(), shiftId);
+        const signup = await db.getFirstAsync<{ id: number }>(
+          'SELECT [id] FROM [EventSignup] WHERE [ShiftID] = ? AND [MemberID] = ?',
+          [shiftId, memberId],
+        );
+        if (!signup) {
+          throw new BusinessRuleError(
+            'NOT_SIGNED_UP',
+            `Member ${memberId} never signed up for shift "${shift.ShiftName}" (id ${shiftId}), so no time can be logged against it.`,
+            { memberId, shiftId },
+          );
+        }
+        const existing = await db.getFirstAsync<{ id: number }>(
+          'SELECT [id] FROM [EventTime] WHERE [ShiftID] = ? AND [MemberID] = ?',
+          [shiftId, memberId],
+        );
+        if (existing) {
+          await db.runAsync('UPDATE [EventTime] SET [Hours] = ?, [ShiftNotes] = ? WHERE [id] = ?', [
+            hours,
+            notes ?? null,
+            existing.id,
+          ]);
+          timeId = existing.id;
+        } else {
+          const ins = await db.runAsync(
+            'INSERT INTO [EventTime] ([ShiftID], [MemberID], [Hours], [ShiftNotes]) VALUES (?, ?, ?, ?)',
+            [shiftId, memberId, hours, notes ?? null],
+          );
+          timeId = ins.lastInsertRowId;
+        }
+      });
+      return (await db.getFirstAsync<EventTime>('SELECT * FROM [EventTime] WHERE [id] = ?', [timeId]))!;
+    },
+  };
+
+  activityTime: DataService['activityTime'] = {
+    logHours: async (memberId, activityId, hours, date, notes) => {
+      assertValidHours(hours);
+      assertActivityDateAllowed(date, this.now());
+      const db = await this.ready();
+      let timeId = 0;
+      await db.withTransactionAsync(async () => {
+        await this.requireMember(db, memberId);
+        const activity = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Activities] WHERE [id] = ?', [
+          activityId,
+        ]);
+        if (!activity) throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${activityId}.`, { activityId });
+        const ins = await db.runAsync(
+          `INSERT INTO [ActivityTime] ([MemberID], [ActivityID], [ActivityDate], [Hours], [ActivityNotes])
+           VALUES (?, ?, ?, ?, ?)`,
+          [memberId, activityId, date, hours, notes ?? null],
+        );
+        timeId = ins.lastInsertRowId;
+      });
+      return (await db.getFirstAsync<ActivityTime>('SELECT * FROM [ActivityTime] WHERE [id] = ?', [timeId]))!;
+    },
+  };
+
+  private async requireShift(db: SQLite.SQLiteDatabase, shiftId: number): Promise<Shift> {
+    const shift = await db.getFirstAsync<Shift>('SELECT * FROM [Shift] WHERE [id] = ?', [shiftId]);
+    if (!shift) throw new BusinessRuleError('SHIFT_NOT_FOUND', `No shift with id ${shiftId}.`, { shiftId });
+    return shift;
+  }
+
+  private async requireMember(db: SQLite.SQLiteDatabase, memberId: number): Promise<void> {
+    const member = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Member] WHERE [id] = ?', [memberId]);
+    if (!member) throw new BusinessRuleError('MEMBER_NOT_FOUND', `No member with id ${memberId}.`, { memberId });
   }
 
   // ---- meetings ----------------------------------------------------------

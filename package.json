@@ -11,9 +11,12 @@
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:mobile": "npm run start --workspace=apps/mobile",
     "build:shared": "npm run build --workspace=packages/shared",
-    "build:web": "npm run build --workspace=apps/web"
+    "build:web": "npm run build --workspace=apps/web",
+    "test": "vitest run",
+    "typecheck": "npm run typecheck --workspace=apps/web && npm run typecheck --workspace=apps/mobile"
   },
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^3.2.4"
   }
 }

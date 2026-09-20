@@ -124,12 +124,13 @@ export interface Event {
   CategoryID: number;
   Budget?: number;
   Spend?: number;
-  "FundsRaised-Cash"?: number;       // ◄── Added to match table columns
-  "FundsRaised-Electronic"?: number; // ◄── Added to match table columns
+  "FundsRaised-Cash"?: number;       // Added to match database columns
+  "FundsRaised-Electronic"?: number; // Added to match database columns
   Highlights?: string;
   PlannedNumberAttendees?: number;
   ActualNumberAttendees?: number;
 }
+
 
 export interface EventCouncils {
   id: number;

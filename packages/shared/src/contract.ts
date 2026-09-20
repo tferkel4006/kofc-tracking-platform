@@ -11,9 +11,13 @@
 // `import type` and nothing here needs to be built or bundled.
 // =========================================================================
 import type {
+  ActivityTime,
   Category,
   Council,
   Degree,
+  Event,
+  EventSignup,
+  EventTime,
   LessonsLearnedCategory,
   Meeting,
   MeetingInvites,
@@ -24,6 +28,7 @@ import type {
   Message,
   NoShowReason,
   Role,
+  Shift,
 } from './types';
 
 // 1. LOOKUPS
@@ -100,6 +105,14 @@ export interface DataService {
   auth: {
     /** Returns the session for valid credentials, otherwise null. Username match is case-insensitive. */
     signIn(username: string, password: string): Promise<SessionUser | null>;
+    /**
+     * First-time registration. Finds the pre-provisioned Member by email (case-insensitive) and
+     * fills in the placeholder Credentials row they already own with a SHA-256 password hash.
+     * Resolves to the new session. Rejects with a BusinessRuleError when: the email matches no
+     * member (MEMBER_NOT_FOUND), the member already registered (ALREADY_REGISTERED), or the
+     * password is under 8 characters (PASSWORD_TOO_SHORT).
+     */
+    signUp(email: string, password: string): Promise<SessionUser>;
   };
 
   lookups: {
@@ -120,6 +133,40 @@ export interface DataService {
     /** Ordered by last name, then first name. */
     listByCouncil(councilId: number, options?: { activeOnly?: boolean }): Promise<Member[]>;
     listRoles(memberId: number): Promise<Role[]>;
+  };
+
+  events: {
+    get(id: number): Promise<Event | null>;
+    getShift(id: number): Promise<Shift | null>;
+    /** Shifts whose ShiftDate is between the two dates inclusive (YYYY-MM-DD), soonest first. */
+    listShiftsBetween(fromDate: string, toDate: string): Promise<Shift[]>;
+    listSignups(shiftId: number): Promise<EventSignup[]>;
+    /**
+     * Registers a volunteer for a shift and increments NumberVolunteersSignedUp, all or nothing.
+     * Rejects (BusinessRuleError, nothing written) when the shift or member does not exist, the
+     * member is already signed up (ALREADY_SIGNED_UP), or NumberVolunteersSignedUp has reached
+     * MinNumberVolunteers, which locks the shift (SHIFT_LOCKED).
+     */
+    signupForShift(memberId: number, shiftId: number): Promise<EventSignup>;
+  };
+
+  eventTime: {
+    /**
+     * Records hours worked on a shift. Requires an existing EventSignup for the member and shift
+     * (NOT_SIGNED_UP). One row per member and shift: logging again replaces the hours and notes.
+     * Rejects when `hours` is not a multiple of 0.25 in (0, 24], or the shift date is more than
+     * 3 months in the past (SHIFT_REPORT_TOO_OLD).
+     */
+    logHours(memberId: number, shiftId: number, hours: number, notes?: string): Promise<EventTime>;
+  };
+
+  activityTime: {
+    /**
+     * Records hours against a council activity on `date` (YYYY-MM-DD). Each call adds an entry.
+     * Rejects when `hours` is not a multiple of 0.25 in (0, 24], or `date` is more than
+     * 6 months in the past (ACTIVITY_DATE_TOO_OLD).
+     */
+    logHours(memberId: number, activityId: number, hours: number, date: string, notes?: string): Promise<ActivityTime>;
   };
 
   meetings: {

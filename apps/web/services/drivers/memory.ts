@@ -4,9 +4,23 @@
 // the table metadata generated from Schema.sql, so UI bugs surface here instead
 // of against Azure SQL. State is per browser tab and resets on reload.
 // Nothing outside /services may import this file.
+import {
+  assertActivityDateAllowed,
+  assertPasswordAcceptable,
+  assertShiftHasRoom,
+  assertShiftReportAllowed,
+  assertValidHours,
+  BusinessRuleError,
+  isSha256Hex,
+  UNREGISTERED_PASSWORD,
+} from '@kofc/shared';
 import type {
+  ActivityTime,
   Council,
   DataService,
+  Event as CouncilEvent,
+  EventSignup,
+  EventTime,
   LookupRowMap,
   LookupTableName,
   Meeting,
@@ -17,9 +31,19 @@ import type {
   NewMeeting,
   Role,
   SessionUser,
+  Shift,
 } from '@kofc/shared';
 import { SEED_DATA, TABLES, type SeedValue } from '../generated/schema.generated';
-import { buildDevMeetings, DEV_COUNCIL_NUMBER, toIsoDate, type DevMeetingTypeName } from '../seed-dev';
+import { sha256Hex } from '../password';
+import {
+  buildDevEvents,
+  buildDevMeetings,
+  DEV_ACTIVITY,
+  DEV_COUNCIL_NUMBER,
+  DEV_UNREGISTERED_MEMBER,
+  toIsoDate,
+  type DevMeetingTypeName,
+} from '../seed-dev';
 
 type Row = Record<string, SeedValue>;
 
@@ -35,8 +59,9 @@ const LOOKUP_TABLES: Record<LookupTableName, true> = {
   MeetingType: true,
 };
 
-/** Dev stub: plaintext comparison, as seeded. Phase 3 replaces this with SHA-256. */
-const passwordMatches = (stored: string, supplied: string) => stored === supplied;
+/** Credentials.Password holds a SHA-256 hex digest; a not-yet-registered member's placeholder never matches. */
+const passwordMatches = async (stored: string, supplied: string) =>
+  stored !== UNREGISTERED_PASSWORD && stored === (await sha256Hex(supplied));
 
 const lower = (v: SeedValue | undefined) => String(v ?? '').toLowerCase();
 
@@ -119,9 +144,19 @@ class MemoryStore {
   }
 }
 
+export interface MemoryDataServiceOptions {
+  /** Clock used for seeding and the history-window rules. Tests pin it. Default: real time. */
+  now?: () => Date;
+}
+
 export class MemoryDataService implements DataService {
   private store = new MemoryStore();
   private initialised: Promise<void> | null = null;
+  private readonly now: () => Date;
+
+  constructor(options: MemoryDataServiceOptions = {}) {
+    this.now = options.now ?? (() => new Date());
+  }
 
   // ---- lifecycle ---------------------------------------------------------
 
@@ -144,16 +179,69 @@ export class MemoryDataService implements DataService {
     await this.init();
   }
 
-  private seed(): void {
+  private async seed(): Promise<void> {
     for (const { table, rows } of SEED_DATA) for (const row of rows) this.store.insert(table, row);
+
+    // Seed.sql stores dev passwords in plaintext; hash them so signIn only ever sees digests.
+    for (const cred of this.store.rows('Credentials')) {
+      const stored = cred.Password as string;
+      if (stored !== UNREGISTERED_PASSWORD && !isSha256Hex(stored)) (cred as Row).Password = await sha256Hex(stored);
+    }
+    this.seedDevMemberAndActivity();
 
     const council = this.store.rows('Council').find((c) => c.CouncilNumber === DEV_COUNCIL_NUMBER);
     if (!council) throw new Error(`Seed.sql did not create Council ${DEV_COUNCIL_NUMBER}`);
     const typeIds = Object.fromEntries(
       this.store.rows('MeetingType').map((t) => [t.Type as string, t.id]),
     ) as Record<DevMeetingTypeName, number>;
-    for (const { meeting, invite } of buildDevMeetings(council.id as number, typeIds)) {
+    for (const { meeting, invite } of buildDevMeetings(council.id as number, typeIds, this.now())) {
       this.insertMeeting(meeting, invite);
+    }
+    this.seedDevEvents(council.id as number);
+  }
+
+  /** A pre-provisioned member with a placeholder Credentials row, plus one council activity. */
+  private seedDevMemberAndActivity(): void {
+    const council = this.store.rows('Council').find((c) => c.CouncilNumber === DEV_COUNCIL_NUMBER);
+    const template = this.store.rows('Member').find((m) => m.CouncilID === council?.id);
+    if (!council || !template) throw new Error(`Seed.sql did not create Council ${DEV_COUNCIL_NUMBER} with members`);
+    const cred = this.store.insert('Credentials', {
+      Username: DEV_UNREGISTERED_MEMBER.Email,
+      Password: UNREGISTERED_PASSWORD,
+    });
+    this.store.insert('Member', {
+      ...DEV_UNREGISTERED_MEMBER,
+      CouncilID: council.id,
+      StatusID: this.activeStatusId(this.store),
+      DegreeID: template.DegreeID,
+      MemberTypeID: this.store.rows('MemberType').find((t) => t.Type === 'Member')?.id,
+      CredentialID: cred.id,
+    });
+    this.store.insert('Activities', {
+      ...DEV_ACTIVITY,
+      CategoryID: this.store.rows('Category').find((c) => c.Category === 'Service')?.id,
+      CouncilID: council.id,
+    });
+  }
+
+  private seedDevEvents(councilId: number): void {
+    const owner = this.store.rows('Member').find((m) => m.Email === 'testadmin@kofc.org');
+    const category = this.store.rows('Category').find((c) => c.Category === 'Service');
+    if (!owner || !category) throw new Error('Seed.sql is missing the test admin or the Service category');
+    for (const { event, shifts } of buildDevEvents(this.now())) {
+      const eventRow = this.store.insert('Event', { ...event, OwnerID: owner.id, CategoryID: category.id });
+      this.store.insert('EventCouncils', { EventID: eventRow.id, CouncilID: councilId });
+      for (const { shift, signedUp } of shifts) {
+        const shiftRow = this.store.insert('Shift', {
+          ...shift,
+          EventID: eventRow.id,
+          NumberVolunteersSignedUp: signedUp.length,
+        });
+        for (const email of signedUp) {
+          const member = this.store.rows('Member').find((m) => m.Email === email);
+          this.store.insert('EventSignup', { ShiftID: shiftRow.id, MemberID: member?.id, NoShow: 0 });
+        }
+      }
     }
   }
 
@@ -169,24 +257,57 @@ export class MemoryDataService implements DataService {
     signIn: async (username, password) => {
       const s = await this.ready();
       const cred = s.rows('Credentials').find((c) => lower(c.Username) === username.toLowerCase());
-      if (!cred || !passwordMatches(cred.Password as string, password)) return null;
+      if (!cred || !(await passwordMatches(cred.Password as string, password))) return null;
       const member = s.rows('Member').find((m) => m.CredentialID === cred.id);
-      if (!member) return null;
-      const type = s.rows('MemberType').find((t) => t.id === member.MemberTypeID);
-      const roles = this.rolesFor(s, member.id as number);
-      return {
-        credentialId: cred.id as number,
-        memberId: member.id as number,
-        councilId: member.CouncilID as number,
-        username: cred.Username as string,
-        firstName: member.MemberFirstName as string,
-        lastName: member.MemberLastName as string,
-        memberType: type?.Type as SessionUser['memberType'],
-        roles: roles.map((r) => r.Role),
-        isOfficer: roles.some((r) => r.Officer === 1),
-      };
+      return member ? this.sessionFor(s, member, cred) : null;
+    },
+
+    signUp: async (email, password) => {
+      assertPasswordAcceptable(password);
+      const hash = await sha256Hex(password); // hash first: the check-and-write below must not span an await
+      const s = await this.ready();
+      const member = s.rows('Member').find((m) => lower(m.Email) === email.trim().toLowerCase());
+      if (!member) {
+        throw new BusinessRuleError(
+          'MEMBER_NOT_FOUND',
+          `No member record has the email ${email.trim()}. Contact your council admin to be added.`,
+          { email },
+        );
+      }
+      const cred = s.rows('Credentials').find((c) => c.id === member.CredentialID);
+      if (!cred) {
+        throw new BusinessRuleError(
+          'CREDENTIALS_MISSING',
+          `Member ${member.id} has no Credentials row (CredentialID ${member.CredentialID}).`,
+          { memberId: member.id },
+        );
+      }
+      if (cred.Password !== UNREGISTERED_PASSWORD) {
+        throw new BusinessRuleError('ALREADY_REGISTERED', `${member.Email} has already registered. Sign in instead.`, {
+          memberId: member.id,
+        });
+      }
+      (cred as Row).Password = hash;
+      (cred as Row).Username = member.Email;
+      return this.sessionFor(s, member, cred);
     },
   };
+
+  private sessionFor(s: MemoryStore, member: Row, cred: Row): SessionUser {
+    const type = s.rows('MemberType').find((t) => t.id === member.MemberTypeID);
+    const roles = this.rolesFor(s, member.id as number);
+    return {
+      credentialId: cred.id as number,
+      memberId: member.id as number,
+      councilId: member.CouncilID as number,
+      username: cred.Username as string,
+      firstName: member.MemberFirstName as string,
+      lastName: member.MemberLastName as string,
+      memberType: type?.Type as SessionUser['memberType'],
+      roles: roles.map((r) => r.Role),
+      isOfficer: roles.some((r) => r.Officer === 1),
+    };
+  }
 
   // ---- lookups / councils / members -------------------------------------
 
@@ -248,6 +369,121 @@ export class MemoryDataService implements DataService {
       .filter((r): r is Row => r !== undefined)
       .map((r) => ({ ...r }) as unknown as Role)
       .sort((a, b) => a.id - b.id);
+  }
+
+  // ---- events, shifts and time logs -------------------------------------
+
+  events: DataService['events'] = {
+    get: async (id) => {
+      const s = await this.ready();
+      const row = s.rows('Event').find((e) => e.id === id);
+      return row ? ({ ...row } as unknown as CouncilEvent) : null;
+    },
+
+    getShift: async (id) => {
+      const s = await this.ready();
+      const row = s.rows('Shift').find((sh) => sh.id === id);
+      return row ? ({ ...row } as unknown as Shift) : null;
+    },
+
+    listShiftsBetween: async (fromDate, toDate) => {
+      const s = await this.ready();
+      const rows = s
+        .rows('Shift')
+        .filter((sh) => (sh.ShiftDate as string) >= fromDate && (sh.ShiftDate as string) <= toDate)
+        .map((sh) => ({ ...sh })) as unknown as Shift[];
+      return rows.sort(
+        (a, b) => a.ShiftDate.localeCompare(b.ShiftDate) || a.StartTime.localeCompare(b.StartTime) || a.id - b.id,
+      );
+    },
+
+    listSignups: async (shiftId) => {
+      const s = await this.ready();
+      return s
+        .rows('EventSignup')
+        .filter((e) => e.ShiftID === shiftId)
+        .map((e) => ({ ...e })) as unknown as EventSignup[];
+    },
+
+    signupForShift: async (memberId, shiftId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const shift = this.requireShift(s, shiftId);
+        this.requireMember(s, memberId);
+        if (s.rows('EventSignup').some((e) => e.ShiftID === shiftId && e.MemberID === memberId)) {
+          throw new BusinessRuleError(
+            'ALREADY_SIGNED_UP',
+            `Member ${memberId} is already signed up for shift "${shift.ShiftName}" (id ${shiftId}).`,
+            { memberId, shiftId },
+          );
+        }
+        assertShiftHasRoom(shift as unknown as Shift);
+        const row = s.insert('EventSignup', { ShiftID: shiftId, MemberID: memberId, NoShow: 0 });
+        (shift as Row).NumberVolunteersSignedUp = (shift.NumberVolunteersSignedUp as number) + 1;
+        return { ...row } as unknown as EventSignup;
+      });
+    },
+  };
+
+  eventTime: DataService['eventTime'] = {
+    logHours: async (memberId, shiftId, hours, notes) => {
+      assertValidHours(hours);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const shift = this.requireShift(s, shiftId);
+        this.requireMember(s, memberId);
+        assertShiftReportAllowed(shift.ShiftDate as string, this.now(), shiftId);
+        if (!s.rows('EventSignup').some((e) => e.ShiftID === shiftId && e.MemberID === memberId)) {
+          throw new BusinessRuleError(
+            'NOT_SIGNED_UP',
+            `Member ${memberId} never signed up for shift "${shift.ShiftName}" (id ${shiftId}), so no time can be logged against it.`,
+            { memberId, shiftId },
+          );
+        }
+        const existing = s.rows('EventTime').find((t) => t.ShiftID === shiftId && t.MemberID === memberId);
+        if (existing) {
+          (existing as Row).Hours = hours;
+          (existing as Row).ShiftNotes = notes ?? null;
+          return { ...existing } as unknown as EventTime;
+        }
+        const row = s.insert('EventTime', { ShiftID: shiftId, MemberID: memberId, Hours: hours, ShiftNotes: notes ?? null });
+        return { ...row } as unknown as EventTime;
+      });
+    },
+  };
+
+  activityTime: DataService['activityTime'] = {
+    logHours: async (memberId, activityId, hours, date, notes) => {
+      assertValidHours(hours);
+      assertActivityDateAllowed(date, this.now());
+      const s = await this.ready();
+      return s.transaction(() => {
+        this.requireMember(s, memberId);
+        if (!s.rows('Activities').some((a) => a.id === activityId)) {
+          throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${activityId}.`, { activityId });
+        }
+        const row = s.insert('ActivityTime', {
+          MemberID: memberId,
+          ActivityID: activityId,
+          ActivityDate: date,
+          Hours: hours,
+          ActivityNotes: notes ?? null,
+        });
+        return { ...row } as unknown as ActivityTime;
+      });
+    },
+  };
+
+  private requireShift(s: MemoryStore, shiftId: number): Row {
+    const shift = s.rows('Shift').find((sh) => sh.id === shiftId);
+    if (!shift) throw new BusinessRuleError('SHIFT_NOT_FOUND', `No shift with id ${shiftId}.`, { shiftId });
+    return shift;
+  }
+
+  private requireMember(s: MemoryStore, memberId: number): Row {
+    const member = s.rows('Member').find((m) => m.id === memberId);
+    if (!member) throw new BusinessRuleError('MEMBER_NOT_FOUND', `No member with id ${memberId}.`, { memberId });
+    return member;
   }
 
   // ---- meetings ----------------------------------------------------------
