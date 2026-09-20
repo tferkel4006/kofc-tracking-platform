@@ -7,7 +7,7 @@
 import type { ShiftFeedItem, ThreadMessage } from './contract';
 import { daysBetween } from './planning';
 import { assertValidHours, HOURS_STEP, subtractMonths, toIsoDate } from './rules';
-import type { Council, Shift } from './types';
+import type { Council, Member, Shift } from './types';
 
 /** Shifts starting within this many days are shown in Secondary Red. */
 export const URGENT_WITHIN_DAYS = 2;
@@ -192,4 +192,45 @@ export const isUnread = (m: ThreadMessage): boolean => m.receipt !== null && m.r
 export function preview(text: string | undefined, max = 80): string {
   const flat = (text ?? '').replace(/\s+/g, ' ').trim();
   return flat.length <= max ? flat : `${flat.slice(0, max - 1).trimEnd()}…`;
+}
+
+// ---- attachments, timestamps, member dropdown ---------------------------------
+
+export type AttachmentKind = 'PDF' | 'IMG' | 'XLS' | 'DOC' | 'FILE';
+
+/** A short tag for the attachment placeholder, from its MIME type. */
+export function attachmentKind(fileType: string): AttachmentKind {
+  const t = fileType.toLowerCase();
+  if (t === 'application/pdf') return 'PDF';
+  if (t.startsWith('image/')) return 'IMG';
+  if (t.includes('spreadsheet') || t.includes('excel') || t === 'text/csv') return 'XLS';
+  if (t.includes('wordprocessing') || t === 'application/msword') return 'DOC';
+  return 'FILE';
+}
+
+/**
+ * Messages.CreatedAt is stored as UTC 'YYYY-MM-DD HH:MM:SS'. Shows it in the device's local time as
+ * 'Sep 20, 3:05 PM', or returns the input unchanged when it is not a timestamp.
+ */
+export function formatTimestamp(stored: string | undefined | null): string {
+  const m = stored ? /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(stored) : null;
+  if (!m) return stored ?? '';
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])));
+  const h = d.getHours();
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${h % 12 === 0 ? 12 : h % 12}:${String(d.getMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/**
+ * Member dropdown rows: "Last, First – Council name", sorted by council name and then last name
+ * (Specifications: "User Interface Behaviors").
+ */
+export function memberDropdownOptions(
+  members: readonly Pick<Member, 'id' | 'MemberFirstName' | 'MemberLastName' | 'CouncilID'>[],
+  councils: readonly Pick<Council, 'id' | 'CouncilName'>[],
+): { value: number; label: string }[] {
+  const councilName = new Map(councils.map((c) => [c.id, c.CouncilName]));
+  return members
+    .map((m) => ({ value: m.id, council: councilName.get(m.CouncilID) ?? '', last: m.MemberLastName, first: m.MemberFirstName }))
+    .sort((a, b) => a.council.localeCompare(b.council) || a.last.localeCompare(b.last) || a.first.localeCompare(b.first))
+    .map((m) => ({ value: m.value, label: `${m.last}, ${m.first} – ${m.council}` }));
 }

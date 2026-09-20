@@ -3,6 +3,7 @@ import {
   addDays,
   addMonths,
   assertValidHours,
+  attachmentKind,
   BRAND,
   cleanLookupValues,
   contrastRatio,
@@ -15,12 +16,14 @@ import {
   formatHours,
   formatShiftWhen,
   formatTime,
+  formatTimestamp,
   HOUR_OPTIONS,
   hoursToPicker,
   isUnread,
   isUrgent,
   LOOKUP_META,
   LOOKUP_TABLE_ORDER,
+  memberDropdownOptions,
   MINUTE_OPTIONS,
   noShowWindowStart,
   padMinutes,
@@ -256,5 +259,42 @@ describe('copy plan', () => {
     expect(plan.event).not.toHaveProperty('Spend');
     expect(plan.event).not.toHaveProperty('Highlights');
     expect(plan.shifts.map((s) => s.ShiftDate)).toEqual(['2026-12-31', '2027-01-01']);
+  });
+});
+
+describe('attachments, timestamps and the member dropdown', () => {
+  it('tags attachments by kind', () => {
+    expect(
+      [
+        'application/pdf',
+        'image/png',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/zip',
+      ].map(attachmentKind),
+    ).toEqual(['PDF', 'IMG', 'XLS', 'DOC', 'FILE']);
+  });
+
+  it('shows stored UTC timestamps in local time and passes anything else through', () => {
+    const local = new Date(Date.UTC(2026, 8, 20, 15, 5));
+    const h = local.getHours();
+    const expected = `Sep ${local.getDate()}, ${h % 12 === 0 ? 12 : h % 12}:05 ${h < 12 ? 'AM' : 'PM'}`;
+    expect(formatTimestamp('2026-09-20 15:05:00')).toBe(expected);
+    expect(formatTimestamp('not a time')).toBe('not a time');
+    expect(formatTimestamp(null)).toBe('');
+  });
+
+  it('orders member dropdown rows by council name, then last name', () => {
+    const councils = [{ id: 1, CouncilName: 'St. Jude Council' }, { id: 2, CouncilName: 'Our Lady of Peace Council' }];
+    const members = [
+      { id: 10, MemberFirstName: 'Zed', MemberLastName: 'Adams', CouncilID: 1 },
+      { id: 11, MemberFirstName: 'Amy', MemberLastName: 'Young', CouncilID: 2 },
+      { id: 12, MemberFirstName: 'Bo', MemberLastName: 'Adams', CouncilID: 1 },
+    ];
+    expect(memberDropdownOptions(members, councils)).toEqual([
+      { value: 11, label: 'Young, Amy – Our Lady of Peace Council' },
+      { value: 12, label: 'Adams, Bo – St. Jude Council' },
+      { value: 10, label: 'Adams, Zed – St. Jude Council' },
+    ]);
   });
 });

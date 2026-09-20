@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "KofC Tracker",
+    "slug": "kofc-tracker",
+    "scheme": "kofc",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["ios", "android"],
+    "backgroundColor": "#FFFFFF",
+    "splash": { "backgroundColor": "#002855", "resizeMode": "contain" },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "org.kofc.tracker" },
+    "android": { "package": "org.kofc.tracker", "backgroundColor": "#FFFFFF" },
+    "plugins": ["expo-router", "expo-sqlite", "expo-secure-store"]
+  }
+}

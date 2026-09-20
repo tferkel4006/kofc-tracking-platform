@@ -2,19 +2,36 @@
   "name": "@kofc/mobile",
   "version": "1.0.0",
   "private": true,
+  "main": "expo-router/entry",
   "scripts": {
+    "start": "expo start",
+    "ios": "expo start --ios",
+    "android": "expo start --android",
     "gen:db": "node ../../scripts/gen-db-assets.mjs",
     "gen:db:check": "node ../../scripts/gen-db-assets.mjs --check",
     "typecheck": "tsc --noEmit",
-    "build": "echo 'Skipping Expo framework build until Sprint 4 scaffolding pass completes'"
+    "build": "expo export --platform all --output-dir dist"
   },
   "dependencies": {
-    "expo-sqlite": "~57.0.3",
+    "@expo/metro-runtime": "~57.0.16",
+    "expo": "~57.0.24",
+    "expo-constants": "~57.0.19",
     "expo-crypto": "~57.0.3",
-    "expo-secure-store": "~57.0.2"
+    "expo-linking": "~57.0.10",
+    "expo-router": "~57.0.22",
+    "expo-secure-store": "~57.0.2",
+    "expo-sqlite": "~57.0.3",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "~4.26.0",
+    "react-native-web": "~0.21.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/react": "~19.2.0",
     "typescript": "^5.0.0"
   }
 }
