@@ -1,0 +1,17 @@
+{
+  "name": "@kofc/mobile",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "gen:db": "node ../../scripts/gen-db-assets.mjs",
+    "gen:db:check": "node ../../scripts/gen-db-assets.mjs --check",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "expo-sqlite": "~57.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,159 @@
+Claude Event Tracking Application Instructions
+This application will be used by multiple Knights of Columbus councils to schedule events and track activities of the council.  It will also allow members to record their time against the various events and activities.
+The application will need to run on iphone, android and web browsers.
+The tech stack for the application should include React Native, Expo and an Azure SQL Server database using T-SQL.  If necessary use Next.JS with React for more complex desktop layouts.
+I already have a database schema designed and a database created for the application.  Database credentials include:
+DatabaseName: KOCEventTracking
+Username:
+Password:
+There are three types of users for the application, Super Admin, Admin, Member.  
+Super Admins maintain data for all councils.  
+Admins maintain data for their councils only.  
+Super Admin Functions:
+Maintain MemberStatus
+Maintain Role
+Maintain Degree
+Maintain MemberType
+Maintain MemberStatus
+Maintain Category
+Maintain NoshowReason 
+Maintain LeasonsLearnedCategory
+Maintain MeetingType
+Admin and Super Admin Functions:
+Maintain council 
+Maintain parish
+Maintain pastor
+Maintain events
+Maintain shifts
+Maintain activities
+Maintain members
+Maintain DistributionLists
+Maintain meetings
+All users can:
+Signup for event-shifts for their councils and affiliated councils
+Record time against shift
+Record time against activities
+Send messages
+Entities:
+Member – Roster of members
+Event – Scheduled events
+Shift – Shifts for scheduled events
+Meetings – Scheduled meetings for council
+MeetingInvites – List of members invited to meeting and whether they showed up
+Credentials – Login credentials
+Activity – Ongoing activities
+Council – Organization members belong to
+Parish – Parish(s) associated with council
+Pastor – Pastor(s) associated with parish
+LessonsLearned – Knowledgebase of learnings from past events
+Message
+DistributionList
+MessageAttachments
+Entity relationships:
+A council can be affiliated with one or more other councils but not itself
+A council can have multiple parishes.
+A parish can have multiple pastors.
+An event can have multiple councils associated to it
+A member/admin/super admin can hold multiple roles.
+An event can have multiple lessons learned.
+An event has one member owner.
+Member can only belong to one council.
+A meeting can have multiple attendees
+Transactional tables:
+ActivityTime – Tracks time logged against activities by members
+EventSignup – Tracks who is signed up for which shifts for an event
+EventTime – Tracks time logged against shifts for events by members
+ReadReceipts
+Lookup Tables:
+MemberStatus
+Role
+Degree
+MemberType
+NoshowReason 
+LeasonsLearnedCategory
+Category
+MeetingType
+Specific entity details:
+An event can span multiple days.  Each event should have at least one shift but could have more.  Events are council specific although some events can be affiliated with multiple councils.  Each event has an associated category.  Events are date specific.  
+Shifts are date and time specific.  Each shift has a required number of volunteers that need to be signed up for it.  Once the required number of volunteers have signed up for a shift it is no longer available for signup.
+Activities are council specific but are not scheduled.  Activities are not shared among affiliated councils.  Members/Admins/Super Admins do not need to sign up for activities in order to record time against them.  Activities can happen on any day.  Each activity is associated with a category.
+Time is recorded in fifteen minute increments.  
+Branding and Usability:
+The application should be branded with the Knights of Columbus branding.  
+The functions of viewing events and shifts, signing up for shifts, recording time against a shift, recording time against an activity or viewing council members lists should be optimized for the phone and highly intuitive.  Minimize the number of clicks required.
+All other functions including maintaining events, shifts, activities, members, councils, parishes, pastors and all the lookup tables should be optimized for the desktop web application.
+Error messages should be highly informative including any contextual data that is relevant.
+Security:
+The login credentials for each user are stored in the Credentials table.  The password field should be encrypted.  The username should default to the members email.  
+There should be a mechanism for a user to change and/or reset their password.  The user should be given the option of using faceid on their phone if appropriate.  
+The first time the user accesses the application they should be asked for their email address.  Their member record should already be created in the Members table.  If so, prompt them to enter the password they want to use and then store in Credentials table.  If no record is found for them in the Members table then display a message telling them to contact their admin and provide his contact information.
+Allow the user to remain logged in to the application on the phone.
+Messaging inside application:
+Provide mechanism for asynchronous messaging within the application.  Messaging features:
+* Media & Document Attachments: Drag and drop PDFs, design files, images, or spreadsheets directly into the message. These remain permanently available in the chat history for later downloading or previewing.
+* Granular Search & Filters: Because reviews happen later, users need to find specific items quickly. Look for tools that let you filter by attachments only, sender, or date range so files don't get lost in the scroll.
+* Persistent History: Messages and attachments are saved indefinitely allowing reviewers to log in hours or days later from any device and see the exact context
+
+* Drafts: Write out a comprehensive review or update when it's convenient for you, then save it as a draft for sending later.
+* Threaded Conversations: Keep feedback organized. When someone leaves a comment on a specific file, keeping that conversation inside a contained thread prevents the main inbox from getting cluttered.
+* Read Receipts & "Mark as Unread": Reviewers can glance at a message and then mark it as unread or flag it for later follow-up so it stays top-of-mind until they have time to respond.
+Store messages in the database.  
+Allow messaging to individuals, groups of individuals or the entire member list from a specific council.  Allow creation of distribution lists by admin or super admin.
+User Interface Behaviors:
+The council drop down should include CouncilNumber and CouncilName sorted in ascending order by CouncilNumber.
+Member drop down should include member last name, member first name and council name sorted alphabetically in ascending order by council name and then member last name.
+All users features:
+Display current event-shifts they are signed up for.  Highlight any shift that is within two days of happening.
+Display event-shifts for their council or affiliated councils that require additional signups to meet  the MinNumberVolunteers amount.  Be able to filter display by council.  Allow user to signup for shifts.  Increment NumberVolunteersSignedUp each time someone signs up for a shift.
+Display all upcoming event-shifts for their council or affiliated councils for the next six months regardless of whether additional signups are required or not.  Include who is signed up for each shift.
+Display event-shifts that have already occurred that the user signed up for but have not yet recorded time against.  Allow them to record time against them for up to three months in the past.  
+Display activities for their council and allow them to record time against them.  
+Display member roster for their council or affiliated councils.  Be able to filter display by council.
+Display history of their recorded time against events/shifts and activities for up to six months after recording.  Allow them to change hours for up to six months.
+Allow user to record a no show for a shift that they signed up for and collect reason for noshow.  Admins can record no shows for any members in their council only. Super Admins can record no shows for any members in their council only.
+View and respond to messages.
+Notify the user at least one day prior to the scheduled shift, ideally through the application and via email including calendar file(.ics) or text.
+There should be some kind of indicator on the application showing the number of no shows recorded for the member logged in over the past year.
+Display past meetings and view minutes.
+Display upcoming meetings that they are invited to.
+Notify member at least one day before meeting they are invited to, ideally through the application and via email including calendar file(.ics) or text.
+
+Admin/Super admin features:
+Display all noshows for the past six months for their council
+Display all shift signups that have not yet had time recorded against them for anyone within their council
+Be able to message members signed up for a specific event 
+Be able to message members signed up for a specific shift
+Update event once it has passed with spend, funds raised, highlights, actual number of attendees and lessons learned.  Owner of event should be able to do this as well.
+Easily copy an existing event and change the details to create a new instance of the event
+View lessons learned across all councils.  Filter by council(s), category, LessonsLearned category
+Schedule meetings and invite one or more members to the meeting for their council.  Should be an easy way to invite all active members to a meeting.  In addition to admin and super admin, any officer should be able to schedule a meeting.  When members are invited to the meeting they should receive a message.
+Record attendance of a meeting and upload minutes.  Officers can do this as well.
+Design Options:
+Traditional menu/screen approach
+Conversational, think Alexa including the voice recognition with replies coming in the application
+Possibly be able to switch between the two options
+Questions/Actions a user may want to answer/do:
+What shifts are I signed up for and which ones are coming up soon?
+What are some upcoming shifts that need people?
+Who will be working a particular shift with me?
+What shifts have I worked lately?
+What shifts that I worked do I need to report time against?
+I need to change my time reported against a specific shift or activity
+What activities can I report time against?
+What activities have I done lately?
+Report 15 minutes against garbage collection for me for today
+Take me off event-shift B
+I can work event-shift A but I will be fifteen minutes late
+I didn’t make it to event-shift B because I forgot
+Show me who is in my council
+Show me the officers in my council
+Send a message to the people who are working the event-shift A with me that I will be 15 minutes late
+What meetings to I have coming up?
+What were the minutes from the last meeting?
+
+
+
+
+
+
+

@@ -1,0 +1,45 @@
+name: Knights of Columbus Monorepo CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  verify-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Monorepo Dependencies
+        run: npm ci
+
+      - name: Build Shared TypeScript Package
+        run: |
+          npm run build --workspace=packages/shared
+
+      - name: Verify Next.js Web App Build
+        run: |
+          npm run build --workspace=apps/web
+        env:
+          DATABASE_URL: "sqlserver://mock-staging-server:1433;database=mock;"
+
+      - name: Setup Expo EAS for Mobile Compilation
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Run Expo Lint and Type-Checks
+        run: |
+          cd apps/mobile
+          npx tsc --noEmit
