@@ -42,7 +42,15 @@ export type BusinessRuleCode =
   | 'NOT_SIGNED_UP'
   | 'PASSWORD_TOO_SHORT'
   | 'ALREADY_REGISTERED'
-  | 'CREDENTIALS_MISSING';
+  | 'CREDENTIALS_MISSING'
+  | 'INVALID_INPUT'
+  | 'EVENT_NOT_FOUND'
+  | 'MEETING_NOT_FOUND'
+  | 'THREAD_NOT_FOUND'
+  | 'MESSAGE_NOT_FOUND'
+  | 'SHIFT_HAS_SIGNUPS'
+  | 'LOOKUP_IN_USE'
+  | 'LOOKUP_PROTECTED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -168,3 +176,52 @@ export function assertPasswordAcceptable(password: unknown): string {
 
 /** True for a lowercase hex SHA-256 digest, the format stored in Credentials.Password. */
 export const isSha256Hex = (value: string): boolean => /^[0-9a-f]{64}$/.test(value);
+
+// ---- field validators for the maintenance screens ---------------------------
+// Shared by every driver so a bad value is refused with the same message everywhere.
+
+const invalid = (message: string, details: Record<string, unknown> = {}) =>
+  new BusinessRuleError('INVALID_INPUT', message, details);
+
+/** Trimmed text of at most `maxLength` characters; `required` rejects an empty result. */
+export function assertText(value: unknown, label: string, maxLength: number, required = true): string {
+  if (typeof value !== 'string') throw invalid(`${label} must be text; received ${JSON.stringify(value)}.`, { label });
+  const text = value.trim();
+  if (required && text === '') throw invalid(`${label} is required.`, { label });
+  if (text.length > maxLength) {
+    throw invalid(`${label} must be at most ${maxLength} characters; received ${text.length}.`, { label, maxLength });
+  }
+  return text;
+}
+
+/** A whole number of at least `min`. */
+export function assertInteger(value: unknown, label: string, min = 0): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < min) {
+    throw invalid(`${label} must be a whole number of at least ${min}; received ${String(value)}.`, { label, min });
+  }
+  return value;
+}
+
+/** A non-negative amount of money with at most two decimal places. */
+export function assertMoney(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) {
+    throw invalid(`${label} must be an amount of 0 or more with at most two decimal places; received ${String(value)}.`, {
+      label,
+    });
+  }
+  return Math.round(value * 100) / 100;
+}
+
+/** HH:MM or HH:MM:SS (24-hour), returned as HH:MM:SS. */
+export function assertTimeOfDay(value: unknown, label: string): string {
+  const m = typeof value === 'string' ? /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value) : null;
+  if (m && Number(m[1]) < 24 && Number(m[2]) < 60 && Number(m[3] ?? 0) < 60) return `${m[1]}:${m[2]}:${m[3] ?? '00'}`;
+  throw invalid(`${label} must be a 24-hour time such as 09:30 or 09:30:00; received ${JSON.stringify(value)}.`, { label });
+}
+
+/** An event may not end before it starts. */
+export function assertEventRange(startDate: string, endDate: string): void {
+  if (endDate < startDate) {
+    throw invalid(`The event ends (${endDate}) before it starts (${startDate}).`, { startDate, endDate });
+  }
+}

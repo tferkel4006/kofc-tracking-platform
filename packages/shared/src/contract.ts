@@ -11,13 +11,16 @@
 // `import type` and nothing here needs to be built or bundled.
 // =========================================================================
 import type {
+  Activities,
   ActivityTime,
   Category,
+  ChatThread,
   Council,
   Degree,
   Event,
   EventSignup,
   EventTime,
+  LessonsLearned,
   LessonsLearnedCategory,
   Meeting,
   MeetingInvites,
@@ -26,7 +29,9 @@ import type {
   MemberStatus,
   MemberType,
   Message,
+  MessageAttachment,
   NoShowReason,
+  ReadReceipt,
   Role,
   Shift,
 } from './types';
@@ -53,6 +58,9 @@ export interface LookupRowMap {
   LessonsLearnedCategory: LessonsLearnedCategory;
   MeetingType: MeetingType;
 }
+
+/** Field values for a lookup row (everything except `id`). Validated per table by LOOKUP_META. */
+export type LookupValues = Record<string, string | number>;
 
 // 2. AUTH
 /** What the UI is allowed to know about a signed-in member. Never includes the password. */
@@ -90,7 +98,89 @@ export interface MessagePageOptions {
   limit?: number;
 }
 
-// 4. THE SERVICE
+// 4. EVENTS, SHIFTS AND THE POST-EVENT LEDGER
+/** An event row without its generated id. */
+export type NewEvent = Omit<Event, 'id'>;
+/** Fields to change on an event; `null` clears an optional field. Omitted fields are left alone. */
+export type EventChanges = { [K in keyof NewEvent]?: NewEvent[K] | null };
+/** A shift without its generated id; NumberVolunteersSignedUp always starts at 0. */
+export type NewShift = Omit<Shift, 'id' | 'NumberVolunteersSignedUp'>;
+export type ShiftChanges = Partial<Omit<NewShift, 'EventID'>>;
+
+export interface CopyEventOptions {
+  /** The copy's first day (YYYY-MM-DD); every shift moves by the same number of days. */
+  startDate: string;
+  /** Default: the original name. */
+  eventName?: string;
+  /** Default: the original owner. */
+  ownerId?: number;
+}
+
+/** A shift the member signed up for, with its event and any hours already logged. */
+export interface MemberShift {
+  signup: EventSignup;
+  shift: Shift;
+  event: Event;
+  /** Hours recorded in EventTime, or null when none are recorded yet. */
+  hoursLogged: number | null;
+}
+
+/** One row of the shift signup feed. */
+export interface ShiftFeedItem {
+  shift: Shift;
+  event: Event;
+  /** Every council the event is linked to. */
+  councilIds: number[];
+  /** True when the requesting member already holds a seat. */
+  isSignedUp: boolean;
+}
+
+// 5. MESSAGING
+export interface ThreadSummary {
+  thread: ChatThread;
+  /** Newest sent (non-draft) message, or null when the thread holds only drafts. */
+  lastMessage: Message | null;
+  lastSenderName: string | null;
+  /** Messages addressed to the member that they have not read. */
+  unreadCount: number;
+  /** The member's own unsent drafts in this thread. */
+  draftCount: number;
+  participantIds: number[];
+  participantNames: string[];
+}
+
+/** One message as a given member sees it. */
+export interface ThreadMessage {
+  message: Message;
+  senderName: string;
+  attachments: MessageAttachment[];
+  /** The member's own receipt for this message, or null when they sent it. `ReadAt: null` means unread. */
+  receipt: ReadReceipt | null;
+}
+
+export interface SendMessageInput {
+  senderId: number;
+  text: string;
+  /** Reply inside an existing thread. Omit to start a new thread (then `councilId` and `recipientIds` are required). */
+  threadId?: number;
+  councilId?: number;
+  recipientIds?: number[];
+  /** Nests the message under another message of the same thread. */
+  parentMessageId?: number | null;
+  /** Send this saved draft instead of creating a new message. */
+  draftId?: number;
+}
+
+export interface SaveDraftInput {
+  senderId: number;
+  threadId: number;
+  text: string;
+  parentMessageId?: number | null;
+  /** Updates this draft in place instead of creating another. */
+  draftId?: number;
+}
+
+// 6. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -118,12 +208,31 @@ export interface DataService {
   lookups: {
     /** All rows of one lookup table, ordered by id. */
     list<T extends LookupTableName>(table: T): Promise<LookupRowMap[T][]>;
+    /**
+     * Adds a row. Rejects (INVALID_INPUT) when a field is missing, too long or malformed, or when the
+     * table's key value (e.g. Role.Role) already exists, compared case-insensitively.
+     */
+    create<T extends LookupTableName>(table: T, values: LookupValues): Promise<LookupRowMap[T]>;
+    /** Changes a row's fields. Protected values the app depends on ('Active', the three member types) cannot be renamed. */
+    update<T extends LookupTableName>(table: T, id: number, values: LookupValues): Promise<LookupRowMap[T]>;
+    /** Deletes a row nothing references (LOOKUP_IN_USE otherwise) and that is not protected (LOOKUP_PROTECTED). */
+    remove(table: LookupTableName, id: number): Promise<void>;
   };
 
   councils: {
     /** Ordered by CouncilNumber, then CouncilName (Specifications: council dropdowns). */
     list(): Promise<Council[]>;
     get(id: number): Promise<Council | null>;
+    /**
+     * Councils linked to `councilId` through AffiliatedCouncils, in either direction, excluding the
+     * council itself. Ordered like `list`.
+     */
+    listAffiliated(councilId: number): Promise<Council[]>;
+  };
+
+  activities: {
+    /** The council's activities, ordered by name. Activities are never shared with affiliated councils. */
+    listByCouncil(councilId: number): Promise<Activities[]>;
   };
 
   members: {
@@ -148,6 +257,50 @@ export interface DataService {
      * MinNumberVolunteers, which locks the shift (SHIFT_LOCKED).
      */
     signupForShift(memberId: number, shiftId: number): Promise<EventSignup>;
+
+    /** Every shift the member is signed up for between the dates inclusive (default: all), soonest first. */
+    listMemberShifts(memberId: number, range?: { fromDate?: string; toDate?: string }): Promise<MemberShift[]>;
+    /**
+     * Shifts between the dates inclusive whose event is linked to any of `councilIds`, soonest first.
+     * Locked shifts are included so the UI can show them as full.
+     */
+    listShiftFeed(query: {
+      memberId: number;
+      councilIds: number[];
+      fromDate: string;
+      toDate: string;
+    }): Promise<ShiftFeedItem[]>;
+    /** Signups flagged NoShow for the member on shifts dated on or after `sinceDate` (rolling one-year badge). */
+    countNoShows(memberId: number, sinceDate: string): Promise<number>;
+
+    /** Events linked to the council, newest StartDate first. */
+    listByCouncil(councilId: number): Promise<Event[]>;
+    listShifts(eventId: number): Promise<Shift[]>;
+    /** Ids of every council the event is linked to. */
+    listCouncilIds(eventId: number): Promise<number[]>;
+    /** Creates an event linked to `councilIds` (at least one). Rejects INVALID_INPUT on any bad field. */
+    create(event: NewEvent, councilIds: number[]): Promise<Event>;
+    /** Changes event fields, including the post-event ledger (Spend, funds raised, attendance, Highlights). */
+    update(id: number, changes: EventChanges): Promise<Event>;
+    /** Replaces the event's council links (at least one). */
+    setCouncils(eventId: number, councilIds: number[]): Promise<void>;
+    /**
+     * Creates a twin of an event: same details, council links and shifts moved to `options.startDate`.
+     * Signups, time and the post-event ledger are not copied.
+     */
+    copy(eventId: number, options: CopyEventOptions): Promise<Event>;
+    /** The shift date must fall within the event's dates; MinNumberVolunteers is at least 1. */
+    createShift(shift: NewShift): Promise<Shift>;
+    /** Rejects when MinNumberVolunteers would drop below the volunteers already signed up. */
+    updateShift(id: number, changes: ShiftChanges): Promise<Shift>;
+    /** Rejects with SHIFT_HAS_SIGNUPS while anyone is signed up. */
+    deleteShift(id: number): Promise<void>;
+  };
+
+  lessonsLearned: {
+    list(eventId: number): Promise<LessonsLearned[]>;
+    add(eventId: number, categoryId: number, description: string): Promise<LessonsLearned>;
+    remove(id: number): Promise<void>;
   };
 
   eventTime: {
@@ -185,6 +338,8 @@ export interface DataService {
     invite(meetingId: number, memberIds: number[]): Promise<number>;
     /** Rejects if the member was never invited to the meeting. */
     setAttended(meetingId: number, memberId: number, attended: boolean): Promise<void>;
+    /** Points the meeting at its uploaded minutes; `null` removes them. */
+    setMinutes(meetingId: number, minutesUrl: string | null): Promise<Meeting>;
   };
 
   messages: {
@@ -192,5 +347,23 @@ export interface DataService {
     getPage(threadId: number, options?: MessagePageOptions): Promise<Message[]>;
     /** Creates one unread ReadReceipt per distribution-list member. Resolves to the number created. */
     createReadReceiptStubs(messageId: number, listId: number): Promise<number>;
+
+    /**
+     * Threads the member sent to or received from, most recent activity first. Threads have no
+     * participant table: a member takes part when they sent a message or hold a read receipt.
+     */
+    listThreads(memberId: number): Promise<ThreadSummary[]>;
+    /** Every message of the thread the member may see, oldest first: sent messages plus the member's own drafts. */
+    listThread(threadId: number, memberId: number): Promise<ThreadMessage[]>;
+    /**
+     * Sends a message (or a saved draft) and creates an unread receipt for every other participant, or for
+     * `recipientIds` when it starts a new thread. Rejects INVALID_INPUT for empty text.
+     */
+    send(input: SendMessageInput): Promise<Message>;
+    /** Creates or updates the member's unsent draft. */
+    saveDraft(input: SaveDraftInput): Promise<Message>;
+    deleteDraft(messageId: number, memberId: number): Promise<void>;
+    /** Marks a message read (`ReadAt` set) or unread (`ReadAt: null`) for the member. */
+    setRead(messageId: number, memberId: number, read: boolean): Promise<ReadReceipt>;
   };
 }
