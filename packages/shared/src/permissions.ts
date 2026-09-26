@@ -4,11 +4,12 @@
 // Specifications: the Super Admin / Admin function lists, officers may schedule meetings,
 // and the owner of an event may record its post-event results).
 //
-// These decide what the UI offers. The DataService contract has no caller identity, so until the
-// remote driver's API enforces the same rules server-side, they are a usability gate, not security.
+// These decide what the UI offers. Member writes (members.create/update, memberProfiles.updateExtensions)
+// take the caller's id and the drivers enforce the same rules (rules.ts); the other areas have no caller
+// identity yet, so until the remote driver's API enforces them server-side they are a usability gate.
 // =========================================================================
 import type { SessionUser } from './contract';
-import type { Event } from './types';
+import type { Event, MemberType } from './types';
 
 type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'>;
 
@@ -34,6 +35,22 @@ export const canManageMeetings = (u: Actor, councilId: number): boolean =>
 /** Admins record post-event results for their councils' events, and the event's owner may too. */
 export const canRecordLedger = (u: Actor, event: Pick<Event, 'OwnerID'>, eventCouncilIds: readonly number[]): boolean =>
   event.OwnerID === u.memberId || eventCouncilIds.some((id) => canAdministerCouncil(u, id));
+
+/** "Add member" / "Create profile" controls: Admins and Super Admins only (drivers: ADMIN_REQUIRED). */
+export const canCreateMembers = (u: Actor): boolean => isAdmin(u);
+
+/** Edit controls on a member's profile: Admins edit anyone, a Member only their own contact details and skills. */
+export const canEditMember = (u: Actor, memberId: number): boolean => isAdmin(u) || u.memberId === memberId;
+
+/**
+ * Member types the user may pick for a member now of `currentType` (omit when adding one). Empty means
+ * hide the type and promotion controls: Members never change types, and Admins cannot touch a Super Admin's.
+ */
+export function grantableMemberTypes(u: Actor, currentType?: MemberType['Type']): MemberType['Type'][] {
+  if (isSuperAdmin(u)) return ['Super Admin', 'Admin', 'Member'];
+  if (!isAdmin(u) || currentType === 'Super Admin') return [];
+  return ['Admin', 'Member'];
+}
 
 /** Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it. */
 export function portalAreas(u: Actor): PortalArea[] {

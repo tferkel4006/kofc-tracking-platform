@@ -61,6 +61,7 @@ export type BusinessRuleCode =
   | 'LOOKUP_PROTECTED'
   | 'DONATION_METHOD_NOT_ENABLED'
   | 'NO_RECIPIENTS'
+  | 'ADMIN_REQUIRED'
   | 'SUPER_ADMIN_REQUIRED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
@@ -76,12 +77,12 @@ export class BusinessRuleError extends Error {
 }
 
 /**
- * A request the caller's privileges do not allow. A BusinessRuleError (code SUPER_ADMIN_REQUIRED) so
- * screens that already report rule failures report this one too; nothing has been written when it throws.
+ * A request the caller's privileges do not allow. A BusinessRuleError so screens that already report rule
+ * failures report this one too; nothing has been written when it throws. The code names the tier needed.
  */
 export class SecurityPrivilegeError extends BusinessRuleError {
-  constructor(message: string, details: Record<string, unknown> = {}) {
-    super('SUPER_ADMIN_REQUIRED', message, details);
+  constructor(code: 'ADMIN_REQUIRED' | 'SUPER_ADMIN_REQUIRED', message: string, details: Record<string, unknown> = {}) {
+    super(code, message, details);
     this.name = 'SecurityPrivilegeError';
   }
 }
@@ -440,10 +441,95 @@ export interface MemberWriteActor {
  */
 export function assertMayGrantMemberType(actor: MemberWriteActor, grantedType: string | undefined, currentType?: string): void {
   if (grantedType !== SUPER_ADMIN_TYPE || currentType === SUPER_ADMIN_TYPE) return;
-  if (actor.memberType === SUPER_ADMIN_TYPE && actor.active) return;
+  if (hasSuperAdminRights(actor)) return;
   throw new SecurityPrivilegeError(
-    `Only an active Super Admin can grant the Super Admin member type; member ${actor.memberId} is ${actor.active ? '' : 'an inactive '}${actor.memberType ?? 'of unknown type'}.`,
+    'SUPER_ADMIN_REQUIRED',
+    `Only an active Super Admin can grant the Super Admin member type; member ${actor.memberId} is ${describeActor(actor)}.`,
     { actorId: actor.memberId, actorType: actor.memberType ?? null, grantedType },
+  );
+}
+
+const hasSuperAdminRights = (a: MemberWriteActor): boolean => a.active && a.memberType === SUPER_ADMIN_TYPE;
+const hasAdminRights = (a: MemberWriteActor): boolean => a.active && (a.memberType === 'Admin' || a.memberType === SUPER_ADMIN_TYPE);
+const describeActor = (a: MemberWriteActor): string => `${a.active ? '' : 'an inactive '}${a.memberType ?? 'of unknown type'}`;
+
+/** The member fields a Member without admin rights may change on their own record (contact details). */
+export const MEMBER_SELF_SERVICE_COLUMNS = [
+  'Phone',
+  'StreetAddress1',
+  'StreetAddress2',
+  'City',
+  'State',
+  'ZipCode',
+  'Email',
+  'WorkingStatusID',
+] as const satisfies readonly (typeof MEMBER_COLUMNS)[number][];
+
+/** Fields a Super Admin's clearance rests on: an Admin changing either could demote or disable them. */
+const CLEARANCE_COLUMNS: readonly string[] = ['MemberTypeID', 'StatusID'];
+
+/** Only an active Admin or Super Admin may create members; a Super Admin row also needs a Super Admin. */
+export function assertMayCreateMember(actor: MemberWriteActor, grantedType: string | undefined): void {
+  if (!hasAdminRights(actor)) {
+    throw new SecurityPrivilegeError(
+      'ADMIN_REQUIRED',
+      `Only an active Admin or Super Admin can add members; member ${actor.memberId} is ${describeActor(actor)}.`,
+      { actorId: actor.memberId, actorType: actor.memberType ?? null },
+    );
+  }
+  assertMayGrantMemberType(actor, grantedType);
+}
+
+/**
+ * members.update. Without admin rights a member may change only their own contact details
+ * (MEMBER_SELF_SERVICE_COLUMNS). An Admin may not change a Super Admin's type or status. Only a Super Admin
+ * may grant Super Admin. `existing` is the stored row, `next` the validated result, and the types are
+ * MemberType.Type names for `existing` and `next`.
+ */
+export function assertMayUpdateMember(
+  actor: MemberWriteActor,
+  existing: Member,
+  next: NewMember,
+  types: { current: string | undefined; next: string | undefined },
+): void {
+  const changed = MEMBER_COLUMNS.filter((c) => (existing[c] ?? null) !== (next[c] ?? null));
+  if (!hasAdminRights(actor)) {
+    if (actor.memberId !== existing.id) {
+      throw new SecurityPrivilegeError(
+        'ADMIN_REQUIRED',
+        `Member ${actor.memberId} may only change their own record, not member ${existing.id}.`,
+        { actorId: actor.memberId, memberId: existing.id },
+      );
+    }
+    const selfService: readonly string[] = MEMBER_SELF_SERVICE_COLUMNS;
+    const restricted = changed.filter((c) => !selfService.includes(c));
+    if (restricted.length > 0) {
+      throw new SecurityPrivilegeError(
+        'ADMIN_REQUIRED',
+        `Only an Admin can change ${restricted.join(', ')}; members may update their own contact details.`,
+        { actorId: actor.memberId, fields: restricted },
+      );
+    }
+  } else if (types.current === SUPER_ADMIN_TYPE && !hasSuperAdminRights(actor)) {
+    const clearance = changed.filter((c) => CLEARANCE_COLUMNS.includes(c));
+    if (clearance.length > 0) {
+      throw new SecurityPrivilegeError(
+        'SUPER_ADMIN_REQUIRED',
+        `Only a Super Admin can change a Super Admin's ${clearance.join(' or ')}; member ${actor.memberId} is ${describeActor(actor)}.`,
+        { actorId: actor.memberId, memberId: existing.id, fields: clearance },
+      );
+    }
+  }
+  assertMayGrantMemberType(actor, types.next, types.current);
+}
+
+/** memberProfiles.updateExtensions: a member without admin rights maintains only their own skills and training. */
+export function assertMayEditMemberExtensions(actor: MemberWriteActor, memberId: number): void {
+  if (hasAdminRights(actor) || actor.memberId === memberId) return;
+  throw new SecurityPrivilegeError(
+    'ADMIN_REQUIRED',
+    `Member ${actor.memberId} may only change their own skills, training and working status, not member ${memberId}'s.`,
+    { actorId: actor.memberId, memberId },
   );
 }
 

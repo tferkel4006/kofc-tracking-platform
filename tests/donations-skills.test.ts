@@ -292,6 +292,7 @@ describe.each(drivers)('$name driver: member skills, training and working status
 
     const ext = await db.memberProfiles.updateExtensions(
       MEMBER.member,
+      MEMBER.member,
       [
         { skillId: bartending, skillLevelId: expert },
         { skillId: finances, skillLevelId: novice },
@@ -327,8 +328,9 @@ describe.each(drivers)('$name driver: member skills, training and working status
     const abuse = idByName(d, db, 'KOCTrainingClasses', 'ClassName', 'Preventing Abuse and Protecting Those We Serve');
     const student = idByName(d, db, 'WorkingStatus', 'WorkingStatus', 'Student');
 
-    await db.memberProfiles.updateExtensions(MEMBER.admin, [{ skillId: cooking, skillLevelId: senior }], [{ trainingClassId: abuse, year: 2020 }], student);
+    await db.memberProfiles.updateExtensions(MEMBER.admin, MEMBER.admin, [{ skillId: cooking, skillLevelId: senior }], [{ trainingClassId: abuse, year: 2020 }], student);
     const replaced = await db.memberProfiles.updateExtensions(
+      MEMBER.admin,
       MEMBER.admin,
       [{ skillId: plumbing, skillLevelId: senior }],
       [
@@ -341,7 +343,7 @@ describe.each(drivers)('$name driver: member skills, training and working status
     expect(replaced.training.map((t) => t.year)).toEqual([2025, 2020]);
     expect(raw(d, db, 'MemberSkill').filter((r) => r.MemberID === MEMBER.admin)).toHaveLength(1);
 
-    const cleared = await db.memberProfiles.updateExtensions(MEMBER.admin, [], [], null);
+    const cleared = await db.memberProfiles.updateExtensions(MEMBER.admin, MEMBER.admin, [], [], null);
     expect(cleared).toEqual({ workingStatus: null, skills: [], training: [] });
     expect(raw(d, db, 'MemberSkill').filter((r) => r.MemberID === MEMBER.admin)).toHaveLength(0);
     expect(raw(d, db, 'MemberTraining').filter((r) => r.MemberID === MEMBER.admin)).toHaveLength(0);
@@ -353,10 +355,11 @@ describe.each(drivers)('$name driver: member skills, training and working status
     const bartending = idByName(d, db, 'Skill', 'SkillName', 'Bartending');
     const expert = idByName(d, db, 'SkillLevel', 'SkillLevel', 'Expert');
     const background = idByName(d, db, 'KOCTrainingClasses', 'ClassName', 'Background Check');
-    const original = await db.memberProfiles.updateExtensions(MEMBER.member, [{ skillId: bartending, skillLevelId: expert }], [], null);
+    const original = await db.memberProfiles.updateExtensions(MEMBER.member, MEMBER.member, [{ skillId: bartending, skillLevelId: expert }], [], null);
 
     await expectRule(
       db.memberProfiles.updateExtensions(
+        MEMBER.member,
         MEMBER.member,
         [
           { skillId: bartending, skillLevelId: expert },
@@ -367,11 +370,11 @@ describe.each(drivers)('$name driver: member skills, training and working status
       ),
       'INVALID_INPUT',
     );
-    await expectRule(db.memberProfiles.updateExtensions(MEMBER.member, [{ skillId: 9999, skillLevelId: expert }], [], null), 'INVALID_INPUT');
-    await expectRule(db.memberProfiles.updateExtensions(MEMBER.member, [], [{ trainingClassId: background, year: 1881 }], null), 'INVALID_INPUT');
-    await expectRule(db.memberProfiles.updateExtensions(MEMBER.member, [], [{ trainingClassId: background, year: 2027 }], null), 'INVALID_INPUT');
-    await expectRule(db.memberProfiles.updateExtensions(MEMBER.member, [], [], 9999), 'INVALID_INPUT');
-    await expectRule(db.memberProfiles.updateExtensions(9999, [], [], null), 'MEMBER_NOT_FOUND');
+    await expectRule(db.memberProfiles.updateExtensions(MEMBER.member, MEMBER.member, [{ skillId: 9999, skillLevelId: expert }], [], null), 'INVALID_INPUT');
+    await expectRule(db.memberProfiles.updateExtensions(MEMBER.member, MEMBER.member, [], [{ trainingClassId: background, year: 1881 }], null), 'INVALID_INPUT');
+    await expectRule(db.memberProfiles.updateExtensions(MEMBER.member, MEMBER.member, [], [{ trainingClassId: background, year: 2027 }], null), 'INVALID_INPUT');
+    await expectRule(db.memberProfiles.updateExtensions(MEMBER.member, MEMBER.member, [], [], 9999), 'INVALID_INPUT');
+    await expectRule(db.memberProfiles.updateExtensions(MEMBER.superAdmin, 9999, [], [], null), 'MEMBER_NOT_FOUND');
 
     expect(await db.memberProfiles.getExtensions(MEMBER.member)).toEqual(original);
   });
@@ -383,9 +386,10 @@ describe.each(drivers)('$name driver: council skill roster', (d) => {
     const level = (name: string) => idByName(d, db, 'SkillLevel', 'SkillLevel', name);
     const s = { bartending: skill('Bartending'), finances: skill('Finances'), masonry: skill('Masonry') };
     // Super Admin and Brother Knight tend bar; Council Admin and Brother Knight handle finances.
-    await db.memberProfiles.updateExtensions(MEMBER.superAdmin, [{ skillId: s.bartending, skillLevelId: level('Intermediate') }], [], null);
-    await db.memberProfiles.updateExtensions(MEMBER.admin, [{ skillId: s.finances, skillLevelId: level('Expert') }], [], null);
+    await db.memberProfiles.updateExtensions(MEMBER.superAdmin, MEMBER.superAdmin, [{ skillId: s.bartending, skillLevelId: level('Intermediate') }], [], null);
+    await db.memberProfiles.updateExtensions(MEMBER.admin, MEMBER.admin, [{ skillId: s.finances, skillLevelId: level('Expert') }], [], null);
     await db.memberProfiles.updateExtensions(
+      MEMBER.member,
       MEMBER.member,
       [
         { skillId: s.bartending, skillLevelId: level('Novice') },
@@ -411,7 +415,7 @@ describe.each(drivers)('$name driver: council skill roster', (d) => {
       DegreeID: 3,
       MemberTypeID: 3,
     });
-    await db.memberProfiles.updateExtensions(other.id, [{ skillId: s.bartending, skillLevelId: level('Expert') }], [], null);
+    await db.memberProfiles.updateExtensions(MEMBER.superAdmin, other.id, [{ skillId: s.bartending, skillLevelId: level('Expert') }], [], null);
     return { ...s, otherId: other.id };
   }
 

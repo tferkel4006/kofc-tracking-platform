@@ -11,7 +11,9 @@ import {
   assertLookupKeyUnique,
   assertLookupNotProtected,
   assertLookupUnused,
-  assertMayGrantMemberType,
+  assertMayCreateMember,
+  assertMayEditMemberExtensions,
+  assertMayUpdateMember,
   assertPasswordAcceptable,
   assertShiftHasRoom,
   assertShiftInsideEvent,
@@ -566,7 +568,7 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       let id = 0;
       await db.withTransactionAsync(async () => {
-        assertMayGrantMemberType(await this.memberWriteActor(db, actorId), await this.memberTypeName(db, clean.MemberTypeID));
+        assertMayCreateMember(await this.memberWriteActor(db, actorId), await this.memberTypeName(db, clean.MemberTypeID));
         await this.assertMemberReferences(db, clean);
         const taken = await db.getFirstAsync<{ n: number }>(
           `SELECT (SELECT COUNT(*) FROM [Member] WHERE [Email] = ? COLLATE NOCASE)
@@ -601,11 +603,10 @@ export class SqliteDataService implements DataService {
         const existing = await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]);
         if (!existing) throw new BusinessRuleError('MEMBER_NOT_FOUND', `No member with id ${id}.`, { memberId: id });
         const clean = mergeMemberChanges(existing, changes, this.now());
-        assertMayGrantMemberType(
-          actor,
-          await this.memberTypeName(db, clean.MemberTypeID),
-          await this.memberTypeName(db, existing.MemberTypeID),
-        );
+        assertMayUpdateMember(actor, existing, clean, {
+          current: await this.memberTypeName(db, existing.MemberTypeID),
+          next: await this.memberTypeName(db, clean.MemberTypeID),
+        });
         await this.assertMemberReferences(db, clean);
         const taken = await db.getFirstAsync<{ n: number }>(
           `SELECT (SELECT COUNT(*) FROM [Member] WHERE [Email] = ? COLLATE NOCASE AND [id] <> ?)
@@ -690,11 +691,13 @@ export class SqliteDataService implements DataService {
       return this.extensionsOf(db, memberId);
     },
 
-    updateExtensions: async (memberId, skills, training, workingStatusId) => {
+    updateExtensions: async (actorId, memberId, skills, training, workingStatusId) => {
       const clean = cleanMemberExtensions(skills, training, workingStatusId, this.now());
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
         await this.requireMember(db, memberId);
+        assertMayEditMemberExtensions(actor, memberId);
         for (const s of clean.skills) {
           await this.assertRowExists(db, 'Skill', s.skillId, 'skill');
           await this.assertRowExists(db, 'SkillLevel', s.skillLevelId, 'skill level');

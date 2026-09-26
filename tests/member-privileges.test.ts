@@ -2,15 +2,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   assertMayGrantMemberType,
   BusinessRuleError,
+  canCreateMembers,
+  canEditMember,
+  grantableMemberTypes,
   SecurityPrivilegeError,
   SUPER_ADMIN_TYPE,
   type DataService,
   type NewMember,
+  type SessionUser,
 } from '@kofc/shared';
 import { drivers, expectRule, MEMBER } from './helpers';
 
-// Only an Active Super Admin may create a Super Admin or promote a member to one. The driver reads the
-// caller's type from the database, so a Council Admin or Member is refused whatever the client sends.
+// Member writes are gated by the caller's tier, which the driver reads from the database, so a Council Admin
+// or Member is refused whatever the client sends:
+//  - only an Active Admin or Super Admin adds members (ADMIN_REQUIRED);
+//  - a Member changes only their own contact details, skills and training (ADMIN_REQUIRED);
+//  - only an Active Super Admin creates or promotes a Super Admin, or changes one's type or status (SUPER_ADMIN_REQUIRED).
 
 async function typeId(db: DataService, type: string): Promise<number> {
   return (await db.lookups.list('MemberType')).find((t) => t.Type === type)!.id;
@@ -39,9 +46,12 @@ async function recruit(db: DataService, type: string, email = 'new.recruit@examp
   };
 }
 
-/** Asserts the promise rejects with a SecurityPrivilegeError (code SUPER_ADMIN_REQUIRED). */
-async function expectPrivilegeError(promise: Promise<unknown>): Promise<void> {
-  const err = await expectRule(promise, 'SUPER_ADMIN_REQUIRED');
+/** Asserts the promise rejects with a SecurityPrivilegeError carrying `code`. */
+async function expectPrivilegeError(
+  promise: Promise<unknown>,
+  code: 'ADMIN_REQUIRED' | 'SUPER_ADMIN_REQUIRED' = 'SUPER_ADMIN_REQUIRED',
+): Promise<void> {
+  const err = await expectRule(promise, code);
   expect(err).toBeInstanceOf(SecurityPrivilegeError);
   expect(err.name).toBe('SecurityPrivilegeError');
 }
@@ -91,9 +101,58 @@ describe.each(drivers)('$name driver: Super Admin privilege guard', (d) => {
     expect(await db.members.getByEmail('new.recruit@example.org')).toBeNull();
   });
 
-  it('refuses a standard Member creating a Super Admin', async () => {
+  it('refuses a standard Member creating any member, Super Admin or not, and writes nothing', async () => {
     const db = await d.make();
-    await expectPrivilegeError(db.members.create(MEMBER.member, await recruit(db, SUPER_ADMIN_TYPE)));
+    const members = d.count(db, 'Member');
+    const logins = d.count(db, 'Credentials');
+    await expectPrivilegeError(db.members.create(MEMBER.member, await recruit(db, 'Member')), 'ADMIN_REQUIRED');
+    await expectPrivilegeError(db.members.create(MEMBER.member, await recruit(db, SUPER_ADMIN_TYPE)), 'ADMIN_REQUIRED');
+    expect(d.count(db, 'Member')).toBe(members);
+    expect(d.count(db, 'Credentials')).toBe(logins);
+  });
+
+  it('refuses an Admin who is no longer Active adding members', async () => {
+    const db = await d.make();
+    await db.members.update(MEMBER.superAdmin, MEMBER.admin, { StatusID: await statusId(db, 'Inactive') });
+    await expectPrivilegeError(db.members.create(MEMBER.admin, await recruit(db, 'Member')), 'ADMIN_REQUIRED');
+  });
+
+  it('lets a standard Member update their own contact details', async () => {
+    const db = await d.make();
+    const updated = await db.members.update(MEMBER.member, MEMBER.member, { Phone: '555-321-0000', City: 'Salem' });
+    expect(updated).toMatchObject({ Phone: '555-321-0000', City: 'Salem' });
+  });
+
+  it('refuses a standard Member modifying another member’s profile, skills or training', async () => {
+    const db = await d.make();
+    const before = await db.members.get(MEMBER.admin);
+    const extensions = await db.memberProfiles.getExtensions(MEMBER.admin);
+    await expectPrivilegeError(db.members.update(MEMBER.member, MEMBER.admin, { Phone: '555-000-0000' }), 'ADMIN_REQUIRED');
+    await expectPrivilegeError(db.members.update(MEMBER.member, MEMBER.superAdmin, { Phone: '555-000-0000' }), 'ADMIN_REQUIRED');
+    await expectPrivilegeError(db.memberProfiles.updateExtensions(MEMBER.member, MEMBER.admin, [], [], null), 'ADMIN_REQUIRED');
+    expect(await db.members.get(MEMBER.admin)).toEqual(before);
+    expect(await db.memberProfiles.getExtensions(MEMBER.admin)).toEqual(extensions);
+  });
+
+  it('refuses a standard Member changing their own type, status, council or name', async () => {
+    const db = await d.make();
+    const before = await db.members.get(MEMBER.member);
+    for (const changes of [
+      { MemberTypeID: await typeId(db, 'Admin') },
+      { MemberTypeID: await typeId(db, SUPER_ADMIN_TYPE) },
+      { StatusID: await statusId(db, 'Inactive') },
+      { CouncilID: 2 },
+      { MemberLastName: 'Renamed' },
+    ]) {
+      await expectPrivilegeError(db.members.update(MEMBER.member, MEMBER.member, changes), 'ADMIN_REQUIRED');
+    }
+    expect(await db.members.get(MEMBER.member)).toEqual(before);
+  });
+
+  it('lets a Council Admin maintain another member’s skills and training', async () => {
+    const db = await d.make();
+    const ext = await db.memberProfiles.updateExtensions(MEMBER.admin, MEMBER.member, [], [], null);
+    expect(ext).toEqual({ workingStatus: null, skills: [], training: [] });
   });
 
   it('still lets a Council Admin create Admins and Members', async () => {
@@ -122,16 +181,36 @@ describe.each(drivers)('$name driver: Super Admin privilege guard', (d) => {
     expect((await db.members.get(MEMBER.member))!.MemberTypeID).toBe(superType);
   });
 
+  it('refuses a Council Admin demoting a Super Admin or changing their status, and leaves the row unchanged', async () => {
+    const db = await d.make();
+    const before = await db.members.get(MEMBER.superAdmin);
+    await expectPrivilegeError(db.members.update(MEMBER.admin, MEMBER.superAdmin, { MemberTypeID: await typeId(db, 'Member') }));
+    await expectPrivilegeError(db.members.update(MEMBER.admin, MEMBER.superAdmin, { MemberTypeID: await typeId(db, 'Admin') }));
+    await expectPrivilegeError(db.members.update(MEMBER.admin, MEMBER.superAdmin, { StatusID: await statusId(db, 'Inactive') }));
+    expect(await db.members.get(MEMBER.superAdmin)).toEqual(before);
+  });
+
+  it('lets a Super Admin demote another Super Admin', async () => {
+    const db = await d.make();
+    const second = await db.members.create(MEMBER.superAdmin, await recruit(db, SUPER_ADMIN_TYPE));
+    const demoted = await db.members.update(MEMBER.superAdmin, second.id, { MemberTypeID: await typeId(db, 'Member') });
+    expect(demoted.MemberTypeID).toBe(await typeId(db, 'Member'));
+  });
+
   it('lets a Council Admin edit an existing Super Admin’s other fields', async () => {
     const db = await d.make();
     const updated = await db.members.update(MEMBER.admin, MEMBER.superAdmin, { Phone: '555-123-4567' });
     expect(updated).toMatchObject({ Phone: '555-123-4567', MemberTypeID: await typeId(db, SUPER_ADMIN_TYPE) });
   });
 
-  it('refuses a Super Admin who is no longer Active', async () => {
+  it('treats a Super Admin who is no longer Active as having no admin rights', async () => {
     const db = await d.make();
     await db.members.update(MEMBER.superAdmin, MEMBER.superAdmin, { StatusID: await statusId(db, 'Inactive') });
-    await expectPrivilegeError(db.members.create(MEMBER.superAdmin, await recruit(db, SUPER_ADMIN_TYPE)));
+    await expectPrivilegeError(db.members.create(MEMBER.superAdmin, await recruit(db, SUPER_ADMIN_TYPE)), 'ADMIN_REQUIRED');
+    await expectPrivilegeError(
+      db.members.update(MEMBER.superAdmin, MEMBER.member, { MemberTypeID: await typeId(db, SUPER_ADMIN_TYPE) }),
+      'ADMIN_REQUIRED',
+    );
   });
 
   it('rejects an unknown caller or member', async () => {
@@ -147,5 +226,32 @@ describe.each(drivers)('$name driver: Super Admin privilege guard', (d) => {
     await db.members.update(MEMBER.superAdmin, MEMBER.member, { Email: 'renamed.member@example.org' });
     expect(d.credentials(db).map((c) => c.Username)).toContain('renamed.member@example.org');
     expect(await db.members.getByEmail('renamed.member@example.org')).toMatchObject({ id: MEMBER.member });
+  });
+});
+
+describe('member UI gates (permissions.ts)', () => {
+  const user = (memberType: SessionUser['memberType'], memberId: number) => ({ memberId, councilId: 1, memberType, isOfficer: false });
+  const superAdmin = user('Super Admin', MEMBER.superAdmin);
+  const admin = user('Admin', MEMBER.admin);
+  const member = user('Member', MEMBER.member);
+
+  it('offers "Add member" to Admins and Super Admins only', () => {
+    expect(canCreateMembers(superAdmin)).toBe(true);
+    expect(canCreateMembers(admin)).toBe(true);
+    expect(canCreateMembers(member)).toBe(false);
+  });
+
+  it('lets a Member open only their own profile for editing', () => {
+    expect(canEditMember(member, MEMBER.member)).toBe(true);
+    expect(canEditMember(member, MEMBER.admin)).toBe(false);
+    expect(canEditMember(admin, MEMBER.member)).toBe(true);
+  });
+
+  it('hides type and promotion controls from Members, and from Admins on a Super Admin', () => {
+    expect(grantableMemberTypes(member)).toEqual([]);
+    expect(grantableMemberTypes(member, 'Member')).toEqual([]);
+    expect(grantableMemberTypes(admin)).toEqual(['Admin', 'Member']);
+    expect(grantableMemberTypes(admin, 'Super Admin')).toEqual([]);
+    expect(grantableMemberTypes(superAdmin, 'Super Admin')).toEqual(['Super Admin', 'Admin', 'Member']);
   });
 });

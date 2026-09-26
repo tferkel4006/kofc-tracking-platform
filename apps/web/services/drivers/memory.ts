@@ -13,7 +13,9 @@ import {
   assertLookupKeyUnique,
   assertLookupNotProtected,
   assertLookupUnused,
-  assertMayGrantMemberType,
+  assertMayCreateMember,
+  assertMayEditMemberExtensions,
+  assertMayUpdateMember,
   assertPasswordAcceptable,
   assertShiftHasRoom,
   assertShiftInsideEvent,
@@ -584,7 +586,7 @@ export class MemoryDataService implements DataService {
       const clean = cleanNewMember(member, this.now());
       const s = await this.ready();
       const row = s.transaction(() => {
-        assertMayGrantMemberType(this.memberWriteActor(s, actorId), this.memberTypeName(s, clean.MemberTypeID));
+        assertMayCreateMember(this.memberWriteActor(s, actorId), this.memberTypeName(s, clean.MemberTypeID));
         this.assertMemberReferences(s, clean);
         const email = clean.Email.toLowerCase();
         if (s.rows('Member').some((m) => lower(m.Email) === email) || s.rows('Credentials').some((c) => lower(c.Username) === email)) {
@@ -608,11 +610,10 @@ export class MemoryDataService implements DataService {
         const actor = this.memberWriteActor(s, actorId);
         const existing = this.requireMember(s, id);
         const clean = mergeMemberChanges(existing as unknown as Member, changes, this.now());
-        assertMayGrantMemberType(
-          actor,
-          this.memberTypeName(s, clean.MemberTypeID),
-          this.memberTypeName(s, existing.MemberTypeID as number),
-        );
+        assertMayUpdateMember(actor, existing as unknown as Member, clean, {
+          current: this.memberTypeName(s, existing.MemberTypeID as number),
+          next: this.memberTypeName(s, clean.MemberTypeID),
+        });
         this.assertMemberReferences(s, clean);
         const email = clean.Email.toLowerCase();
         if (
@@ -693,11 +694,13 @@ export class MemoryDataService implements DataService {
       return this.extensionsOf(s, memberId);
     },
 
-    updateExtensions: async (memberId, skills, training, workingStatusId) => {
+    updateExtensions: async (actorId, memberId, skills, training, workingStatusId) => {
       const clean = cleanMemberExtensions(skills, training, workingStatusId, this.now());
       const s = await this.ready();
       s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
         const member = this.requireMember(s, memberId);
+        assertMayEditMemberExtensions(actor, memberId);
         for (const sk of clean.skills) {
           this.assertRowExists(s, 'Skill', sk.skillId, 'skill');
           this.assertRowExists(s, 'SkillLevel', sk.skillLevelId, 'skill level');
