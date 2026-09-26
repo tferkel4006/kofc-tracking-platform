@@ -11,6 +11,7 @@ import {
   assertLookupKeyUnique,
   assertLookupNotProtected,
   assertLookupUnused,
+  assertMayGrantMemberType,
   assertPasswordAcceptable,
   assertShiftHasRoom,
   assertShiftInsideEvent,
@@ -35,6 +36,7 @@ import {
   EVENT_COLUMNS,
   isSha256Hex,
   LOOKUP_META,
+  mergeMemberChanges,
   MEMBER_COLUMNS,
   participantIds,
   planEventCopy,
@@ -44,6 +46,7 @@ import {
   trainingYearToDate,
   UNREGISTERED_PASSWORD,
   type CouncilAdminDetails,
+  type MemberWriteActor,
   type MessagingRows,
 } from '@kofc/shared';
 import type {
@@ -60,6 +63,7 @@ import type {
   MemberExtensions,
   MemberSkill,
   MemberTraining,
+  NewMember,
   Skill,
   SkillLevel,
   WorkingStatus,
@@ -557,16 +561,13 @@ export class SqliteDataService implements DataService {
     },
     listRoles: async (memberId) => this.rolesFor(await this.ready(), memberId),
 
-    create: async (member) => {
+    create: async (actorId, member) => {
       const clean = cleanNewMember(member, this.now());
       const db = await this.ready();
       let id = 0;
       await db.withTransactionAsync(async () => {
-        await this.assertCouncilsExist(db, [clean.CouncilID]);
-        await this.assertRowExists(db, 'MemberStatus', clean.StatusID, 'member status');
-        await this.assertRowExists(db, 'Degree', clean.DegreeID, 'degree');
-        await this.assertRowExists(db, 'MemberType', clean.MemberTypeID, 'member type');
-        if (clean.WorkingStatusID != null) await this.assertRowExists(db, 'WorkingStatus', clean.WorkingStatusID, 'working status');
+        assertMayGrantMemberType(await this.memberWriteActor(db, actorId), await this.memberTypeName(db, clean.MemberTypeID));
+        await this.assertMemberReferences(db, clean);
         const taken = await db.getFirstAsync<{ n: number }>(
           `SELECT (SELECT COUNT(*) FROM [Member] WHERE [Email] = ? COLLATE NOCASE)
                 + (SELECT COUNT(*) FROM [Credentials] WHERE [Username] = ? COLLATE NOCASE) AS n`,
@@ -592,7 +593,65 @@ export class SqliteDataService implements DataService {
       await this.sendWelcomeEmail(db, created);
       return created;
     },
+
+    update: async (actorId, id, changes) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const existing = await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]);
+        if (!existing) throw new BusinessRuleError('MEMBER_NOT_FOUND', `No member with id ${id}.`, { memberId: id });
+        const clean = mergeMemberChanges(existing, changes, this.now());
+        assertMayGrantMemberType(
+          actor,
+          await this.memberTypeName(db, clean.MemberTypeID),
+          await this.memberTypeName(db, existing.MemberTypeID),
+        );
+        await this.assertMemberReferences(db, clean);
+        const taken = await db.getFirstAsync<{ n: number }>(
+          `SELECT (SELECT COUNT(*) FROM [Member] WHERE [Email] = ? COLLATE NOCASE AND [id] <> ?)
+                + (SELECT COUNT(*) FROM [Credentials] WHERE [Username] = ? COLLATE NOCASE AND [id] <> ?) AS n`,
+          [clean.Email, id, clean.Email, existing.CredentialID],
+        );
+        if ((taken?.n ?? 0) > 0) {
+          throw new BusinessRuleError('INVALID_INPUT', `The email ${clean.Email} already belongs to a member or login.`, {
+            email: clean.Email,
+          });
+        }
+        await db.runAsync('UPDATE [Credentials] SET [Username] = ? WHERE [id] = ?', [clean.Email, existing.CredentialID]);
+        await db.runAsync(`UPDATE [Member] SET ${MEMBER_COLUMNS.map((c) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [
+          ...MEMBER_COLUMNS.map((c) => (clean[c] ?? null) as Bind),
+          id,
+        ]);
+      });
+      return (await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]))!;
+    },
   };
+
+  /** The caller of a member write, read from the database so the client cannot claim a type it does not hold. */
+  private async memberWriteActor(db: SQLite.SQLiteDatabase, actorId: number): Promise<MemberWriteActor> {
+    const actor = await db.getFirstAsync<{ type: string | null; active: number }>(
+      `SELECT t.[Type] AS type, (st.[Status] = 'Active') AS active FROM [Member] m
+         LEFT JOIN [MemberType] t ON t.[id] = m.[MemberTypeID]
+         LEFT JOIN [MemberStatus] st ON st.[id] = m.[StatusID]
+        WHERE m.[id] = ?`,
+      [actorId],
+    );
+    if (!actor) throw new BusinessRuleError('MEMBER_NOT_FOUND', `No member with id ${actorId}.`, { memberId: actorId });
+    return { memberId: actorId, memberType: actor.type ?? undefined, active: actor.active === 1 };
+  }
+
+  private async memberTypeName(db: SQLite.SQLiteDatabase, typeId: number): Promise<string | undefined> {
+    return (await db.getFirstAsync<{ Type: string }>('SELECT [Type] FROM [MemberType] WHERE [id] = ?', [typeId]))?.Type;
+  }
+
+  /** The council and lookup ids a member row points at must exist. */
+  private async assertMemberReferences(db: SQLite.SQLiteDatabase, clean: NewMember): Promise<void> {
+    await this.assertCouncilsExist(db, [clean.CouncilID]);
+    await this.assertRowExists(db, 'MemberStatus', clean.StatusID, 'member status');
+    await this.assertRowExists(db, 'Degree', clean.DegreeID, 'degree');
+    await this.assertRowExists(db, 'MemberType', clean.MemberTypeID, 'member type');
+    if (clean.WorkingStatusID != null) await this.assertRowExists(db, 'WorkingStatus', clean.WorkingStatusID, 'working status');
+  }
 
   /** System hook after members.create commits: compiles the welcome email and logs it (no mail server yet). */
   private async sendWelcomeEmail(db: SQLite.SQLiteDatabase, member: Member): Promise<void> {

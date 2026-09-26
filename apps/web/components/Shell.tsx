@@ -1,6 +1,7 @@
 'use client';
 // The portal frame: navy header (logo, then the calling council's number and name), a navy side navigation
 // with a gold marker on the current section, and a white content area. Nothing renders behind the sign-in gate.
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, type FormEvent, type ReactNode } from 'react';
@@ -9,6 +10,7 @@ import { Button, cx, Field, Input, Notice } from '@/components/ui';
 import { useSession } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
+import emblem from './kofc-logo.png';
 
 const AREAS: Record<PortalArea, { href: string; label: string; hint: string }> = {
   lookups: { href: '/lookups', label: 'System lookups', hint: 'Maintain the global tables' },
@@ -17,17 +19,9 @@ const AREAS: Record<PortalArea, { href: string; label: string; hint: string }> =
   ledger: { href: '/ledger', label: 'Post-event ledger', hint: 'Spend, funds raised, lessons' },
 };
 
-/** Placeholder mark until the council supplies the official emblem asset. */
+/** The council-supplied Knights of Columbus emblem; decorative, since the title beside it names the order. */
 export function BrandMark({ size = 44 }: { size?: number }) {
-  return (
-    <div
-      aria-hidden="true"
-      style={{ width: size, height: size }}
-      className="flex shrink-0 items-center justify-center rounded-full border-[3px] border-gold bg-navy font-serif font-bold text-white"
-    >
-      <span style={{ fontSize: size * 0.4 }}>KC</span>
-    </div>
-  );
+  return <Image src={emblem} alt="" width={size} height={size} preload className="shrink-0" />;
 }
 
 function SignIn() {

@@ -16,7 +16,7 @@ import type {
   NewDonation,
   NewMember,
 } from './contract';
-import type { Meeting, Shift } from './types';
+import type { Meeting, Member, Shift } from './types';
 
 /** Time entries move in 15-minute steps (Blueprint: "Time Increments & History Boundaries"). */
 export const HOURS_STEP = 0.25;
@@ -60,7 +60,8 @@ export type BusinessRuleCode =
   | 'LOOKUP_IN_USE'
   | 'LOOKUP_PROTECTED'
   | 'DONATION_METHOD_NOT_ENABLED'
-  | 'NO_RECIPIENTS';
+  | 'NO_RECIPIENTS'
+  | 'SUPER_ADMIN_REQUIRED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -71,6 +72,17 @@ export class BusinessRuleError extends Error {
   ) {
     super(message);
     this.name = 'BusinessRuleError';
+  }
+}
+
+/**
+ * A request the caller's privileges do not allow. A BusinessRuleError (code SUPER_ADMIN_REQUIRED) so
+ * screens that already report rule failures report this one too; nothing has been written when it throws.
+ */
+export class SecurityPrivilegeError extends BusinessRuleError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super('SUPER_ADMIN_REQUIRED', message, details);
+    this.name = 'SecurityPrivilegeError';
   }
 }
 
@@ -410,6 +422,36 @@ export const MEMBER_COLUMNS = [
   'MemberTypeID',
   'WorkingStatusID',
 ] as const satisfies readonly (keyof NewMember)[];
+
+/** The member type only a Super Admin may grant. A protected MemberType value, so it cannot be renamed. */
+export const SUPER_ADMIN_TYPE = 'Super Admin';
+
+/** The caller of a member write, as the driver read it from the database, never as the client describes itself. */
+export interface MemberWriteActor {
+  memberId: number;
+  memberType: string | undefined;
+  active: boolean;
+}
+
+/**
+ * Only an Active Super Admin may create a Super Admin or promote a member to Super Admin. `grantedType` is
+ * the MemberType.Type being written; `currentType` is the target's type before an update (omit on create),
+ * so saving a Super Admin's other fields is not a promotion.
+ */
+export function assertMayGrantMemberType(actor: MemberWriteActor, grantedType: string | undefined, currentType?: string): void {
+  if (grantedType !== SUPER_ADMIN_TYPE || currentType === SUPER_ADMIN_TYPE) return;
+  if (actor.memberType === SUPER_ADMIN_TYPE && actor.active) return;
+  throw new SecurityPrivilegeError(
+    `Only an active Super Admin can grant the Super Admin member type; member ${actor.memberId} is ${actor.active ? '' : 'an inactive '}${actor.memberType ?? 'of unknown type'}.`,
+    { actorId: actor.memberId, actorType: actor.memberType ?? null, grantedType },
+  );
+}
+
+/** members.update: applies `changes` over the stored row and validates the result as a whole member. */
+export function mergeMemberChanges(existing: Member, changes: Partial<NewMember>, now: Date): NewMember {
+  const current = Object.fromEntries(MEMBER_COLUMNS.map((c) => [c, existing[c]])) as unknown as NewMember;
+  return cleanNewMember({ ...current, ...changes }, now);
+}
 
 /** Validates a new member's fields against Schema.sql's lengths. Ids are checked against the database by the driver. */
 export function cleanNewMember(input: NewMember, now: Date): NewMember {

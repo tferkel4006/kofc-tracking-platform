@@ -1,36 +1,23 @@
 import { useEffect, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Image, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { councilLabel, type Council } from '@kofc/shared';
 import { AppText } from '@/components/ui';
 import { useApp } from '@/lib/app-context';
-import { color, radius, space } from '@/lib/theme';
+import { color, space } from '@/lib/theme';
 import { db } from '@/services/db';
+import emblem from './kofc-logo.png';
 
-/**
- * Placeholder brand mark: a gold-ringed navy roundel. Swap in the official emblem asset here once
- * the council supplies it (the emblem is a registered mark, so it is not drawn from memory).
- */
+/** The council-supplied Knights of Columbus emblem, square, decorative next to the spelled-out title. */
 export function BrandMark({ size = 40 }: { size?: number }) {
   return (
-    <View
+    <Image
+      source={emblem}
       accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-      style={{
-        width: size,
-        height: size,
-        borderRadius: radius.pill,
-        borderWidth: 3,
-        borderColor: color.gold,
-        backgroundColor: color.navy,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <AppText variant="heading" tone="white" style={{ fontSize: size * 0.4, lineHeight: size * 0.5 }}>
-        KC
-      </AppText>
-    </View>
+      importantForAccessibility="no"
+      resizeMode="contain"
+      style={{ width: size, height: size }}
+    />
   );
 }
 

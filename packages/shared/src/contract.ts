@@ -334,8 +334,18 @@ export interface DataService {
      * through auth.signUp. Rejects INVALID_INPUT for a bad field, an unknown council/lookup id, or an
      * email already used by a member or a login (case-insensitive). Once the row is stored, logs the
      * welcome email (what the app is, how to get it, how to sign in, who the council admin is).
+     * `actorId` is the signed-in member making the change; only an Active Super Admin may create a
+     * Super Admin (SecurityPrivilegeError, code SUPER_ADMIN_REQUIRED, nothing written). Rejects
+     * MEMBER_NOT_FOUND for an unknown actor.
      */
-    create(member: NewMember): Promise<Member>;
+    create(actorId: number, member: NewMember): Promise<Member>;
+    /**
+     * Changes a member's fields; omitted fields keep their stored values, and the result is validated as
+     * in `create`. An email change also renames the member's login. Only an Active Super Admin may
+     * promote a member to Super Admin (SecurityPrivilegeError, code SUPER_ADMIN_REQUIRED, nothing
+     * written). Rejects MEMBER_NOT_FOUND for an unknown actor or member.
+     */
+    update(actorId: number, id: number, changes: Partial<NewMember>): Promise<Member>;
   };
 
   memberProfiles: {

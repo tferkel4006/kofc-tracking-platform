@@ -13,6 +13,7 @@ import {
   assertLookupKeyUnique,
   assertLookupNotProtected,
   assertLookupUnused,
+  assertMayGrantMemberType,
   assertPasswordAcceptable,
   assertShiftHasRoom,
   assertShiftInsideEvent,
@@ -36,6 +37,7 @@ import {
   donationMethodKind,
   isSha256Hex,
   LOOKUP_META,
+  mergeMemberChanges,
   MEMBER_COLUMNS,
   participantIds,
   planEventCopy,
@@ -43,6 +45,7 @@ import {
   trainingDateToYear,
   trainingYearToDate,
   UNREGISTERED_PASSWORD,
+  type MemberWriteActor,
   type MessagingRows,
 } from '@kofc/shared';
 import type {
@@ -59,6 +62,7 @@ import type {
   MemberExtensions,
   MemberSkill,
   MemberTraining,
+  NewMember,
   Skill,
   SkillLevel,
   WorkingStatus,
@@ -576,15 +580,12 @@ export class MemoryDataService implements DataService {
     },
     listRoles: async (memberId) => this.rolesFor(await this.ready(), memberId),
 
-    create: async (member) => {
+    create: async (actorId, member) => {
       const clean = cleanNewMember(member, this.now());
       const s = await this.ready();
       const row = s.transaction(() => {
-        this.assertCouncilsExist(s, [clean.CouncilID]);
-        this.assertRowExists(s, 'MemberStatus', clean.StatusID, 'member status');
-        this.assertRowExists(s, 'Degree', clean.DegreeID, 'degree');
-        this.assertRowExists(s, 'MemberType', clean.MemberTypeID, 'member type');
-        if (clean.WorkingStatusID != null) this.assertRowExists(s, 'WorkingStatus', clean.WorkingStatusID, 'working status');
+        assertMayGrantMemberType(this.memberWriteActor(s, actorId), this.memberTypeName(s, clean.MemberTypeID));
+        this.assertMemberReferences(s, clean);
         const email = clean.Email.toLowerCase();
         if (s.rows('Member').some((m) => lower(m.Email) === email) || s.rows('Credentials').some((c) => lower(c.Username) === email)) {
           throw new BusinessRuleError('INVALID_INPUT', `The email ${clean.Email} already belongs to a member or login.`, {
@@ -600,7 +601,59 @@ export class MemoryDataService implements DataService {
       this.sendWelcomeEmail(s, created);
       return created;
     },
+
+    update: async (actorId, id, changes) => {
+      const s = await this.ready();
+      const row = s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const existing = this.requireMember(s, id);
+        const clean = mergeMemberChanges(existing as unknown as Member, changes, this.now());
+        assertMayGrantMemberType(
+          actor,
+          this.memberTypeName(s, clean.MemberTypeID),
+          this.memberTypeName(s, existing.MemberTypeID as number),
+        );
+        this.assertMemberReferences(s, clean);
+        const email = clean.Email.toLowerCase();
+        if (
+          s.rows('Member').some((m) => m.id !== id && lower(m.Email) === email) ||
+          s.rows('Credentials').some((c) => c.id !== existing.CredentialID && lower(c.Username) === email)
+        ) {
+          throw new BusinessRuleError('INVALID_INPUT', `The email ${clean.Email} already belongs to a member or login.`, {
+            email: clean.Email,
+          });
+        }
+        const credential = s.rows('Credentials').find((c) => c.id === existing.CredentialID);
+        if (credential) credential.Username = clean.Email;
+        for (const c of MEMBER_COLUMNS) existing[c] = clean[c] ?? null;
+        return existing;
+      });
+      return { ...row } as unknown as Member;
+    },
   };
+
+  /** The caller of a member write, read from the store so the client cannot claim a type it does not hold. */
+  private memberWriteActor(s: MemoryStore, actorId: number): MemberWriteActor {
+    const actor = this.requireMember(s, actorId);
+    return {
+      memberId: actorId,
+      memberType: this.memberTypeName(s, actor.MemberTypeID as number),
+      active: actor.StatusID === this.activeStatusId(s),
+    };
+  }
+
+  private memberTypeName(s: MemoryStore, typeId: number): string | undefined {
+    return s.rows('MemberType').find((t) => t.id === typeId)?.Type as string | undefined;
+  }
+
+  /** The council and lookup ids a member row points at must exist. */
+  private assertMemberReferences(s: MemoryStore, clean: NewMember): void {
+    this.assertCouncilsExist(s, [clean.CouncilID]);
+    this.assertRowExists(s, 'MemberStatus', clean.StatusID, 'member status');
+    this.assertRowExists(s, 'Degree', clean.DegreeID, 'degree');
+    this.assertRowExists(s, 'MemberType', clean.MemberTypeID, 'member type');
+    if (clean.WorkingStatusID != null) this.assertRowExists(s, 'WorkingStatus', clean.WorkingStatusID, 'working status');
+  }
 
   /** System hook after members.create commits: compiles the welcome email and logs it (no mail server yet). */
   private sendWelcomeEmail(s: MemoryStore, member: Member): void {

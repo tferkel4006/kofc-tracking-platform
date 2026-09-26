@@ -395,7 +395,7 @@ describe.each(drivers)('$name driver: council skill roster', (d) => {
       null,
     );
     // A bartender in another council must never appear in council 1's roster.
-    const other = await db.members.create({
+    const other = await db.members.create(MEMBER.superAdmin, {
       CouncilID: AFFILIATED,
       MemberNumber: 9910001,
       MemberFirstName: 'Visiting',
