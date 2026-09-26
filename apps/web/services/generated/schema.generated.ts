@@ -485,7 +485,7 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "name": "Meeting Name",
         "kind": "text",
-        "notNull": false,
+        "notNull": true,
         "identity": false,
         "default": null
       },
@@ -499,49 +499,49 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "name": "Date",
         "kind": "date",
-        "notNull": false,
+        "notNull": true,
         "identity": false,
         "default": null
       },
       {
         "name": "Time Start",
         "kind": "time",
-        "notNull": false,
+        "notNull": true,
         "identity": false,
         "default": null
       },
       {
         "name": "Time End",
         "kind": "time",
-        "notNull": false,
+        "notNull": true,
         "identity": false,
         "default": null
       },
       {
         "name": "Location",
         "kind": "text",
-        "notNull": false,
+        "notNull": true,
         "identity": false,
         "default": null
       },
       {
         "name": "Agenda",
         "kind": "text",
-        "notNull": false,
+        "notNull": true,
         "identity": false,
         "default": null
       },
       {
         "name": "MinutesURL",
         "kind": "text",
-        "notNull": false,
+        "notNull": true,
         "identity": false,
         "default": null
       },
       {
         "name": "MeetingType",
         "kind": "int",
-        "notNull": false,
+        "notNull": true,
         "identity": false,
         "default": null
       }
@@ -732,6 +732,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": true,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "WorkingStatusID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -758,6 +765,11 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "StatusID",
         "refTable": "MemberStatus",
+        "refColumn": "id"
+      },
+      {
+        "column": "WorkingStatusID",
+        "refTable": "WorkingStatus",
         "refColumn": "id"
       }
     ]
@@ -1635,6 +1647,396 @@ export const TABLES: Record<string, TableMeta> = {
         "refColumn": "id"
       }
     ]
+  },
+  "WorkingStatus": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "WorkingStatus",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": []
+  },
+  "Donation": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DonationDate",
+        "kind": "date",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DonationMethodID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DonationTypeID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "Donor",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DonationDesciption",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "EventID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DonationAmount",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DonationPhotoURL",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "EventID",
+        "refTable": "Event",
+        "refColumn": "id"
+      },
+      {
+        "column": "DonationMethodID",
+        "refTable": "DonationMethod",
+        "refColumn": "id"
+      },
+      {
+        "column": "DonationTypeID",
+        "refTable": "DonationType",
+        "refColumn": "id"
+      }
+    ]
+  },
+  "DonationMethod": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "DonationMethod",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": []
+  },
+  "DonationType": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DonationType",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      }
+    ]
+  },
+  "Skill": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "SkillName",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": []
+  },
+  "SkillLevel": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "SkillLevel",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": []
+  },
+  "MemberSkill": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "SkillID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "SkillLevelID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "MemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "SkillID",
+        "refTable": "Skill",
+        "refColumn": "id"
+      },
+      {
+        "column": "SkillLevelID",
+        "refTable": "SkillLevel",
+        "refColumn": "id"
+      },
+      {
+        "column": "MemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ]
+  },
+  "KOCTrainingClasses": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "ClassName",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": []
+  },
+  "MemberTraining": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "MemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "TrainingClassID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "YearTaken",
+        "kind": "date",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "TrainingClassID",
+        "refTable": "KOCTrainingClasses",
+        "refColumn": "id"
+      },
+      {
+        "column": "MemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ]
+  },
+  "CouncilDonationMethod": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DonationMethodID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DonationMethodURL",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "DonationMethodID",
+        "refTable": "DonationMethod",
+        "refColumn": "id"
+      }
+    ]
   }
 };
 
@@ -1962,6 +2364,154 @@ export const SEED_DATA: readonly SeedTable[] = [
       {
         "RoleID": 20,
         "MemberID": 3
+      }
+    ]
+  },
+  {
+    "table": "WorkingStatus",
+    "rows": [
+      {
+        "WorkingStatus": "Student"
+      },
+      {
+        "WorkingStatus": "Full Time"
+      },
+      {
+        "WorkingStatus": "Part Time"
+      },
+      {
+        "WorkingStatus": "Retired"
+      },
+      {
+        "WorkingStatus": "Unemployed"
+      }
+    ]
+  },
+  {
+    "table": "DonationMethod",
+    "rows": [
+      {
+        "DonationMethod": "Cash"
+      },
+      {
+        "DonationMethod": "Credit Card"
+      },
+      {
+        "DonationMethod": "Venmo"
+      },
+      {
+        "DonationMethod": "Zelle"
+      },
+      {
+        "DonationMethod": "Zeffy"
+      },
+      {
+        "DonationMethod": "Parishsoft"
+      },
+      {
+        "DonationMethod": "Physical Items"
+      }
+    ]
+  },
+  {
+    "table": "DonationType",
+    "rows": [
+      {
+        "DonationType": "Parking",
+        "CouncilID": 1
+      },
+      {
+        "DonationType": "Parish Event",
+        "CouncilID": 1
+      },
+      {
+        "DonationType": "Meals",
+        "CouncilID": 1
+      },
+      {
+        "DonationType": "Unsolicited",
+        "CouncilID": 1
+      }
+    ]
+  },
+  {
+    "table": "Skill",
+    "rows": [
+      {
+        "SkillName": "Bartending"
+      },
+      {
+        "SkillName": "Plumbing"
+      },
+      {
+        "SkillName": "Electrical"
+      },
+      {
+        "SkillName": "Carpentry"
+      },
+      {
+        "SkillName": "Automotive"
+      },
+      {
+        "SkillName": "Mechanical"
+      },
+      {
+        "SkillName": "Cooking"
+      },
+      {
+        "SkillName": "Baking"
+      },
+      {
+        "SkillName": "Canning"
+      },
+      {
+        "SkillName": "Graphic Arts"
+      },
+      {
+        "SkillName": "Finances"
+      },
+      {
+        "SkillName": "Computer"
+      },
+      {
+        "SkillName": "Marketing"
+      },
+      {
+        "SkillName": "Masonry"
+      },
+      {
+        "SkillName": "Heating/Cooling"
+      }
+    ]
+  },
+  {
+    "table": "SkillLevel",
+    "rows": [
+      {
+        "SkillLevel": "Novice"
+      },
+      {
+        "SkillLevel": "Beginner"
+      },
+      {
+        "SkillLevel": "Intermediate"
+      },
+      {
+        "SkillLevel": "Senior"
+      },
+      {
+        "SkillLevel": "Expert"
+      }
+    ]
+  },
+  {
+    "table": "KOCTrainingClasses",
+    "rows": [
+      {
+        "ClassName": "Background Check"
+      },
+      {
+        "ClassName": "Preventing Abuse and Protecting Those We Serve"
       }
     ]
   }

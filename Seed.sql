@@ -131,3 +131,69 @@ VALUES
 (20, 3); -- Member is set as standard Member (Role id 20; there is no id 21)
 GO
 
+-- ==============================================================================
+-- Phase 2 seeding
+-- ==============================================================================
+-- 1.  Working Status for member
+Insert Into [WorkingStatus] ([WorkingStatus])
+Values 
+('Student'),
+('Full Time'),
+('Part Time'),
+('Retired'),
+('Unemployed');
+GO
+-- 2. Donation method
+Insert Into [DonationMethod] ([DonationMethod])
+Values 
+('Cash'),
+('Credit Card'),
+('Venmo'),
+('Zelle'),
+('Zeffy'),
+('Parishsoft'),
+('Physical Items');
+GO
+-- 3. Donation type
+Insert Into [DonationType] ([DonationType],[CouncilID])
+Values 
+('Parking', 1),
+('Parish Event', 1),
+('Meals', 1),
+('Unsolicited', 1);
+GO
+-- 4. Skill
+Insert Into [Skill] ([SkillName])
+Values 
+('Bartending'),
+('Plumbing'),
+('Electrical'),
+('Carpentry'),
+('Automotive'),
+('Mechanical'),
+('Cooking'),
+('Baking'),
+('Canning'),
+('Graphic Arts'),
+('Finances'),
+('Computer'),
+('Marketing'),
+('Masonry'),
+('Heating/Cooling');
+GO
+-- 5. Skill Level
+Insert Into [SkillLevel] ([SkillLevel])
+Values 
+('Novice'),
+('Beginner'),
+('Intermediate'),
+('Senior'),
+('Expert');
+GO
+-- 6. Training classes
+Insert Into [KOCTrainingClasses] ([ClassName])
+Values 
+('Background Check'),
+('Preventing Abuse and Protecting Those We Serve');
+GO
+

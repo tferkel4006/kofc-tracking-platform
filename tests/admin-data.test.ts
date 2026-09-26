@@ -339,7 +339,7 @@ describe.each(drivers)('$name driver: lessons learned and minutes', (d) => {
     const set = await db.meetings.setMinutes(meeting.id, 'blob:minutes-2026-09.pdf');
     expect(set.MinutesURL).toBe('blob:minutes-2026-09.pdf');
     expect((await db.meetings.get(meeting.id))?.MinutesURL).toBe('blob:minutes-2026-09.pdf');
-    expect((await db.meetings.setMinutes(meeting.id, null)).MinutesURL ?? null).toBeNull();
+    expect((await db.meetings.setMinutes(meeting.id, null)).MinutesURL).toBe(''); // NOT NULL column: '' means no minutes
     await expectRule(db.meetings.setMinutes(meeting.id, 'x'.repeat(256)), 'INVALID_INPUT');
     await expectRule(db.meetings.setMinutes(9999, 'a.pdf'), 'MEETING_NOT_FOUND');
   });

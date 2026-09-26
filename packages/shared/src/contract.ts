@@ -16,7 +16,11 @@ import type {
   Category,
   ChatThread,
   Council,
+  CouncilDonationMethod,
   Degree,
+  Donation,
+  DonationMethod,
+  DonationType,
   Event,
   EventSignup,
   EventTime,
@@ -24,9 +28,12 @@ import type {
   LessonsLearnedCategory,
   Meeting,
   MeetingInvites,
+  KOCTrainingClasses,
   MeetingType,
   Member,
+  MemberSkill,
   MemberStatus,
+  MemberTraining,
   MemberType,
   Message,
   MessageAttachment,
@@ -34,6 +41,9 @@ import type {
   ReadReceipt,
   Role,
   Shift,
+  Skill,
+  SkillLevel,
+  WorkingStatus,
 } from './types';
 
 // 1. LOOKUPS
@@ -180,7 +190,84 @@ export interface SaveDraftInput {
   draftId?: number;
 }
 
-// 6. THE SERVICE
+// 6. MEMBERS, PROFILES AND SKILLS (Phase 2)
+/**
+ * A member row without its generated id or credentials: members.create provisions a placeholder
+ * Credentials row the member claims through auth.signUp.
+ */
+export type NewMember = Omit<Member, 'id' | 'CredentialID'>;
+
+export interface MemberSkillInput {
+  skillId: number;
+  skillLevelId: number;
+}
+
+export interface MemberTrainingInput {
+  trainingClassId: number;
+  /** Four-digit year the class was taken; stored in MemberTraining.YearTaken as YYYY-01-01. */
+  year: number;
+}
+
+/** A member's self-maintained profile extensions, with lookup names resolved for display. */
+export interface MemberExtensions {
+  workingStatus: WorkingStatus | null;
+  skills: { row: MemberSkill; skill: Skill; level: SkillLevel }[];
+  training: { row: MemberTraining; trainingClass: KOCTrainingClasses; year: number }[];
+}
+
+/** One row of the council skill roster (view_CouncilSkills, plus ids for targeting). */
+export interface CouncilSkillEntry {
+  memberId: number;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  skill: Skill;
+  level: SkillLevel;
+}
+
+export interface BulkSkillMessageResult {
+  message: Message;
+  /** Members the message went to (Active council members holding the skill, excluding the sender). */
+  recipientIds: number[];
+}
+
+// 7. DONATIONS (Phase 2)
+/**
+ * Fields for a new donation. DonationDate defaults to today. EventID omitted or null records a
+ * standalone donation. For 'Physical Items', DonationAmount is the estimated value.
+ */
+export type NewDonation = Omit<Donation, 'id' | 'DonationDate'> & { DonationDate?: string };
+
+/** How the phone UI presents a method: a big button, a QR code to show the donor, or a camera for items. */
+export type DonationMethodKind = 'cash' | 'card' | 'qr' | 'item' | 'other';
+
+/** A method the council has enabled, ready for a one-tap picker. */
+export interface CouncilDonationOption {
+  method: DonationMethod;
+  kind: DonationMethodKind;
+  link: CouncilDonationMethod;
+  /** QR image for Venmo/Zelle/Zeffy/Parishsoft that routes money to the council's account; null when none. */
+  qrCodeUrl: string | null;
+}
+
+// 8. MEETING HOURS (Phase 2)
+export interface MeetingHoursEntry {
+  meetingId: number;
+  meetingName: string;
+  date: string;
+  hours: number;
+  /** Cumulative hours up to and including this meeting, oldest first. */
+  runningTotal: number;
+}
+
+export interface MemberMeetingHours {
+  memberId: number;
+  totalHours: number;
+  meetings: MeetingHoursEntry[];
+}
+
+// 9. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -242,6 +329,57 @@ export interface DataService {
     /** Ordered by last name, then first name. */
     listByCouncil(councilId: number, options?: { activeOnly?: boolean }): Promise<Member[]>;
     listRoles(memberId: number): Promise<Role[]>;
+    /**
+     * Adds a member together with a placeholder Credentials row (UNREGISTERED_PASSWORD) they claim
+     * through auth.signUp. Rejects INVALID_INPUT for a bad field, an unknown council/lookup id, or an
+     * email already used by a member or a login (case-insensitive). Once the row is stored, logs the
+     * welcome email (what the app is, how to get it, how to sign in, who the council admin is).
+     */
+    create(member: NewMember): Promise<Member>;
+  };
+
+  memberProfiles: {
+    /** The member's working status, skills and training, with lookup names resolved. */
+    getExtensions(memberId: number): Promise<MemberExtensions>;
+    /**
+     * Self-service replace of a member's skills, training classes and working status, all or nothing.
+     * `skills` and `training` are the complete new lists (an empty array clears them); `workingStatusId`
+     * null clears the status. Rejects MEMBER_NOT_FOUND, or INVALID_INPUT for an unknown lookup id, a skill
+     * listed twice, the same class twice in one year, or a year outside 1882..this year.
+     */
+    updateExtensions(
+      memberId: number,
+      skills: MemberSkillInput[],
+      training: MemberTrainingInput[],
+      workingStatusId: number | null,
+    ): Promise<MemberExtensions>;
+  };
+
+  communication: {
+    /** Every skill held by a member of the council (view_CouncilSkills), ordered by skill, then member name. */
+    listCouncilSkills(councilId: number): Promise<CouncilSkillEntry[]>;
+    /**
+     * Starts a group thread from `senderId` to every Active member of the council who holds `skillId`
+     * (the sender is never a recipient). Rejects INVALID_INPUT for empty text or an unknown skill,
+     * and NO_RECIPIENTS when nobody else in the council has the skill.
+     */
+    sendBulkToSkills(councilId: number, skillId: number, messageText: string, senderId: number): Promise<BulkSkillMessageResult>;
+  };
+
+  donations: {
+    /** The council's enabled methods in DonationMethod id order, with QR images, for a one-tap picker. */
+    listMethods(councilId: number): Promise<CouncilDonationOption[]>;
+    /** The council's own donation types, ordered by name. */
+    listTypes(councilId: number): Promise<DonationType[]>;
+    /** The council's donations, newest first; with `eventId`, only that event's. */
+    list(councilId: number, options?: { eventId?: number }): Promise<Donation[]>;
+    /**
+     * Records a cash, credit card, QR (Venmo/Zelle/Zeffy/Parishsoft) or physical-item donation.
+     * Rejects INVALID_INPUT for a bad field, a future date, an amount of 0, a type from another council,
+     * an event not linked to the council, or a physical item without a description; and
+     * DONATION_METHOD_NOT_ENABLED when the council has not enabled the method.
+     */
+    record(donation: NewDonation): Promise<Donation>;
   };
 
   events: {
@@ -308,7 +446,8 @@ export interface DataService {
      * Records hours worked on a shift. Requires an existing EventSignup for the member and shift
      * (NOT_SIGNED_UP). One row per member and shift: logging again replaces the hours and notes.
      * Rejects when `hours` is not a multiple of 0.25 in (0, 24], or the shift date is more than
-     * 3 months in the past (SHIFT_REPORT_TOO_OLD).
+     * 3 months in the past (SHIFT_REPORT_TOO_OLD). Hours may exceed the shift's scheduled
+     * StartTime-EndTime length (set-up and clean-up often run over); see SHIFT_DURATION_IS_A_CEILING.
      */
     logHours(memberId: number, shiftId: number, hours: number, notes?: string): Promise<EventTime>;
   };
@@ -338,8 +477,13 @@ export interface DataService {
     invite(meetingId: number, memberIds: number[]): Promise<number>;
     /** Rejects if the member was never invited to the meeting. */
     setAttended(meetingId: number, memberId: number, attended: boolean): Promise<void>;
-    /** Points the meeting at its uploaded minutes; `null` removes them. */
+    /** Points the meeting at its uploaded minutes; `null` removes them (stored as '', since the column is NOT NULL). */
     setMinutes(meetingId: number, minutesUrl: string | null): Promise<Meeting>;
+    /**
+     * Meeting hours for a member: every invitation marked Attended = 1, each worth its meeting's
+     * Time End - Time Start, oldest first with a running total. Optional inclusive date range.
+     */
+    memberHours(memberId: number, range?: { fromDate?: string; toDate?: string }): Promise<MemberMeetingHours>;
   };
 
   messages: {

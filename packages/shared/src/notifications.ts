@@ -9,7 +9,7 @@
 // times (no trailing Z), which calendar apps read as the attendee's local time.
 // =========================================================================
 import type { DataService } from './contract';
-import { toIsoDate } from './rules';
+import { MIN_PASSWORD_LENGTH, toIsoDate } from './rules';
 import type { Meeting, Member, Shift, Event as CouncilEvent } from './types';
 
 /** How far ahead of the start a reminder goes out. */
@@ -108,7 +108,7 @@ export interface EmailPayload {
 }
 
 export interface NotificationPacket {
-  kind: 'shift' | 'meeting';
+  kind: 'shift' | 'meeting' | 'welcome';
   /** Stable dedupe key, e.g. "shift:12:member:3". */
   key: string;
   email: EmailPayload;
@@ -188,6 +188,69 @@ export function buildMeetingReminder(input: {
         `You are invited to "${meeting['Meeting Name']}" on ${describeStart(start)} at ${meeting.Location}.\n` +
         `A calendar file is attached.`,
       attachments: [{ filename: 'meeting.ics', contentType: 'text/calendar; charset=utf-8; method=PUBLISH', content: ics }],
+    },
+  };
+}
+
+// ---- welcome email -------------------------------------------------------
+
+/**
+ * Where members get the apps. Neither store listing nor the portal is published yet, so these are
+ * labelled placeholders; replace them when the apps ship.
+ */
+export const APP_DISTRIBUTION = {
+  appName: 'Knights of Columbus Tracking Platform',
+  iosStore: '[App Store listing - not yet published]',
+  androidStore: '[Google Play listing - not yet published]',
+  webPortal: '[Web portal address - not yet published]',
+} as const;
+
+export interface CouncilAdminDetails {
+  name: string;
+  email: string;
+  phone: string;
+}
+
+/**
+ * Specifications: "When a record is added to the Member table send an email to that person telling them
+ * they now have access to the app, what the app is, how to download the app or access the website,
+ * how to login and who their council admin is if they have any questions."
+ */
+export function buildWelcomeEmail(input: {
+  member: Pick<Member, 'id' | 'Email' | 'MemberFirstName'>;
+  council: { CouncilNumber: number; CouncilName: string; Phone?: string | null };
+  /** null when the council has no active Admin on file; the council's phone is offered instead. */
+  admin: CouncilAdminDetails | null;
+}): NotificationPacket {
+  const { member, council, admin } = input;
+  const app = APP_DISTRIBUTION;
+  const contact = admin
+    ? `${admin.name}, ${admin.email}, ${admin.phone}`
+    : `no admin is on file yet; call the council office${council.Phone ? ` at ${council.Phone}` : ''}`;
+  return {
+    kind: 'welcome',
+    key: `welcome:member:${member.id}`,
+    email: {
+      from: NOTIFICATION_SENDER,
+      to: member.Email,
+      subject: `Welcome to the ${app.appName}`,
+      text:
+        `Hello ${member.MemberFirstName},\n\n` +
+        `You now have access to the ${app.appName} for ${council.CouncilName} (Council ${council.CouncilNumber}).\n\n` +
+        `WHAT IT IS\n` +
+        `One place to sign up for event shifts, log volunteer and activity hours, see upcoming meetings ` +
+        `and minutes, record donations, and message other members of your council.\n\n` +
+        `GET THE APP\n` +
+        `  iPhone:  ${app.iosStore}\n` +
+        `  Android: ${app.androidStore}\n` +
+        `  Web:     ${app.webPortal}\n\n` +
+        `SIGNING IN FOR THE FIRST TIME\n` +
+        `  1. Open the app and enter this email address: ${member.Email}\n` +
+        `  2. Create a password of at least ${MIN_PASSWORD_LENGTH} characters.\n` +
+        `  3. After that, sign in with the same email and password.\n\n` +
+        `QUESTIONS?\n` +
+        `Your council admin: ${contact}.\n`,
+      attachments: [],
     },
   };
 }

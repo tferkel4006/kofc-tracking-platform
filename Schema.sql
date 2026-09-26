@@ -117,15 +117,15 @@ GO
 CREATE TABLE [Meeting] (
 	[id] INTEGER NOT NULL IDENTITY,
 	[CouncilID] INTEGER,
-	[Meeting Name] VARCHAR(100),
+	[Meeting Name] VARCHAR(100) NOT NULL,
 	[Meeting Description] VARCHAR(255),
-	[Date] DATE,
-	[Time Start] TIME,
-	[Time End] TIME,
-	[Location] VARCHAR(100),
-	[Agenda] VARCHAR(MAX), -- Fixed: T-SQL TEXT takes no length argument
-	[MinutesURL] VARCHAR(255),
-	[MeetingType] INTEGER,
+	[Date] DATE NOT NULL,
+	[Time Start] TIME NOT NULL,
+	[Time End] TIME NOT NULL,
+	[Location] VARCHAR(100) NOT NULL,
+	[Agenda] VARCHAR(MAX) NOT NULL, -- Fixed: T-SQL TEXT takes no length argument
+	[MinutesURL] VARCHAR(255) NOT NULL,
+	[MeetingType] INTEGER NOT NULL,
 	PRIMARY KEY([id])
 );
 GO
@@ -159,6 +159,7 @@ CREATE TABLE [Member] (
 	[DegreeID] INTEGER NOT NULL,
 	[MemberTypeID] INTEGER NOT NULL,
 	[CredentialID] INTEGER NOT NULL,
+	[WorkingStatusID] INTEGER, -- Phase 2: optional until the member fills in their profile
 	PRIMARY KEY([id])
 );
 GO
@@ -613,4 +614,205 @@ INNER JOIN [Council] ON [EventCouncils].[CouncilID] = [Council].[id]
 INNER JOIN [Category] ON [Event].[CategoryID] = [Category].[id];
 GO
 
+-- PHASE 2 ADDITIONAL SCHEMA EXTENSIONS
+CREATE TABLE [WorkingStatus] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[WorkingStatus] VARCHAR(25) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
 
+CREATE TABLE [Donation] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[DonationDate] DATE NOT NULL,
+	[DonationMethodID] INTEGER NOT NULL,
+	[DonationTypeID] INTEGER NOT NULL,
+	[Donor] VARCHAR(100),
+	[DonationDesciption] VARCHAR(255),
+	[EventID] INTEGER, -- NULL for a standalone donation
+	[DonationAmount] MONEY NOT NULL,
+	[DonationPhotoURL] VARCHAR(255),
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE INDEX [Donation_EventID_idx]
+ON [Donation] ([EventID]);
+GO
+
+CREATE INDEX [Donation_CouncilID_idx]
+ON [Donation] ([CouncilID]);
+GO
+
+CREATE TABLE [DonationMethod] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[DonationMethod] VARCHAR(30) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [DonationType] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[DonationType] VARCHAR(100) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [Skill] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[SkillName] VARCHAR(30) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [SkillLevel] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[SkillLevel] VARCHAR(30) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [MemberSkill] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[SkillID] INTEGER NOT NULL,
+	[SkillLevelID] INTEGER NOT NULL,
+	[MemberID] INTEGER NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE INDEX [SkillMember_MemberID_idx]
+ON [MemberSkill] ([MemberID]);
+GO
+
+CREATE TABLE [KOCTrainingClasses] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[ClassName] VARCHAR(100) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [MemberTraining] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[MemberID] INTEGER NOT NULL,
+	[TrainingClassID] INTEGER NOT NULL,
+	[YearTaken] DATE NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE INDEX [MemberTraining_MemberID_idx]
+ON [MemberTraining] ([MemberID]);
+GO
+
+CREATE TABLE [CouncilDonationMethod] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[DonationMethodID] INTEGER NOT NULL,
+	[DonationMethodURL] VARCHAR(255),
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [Member]
+ADD FOREIGN KEY([WorkingStatusID])
+REFERENCES [WorkingStatus]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [Donation]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [Donation]
+ADD FOREIGN KEY([EventID])
+REFERENCES [Event]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [Donation]
+ADD FOREIGN KEY([DonationMethodID])
+REFERENCES [DonationMethod]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [DonationType]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [Donation]
+ADD FOREIGN KEY([DonationTypeID])
+REFERENCES [DonationType]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MemberSkill]
+ADD FOREIGN KEY([SkillID])
+REFERENCES [Skill]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MemberSkill]
+ADD FOREIGN KEY([SkillLevelID])
+REFERENCES [SkillLevel]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MemberSkill]
+ADD FOREIGN KEY([MemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MemberTraining]
+ADD FOREIGN KEY([TrainingClassID])
+REFERENCES [KOCTrainingClasses]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MemberTraining]
+ADD FOREIGN KEY([MemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilDonationMethod]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilDonationMethod]
+ADD FOREIGN KEY([DonationMethodID])
+REFERENCES [DonationMethod]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE OR ALTER VIEW [view_Donations] AS
+SELECT
+  [Council].[CouncilNumber],
+  [Council].[CouncilName],
+  [Donation].[DonationDate],
+  [DonationMethod].[DonationMethod],
+  [Donation].[DonationAmount],
+  [Event].[EventName],
+  [Donation].[Donor],
+  [Donation].[DonationDesciption],
+  [DonationType].[DonationType]
+FROM [Donation]
+INNER JOIN [Council] ON [Donation].[CouncilID] = [Council].[id]
+LEFT OUTER JOIN [Event] ON [Donation].[EventID] = [Event].[id] -- standalone donations have no event
+INNER JOIN [DonationMethod] ON [Donation].[DonationMethodID] = [DonationMethod].[id]
+INNER JOIN [DonationType] ON [Donation].[DonationTypeID] = [DonationType].[id];
+GO
+
+CREATE OR ALTER VIEW [view_CouncilSkills] AS
+SELECT
+  [Council].[CouncilNumber],
+  [Council].[CouncilName],
+  [Skill].[SkillName],
+  [SkillLevel].[SkillLevel],
+  [Member].[MemberLastName],
+  [Member].[MemberFirstName],
+  [Member].[Phone],
+  [Member].[Email]
+FROM [MemberSkill]
+INNER JOIN [Member] ON [MemberSkill].[MemberID] = [Member].[id]
+INNER JOIN [Skill] ON [MemberSkill].[SkillID] = [Skill].[id]
+INNER JOIN [SkillLevel] ON [MemberSkill].[SkillLevelID] = [SkillLevel].[id]
+INNER JOIN [Council] ON [Member].[CouncilID] = [Council].[id];
+GO

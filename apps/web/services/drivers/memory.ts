@@ -5,7 +5,10 @@
 // of against Azure SQL. State is per browser tab and resets on reload.
 // Nothing outside /services may import this file.
 import {
+  aggregateMeetingHours,
   assertActivityDateAllowed,
+  assertDonationDateForEvent,
+  assertDonationFitsMethod,
   assertEventRange,
   assertLookupKeyUnique,
   assertLookupNotProtected,
@@ -19,18 +22,26 @@ import {
   assertThreadParticipant,
   buildThreadMessages,
   buildThreadSummaries,
+  buildWelcomeEmail,
   BusinessRuleError,
   cleanCouncilIds,
   cleanEventFields,
   cleanLookupValues,
+  cleanMemberExtensions,
+  cleanNewDonation,
   cleanNewEvent,
+  cleanNewMember,
   cleanNewShift,
   cleanShiftFields,
+  donationMethodKind,
   isSha256Hex,
   LOOKUP_META,
+  MEMBER_COLUMNS,
   participantIds,
   planEventCopy,
   toTimestamp,
+  trainingDateToYear,
+  trainingYearToDate,
   UNREGISTERED_PASSWORD,
   type MessagingRows,
 } from '@kofc/shared';
@@ -39,7 +50,18 @@ import type {
   ActivityTime,
   ChatThread,
   Council,
+  CouncilDonationMethod,
+  CouncilSkillEntry,
   DataService,
+  Donation,
+  DonationType,
+  KOCTrainingClasses,
+  MemberExtensions,
+  MemberSkill,
+  MemberTraining,
+  Skill,
+  SkillLevel,
+  WorkingStatus,
   Event as CouncilEvent,
   EventChanges,
   EventSignup,
@@ -73,6 +95,7 @@ import {
   buildDevMessaging,
   DEV_ACTIVITY,
   DEV_AFFILIATED_COUNCIL,
+  DEV_COUNCIL_DONATION_METHODS,
   DEV_COUNCIL_NUMBER,
   DEV_UNAFFILIATED_COUNCIL,
   DEV_UNREGISTERED_MEMBER,
@@ -194,15 +217,19 @@ class MemoryStore {
 export interface MemoryDataServiceOptions {
   /** Clock used for seeding and the history-window rules. Tests pin it. Default: real time. */
   now?: () => Date;
+  /** Where system emails (the new-member welcome) go. Default: console.log (no mail infrastructure exists yet). */
+  log?: (...args: unknown[]) => void;
 }
 
 export class MemoryDataService implements DataService {
   private store = new MemoryStore();
   private initialised: Promise<void> | null = null;
   private readonly now: () => Date;
+  private readonly log: (...args: unknown[]) => void;
 
   constructor(options: MemoryDataServiceOptions = {}) {
     this.now = options.now ?? (() => new Date());
+    this.log = options.log ?? console.log;
   }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -246,6 +273,13 @@ export class MemoryDataService implements DataService {
     }
     this.seedDevEvents(council.id as number);
     this.seedDevExtras(council.id as number);
+
+    // Enables every donation method for the test council (Seed.sql has no CouncilDonationMethod rows).
+    for (const { method, qrUrl } of DEV_COUNCIL_DONATION_METHODS) {
+      const methodRow = this.store.rows('DonationMethod').find((m) => m.DonationMethod === method);
+      if (!methodRow) throw new Error(`Seed.sql is missing donation method ${method}`);
+      this.store.insert('CouncilDonationMethod', { CouncilID: council.id, DonationMethodID: methodRow.id, DonationMethodURL: qrUrl });
+    }
   }
 
   /** A pre-provisioned member with a placeholder Credentials row, plus one council activity. */
@@ -541,6 +575,240 @@ export class MemoryDataService implements DataService {
       );
     },
     listRoles: async (memberId) => this.rolesFor(await this.ready(), memberId),
+
+    create: async (member) => {
+      const clean = cleanNewMember(member, this.now());
+      const s = await this.ready();
+      const row = s.transaction(() => {
+        this.assertCouncilsExist(s, [clean.CouncilID]);
+        this.assertRowExists(s, 'MemberStatus', clean.StatusID, 'member status');
+        this.assertRowExists(s, 'Degree', clean.DegreeID, 'degree');
+        this.assertRowExists(s, 'MemberType', clean.MemberTypeID, 'member type');
+        if (clean.WorkingStatusID != null) this.assertRowExists(s, 'WorkingStatus', clean.WorkingStatusID, 'working status');
+        const email = clean.Email.toLowerCase();
+        if (s.rows('Member').some((m) => lower(m.Email) === email) || s.rows('Credentials').some((c) => lower(c.Username) === email)) {
+          throw new BusinessRuleError('INVALID_INPUT', `The email ${clean.Email} already belongs to a member or login.`, {
+            email: clean.Email,
+          });
+        }
+        const cred = s.insert('Credentials', { Username: clean.Email, Password: UNREGISTERED_PASSWORD });
+        const values: Record<string, SeedValue | undefined> = { CredentialID: cred.id };
+        for (const c of MEMBER_COLUMNS) values[c] = clean[c] ?? null;
+        return s.insert('Member', values);
+      });
+      const created = { ...row } as unknown as Member;
+      this.sendWelcomeEmail(s, created);
+      return created;
+    },
+  };
+
+  /** System hook after members.create commits: compiles the welcome email and logs it (no mail server yet). */
+  private sendWelcomeEmail(s: MemoryStore, member: Member): void {
+    try {
+      const council = { ...s.rows('Council').find((c) => c.id === member.CouncilID)! } as unknown as Council;
+      const activeId = this.activeStatusId(s);
+      const adminType = s.rows('MemberType').find((t) => t.Type === 'Admin')?.id;
+      const admin = (s.rows('Member').filter(
+        (m) => m.CouncilID === member.CouncilID && m.id !== member.id && m.StatusID === activeId && m.MemberTypeID === adminType,
+      ) as unknown as Member[]).sort(
+        (a, b) =>
+          a.MemberLastName.localeCompare(b.MemberLastName) || a.MemberFirstName.localeCompare(b.MemberFirstName) || a.id - b.id,
+      )[0];
+      const details = admin
+        ? { name: `${admin.MemberFirstName} ${admin.MemberLastName}`, email: admin.Email, phone: admin.Phone }
+        : null;
+      this.log('[notification]', JSON.stringify(buildWelcomeEmail({ member, council, admin: details }), null, 2));
+    } catch (err) {
+      // The member is already saved; a failed notification must not undo or fail that.
+      console.error('[notification] welcome email failed:', err);
+    }
+  }
+
+  /** Friendly INVALID_INPUT for a foreign key the generic constraint message would explain poorly. */
+  private assertRowExists(s: MemoryStore, table: string, id: number, label: string): void {
+    if (!s.rows(table).some((r) => r.id === id)) {
+      throw new BusinessRuleError('INVALID_INPUT', `No ${label} with id ${id}.`, { table, id });
+    }
+  }
+
+  // ---- Phase 2: member profiles, skill messaging, donations -------------
+
+  memberProfiles: DataService['memberProfiles'] = {
+    getExtensions: async (memberId) => {
+      const s = await this.ready();
+      this.requireMember(s, memberId);
+      return this.extensionsOf(s, memberId);
+    },
+
+    updateExtensions: async (memberId, skills, training, workingStatusId) => {
+      const clean = cleanMemberExtensions(skills, training, workingStatusId, this.now());
+      const s = await this.ready();
+      s.transaction(() => {
+        const member = this.requireMember(s, memberId);
+        for (const sk of clean.skills) {
+          this.assertRowExists(s, 'Skill', sk.skillId, 'skill');
+          this.assertRowExists(s, 'SkillLevel', sk.skillLevelId, 'skill level');
+        }
+        for (const t of clean.training) this.assertRowExists(s, 'KOCTrainingClasses', t.trainingClassId, 'training class');
+        if (clean.workingStatusId !== null) this.assertRowExists(s, 'WorkingStatus', clean.workingStatusId, 'working status');
+
+        s.remove('MemberSkill', (r) => r.MemberID === memberId);
+        for (const sk of clean.skills) {
+          s.insert('MemberSkill', { SkillID: sk.skillId, SkillLevelID: sk.skillLevelId, MemberID: memberId });
+        }
+        s.remove('MemberTraining', (r) => r.MemberID === memberId);
+        for (const t of clean.training) {
+          s.insert('MemberTraining', { MemberID: memberId, TrainingClassID: t.trainingClassId, YearTaken: trainingYearToDate(t.year) });
+        }
+        (member as Row).WorkingStatusID = clean.workingStatusId;
+      });
+      return this.extensionsOf(s, memberId);
+    },
+  };
+
+  private extensionsOf(s: MemoryStore, memberId: number): MemberExtensions {
+    const find = <T>(table: string, id: unknown) => ({ ...s.rows(table).find((r) => r.id === id)! }) as unknown as T;
+    const member = s.rows('Member').find((m) => m.id === memberId)!;
+    const skills = (s.rows('MemberSkill').filter((r) => r.MemberID === memberId).map((r) => ({ ...r })) as unknown as MemberSkill[]).sort(
+      (a, b) => a.id - b.id,
+    );
+    const training = (
+      s.rows('MemberTraining').filter((r) => r.MemberID === memberId).map((r) => ({ ...r })) as unknown as MemberTraining[]
+    ).sort((a, b) => b.YearTaken.localeCompare(a.YearTaken) || a.id - b.id);
+    return {
+      workingStatus: member.WorkingStatusID == null ? null : find<WorkingStatus>('WorkingStatus', member.WorkingStatusID),
+      skills: skills.map((row) => ({ row, skill: find<Skill>('Skill', row.SkillID), level: find<SkillLevel>('SkillLevel', row.SkillLevelID) })),
+      training: training.map((row) => ({
+        row,
+        trainingClass: find<KOCTrainingClasses>('KOCTrainingClasses', row.TrainingClassID),
+        year: trainingDateToYear(row.YearTaken),
+      })),
+    };
+  }
+
+  communication: DataService['communication'] = {
+    listCouncilSkills: async (councilId) => {
+      const s = await this.ready();
+      const out: CouncilSkillEntry[] = [];
+      for (const ms of s.rows('MemberSkill')) {
+        const m = s.rows('Member').find((r) => r.id === ms.MemberID);
+        const skill = s.rows('Skill').find((r) => r.id === ms.SkillID);
+        const level = s.rows('SkillLevel').find((r) => r.id === ms.SkillLevelID);
+        if (!m || !skill || !level || m.CouncilID !== councilId) continue;
+        out.push({
+          memberId: m.id as number,
+          firstName: m.MemberFirstName as string,
+          lastName: m.MemberLastName as string,
+          phone: m.Phone as string,
+          email: m.Email as string,
+          skill: { ...skill } as unknown as Skill,
+          level: { ...level } as unknown as SkillLevel,
+        });
+      }
+      return out.sort(
+        (a, b) =>
+          a.skill.SkillName.localeCompare(b.skill.SkillName) ||
+          a.lastName.localeCompare(b.lastName) ||
+          a.firstName.localeCompare(b.firstName) ||
+          a.memberId - b.memberId,
+      );
+    },
+
+    sendBulkToSkills: async (councilId, skillId, messageText, senderId) => {
+      assertText(messageText, 'Message', 10_000);
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      const skill = s.rows('Skill').find((r) => r.id === skillId);
+      if (!skill) throw new BusinessRuleError('INVALID_INPUT', `No skill with id ${skillId}.`, { skillId });
+      const activeId = this.activeStatusId(s);
+      const holders = new Set(s.rows('MemberSkill').filter((r) => r.SkillID === skillId).map((r) => r.MemberID));
+      const recipientIds = s
+        .rows('Member')
+        .filter((m) => m.CouncilID === councilId && m.StatusID === activeId && m.id !== senderId && holders.has(m.id))
+        .map((m) => m.id as number)
+        .sort((a, b) => a - b);
+      if (recipientIds.length === 0) {
+        throw new BusinessRuleError(
+          'NO_RECIPIENTS',
+          `No other active member of council ${councilId} has the skill "${skill.SkillName}", so there is nobody to message.`,
+          { councilId, skillId },
+        );
+      }
+      const message = await this.messages.send({ senderId, councilId, recipientIds, text: messageText });
+      return { message, recipientIds };
+    },
+  };
+
+  donations: DataService['donations'] = {
+    listMethods: async (councilId) => {
+      const s = await this.ready();
+      const out = [];
+      for (const link of s.rows('CouncilDonationMethod').filter((r) => r.CouncilID === councilId)) {
+        const method = s.rows('DonationMethod').find((m) => m.id === link.DonationMethodID)!;
+        out.push({
+          method: { id: method.id as number, DonationMethod: method.DonationMethod as string },
+          kind: donationMethodKind(method.DonationMethod as string),
+          link: { ...link } as unknown as CouncilDonationMethod,
+          qrCodeUrl: (link.DonationMethodURL as string | null) || null,
+        });
+      }
+      return out.sort((a, b) => a.method.id - b.method.id || a.link.id - b.link.id);
+    },
+
+    listTypes: async (councilId) => {
+      const s = await this.ready();
+      return (s.rows('DonationType').filter((t) => t.CouncilID === councilId).map((t) => ({ ...t })) as unknown as DonationType[]).sort(
+        (a, b) => a.DonationType.localeCompare(b.DonationType) || a.id - b.id,
+      );
+    },
+
+    list: async (councilId, options) => {
+      const s = await this.ready();
+      const rows = s
+        .rows('Donation')
+        .filter((d) => d.CouncilID === councilId && (options?.eventId === undefined || d.EventID === options.eventId))
+        .map((d) => ({ ...d })) as unknown as Donation[];
+      return rows.sort((a, b) => b.DonationDate.localeCompare(a.DonationDate) || b.id - a.id);
+    },
+
+    record: async (donation) => {
+      const clean = cleanNewDonation(donation, this.now());
+      const s = await this.ready();
+      return s.transaction(() => {
+        this.assertCouncilsExist(s, [clean.CouncilID]);
+        const method = s.rows('DonationMethod').find((m) => m.id === clean.DonationMethodID);
+        if (!method) {
+          throw new BusinessRuleError('INVALID_INPUT', `No donation method with id ${clean.DonationMethodID}.`, {
+            donationMethodId: clean.DonationMethodID,
+          });
+        }
+        if (!s.rows('CouncilDonationMethod').some((r) => r.CouncilID === clean.CouncilID && r.DonationMethodID === clean.DonationMethodID)) {
+          throw new BusinessRuleError(
+            'DONATION_METHOD_NOT_ENABLED',
+            `Council ${clean.CouncilID} has not enabled ${method.DonationMethod} donations.`,
+            { councilId: clean.CouncilID, donationMethodId: clean.DonationMethodID },
+          );
+        }
+        assertDonationFitsMethod(donationMethodKind(method.DonationMethod as string), clean);
+        if (!s.rows('DonationType').some((t) => t.id === clean.DonationTypeID && t.CouncilID === clean.CouncilID)) {
+          throw new BusinessRuleError('INVALID_INPUT', `Council ${clean.CouncilID} has no donation type with id ${clean.DonationTypeID}.`, {
+            councilId: clean.CouncilID,
+            donationTypeId: clean.DonationTypeID,
+          });
+        }
+        if (clean.EventID != null) {
+          const event = this.requireEvent(s, clean.EventID) as unknown as CouncilEvent;
+          if (!this.councilIdsOf(s, event.id).includes(clean.CouncilID)) {
+            throw new BusinessRuleError('INVALID_INPUT', `"${event.EventName}" is not linked to council ${clean.CouncilID}.`, {
+              eventId: event.id,
+              councilId: clean.CouncilID,
+            });
+          }
+          assertDonationDateForEvent(clean.DonationDate, event);
+        }
+        return { ...s.insert('Donation', { ...clean }) } as unknown as Donation;
+      });
+    },
   };
 
   private activeStatusId(s: MemoryStore): number | undefined {
@@ -976,12 +1244,26 @@ export class MemoryDataService implements DataService {
     },
 
     setMinutes: async (meetingId, minutesUrl) => {
-      const url = minutesUrl === null ? null : assertText(minutesUrl, 'Minutes link', 255);
+      // MinutesURL is NOT NULL in Schema.sql, so "no minutes" is stored as ''.
+      const url = minutesUrl === null ? '' : assertText(minutesUrl, 'Minutes link', 255);
       const s = await this.ready();
       const row = s.rows('Meeting').find((m) => m.id === meetingId);
       if (!row) throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
       (row as Row).MinutesURL = url;
       return { ...row } as unknown as Meeting;
+    },
+
+    memberHours: async (memberId, range) => {
+      const s = await this.ready();
+      this.requireMember(s, memberId);
+      const from = range?.fromDate ?? '0000-01-01';
+      const to = range?.toDate ?? '9999-12-31';
+      const attendedIds = new Set(s.rows('MeetingInvites').filter((i) => i.MemberID === memberId && i.Attended === 1).map((i) => i.MeetingID));
+      const attended = s
+        .rows('Meeting')
+        .filter((m) => attendedIds.has(m.id) && (m.Date as string) >= from && (m.Date as string) <= to)
+        .map((m) => ({ ...m })) as unknown as Meeting[];
+      return { memberId, ...aggregateMeetingHours(attended) };
     },
   };
 
@@ -994,8 +1276,8 @@ export class MemoryDataService implements DataService {
       'Time Start': m['Time Start'],
       'Time End': m['Time End'],
       Location: m.Location,
-      Agenda: m.Agenda ?? null,
-      MinutesURL: m.MinutesURL ?? null,
+      Agenda: m.Agenda ?? '', // Agenda and MinutesURL are NOT NULL in Schema.sql: '' means "none yet"
+      MinutesURL: m.MinutesURL ?? '',
       MeetingType: m.MeetingType,
     });
     const meetingId = row.id as number;

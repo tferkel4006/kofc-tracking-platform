@@ -103,6 +103,7 @@ export interface Member {
   DegreeID: number;
   MemberTypeID: number;
   CredentialID: number;
+  WorkingStatusID?: number | null; // Phase 2: null until the member sets it
 }
 
 export interface MemberRoles {
@@ -257,8 +258,8 @@ export interface Meeting {
   "Time Start": string; // HH:MM:SS
   "Time End": string;   // HH:MM:SS
   Location: string;
-  Agenda?: string;
-  MinutesURL?: string; // Links directly to cloud PDF assets
+  Agenda?: string;     // NOT NULL in Schema.sql: drivers store '' when there is none
+  MinutesURL?: string; // Links directly to cloud PDF assets; '' until minutes are uploaded (NOT NULL in Schema.sql)
   MeetingType: number;
 }
 
@@ -269,3 +270,72 @@ export interface MeetingInvites {
   Attended: 1 | 0; // SQL BIT flag tracker
 }
 
+
+
+// 7. PHASE 2 EXTENSIONS: DONATIONS, SKILLS, TRAINING, WORKING STATUS
+export interface WorkingStatus {
+  id: number;
+  WorkingStatus: string; // e.g. 'Student', 'Full Time', 'Retired'
+}
+
+export interface DonationMethod {
+  id: number;
+  DonationMethod: string; // e.g. 'Cash', 'Venmo', 'Physical Items'
+}
+
+/** Council-specific donation categories (maintained by council admins). */
+export interface DonationType {
+  id: number;
+  CouncilID: number;
+  DonationType: string;
+}
+
+/** A donation method a council has enabled, with the QR image that routes digital payments to its account. */
+export interface CouncilDonationMethod {
+  id: number;
+  CouncilID: number;
+  DonationMethodID: number;
+  DonationMethodURL?: string | null;
+}
+
+export interface Donation {
+  id: number;
+  CouncilID: number;
+  DonationDate: string; // YYYY-MM-DD
+  DonationMethodID: number;
+  DonationTypeID: number;
+  Donor?: string | null;
+  DonationDesciption?: string | null; // sic: the schema's spelling
+  EventID?: number | null;            // null for a standalone donation
+  DonationAmount: number;             // for physical items, the estimated value
+  DonationPhotoURL?: string | null;
+}
+
+export interface Skill {
+  id: number;
+  SkillName: string;
+}
+
+export interface SkillLevel {
+  id: number;
+  SkillLevel: string; // e.g. 'Novice' ... 'Expert'
+}
+
+export interface MemberSkill {
+  id: number;
+  SkillID: number;
+  SkillLevelID: number;
+  MemberID: number;
+}
+
+export interface KOCTrainingClasses {
+  id: number;
+  ClassName: string;
+}
+
+export interface MemberTraining {
+  id: number;
+  MemberID: number;
+  TrainingClassID: number;
+  YearTaken: string; // DATE column; the year is what matters, stored as YYYY-01-01
+}

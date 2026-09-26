@@ -3,7 +3,10 @@
 // scripts/gen-db-assets.mjs. Nothing outside /services may import this file.
 import * as SQLite from 'expo-sqlite';
 import {
+  aggregateMeetingHours,
   assertActivityDateAllowed,
+  assertDonationDateForEvent,
+  assertDonationFitsMethod,
   assertEventRange,
   assertLookupKeyUnique,
   assertLookupNotProtected,
@@ -17,21 +20,30 @@ import {
   assertValidHours,
   buildThreadMessages,
   buildThreadSummaries,
+  buildWelcomeEmail,
   BusinessRuleError,
   cleanCouncilIds,
   cleanEventFields,
   cleanLookupValues,
+  cleanMemberExtensions,
+  cleanNewDonation,
   cleanNewEvent,
+  cleanNewMember,
   cleanNewShift,
   cleanShiftFields,
+  donationMethodKind,
   EVENT_COLUMNS,
   isSha256Hex,
   LOOKUP_META,
+  MEMBER_COLUMNS,
   participantIds,
   planEventCopy,
   SHIFT_COLUMNS,
   toTimestamp,
+  trainingDateToYear,
+  trainingYearToDate,
   UNREGISTERED_PASSWORD,
+  type CouncilAdminDetails,
   type MessagingRows,
 } from '@kofc/shared';
 import type {
@@ -39,7 +51,18 @@ import type {
   ActivityTime,
   ChatThread,
   Council,
+  CouncilDonationMethod,
+  CouncilSkillEntry,
   DataService,
+  Donation,
+  DonationType,
+  KOCTrainingClasses,
+  MemberExtensions,
+  MemberSkill,
+  MemberTraining,
+  Skill,
+  SkillLevel,
+  WorkingStatus,
   Event as CouncilEvent,
   EventChanges,
   EventSignup,
@@ -74,6 +97,7 @@ import {
   buildDevMessaging,
   DEV_ACTIVITY,
   DEV_AFFILIATED_COUNCIL,
+  DEV_COUNCIL_DONATION_METHODS,
   DEV_COUNCIL_NUMBER,
   DEV_UNAFFILIATED_COUNCIL,
   DEV_UNREGISTERED_MEMBER,
@@ -82,8 +106,12 @@ import {
 } from '../seed-dev';
 
 const DB_NAME = 'kofc.db';
-/** Bump when Schema.sql changes; stored in PRAGMA user_version. Migrations are a later concern. */
-const SCHEMA_VERSION = 1;
+/**
+ * Bump when Schema.sql changes; stored in PRAGMA user_version. Migrations are a later concern:
+ * a dev database created at an older version must be wiped with reset() (or the app reinstalled).
+ * 2: Phase 2 donations, skills, training and working status.
+ */
+const SCHEMA_VERSION = 2;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -148,14 +176,18 @@ type Bind = string | number | null;
 export interface SqliteDataServiceOptions {
   /** Clock used for seeding and the history-window rules. Tests pin it. Default: real time. */
   now?: () => Date;
+  /** Where system emails (the new-member welcome) go. Default: console.log (no mail infrastructure exists yet). */
+  log?: (...args: unknown[]) => void;
 }
 
 export class SqliteDataService implements DataService {
   private opening: Promise<SQLite.SQLiteDatabase> | null = null;
   private readonly now: () => Date;
+  private readonly log: (...args: unknown[]) => void;
 
   constructor(options: SqliteDataServiceOptions = {}) {
     this.now = options.now ?? (() => new Date());
+    this.log = options.log ?? console.log;
   }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -207,6 +239,7 @@ export class SqliteDataService implements DataService {
       await this.seedDevMeetings(db);
       await this.seedDevEvents(db);
       await this.seedDevExtras(db);
+      await this.seedDevDonationMethods(db);
       await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
     });
   }
@@ -523,6 +556,302 @@ export class SqliteDataService implements DataService {
       );
     },
     listRoles: async (memberId) => this.rolesFor(await this.ready(), memberId),
+
+    create: async (member) => {
+      const clean = cleanNewMember(member, this.now());
+      const db = await this.ready();
+      let id = 0;
+      await db.withTransactionAsync(async () => {
+        await this.assertCouncilsExist(db, [clean.CouncilID]);
+        await this.assertRowExists(db, 'MemberStatus', clean.StatusID, 'member status');
+        await this.assertRowExists(db, 'Degree', clean.DegreeID, 'degree');
+        await this.assertRowExists(db, 'MemberType', clean.MemberTypeID, 'member type');
+        if (clean.WorkingStatusID != null) await this.assertRowExists(db, 'WorkingStatus', clean.WorkingStatusID, 'working status');
+        const taken = await db.getFirstAsync<{ n: number }>(
+          `SELECT (SELECT COUNT(*) FROM [Member] WHERE [Email] = ? COLLATE NOCASE)
+                + (SELECT COUNT(*) FROM [Credentials] WHERE [Username] = ? COLLATE NOCASE) AS n`,
+          [clean.Email, clean.Email],
+        );
+        if ((taken?.n ?? 0) > 0) {
+          throw new BusinessRuleError('INVALID_INPUT', `The email ${clean.Email} already belongs to a member or login.`, {
+            email: clean.Email,
+          });
+        }
+        const cred = await db.runAsync('INSERT INTO [Credentials] ([Username], [Password]) VALUES (?, ?)', [
+          clean.Email,
+          UNREGISTERED_PASSWORD,
+        ]);
+        const cols = MEMBER_COLUMNS.filter((c) => clean[c] != null);
+        const res = await db.runAsync(
+          `INSERT INTO [Member] (${cols.map((c) => `[${c}]`).join(', ')}, [CredentialID]) VALUES (${marks(cols.length + 1)})`,
+          [...cols.map((c) => clean[c] as Bind), cred.lastInsertRowId],
+        );
+        id = res.lastInsertRowId;
+      });
+      const created = (await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]))!;
+      await this.sendWelcomeEmail(db, created);
+      return created;
+    },
+  };
+
+  /** System hook after members.create commits: compiles the welcome email and logs it (no mail server yet). */
+  private async sendWelcomeEmail(db: SQLite.SQLiteDatabase, member: Member): Promise<void> {
+    try {
+      const council = (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [member.CouncilID]))!;
+      const admin = await db.getFirstAsync<{ first: string; last: string; Email: string; Phone: string }>(
+        `SELECT m.[MemberFirstName] AS first, m.[MemberLastName] AS last, m.[Email], m.[Phone] FROM [Member] m
+          WHERE ${ACTIVE_MEMBER_FILTER} AND m.[id] <> ?
+            AND m.[MemberTypeID] = (SELECT [id] FROM [MemberType] WHERE [Type] = 'Admin')
+          ORDER BY m.[MemberLastName], m.[MemberFirstName], m.[id] LIMIT 1`,
+        [member.CouncilID, member.id],
+      );
+      const details: CouncilAdminDetails | null = admin
+        ? { name: `${admin.first} ${admin.last}`, email: admin.Email, phone: admin.Phone }
+        : null;
+      this.log('[notification]', JSON.stringify(buildWelcomeEmail({ member, council, admin: details }), null, 2));
+    } catch (err) {
+      // The member is already saved; a failed notification must not undo or fail that.
+      console.error('[notification] welcome email failed:', err);
+    }
+  }
+
+  /** Friendly INVALID_INPUT for a foreign key the generic constraint message would explain poorly. `table` is always a literal. */
+  private async assertRowExists(db: SQLite.SQLiteDatabase, table: string, id: number, label: string): Promise<void> {
+    if (!(await db.getFirstAsync(`SELECT [id] FROM [${table}] WHERE [id] = ?`, [id]))) {
+      throw new BusinessRuleError('INVALID_INPUT', `No ${label} with id ${id}.`, { table, id });
+    }
+  }
+
+  // ---- Phase 2: member profiles, skill messaging, donations -------------
+
+  memberProfiles: DataService['memberProfiles'] = {
+    getExtensions: async (memberId) => {
+      const db = await this.ready();
+      await this.requireMember(db, memberId);
+      return this.extensionsOf(db, memberId);
+    },
+
+    updateExtensions: async (memberId, skills, training, workingStatusId) => {
+      const clean = cleanMemberExtensions(skills, training, workingStatusId, this.now());
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        await this.requireMember(db, memberId);
+        for (const s of clean.skills) {
+          await this.assertRowExists(db, 'Skill', s.skillId, 'skill');
+          await this.assertRowExists(db, 'SkillLevel', s.skillLevelId, 'skill level');
+        }
+        for (const t of clean.training) await this.assertRowExists(db, 'KOCTrainingClasses', t.trainingClassId, 'training class');
+        if (clean.workingStatusId !== null) await this.assertRowExists(db, 'WorkingStatus', clean.workingStatusId, 'working status');
+
+        await db.runAsync('DELETE FROM [MemberSkill] WHERE [MemberID] = ?', [memberId]);
+        for (const s of clean.skills) {
+          await db.runAsync('INSERT INTO [MemberSkill] ([SkillID], [SkillLevelID], [MemberID]) VALUES (?, ?, ?)', [
+            s.skillId,
+            s.skillLevelId,
+            memberId,
+          ]);
+        }
+        await db.runAsync('DELETE FROM [MemberTraining] WHERE [MemberID] = ?', [memberId]);
+        for (const t of clean.training) {
+          await db.runAsync('INSERT INTO [MemberTraining] ([MemberID], [TrainingClassID], [YearTaken]) VALUES (?, ?, ?)', [
+            memberId,
+            t.trainingClassId,
+            trainingYearToDate(t.year),
+          ]);
+        }
+        await db.runAsync('UPDATE [Member] SET [WorkingStatusID] = ? WHERE [id] = ?', [clean.workingStatusId, memberId]);
+      });
+      return this.extensionsOf(db, memberId);
+    },
+  };
+
+  private async extensionsOf(db: SQLite.SQLiteDatabase, memberId: number): Promise<MemberExtensions> {
+    const member = await db.getFirstAsync<{ WorkingStatusID: number | null }>('SELECT [WorkingStatusID] FROM [Member] WHERE [id] = ?', [
+      memberId,
+    ]);
+    const workingStatus =
+      member?.WorkingStatusID == null
+        ? null
+        : ((await db.getFirstAsync<WorkingStatus>('SELECT * FROM [WorkingStatus] WHERE [id] = ?', [member.WorkingStatusID])) ?? null);
+    const skills = new Map((await db.getAllAsync<Skill>('SELECT * FROM [Skill]')).map((r) => [r.id, r]));
+    const levels = new Map((await db.getAllAsync<SkillLevel>('SELECT * FROM [SkillLevel]')).map((r) => [r.id, r]));
+    const classes = new Map((await db.getAllAsync<KOCTrainingClasses>('SELECT * FROM [KOCTrainingClasses]')).map((r) => [r.id, r]));
+    const skillRows = await db.getAllAsync<MemberSkill>('SELECT * FROM [MemberSkill] WHERE [MemberID] = ? ORDER BY [id]', [memberId]);
+    const trainingRows = await db.getAllAsync<MemberTraining>(
+      'SELECT * FROM [MemberTraining] WHERE [MemberID] = ? ORDER BY [YearTaken] DESC, [id]',
+      [memberId],
+    );
+    return {
+      workingStatus,
+      skills: skillRows.map((row) => ({ row, skill: skills.get(row.SkillID)!, level: levels.get(row.SkillLevelID)! })),
+      training: trainingRows.map((row) => ({
+        row,
+        trainingClass: classes.get(row.TrainingClassID)!,
+        year: trainingDateToYear(row.YearTaken),
+      })),
+    };
+  }
+
+  communication: DataService['communication'] = {
+    listCouncilSkills: async (councilId) => {
+      const db = await this.ready();
+      const rows = await db.getAllAsync<{
+        memberId: number;
+        firstName: string;
+        lastName: string;
+        phone: string;
+        email: string;
+        skillId: number;
+        SkillName: string;
+        levelId: number;
+        SkillLevel: string;
+      }>(
+        `SELECT m.[id] AS memberId, m.[MemberFirstName] AS firstName, m.[MemberLastName] AS lastName,
+                m.[Phone] AS phone, m.[Email] AS email,
+                s.[id] AS skillId, s.[SkillName], sl.[id] AS levelId, sl.[SkillLevel]
+           FROM [MemberSkill] ms
+           JOIN [Member] m ON m.[id] = ms.[MemberID]
+           JOIN [Skill] s ON s.[id] = ms.[SkillID]
+           JOIN [SkillLevel] sl ON sl.[id] = ms.[SkillLevelID]
+          WHERE m.[CouncilID] = ?
+          ORDER BY s.[SkillName], m.[MemberLastName], m.[MemberFirstName], m.[id]`,
+        [councilId],
+      );
+      return rows.map(
+        (r): CouncilSkillEntry => ({
+          memberId: r.memberId,
+          firstName: r.firstName,
+          lastName: r.lastName,
+          phone: r.phone,
+          email: r.email,
+          skill: { id: r.skillId, SkillName: r.SkillName },
+          level: { id: r.levelId, SkillLevel: r.SkillLevel },
+        }),
+      );
+    },
+
+    sendBulkToSkills: async (councilId, skillId, messageText, senderId) => {
+      assertText(messageText, 'Message', 10_000);
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      const skill = await db.getFirstAsync<Skill>('SELECT * FROM [Skill] WHERE [id] = ?', [skillId]);
+      if (!skill) throw new BusinessRuleError('INVALID_INPUT', `No skill with id ${skillId}.`, { skillId });
+      const rows = await db.getAllAsync<{ id: number }>(
+        `SELECT m.[id] FROM [Member] m
+          WHERE ${ACTIVE_MEMBER_FILTER} AND m.[id] <> ?
+            AND EXISTS (SELECT 1 FROM [MemberSkill] ms WHERE ms.[MemberID] = m.[id] AND ms.[SkillID] = ?)
+          ORDER BY m.[id]`,
+        [councilId, senderId, skillId],
+      );
+      const recipientIds = rows.map((r) => r.id);
+      if (recipientIds.length === 0) {
+        throw new BusinessRuleError(
+          'NO_RECIPIENTS',
+          `No other active member of council ${councilId} has the skill "${skill.SkillName}", so there is nobody to message.`,
+          { councilId, skillId },
+        );
+      }
+      const message = await this.messages.send({ senderId, councilId, recipientIds, text: messageText });
+      return { message, recipientIds };
+    },
+  };
+
+  donations: DataService['donations'] = {
+    listMethods: async (councilId) => {
+      const db = await this.ready();
+      const rows = await db.getAllAsync<CouncilDonationMethod & { MethodName: string }>(
+        `SELECT cdm.*, dm.[DonationMethod] AS MethodName FROM [CouncilDonationMethod] cdm
+           JOIN [DonationMethod] dm ON dm.[id] = cdm.[DonationMethodID]
+          WHERE cdm.[CouncilID] = ? ORDER BY dm.[id], cdm.[id]`,
+        [councilId],
+      );
+      return rows.map(({ MethodName, ...link }) => ({
+        method: { id: link.DonationMethodID, DonationMethod: MethodName },
+        kind: donationMethodKind(MethodName),
+        link,
+        qrCodeUrl: link.DonationMethodURL || null,
+      }));
+    },
+
+    listTypes: async (councilId) => {
+      const db = await this.ready();
+      return db.getAllAsync<DonationType>('SELECT * FROM [DonationType] WHERE [CouncilID] = ? ORDER BY [DonationType], [id]', [
+        councilId,
+      ]);
+    },
+
+    list: async (councilId, options) => {
+      const db = await this.ready();
+      const byEvent = options?.eventId !== undefined;
+      return db.getAllAsync<Donation>(
+        `SELECT * FROM [Donation] WHERE [CouncilID] = ?${byEvent ? ' AND [EventID] = ?' : ''}
+          ORDER BY [DonationDate] DESC, [id] DESC`,
+        byEvent ? [councilId, options!.eventId!] : [councilId],
+      );
+    },
+
+    record: async (donation) => {
+      const clean = cleanNewDonation(donation, this.now());
+      const db = await this.ready();
+      let id = 0;
+      await db.withTransactionAsync(async () => {
+        await this.assertCouncilsExist(db, [clean.CouncilID]);
+        const method = await db.getFirstAsync<{ DonationMethod: string }>('SELECT [DonationMethod] FROM [DonationMethod] WHERE [id] = ?', [
+          clean.DonationMethodID,
+        ]);
+        if (!method) {
+          throw new BusinessRuleError('INVALID_INPUT', `No donation method with id ${clean.DonationMethodID}.`, {
+            donationMethodId: clean.DonationMethodID,
+          });
+        }
+        const enabled = await db.getFirstAsync(
+          'SELECT [id] FROM [CouncilDonationMethod] WHERE [CouncilID] = ? AND [DonationMethodID] = ?',
+          [clean.CouncilID, clean.DonationMethodID],
+        );
+        if (!enabled) {
+          throw new BusinessRuleError(
+            'DONATION_METHOD_NOT_ENABLED',
+            `Council ${clean.CouncilID} has not enabled ${method.DonationMethod} donations.`,
+            { councilId: clean.CouncilID, donationMethodId: clean.DonationMethodID },
+          );
+        }
+        assertDonationFitsMethod(donationMethodKind(method.DonationMethod), clean);
+        if (!(await db.getFirstAsync('SELECT [id] FROM [DonationType] WHERE [id] = ? AND [CouncilID] = ?', [clean.DonationTypeID, clean.CouncilID]))) {
+          throw new BusinessRuleError('INVALID_INPUT', `Council ${clean.CouncilID} has no donation type with id ${clean.DonationTypeID}.`, {
+            councilId: clean.CouncilID,
+            donationTypeId: clean.DonationTypeID,
+          });
+        }
+        if (clean.EventID != null) {
+          const event = await this.requireEvent(db, clean.EventID);
+          if (!(await this.councilIdsOf(db, event.id)).includes(clean.CouncilID)) {
+            throw new BusinessRuleError('INVALID_INPUT', `"${event.EventName}" is not linked to council ${clean.CouncilID}.`, {
+              eventId: event.id,
+              councilId: clean.CouncilID,
+            });
+          }
+          assertDonationDateForEvent(clean.DonationDate, event);
+        }
+        const res = await db.runAsync(
+          `INSERT INTO [Donation] ([CouncilID], [DonationDate], [DonationMethodID], [DonationTypeID], [Donor],
+                                   [DonationDesciption], [EventID], [DonationAmount], [DonationPhotoURL])
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            clean.CouncilID,
+            clean.DonationDate,
+            clean.DonationMethodID,
+            clean.DonationTypeID,
+            clean.Donor ?? null,
+            clean.DonationDesciption ?? null,
+            clean.EventID ?? null,
+            clean.DonationAmount,
+            clean.DonationPhotoURL ?? null,
+          ],
+        );
+        id = res.lastInsertRowId;
+      });
+      return (await db.getFirstAsync<Donation>('SELECT * FROM [Donation] WHERE [id] = ?', [id]))!;
+    },
   };
 
   private rolesFor(db: SQLite.SQLiteDatabase, memberId: number): Promise<Role[]> {
@@ -1056,11 +1385,23 @@ export class SqliteDataService implements DataService {
     },
 
     setMinutes: async (meetingId, minutesUrl) => {
-      const url = minutesUrl === null ? null : assertText(minutesUrl, 'Minutes link', 255);
+      // MinutesURL is NOT NULL in Schema.sql, so "no minutes" is stored as ''.
+      const url = minutesUrl === null ? '' : assertText(minutesUrl, 'Minutes link', 255);
       const db = await this.ready();
       const res = await db.runAsync('UPDATE [Meeting] SET [MinutesURL] = ? WHERE [id] = ?', [url, meetingId]);
       if (res.changes === 0) throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
       return (await db.getFirstAsync<Meeting>('SELECT * FROM [Meeting] WHERE [id] = ?', [meetingId]))!;
+    },
+
+    memberHours: async (memberId, range) => {
+      const db = await this.ready();
+      await this.requireMember(db, memberId);
+      const attended = await db.getAllAsync<Meeting>(
+        `SELECT m.* FROM [MeetingInvites] i JOIN [Meeting] m ON m.[id] = i.[MeetingID]
+          WHERE i.[MemberID] = ? AND i.[Attended] = 1 AND m.[Date] BETWEEN ? AND ?`,
+        [memberId, range?.fromDate ?? '0000-01-01', range?.toDate ?? '9999-12-31'],
+      );
+      return { memberId, ...aggregateMeetingHours(attended) };
     },
   };
 
@@ -1081,8 +1422,8 @@ export class SqliteDataService implements DataService {
         m['Time Start'],
         m['Time End'],
         m.Location,
-        m.Agenda ?? null,
-        m.MinutesURL ?? null,
+        m.Agenda ?? '', // Agenda and MinutesURL are NOT NULL in Schema.sql: '' means "none yet"
+        m.MinutesURL ?? '',
         m.MeetingType,
       ],
     );
@@ -1340,6 +1681,18 @@ export class SqliteDataService implements DataService {
       });
     }
     return draft;
+  }
+
+  /** Enables every donation method for the test council (Seed.sql has no CouncilDonationMethod rows). */
+  private async seedDevDonationMethods(db: SQLite.SQLiteDatabase): Promise<void> {
+    for (const { method, qrUrl } of DEV_COUNCIL_DONATION_METHODS) {
+      const res = await db.runAsync(
+        `INSERT INTO [CouncilDonationMethod] ([CouncilID], [DonationMethodID], [DonationMethodURL])
+         SELECT c.[id], dm.[id], ? FROM [Council] c, [DonationMethod] dm WHERE c.[CouncilNumber] = ? AND dm.[DonationMethod] = ?`,
+        [qrUrl, DEV_COUNCIL_NUMBER, method],
+      );
+      if (res.changes !== 1) throw new Error(`Seed.sql is missing Council ${DEV_COUNCIL_NUMBER} or donation method ${method}`);
+    }
   }
 
   /** Extra councils, shared and historical events, no-show history and message threads for the new screens. */

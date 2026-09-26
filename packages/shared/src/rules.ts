@@ -8,7 +8,15 @@
 // Every date-window guard takes `now` so tests can pin the clock.
 // Dates are local-time YYYY-MM-DD strings, matching the schema's DATE columns.
 // =========================================================================
-import type { Shift } from './types';
+import type {
+  DonationMethodKind,
+  MeetingHoursEntry,
+  MemberSkillInput,
+  MemberTrainingInput,
+  NewDonation,
+  NewMember,
+} from './contract';
+import type { Meeting, Shift } from './types';
 
 /** Time entries move in 15-minute steps (Blueprint: "Time Increments & History Boundaries"). */
 export const HOURS_STEP = 0.25;
@@ -50,7 +58,9 @@ export type BusinessRuleCode =
   | 'MESSAGE_NOT_FOUND'
   | 'SHIFT_HAS_SIGNUPS'
   | 'LOOKUP_IN_USE'
-  | 'LOOKUP_PROTECTED';
+  | 'LOOKUP_PROTECTED'
+  | 'DONATION_METHOD_NOT_ENABLED'
+  | 'NO_RECIPIENTS';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -224,4 +234,209 @@ export function assertEventRange(startDate: string, endDate: string): void {
   if (endDate < startDate) {
     throw invalid(`The event ends (${endDate}) before it starts (${startDate}).`, { startDate, endDate });
   }
+}
+
+// ---- Phase 2: shift time, meeting hours, donations, member profiles ----------
+
+/**
+ * Specifications: "Time reported against a shift can be more than the shift's duration."
+ * A shift's StartTime-EndTime is its planned layout, not a cap: assertValidHours (15-minute
+ * steps, at most 24 per entry) is the only bound on hours logged against a shift.
+ */
+export const SHIFT_DURATION_IS_A_CEILING = false;
+
+/**
+ * Hours from `start` to `end` (HH:MM or HH:MM:SS), rounded to 2 decimals. An end before the
+ * start is taken to run past midnight, so 22:00-01:00 is 3 hours; equal times are 0.
+ */
+export function hoursBetween(start: string, end: string): number {
+  const minutes = (t: string) => {
+    const [h = 0, m = 0, s = 0] = t.split(':').map(Number);
+    return h * 60 + m + s / 60;
+  };
+  let span = minutes(end) - minutes(start);
+  if (span < 0) span += 24 * 60;
+  return Math.round((span / 60) * 100) / 100;
+}
+
+/** Length of a meeting in hours, from its Time Start and Time End. */
+export const meetingDurationHours = (m: Pick<Meeting, 'Time Start' | 'Time End'>): number =>
+  hoursBetween(m['Time Start'], m['Time End']);
+
+/**
+ * Meeting Hour Aggregator: orders attended meetings oldest first and adds a running total.
+ * Callers pass only meetings whose MeetingInvites row has Attended = 1.
+ */
+export function aggregateMeetingHours(
+  attended: readonly Pick<Meeting, 'id' | 'Meeting Name' | 'Date' | 'Time Start' | 'Time End'>[],
+): { totalHours: number; meetings: MeetingHoursEntry[] } {
+  const sorted = [...attended].sort(
+    (a, b) => a.Date.localeCompare(b.Date) || a['Time Start'].localeCompare(b['Time Start']) || a.id - b.id,
+  );
+  let running = 0;
+  const meetings = sorted.map((m) => {
+    const hours = meetingDurationHours(m);
+    running = Math.round((running + hours) * 100) / 100;
+    return { meetingId: m.id, meetingName: m['Meeting Name'], date: m.Date, hours, runningTotal: running };
+  });
+  return { totalHours: running, meetings };
+}
+
+/** DonationMethod names the phone UI treats specially; any other name a Super Admin adds is 'other'. */
+const DONATION_METHOD_KINDS: Record<string, DonationMethodKind> = {
+  cash: 'cash',
+  'credit card': 'card',
+  venmo: 'qr',
+  zelle: 'qr',
+  zeffy: 'qr',
+  parishsoft: 'qr',
+  'physical items': 'item',
+};
+
+export const donationMethodKind = (methodName: string): DonationMethodKind =>
+  DONATION_METHOD_KINDS[methodName.trim().toLowerCase()] ?? 'other';
+
+const optionalText = (value: unknown, label: string, maxLength: number): string | null => {
+  if (value === undefined || value === null) return null;
+  const text = assertText(value, label, maxLength, false);
+  return text === '' ? null : text;
+};
+
+export type CleanDonation = Omit<NewDonation, 'DonationDate'> & { DonationDate: string };
+
+/**
+ * Validates a new donation's own fields and fills DonationDate with today. The driver still checks
+ * the ids against the database (council, enabled method, the council's type, the council's event).
+ */
+export function cleanNewDonation(input: NewDonation, now: Date): CleanDonation {
+  const today = toIsoDate(now);
+  const date = input.DonationDate === undefined ? today : assertIsoDate(input.DonationDate, 'Donation date');
+  if (date > today) {
+    throw invalid(`Donation date ${date} is in the future (today is ${today}).`, { donationDate: date, today });
+  }
+  const amount = assertMoney(input.DonationAmount, 'Donation amount');
+  if (amount === 0) throw invalid('Donation amount must be greater than 0.', { label: 'Donation amount' });
+  return {
+    CouncilID: assertInteger(input.CouncilID, 'Council', 1),
+    DonationDate: date,
+    DonationMethodID: assertInteger(input.DonationMethodID, 'Donation method', 1),
+    DonationTypeID: assertInteger(input.DonationTypeID, 'Donation type', 1),
+    Donor: optionalText(input.Donor, 'Donor name', 100),
+    DonationDesciption: optionalText(input.DonationDesciption, 'Donation description', 255),
+    EventID: input.EventID == null ? null : assertInteger(input.EventID, 'Event', 1),
+    DonationAmount: amount,
+    DonationPhotoURL: optionalText(input.DonationPhotoURL, 'Donation photo link', 255),
+  };
+}
+
+/** Physical items are recorded with a description of what was given (the amount is its estimated value). */
+export function assertDonationFitsMethod(kind: DonationMethodKind, donation: Pick<NewDonation, 'DonationDesciption'>): void {
+  if (kind === 'item' && !donation.DonationDesciption) {
+    throw invalid('A physical-item donation needs a description of the items.', { kind });
+  }
+}
+
+/** Specifications: "Event donations can be made during or after an event." */
+export function assertDonationDateForEvent(date: string, event: { id: number; EventName: string; StartDate: string }): void {
+  if (date < event.StartDate) {
+    throw invalid(
+      `Donation date ${date} is before "${event.EventName}" starts (${event.StartDate}); event donations are recorded during or after the event.`,
+      { donationDate: date, eventId: event.id, startDate: event.StartDate },
+    );
+  }
+}
+
+/** The Knights of Columbus was founded in 1882; no training can predate it. */
+export const EARLIEST_TRAINING_YEAR = 1882;
+
+/** Validates the lists for memberProfiles.updateExtensions. Ids are checked against the database by the driver. */
+export function cleanMemberExtensions(
+  skills: readonly MemberSkillInput[],
+  training: readonly MemberTrainingInput[],
+  workingStatusId: number | null,
+  now: Date,
+): { skills: MemberSkillInput[]; training: MemberTrainingInput[]; workingStatusId: number | null } {
+  if (!Array.isArray(skills) || !Array.isArray(training)) {
+    throw invalid('Skills and training must each be a list (use an empty list to clear them).');
+  }
+  const seenSkills = new Set<number>();
+  const cleanSkills = skills.map((s) => {
+    const skillId = assertInteger(s?.skillId, 'Skill', 1);
+    const skillLevelId = assertInteger(s?.skillLevelId, 'Skill level', 1);
+    if (seenSkills.has(skillId)) throw invalid(`Skill ${skillId} is listed more than once.`, { skillId });
+    seenSkills.add(skillId);
+    return { skillId, skillLevelId };
+  });
+  const thisYear = now.getFullYear();
+  const seenClasses = new Set<string>();
+  const cleanTraining = training.map((t) => {
+    const trainingClassId = assertInteger(t?.trainingClassId, 'Training class', 1);
+    const year = assertInteger(t?.year, 'Training year', EARLIEST_TRAINING_YEAR);
+    if (year > thisYear) throw invalid(`Training year ${year} is in the future (this year is ${thisYear}).`, { year });
+    const key = `${trainingClassId}:${year}`;
+    if (seenClasses.has(key)) {
+      throw invalid(`Training class ${trainingClassId} is listed twice for ${year}.`, { trainingClassId, year });
+    }
+    seenClasses.add(key);
+    return { trainingClassId, year };
+  });
+  return {
+    skills: cleanSkills,
+    training: cleanTraining,
+    workingStatusId: workingStatusId === null ? null : assertInteger(workingStatusId, 'Working status', 1),
+  };
+}
+
+/** MemberTraining.YearTaken is a DATE; the year is stored as January 1st. */
+export const trainingYearToDate = (year: number): string => `${year}-01-01`;
+export const trainingDateToYear = (date: string): number => Number(date.slice(0, 4));
+
+/** Columns members.create writes, besides CredentialID. The only member names a driver interpolates into SQL. */
+export const MEMBER_COLUMNS = [
+  'CouncilID',
+  'MemberNumber',
+  'MemberFirstName',
+  'MemberLastName',
+  'Phone',
+  'StreetAddress1',
+  'StreetAddress2',
+  'City',
+  'State',
+  'ZipCode',
+  'Email',
+  'DateOfBirth',
+  'StatusID',
+  'DegreeID',
+  'MemberTypeID',
+  'WorkingStatusID',
+] as const satisfies readonly (keyof NewMember)[];
+
+/** Validates a new member's fields against Schema.sql's lengths. Ids are checked against the database by the driver. */
+export function cleanNewMember(input: NewMember, now: Date): NewMember {
+  const allowed = new Set<string>(MEMBER_COLUMNS);
+  for (const key of Object.keys(input)) {
+    if (!allowed.has(key)) throw invalid(`A member has no field "${key}".`, { field: key });
+  }
+  const email = assertText(input.Email, 'Email', 50);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid(`Email "${email}" is not a valid address.`, { email });
+  const dob = assertIsoDate(input.DateOfBirth, 'Date of birth');
+  if (dob >= toIsoDate(now)) throw invalid(`Date of birth ${dob} must be in the past.`, { dateOfBirth: dob });
+  return {
+    CouncilID: assertInteger(input.CouncilID, 'Council', 1),
+    MemberNumber: assertInteger(input.MemberNumber, 'Member number', 1),
+    MemberFirstName: assertText(input.MemberFirstName, 'First name', 100),
+    MemberLastName: assertText(input.MemberLastName, 'Last name', 100),
+    Phone: assertText(input.Phone, 'Phone', 50),
+    StreetAddress1: assertText(input.StreetAddress1, 'Street address', 255),
+    StreetAddress2: optionalText(input.StreetAddress2, 'Street address line 2', 255) ?? undefined,
+    City: assertText(input.City, 'City', 50),
+    State: assertText(input.State, 'State', 20),
+    ZipCode: assertText(input.ZipCode, 'ZIP code', 15),
+    Email: email,
+    DateOfBirth: dob,
+    StatusID: assertInteger(input.StatusID, 'Member status', 1),
+    DegreeID: assertInteger(input.DegreeID, 'Degree', 1),
+    MemberTypeID: assertInteger(input.MemberTypeID, 'Member type', 1),
+    WorkingStatusID: input.WorkingStatusID == null ? null : assertInteger(input.WorkingStatusID, 'Working status', 1),
+  };
 }

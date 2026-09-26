@@ -34,6 +34,21 @@ export function createRemoteDataService(): DataService {
       getByEmail: notImplemented('members.getByEmail'),
       listByCouncil: notImplemented('members.listByCouncil'),
       listRoles: notImplemented('members.listRoles'),
+      create: notImplemented('members.create'),
+    },
+    memberProfiles: {
+      getExtensions: notImplemented('memberProfiles.getExtensions'),
+      updateExtensions: notImplemented('memberProfiles.updateExtensions'),
+    },
+    communication: {
+      listCouncilSkills: notImplemented('communication.listCouncilSkills'),
+      sendBulkToSkills: notImplemented('communication.sendBulkToSkills'),
+    },
+    donations: {
+      listMethods: notImplemented('donations.listMethods'),
+      listTypes: notImplemented('donations.listTypes'),
+      list: notImplemented('donations.list'),
+      record: notImplemented('donations.record'),
     },
     events: {
       get: notImplemented('events.get'),
@@ -70,6 +85,7 @@ export function createRemoteDataService(): DataService {
       invite: notImplemented('meetings.invite'),
       setAttended: notImplemented('meetings.setAttended'),
       setMinutes: notImplemented('meetings.setMinutes'),
+      memberHours: notImplemented('meetings.memberHours'),
     },
     messages: {
       getPage: notImplemented('messages.getPage'),

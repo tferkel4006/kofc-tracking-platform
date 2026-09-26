@@ -145,7 +145,8 @@ function parseSchema(sql) {
       if (!pk.length) fail(`[${name}] has no PRIMARY KEY`, stmt);
       for (const c of pk) if (!columns.some((x) => x.name === c)) fail(`PK column [${c}] missing on [${name}]`, stmt);
       tables.set(name, { columns, pk, fks: [] });
-    } else if ((m = stmt.match(/^ALTER TABLE \[([^\]]+)\]\s+ADD FOREIGN KEY\s*\(\[([^\]]+)\]\)\s+REFERENCES\s+\[?([^\s(\]]+)\]?\s*(?:\(\[?([^\])]+)\]?\))?$/i))) {
+    } else if ((m = stmt.match(/^ALTER TABLE \[([^\]]+)\]\s+ADD FOREIGN KEY\s*\(\[([^\]]+)\]\)\s+REFERENCES\s+\[?([^\s(\]]+)\]?\s*(?:\(\[?([^\])]+)\]?\))?(?:\s+ON\s+(?:UPDATE|DELETE)\s+NO\s+ACTION)*$/i))) {
+      // ON UPDATE/DELETE NO ACTION is SQLite's default too, so the clauses need no translation.
       alters.push({ table: m[1], column: m[2], refTable: m[3], refColumn: m[4] ?? null, stmt });
     } else if ((m = stmt.match(/^CREATE INDEX \[([^\]]+)\]\s+ON\s+\[([^\]]+)\]\s*\(([^)]*)\)(?:\s*INCLUDE\s*\([^)]*\))?$/i))) {
       indexes.push({ name: m[1], table: m[2], columns: m[3].trim(), stmt });

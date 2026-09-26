@@ -35,17 +35,17 @@ Record time against shift
 Record time against activities
 Send messages
 Entities:
-Member – Roster of members
-Event – Scheduled events
-Shift – Shifts for scheduled events
-Meetings – Scheduled meetings for council
-MeetingInvites – List of members invited to meeting and whether they showed up
-Credentials – Login credentials
-Activity – Ongoing activities
-Council – Organization members belong to
-Parish – Parish(s) associated with council
-Pastor – Pastor(s) associated with parish
-LessonsLearned – Knowledgebase of learnings from past events
+Member   Roster of members
+Event   Scheduled events
+Shift   Shifts for scheduled events
+Meetings   Scheduled meetings for council
+MeetingInvites   List of members invited to meeting and whether they showed up
+Credentials   Login credentials
+Activity   Ongoing activities
+Council   Organization members belong to
+Parish   Parish(s) associated with council
+Pastor   Pastor(s) associated with parish
+LessonsLearned   Knowledgebase of learnings from past events
 Message
 DistributionList
 MessageAttachments
@@ -60,9 +60,9 @@ An event has one member owner.
 Member can only belong to one council.
 A meeting can have multiple attendees
 Transactional tables:
-ActivityTime – Tracks time logged against activities by members
-EventSignup – Tracks who is signed up for which shifts for an event
-EventTime – Tracks time logged against shifts for events by members
+ActivityTime   Tracks time logged against activities by members
+EventSignup   Tracks who is signed up for which shifts for an event
+EventTime   Tracks time logged against shifts for events by members
 ReadReceipts
 Lookup Tables:
 MemberStatus
@@ -144,12 +144,113 @@ What activities have I done lately?
 Report 15 minutes against garbage collection for me for today
 Take me off event-shift B
 I can work event-shift A but I will be fifteen minutes late
-I didn’t make it to event-shift B because I forgot
+I didn t make it to event-shift B because I forgot
 Show me who is in my council
 Show me the officers in my council
 Send a message to the people who are working the event-shift A with me that I will be 15 minutes late
 What meetings to I have coming up?
 What were the minutes from the last meeting?
+
+Enhancements
+These are enhancements to the application including a new ability to accept donations along with enhancements to member and meeting.
+Entities
+Donation
+MemberSkill
+MemberTraining
+Lookups
+DonationType
+DonationMethod
+WorkingStatus
+Skill
+SkillLevel
+KOCTrainingClasses
+CouncilDonationMethod
+Workingstatus, skill, donationmethod, KOCTrainingClasses, and skilllevel are lookup tables maintained by super admin.
+Donation type and councildonationmethod are lookup tables maintained by council admins.
+Donation Details
+Donations are tracked by council.
+Donations can be associated with an event or standalone.
+Donation methods include:
+Cash
+Credit card
+Venmo
+Zelle
+Zeffy
+Parishsoft
+Physical items
+Donation methods are enabled by council.
+When presenting donation method options for a new donation it needs to be very easy and quick to pick one, not scrolling through drop down.
+Upload and store QR code image files for Venmo, Zelle, Zeffy and Parishsoft in Azure Blob storage which direct donations to the proper account by council.
+When recording a donation for Venmo, Zelle, Zeffy or Parishsoft present the QR code on the memberâ€™s phone. The member will present the QR code to the donor and the donor will scan it in the appropriate application on their phone, enter an amount to complete the transaction and present the confirmation to the member. At that point the member can record the donation, changing the amount donated if different from default amount and description if different from default and donation type if different from default. Allow them to cancel as well if necessary.
+Capture picture of donated physical items, along with description and estimated value.
+Events can have multiple donations.
+Any member can record a donation.
+When recording donations for an event you should only have to specify the event for the first donation, all subsequent donations should be associated with the event until the person indicates the event is over. One possible solution is to have the member open the event on the phone, click Start Accepting Donations, enter in default amount and description.
+Multiple people can accept donations for an event at the same time from different phones.
+Track donation amount, date, time, method, description(optional), donation type, donorâ€™s name(optional) and event if applicable.
+Donations are generally anonymous but if available be able to capture donors name.
+There can be a default amount, default donation type and default description for event donations.
+Event donations can be made during or after an event.
+Donations should be optimized for the phone.
+Donation types are council specific.
+Build out a Stripe ability to accept credit card donations without an active Stripe merchant account.
+Stripe merchant accounts are council specific.
+Council specific setting whether to pass on credit card fee and what the percentage is.
+Shift Time Reporting Enhancement Details
+Time reported against a shift can be more than the shiftâ€™s duration.
+Meeting Enhancement Details
+Be able to record attendance at/ during meeting.
+Upload meeting minutes to Azure blob storage, typically a Word document.
+Provide basic text formatting functions for large text entry fields including bold, italics, underline, font size and font color.
+Calculate amount of time member spent in meetings based on attendance and duration of meetings.
+Track member meeting hours.
+Member Enhancement Details
+When a record is added to the Member table send an email to that person telling them they now have access to the app, what the app is, how to download the app or access the website, how to login and who their council admin is if they have any questions.
+Track KOC training classes taken by member and in what year.
+KOC training classes include:
+Background check
+Preventing Abuse and Protecting Those We Serve
+Track member skills and skill level.
+Member can have multiple skills.
+Skills include:
+Bartending
+Carpentry
+Plumbing
+Electrical
+Automotive
+Mechanical
+Cooking
+Baking
+Canning
+Graphic Arts
+Finances
+Computer
+Marketing
+Masonry
+Heating/Cooling
+Skill levels include:
+Novice
+Beginner
+Intermediate
+Senior
+Expert
+Member can maintain their own contact, training and skill information.
+View all skills associated with a council.
+Select council skills and see members with those skills and be able to message them.
+Track member working status.
+Working statuses include:
+Student
+Full time
+Part time
+Retired
+Unemployed
+Transfer members between councils including:
+	Requires both councils using system
+	Retain history from previous council
+	Receiving council initiates
+
+
+
 
 
 

@@ -385,3 +385,19 @@ export function buildDevMessaging(): { threads: DevThread[]; messages: DevMessag
     ],
   };
 }
+
+// ---- Phase 2 dev fixtures ---------------------------------------------------
+
+/**
+ * Donation methods enabled for the test council. The digital methods carry a placeholder QR image
+ * until real ones are uploaded to Azure Blob storage.
+ */
+export const DEV_COUNCIL_DONATION_METHODS: readonly { method: string; qrUrl: string | null }[] = [
+  { method: 'Cash', qrUrl: null },
+  { method: 'Credit Card', qrUrl: null },
+  { method: 'Venmo', qrUrl: 'placeholder://qr/venmo.png' },
+  { method: 'Zelle', qrUrl: 'placeholder://qr/zelle.png' },
+  { method: 'Zeffy', qrUrl: 'placeholder://qr/zeffy.png' },
+  { method: 'Parishsoft', qrUrl: 'placeholder://qr/parishsoft.png' },
+  { method: 'Physical Items', qrUrl: null },
+];
