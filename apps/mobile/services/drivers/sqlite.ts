@@ -3,6 +3,7 @@
 // scripts/gen-db-assets.mjs. Nothing outside /services may import this file.
 import * as SQLite from 'expo-sqlite';
 import {
+  ACTIVITY_COLUMNS,
   aggregateMeetingHours,
   assertActivityDateAllowed,
   assertDonationDateForEvent,
@@ -13,9 +14,13 @@ import {
   assertLookupUnused,
   assertMayCreateMember,
   assertMayEditMemberExtensions,
+  assertMayMaintainCouncilRecords,
+  assertMayMaintainCouncils,
   assertMayMaintainLookups,
   assertMayUpdateMember,
   assertPasswordAcceptable,
+  assertRecordUnused,
+  assertRecordValueUnique,
   assertShiftHasRoom,
   assertShiftInsideEvent,
   assertShiftReportAllowed,
@@ -26,29 +31,42 @@ import {
   buildThreadSummaries,
   buildWelcomeEmail,
   BusinessRuleError,
+  cleanActivity,
+  cleanCouncil,
   cleanCouncilIds,
+  cleanDistributionListChanges,
   cleanEventFields,
   cleanLookupValues,
   cleanMemberExtensions,
+  cleanNewDistributionList,
   cleanNewDonation,
   cleanNewEvent,
   cleanNewMember,
   cleanNewShift,
+  cleanParish,
+  cleanPastor,
   cleanShiftFields,
+  COUNCIL_COLUMNS,
   donationMethodKind,
   EVENT_COLUMNS,
   isSha256Hex,
   LOOKUP_META,
   mergeMemberChanges,
+  mergeRecordChanges,
   MEMBER_COLUMNS,
+  PARISH_COLUMNS,
   participantIds,
+  PASTOR_COLUMNS,
   planEventCopy,
+  RECORD_REFERENCES,
+  recordNotFound,
   SHIFT_COLUMNS,
   toTimestamp,
   trainingDateToYear,
   trainingYearToDate,
   UNREGISTERED_PASSWORD,
   type CouncilAdminDetails,
+  type MaintainedTable,
   type MemberWriteActor,
   type MessagingRows,
 } from '@kofc/shared';
@@ -60,13 +78,21 @@ import type {
   CouncilDonationMethod,
   CouncilSkillEntry,
   DataService,
+  DistributionLists,
+  DistributionListSummary,
   Donation,
   DonationType,
   KOCTrainingClasses,
   MemberExtensions,
   MemberSkill,
   MemberTraining,
+  NewActivity,
+  NewCouncil,
   NewMember,
+  NewParish,
+  NewPastor,
+  Parish,
+  Pastor,
   Skill,
   SkillLevel,
   WorkingStatus,
@@ -179,6 +205,8 @@ async function selectIn<T>(
 }
 
 type Bind = string | number | null;
+
+const noParish = (parishId: number) => new BusinessRuleError('INVALID_INPUT', `No parish with id ${parishId}.`, { parishId });
 
 export interface SqliteDataServiceOptions {
   /** Clock used for seeding and the history-window rules. Tests pin it. Default: real time. */
@@ -533,7 +561,172 @@ export class SqliteDataService implements DataService {
         [councilId, councilId, councilId],
       );
     },
+
+    create: async (actorId, council) => {
+      const db = await this.ready();
+      assertMayMaintainCouncils(await this.memberWriteActor(db, actorId), 'add councils');
+      const clean = cleanCouncil(council);
+      let id = 0;
+      await db.withTransactionAsync(async () => {
+        const rows = await db.getAllAsync<Record<string, unknown>>('SELECT [id], [CouncilNumber] FROM [Council]');
+        assertRecordValueUnique('Council', rows, 'CouncilNumber', clean.CouncilNumber, 'by another council');
+        id = await this.insertRecord(db, 'Council', COUNCIL_COLUMNS, clean);
+      });
+      return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [id]))!;
+    },
+
+    update: async (actorId, id, changes) => {
+      const db = await this.ready();
+      assertMayMaintainCouncils(await this.memberWriteActor(db, actorId), `change council ${id}`);
+      await db.withTransactionAsync(async () => {
+        const row = await this.requireRecord(db, 'Council', id);
+        const clean = cleanCouncil(mergeRecordChanges<NewCouncil>(row, changes, COUNCIL_COLUMNS));
+        const rows = await db.getAllAsync<Record<string, unknown>>('SELECT [id], [CouncilNumber] FROM [Council]');
+        assertRecordValueUnique('Council', rows, 'CouncilNumber', clean.CouncilNumber, 'by another council', id);
+        await this.updateRecord(db, 'Council', id, COUNCIL_COLUMNS, clean);
+      });
+      return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [id]))!;
+    },
+
+    remove: async (actorId, id) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayMaintainCouncils(await this.memberWriteActor(db, actorId), `delete council ${id}`);
+        const row = await this.requireRecord(db, 'Council', id);
+        await this.assertRecordUnused(db, 'Council', id, `${String(row.CouncilNumber)} ${String(row.CouncilName)}`);
+        await db.runAsync('DELETE FROM [Council] WHERE [id] = ?', [id]);
+      });
+    },
   };
+
+  // ---- council-level maintenance: parishes, pastors, activities, lists ----
+
+  parishes: DataService['parishes'] = {
+    listByCouncil: async (councilId) => {
+      const db = await this.ready();
+      return db.getAllAsync<Parish>('SELECT * FROM [Parish] WHERE [CouncilID] = ? ORDER BY [Name] COLLATE NOCASE, [id]', [councilId]);
+    },
+
+    get: async (id) => {
+      const db = await this.ready();
+      return (await db.getFirstAsync<Parish>('SELECT * FROM [Parish] WHERE [id] = ?', [id])) ?? null;
+    },
+
+    create: async (actorId, parish) => {
+      const clean = cleanParish(parish);
+      const db = await this.ready();
+      assertMayMaintainCouncilRecords(await this.memberWriteActor(db, actorId), clean.CouncilID, 'add parishes');
+      let id = 0;
+      await db.withTransactionAsync(async () => {
+        await this.assertCouncilsExist(db, [clean.CouncilID]);
+        await this.assertParishNameUnique(db, clean);
+        id = await this.insertRecord(db, 'Parish', PARISH_COLUMNS, clean);
+      });
+      return (await db.getFirstAsync<Parish>('SELECT * FROM [Parish] WHERE [id] = ?', [id]))!;
+    },
+
+    update: async (actorId, id, changes) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireRecord(db, 'Parish', id);
+        assertMayMaintainCouncilRecords(actor, row.CouncilID as number, `change parish ${id}`);
+        const clean = cleanParish(mergeRecordChanges<NewParish>(row, changes, PARISH_COLUMNS));
+        if (clean.CouncilID !== row.CouncilID) {
+          assertMayMaintainCouncilRecords(actor, clean.CouncilID, `move parish ${id}`);
+          await this.assertCouncilsExist(db, [clean.CouncilID]);
+        }
+        await this.assertParishNameUnique(db, clean, id);
+        await this.updateRecord(db, 'Parish', id, PARISH_COLUMNS, clean);
+      });
+      return (await db.getFirstAsync<Parish>('SELECT * FROM [Parish] WHERE [id] = ?', [id]))!;
+    },
+
+    remove: async (actorId, id) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireRecord(db, 'Parish', id);
+        assertMayMaintainCouncilRecords(actor, row.CouncilID as number, `delete parish ${id}`);
+        await this.assertRecordUnused(db, 'Parish', id, String(row.Name));
+        await db.runAsync('DELETE FROM [Parish] WHERE [id] = ?', [id]);
+      });
+    },
+  };
+
+  private async assertParishNameUnique(db: SQLite.SQLiteDatabase, clean: NewParish, ignoreId?: number): Promise<void> {
+    const siblings = await db.getAllAsync<Record<string, unknown>>('SELECT [id], [Name] FROM [Parish] WHERE [CouncilID] = ?', [
+      clean.CouncilID,
+    ]);
+    assertRecordValueUnique('Parish', siblings, 'Name', clean.Name, `in council ${clean.CouncilID}`, ignoreId);
+  }
+
+  pastors: DataService['pastors'] = {
+    listByParish: async (parishId) => {
+      const db = await this.ready();
+      return db.getAllAsync<Pastor>(
+        'SELECT * FROM [Pastor] WHERE [ParishID] = ? ORDER BY [LastName] COLLATE NOCASE, [FirstName] COLLATE NOCASE, [id]',
+        [parishId],
+      );
+    },
+
+    listByCouncil: async (councilId) => {
+      const db = await this.ready();
+      return db.getAllAsync<Pastor>(
+        `SELECT p.* FROM [Pastor] p JOIN [Parish] pa ON pa.[id] = p.[ParishID]
+          WHERE pa.[CouncilID] = ?
+          ORDER BY p.[LastName] COLLATE NOCASE, p.[FirstName] COLLATE NOCASE, p.[id]`,
+        [councilId],
+      );
+    },
+
+    create: async (actorId, pastor) => {
+      const clean = cleanPastor(pastor);
+      const db = await this.ready();
+      let id = 0;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const councilId = await this.parishCouncilId(db, clean.ParishID);
+        // A non-admin hears ADMIN_REQUIRED even for an unknown parish; the parish only decides the tenant.
+        assertMayMaintainCouncilRecords(actor, councilId ?? actor.councilId, 'add pastors');
+        if (councilId === null) throw noParish(clean.ParishID);
+        id = await this.insertRecord(db, 'Pastor', PASTOR_COLUMNS, clean);
+      });
+      return (await db.getFirstAsync<Pastor>('SELECT * FROM [Pastor] WHERE [id] = ?', [id]))!;
+    },
+
+    update: async (actorId, id, changes) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireRecord(db, 'Pastor', id);
+        assertMayMaintainCouncilRecords(actor, (await this.parishCouncilId(db, row.ParishID as number))!, `change pastor ${id}`);
+        const clean = cleanPastor(mergeRecordChanges<NewPastor>(row, changes, PASTOR_COLUMNS));
+        if (clean.ParishID !== row.ParishID) {
+          const councilId = await this.parishCouncilId(db, clean.ParishID);
+          assertMayMaintainCouncilRecords(actor, councilId ?? actor.councilId, `move pastor ${id}`);
+          if (councilId === null) throw noParish(clean.ParishID);
+        }
+        await this.updateRecord(db, 'Pastor', id, PASTOR_COLUMNS, clean);
+      });
+      return (await db.getFirstAsync<Pastor>('SELECT * FROM [Pastor] WHERE [id] = ?', [id]))!;
+    },
+
+    remove: async (actorId, id) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireRecord(db, 'Pastor', id);
+        assertMayMaintainCouncilRecords(actor, (await this.parishCouncilId(db, row.ParishID as number))!, `delete pastor ${id}`);
+        await db.runAsync('DELETE FROM [Pastor] WHERE [id] = ?', [id]);
+      });
+    },
+  };
+
+  /** The parish's council, or null when there is no such parish. */
+  private async parishCouncilId(db: SQLite.SQLiteDatabase, parishId: number): Promise<number | null> {
+    return (await db.getFirstAsync<{ CouncilID: number }>('SELECT [CouncilID] FROM [Parish] WHERE [id] = ?', [parishId]))?.CouncilID ?? null;
+  }
 
   activities: DataService['activities'] = {
     listByCouncil: async (councilId) => {
@@ -542,7 +735,221 @@ export class SqliteDataService implements DataService {
         councilId,
       ]);
     },
+
+    get: async (id) => {
+      const db = await this.ready();
+      return (await db.getFirstAsync<Activities>('SELECT * FROM [Activities] WHERE [id] = ?', [id])) ?? null;
+    },
+
+    create: async (actorId, activity) => {
+      const clean = cleanActivity(activity);
+      const db = await this.ready();
+      assertMayMaintainCouncilRecords(await this.memberWriteActor(db, actorId), clean.CouncilID, 'add activities');
+      let id = 0;
+      await db.withTransactionAsync(async () => {
+        await this.assertActivityReferences(db, clean);
+        await this.assertActivityNameUnique(db, clean);
+        id = await this.insertRecord(db, 'Activities', ACTIVITY_COLUMNS, clean);
+      });
+      return (await db.getFirstAsync<Activities>('SELECT * FROM [Activities] WHERE [id] = ?', [id]))!;
+    },
+
+    update: async (actorId, id, changes) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireRecord(db, 'Activities', id);
+        assertMayMaintainCouncilRecords(actor, row.CouncilID as number, `change activity ${id}`);
+        const clean = cleanActivity(mergeRecordChanges<NewActivity>(row, changes, ACTIVITY_COLUMNS));
+        if (clean.CouncilID !== row.CouncilID) assertMayMaintainCouncilRecords(actor, clean.CouncilID, `move activity ${id}`);
+        await this.assertActivityReferences(db, clean);
+        await this.assertActivityNameUnique(db, clean, id);
+        await this.updateRecord(db, 'Activities', id, ACTIVITY_COLUMNS, clean);
+      });
+      return (await db.getFirstAsync<Activities>('SELECT * FROM [Activities] WHERE [id] = ?', [id]))!;
+    },
+
+    remove: async (actorId, id) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireRecord(db, 'Activities', id);
+        assertMayMaintainCouncilRecords(actor, row.CouncilID as number, `delete activity ${id}`);
+        await this.assertRecordUnused(db, 'Activities', id, String(row.ActivityName));
+        await db.runAsync('DELETE FROM [Activities] WHERE [id] = ?', [id]);
+      });
+    },
   };
+
+  private async assertActivityReferences(db: SQLite.SQLiteDatabase, clean: NewActivity): Promise<void> {
+    await this.assertCouncilsExist(db, [clean.CouncilID]);
+    await this.assertRowExists(db, 'Category', clean.CategoryID, 'activity category');
+  }
+
+  private async assertActivityNameUnique(db: SQLite.SQLiteDatabase, clean: NewActivity, ignoreId?: number): Promise<void> {
+    const siblings = await db.getAllAsync<Record<string, unknown>>(
+      'SELECT [id], [ActivityName] FROM [Activities] WHERE [CouncilID] = ?',
+      [clean.CouncilID],
+    );
+    assertRecordValueUnique('Activities', siblings, 'ActivityName', clean.ActivityName, `in council ${clean.CouncilID}`, ignoreId);
+  }
+
+  distributionLists: DataService['distributionLists'] = {
+    listByCouncil: async (councilId) => {
+      const db = await this.ready();
+      const lists = await db.getAllAsync<DistributionLists>(
+        'SELECT * FROM [DistributionLists] WHERE [CouncilID] = ? ORDER BY [ListName] COLLATE NOCASE, [id]',
+        [councilId],
+      );
+      const members = await db.getAllAsync<{ ListID: number; MemberID: number }>(
+        `SELECT m.[ListID], m.[MemberID] FROM [DistributionListMembers] m
+           JOIN [DistributionLists] l ON l.[id] = m.[ListID]
+          WHERE l.[CouncilID] = ? ORDER BY m.[MemberID]`,
+        [councilId],
+      );
+      return lists.map((list) => ({ list, memberIds: members.filter((m) => m.ListID === list.id).map((m) => m.MemberID) }));
+    },
+
+    create: async (actorId, list) => {
+      const clean = cleanNewDistributionList(list);
+      const db = await this.ready();
+      assertMayMaintainCouncilRecords(await this.memberWriteActor(db, actorId), clean.CouncilID, 'create distribution lists');
+      let id = 0;
+      await db.withTransactionAsync(async () => {
+        await this.assertCouncilsExist(db, [clean.CouncilID]);
+        await this.assertListNameUnique(db, clean.CouncilID, clean.ListName);
+        await this.assertListMembers(db, clean.CouncilID, clean.memberIds);
+        const res = await db.runAsync('INSERT INTO [DistributionLists] ([ListName], [CouncilID], [CreatedBy]) VALUES (?, ?, ?)', [
+          clean.ListName,
+          clean.CouncilID,
+          actorId,
+        ]);
+        id = res.lastInsertRowId;
+        await this.insertListMembers(db, id, clean.memberIds);
+      });
+      return this.listSummary(db, id);
+    },
+
+    update: async (actorId, id, changes) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireRecord(db, 'DistributionLists', id);
+        const councilId = (row.CouncilID as number | null) ?? 0;
+        assertMayMaintainCouncilRecords(actor, councilId, `change distribution list ${id}`);
+        const clean = cleanDistributionListChanges(changes);
+        if (clean.ListName !== undefined) {
+          await this.assertListNameUnique(db, councilId, clean.ListName, id);
+          await db.runAsync('UPDATE [DistributionLists] SET [ListName] = ? WHERE [id] = ?', [clean.ListName, id]);
+        }
+        if (clean.memberIds !== undefined) {
+          await this.assertListMembers(db, councilId, clean.memberIds);
+          await db.runAsync('DELETE FROM [DistributionListMembers] WHERE [ListID] = ?', [id]);
+          await this.insertListMembers(db, id, clean.memberIds);
+        }
+      });
+      return this.listSummary(db, id);
+    },
+
+    remove: async (actorId, id) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireRecord(db, 'DistributionLists', id);
+        assertMayMaintainCouncilRecords(actor, (row.CouncilID as number | null) ?? 0, `delete distribution list ${id}`);
+        await db.runAsync('DELETE FROM [DistributionListMembers] WHERE [ListID] = ?', [id]);
+        await db.runAsync('DELETE FROM [DistributionLists] WHERE [id] = ?', [id]);
+      });
+    },
+  };
+
+  private async listSummary(db: SQLite.SQLiteDatabase, id: number): Promise<DistributionListSummary> {
+    const list = (await db.getFirstAsync<DistributionLists>('SELECT * FROM [DistributionLists] WHERE [id] = ?', [id]))!;
+    const members = await db.getAllAsync<{ MemberID: number }>(
+      'SELECT [MemberID] FROM [DistributionListMembers] WHERE [ListID] = ? ORDER BY [MemberID]',
+      [id],
+    );
+    return { list, memberIds: members.map((m) => m.MemberID) };
+  }
+
+  private async assertListNameUnique(db: SQLite.SQLiteDatabase, councilId: number, name: string, ignoreId?: number): Promise<void> {
+    const siblings = await db.getAllAsync<Record<string, unknown>>(
+      'SELECT [id], [ListName] FROM [DistributionLists] WHERE [CouncilID] = ?',
+      [councilId],
+    );
+    assertRecordValueUnique('DistributionLists', siblings, 'ListName', name, `in council ${councilId}`, ignoreId);
+  }
+
+  /** Every list member must exist and belong to the list's council. */
+  private async assertListMembers(db: SQLite.SQLiteDatabase, councilId: number, memberIds: readonly number[]): Promise<void> {
+    const found = await selectIn<{ id: number; CouncilID: number }>(
+      db,
+      (m) => `SELECT [id], [CouncilID] FROM [Member] WHERE [id] IN (${m})`,
+      memberIds,
+    );
+    for (const memberId of memberIds) {
+      const member = found.find((f) => f.id === memberId);
+      if (!member || member.CouncilID !== councilId) {
+        throw new BusinessRuleError(
+          'INVALID_INPUT',
+          member
+            ? `Member ${memberId} belongs to council ${member.CouncilID}, not council ${councilId}; a distribution list holds only its own council's members.`
+            : `No member with id ${memberId}.`,
+          { memberId, councilId },
+        );
+      }
+    }
+  }
+
+  private async insertListMembers(db: SQLite.SQLiteDatabase, listId: number, memberIds: readonly number[]): Promise<void> {
+    for (const memberId of memberIds) {
+      await db.runAsync('INSERT INTO [DistributionListMembers] ([ListID], [MemberID]) VALUES (?, ?)', [listId, memberId]);
+    }
+  }
+
+  // ---- maintenance helpers ------------------------------------------------
+  // `table` is always a MaintainedTable and `columns` one of the shared *_COLUMNS lists, never caller input.
+
+  private async requireRecord(db: SQLite.SQLiteDatabase, table: MaintainedTable, id: number): Promise<Record<string, unknown>> {
+    const row = await db.getFirstAsync<Record<string, unknown>>(`SELECT * FROM [${table}] WHERE [id] = ?`, [id]);
+    if (!row) throw recordNotFound(table, id);
+    return row;
+  }
+
+  private async insertRecord<T extends object>(
+    db: SQLite.SQLiteDatabase,
+    table: MaintainedTable,
+    columns: readonly (keyof T & string)[],
+    clean: T,
+  ): Promise<number> {
+    const res = await db.runAsync(
+      `INSERT INTO [${table}] (${columns.map((c) => `[${c}]`).join(', ')}) VALUES (${marks(columns.length)})`,
+      columns.map((c) => (clean[c] ?? null) as Bind),
+    );
+    return res.lastInsertRowId;
+  }
+
+  private async updateRecord<T extends object>(
+    db: SQLite.SQLiteDatabase,
+    table: MaintainedTable,
+    id: number,
+    columns: readonly (keyof T & string)[],
+    clean: T,
+  ): Promise<void> {
+    await db.runAsync(`UPDATE [${table}] SET ${columns.map((c) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [
+      ...columns.map((c) => (clean[c] ?? null) as Bind),
+      id,
+    ]);
+  }
+
+  private async assertRecordUnused(db: SQLite.SQLiteDatabase, table: MaintainedTable, id: number, name: string): Promise<void> {
+    const usage = [];
+    for (const ref of RECORD_REFERENCES[table]) {
+      const found = await db.getFirstAsync<{ n: number }>(`SELECT COUNT(*) AS n FROM [${ref.table}] WHERE [${ref.column}] = ?`, [id]);
+      usage.push({ ...ref, count: found?.n ?? 0 });
+    }
+    assertRecordUnused(table, id, name, usage);
+  }
 
   members: DataService['members'] = {
     get: async (id) => {

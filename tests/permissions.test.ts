@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   canAdministerCouncil,
+  canMaintainCouncilRecords,
+  canMaintainCouncils,
   canMaintainLookups,
   canManageMeetings,
   canPlanEvents,
@@ -32,6 +34,18 @@ describe('portal permissions', () => {
     expect(canAdministerCouncil(officer, 1)).toBe(false);
   });
 
+  it('only Super Admins maintain councils', () => {
+    expect([superAdmin, admin, officer, member].map(canMaintainCouncils)).toEqual([true, false, false, false]);
+  });
+
+  it('council records (parishes, pastors, activities, lists) belong to that council\'s Admins and any Super Admin', () => {
+    expect(canMaintainCouncilRecords(admin, 1)).toBe(true);
+    expect(canMaintainCouncilRecords(admin, 2)).toBe(false);
+    expect(canMaintainCouncilRecords(superAdmin, 2)).toBe(true);
+    expect(canMaintainCouncilRecords(officer, 1)).toBe(false);
+    expect(canMaintainCouncilRecords(member, 1)).toBe(false);
+  });
+
   it('Admins and Super Admins plan events; officers and members do not', () => {
     expect([superAdmin, admin, officer, member].map(canPlanEvents)).toEqual([true, true, false, false]);
   });
@@ -53,8 +67,18 @@ describe('portal permissions', () => {
   });
 
   it('shows each role only the areas it can use', () => {
-    expect(portalAreas(superAdmin)).toEqual(['lookups', 'members', 'events', 'meetings', 'ledger']);
-    expect(portalAreas(admin)).toEqual(['members', 'events', 'meetings', 'ledger']);
+    expect(portalAreas(superAdmin)).toEqual([
+      'lookups',
+      'councils',
+      'parishes',
+      'members',
+      'activities',
+      'events',
+      'meetings',
+      'distribution-lists',
+      'ledger',
+    ]);
+    expect(portalAreas(admin)).toEqual(['parishes', 'members', 'activities', 'events', 'meetings', 'distribution-lists', 'ledger']);
     expect(portalAreas(officer)).toEqual(['meetings', 'ledger']);
     expect(portalAreas(member)).toEqual(['ledger']);
   });

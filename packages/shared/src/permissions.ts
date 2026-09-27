@@ -5,8 +5,8 @@
 // and the owner of an event may record its post-event results).
 //
 // These decide what the UI offers. Member writes (members.create/update, memberProfiles.updateExtensions)
-// and lookup writes (lookups.create/update/remove) take the caller's id and the drivers enforce the same
-// rules (rules.ts); the other areas have no caller
+// lookup writes (lookups.create/update/remove) and council, parish, pastor, activity and distribution-list
+// writes take the caller's id and the drivers enforce the same rules (rules.ts); the other areas have no caller
 // identity yet, so until the remote driver's API enforces them server-side they are a usability gate.
 // =========================================================================
 import type { SessionUser } from './contract';
@@ -14,7 +14,17 @@ import type { Event, Member, MemberType } from './types';
 
 type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'>;
 
-export type PortalArea = 'lookups' | 'members' | 'events' | 'meetings' | 'ledger';
+/** Each area is also its route: RequireArea links to `/${area}`. */
+export type PortalArea =
+  | 'lookups'
+  | 'councils'
+  | 'parishes'
+  | 'members'
+  | 'activities'
+  | 'events'
+  | 'meetings'
+  | 'distribution-lists'
+  | 'ledger';
 
 export const isSuperAdmin = (u: Actor): boolean => u.memberType === 'Super Admin';
 export const isAdmin = (u: Actor): boolean => u.memberType === 'Admin' || isSuperAdmin(u);
@@ -22,9 +32,18 @@ export const isAdmin = (u: Actor): boolean => u.memberType === 'Admin' || isSupe
 /** Super Admins maintain the global lookup tables. */
 export const canMaintainLookups = (u: Actor): boolean => isSuperAdmin(u);
 
+/** Only Super Admins add, change or delete councils (drivers: SUPER_ADMIN_REQUIRED). */
+export const canMaintainCouncils = (u: Actor): boolean => isSuperAdmin(u);
+
 /** Super Admins act on any council; Admins only on their own. */
 export const canAdministerCouncil = (u: Actor, councilId: number): boolean =>
   isSuperAdmin(u) || (u.memberType === 'Admin' && u.councilId === councilId);
+
+/**
+ * Parishes, pastors, activities and distribution lists of a council: its Admins and any Super Admin
+ * (drivers: ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED).
+ */
+export const canMaintainCouncilRecords = (u: Actor, councilId: number): boolean => canAdministerCouncil(u, councilId);
 
 /** Admins and Super Admins schedule events and shifts. */
 export const canPlanEvents = (u: Actor): boolean => isAdmin(u);
@@ -58,9 +77,11 @@ export function grantableMemberTypes(u: Actor, currentType?: MemberType['Type'])
 export function portalAreas(u: Actor): PortalArea[] {
   const areas: PortalArea[] = [];
   if (canMaintainLookups(u)) areas.push('lookups');
-  if (isAdmin(u)) areas.push('members');
+  if (canMaintainCouncils(u)) areas.push('councils');
+  if (isAdmin(u)) areas.push('parishes', 'members', 'activities');
   if (canPlanEvents(u)) areas.push('events');
   if (isAdmin(u) || u.isOfficer) areas.push('meetings');
+  if (isAdmin(u)) areas.push('distribution-lists');
   areas.push('ledger');
   return areas;
 }

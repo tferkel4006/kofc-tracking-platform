@@ -16,6 +16,31 @@ export function parseNumberField(text: string, label: string): number | null {
   return value;
 }
 
+/** A 10-digit US number as (503) 555-0199 (a leading 1 is dropped); anything else is shown as typed, blank as an en dash. */
+export function formatPhone(value: string | null | undefined): string {
+  if (!value?.trim()) return '–';
+  const digits = value.replace(/\D/g, '');
+  const local = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
+  return local.length === 10 ? `(${local.slice(0, 3)}) ${local.slice(3, 6)}-${local.slice(6)}` : value.trim();
+}
+
+/** Street lines, then "City, ST", skipping blanks: "100 Church St, Suite 2, Portland, OR". */
+export function formatAddress(parts: {
+  StreetAddress1?: string | null;
+  StreetAddress2?: string | null;
+  City?: string | null;
+  State?: string | null;
+}): string {
+  const lines = [parts.StreetAddress1, parts.StreetAddress2, [parts.City, parts.State].filter((p) => p?.trim()).join(', ')];
+  return lines.filter((l) => l?.trim()).join(', ') || '–';
+}
+
+/** "Last, First" for sorted lists and grids. */
+export const formatPersonName = (first: string, last: string): string => [last, first].filter((p) => p.trim()).join(', ');
+
+/** An optional form field to the driver: blank becomes null, which clears the stored value. */
+export const blankToNull = (text: string): string | null => (text.trim() === '' ? null : text);
+
 /** A stored number back into a form field. */
 export const toField = (value: number | null | undefined): string => (value == null ? '' : String(value));
 

@@ -18,6 +18,7 @@ import type {
   Council,
   CouncilDonationMethod,
   Degree,
+  DistributionLists,
   Donation,
   DonationMethod,
   DonationType,
@@ -38,6 +39,8 @@ import type {
   Message,
   MessageAttachment,
   NoShowReason,
+  Parish,
+  Pastor,
   ReadReceipt,
   Role,
   Shift,
@@ -267,7 +270,43 @@ export interface MemberMeetingHours {
   meetings: MeetingHoursEntry[];
 }
 
-// 9. THE SERVICE
+// 9. COUNCIL-LEVEL MAINTENANCE (Sprint 5G)
+/** A council row without its generated id. */
+export type NewCouncil = Omit<Council, 'id'>;
+/** A parish row without its generated id. */
+export type NewParish = Omit<Parish, 'id'>;
+/** A pastor row without its generated id. */
+export type NewPastor = Omit<Pastor, 'id'>;
+/** An activity row without its generated id. */
+export type NewActivity = Omit<Activities, 'id'>;
+
+/**
+ * Fields to change on a maintained row. Omitted fields keep their stored values; `null` or '' clears an
+ * optional text field (e.g. Phone).
+ */
+export type RecordChanges<T> = { [K in keyof T]?: T[K] | null };
+
+/** A new distribution list: its name, its council and the complete member list. */
+export interface NewDistributionList {
+  ListName: string;
+  CouncilID: number;
+  /** Members of the list's council; duplicates are ignored. */
+  memberIds: number[];
+}
+
+/** A list keeps its council for life; omit `memberIds` to keep the members, pass [] to clear them. */
+export interface DistributionListChanges {
+  ListName?: string;
+  memberIds?: number[];
+}
+
+/** One distribution list with its members' ids, ascending. */
+export interface DistributionListSummary {
+  list: DistributionLists;
+  memberIds: number[];
+}
+
+// 10. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -320,11 +359,79 @@ export interface DataService {
      * council itself. Ordered like `list`.
      */
     listAffiliated(councilId: number): Promise<Council[]>;
+    /**
+     * Adds a council. Only an Active Super Admin maintains councils (SecurityPrivilegeError
+     * SUPER_ADMIN_REQUIRED, nothing written); an unknown actor rejects MEMBER_NOT_FOUND. Rejects
+     * INVALID_INPUT for a bad field or a CouncilNumber another council already uses.
+     */
+    create(actorId: number, council: NewCouncil): Promise<Council>;
+    /** Changes a council's fields, validated as in `create`. RECORD_NOT_FOUND for an unknown council. */
+    update(actorId: number, id: number, changes: RecordChanges<NewCouncil>): Promise<Council>;
+    /**
+     * Deletes a council nothing points at. Rejects RECORD_IN_USE, naming each table and row count, while any
+     * member, parish, event, meeting, activity, list, thread, donation record or affiliation refers to it.
+     */
+    remove(actorId: number, id: number): Promise<void>;
+  };
+
+  /**
+   * Council-level maintenance (parishes, pastors, activities, distribution lists) shares one privilege rule:
+   * the actor must be an Active Admin or Super Admin (ADMIN_REQUIRED), and an Admin may touch only rows of
+   * their own council, both where a row is now and where a change would move it (COUNCIL_ACCESS_DENIED).
+   * Nothing is written when a check fails. Unknown actors reject MEMBER_NOT_FOUND and unknown rows
+   * RECORD_NOT_FOUND; a delete is refused with RECORD_IN_USE while other rows still point at the row.
+   */
+  parishes: {
+    /** The council's parishes, ordered by name. */
+    listByCouncil(councilId: number): Promise<Parish[]>;
+    get(id: number): Promise<Parish | null>;
+    /** Rejects INVALID_INPUT for a bad field, an unknown council, or a name already used in the council (ignoring case). */
+    create(actorId: number, parish: NewParish): Promise<Parish>;
+    /** Moving a parish to another council requires rights over both councils. */
+    update(actorId: number, id: number, changes: RecordChanges<NewParish>): Promise<Parish>;
+    /** Refused (RECORD_IN_USE) while the parish still has pastors. */
+    remove(actorId: number, id: number): Promise<void>;
+  };
+
+  pastors: {
+    /** The parish's pastors, ordered by last name, then first name. */
+    listByParish(parishId: number): Promise<Pastor[]>;
+    /** Pastors of every parish of the council, ordered like `listByParish`. */
+    listByCouncil(councilId: number): Promise<Pastor[]>;
+    /** A pastor's council is their parish's. Rejects INVALID_INPUT for a bad field or an unknown parish. */
+    create(actorId: number, pastor: NewPastor): Promise<Pastor>;
+    /** Moving a pastor to another parish requires rights over both parishes' councils. */
+    update(actorId: number, id: number, changes: RecordChanges<NewPastor>): Promise<Pastor>;
+    remove(actorId: number, id: number): Promise<void>;
   };
 
   activities: {
     /** The council's activities, ordered by name. Activities are never shared with affiliated councils. */
     listByCouncil(councilId: number): Promise<Activities[]>;
+    get(id: number): Promise<Activities | null>;
+    /**
+     * Rejects INVALID_INPUT for a bad field, an unknown council or category, or a name already used in the
+     * council (ignoring case).
+     */
+    create(actorId: number, activity: NewActivity): Promise<Activities>;
+    update(actorId: number, id: number, changes: RecordChanges<NewActivity>): Promise<Activities>;
+    /** Refused (RECORD_IN_USE) once any time has been logged against the activity. */
+    remove(actorId: number, id: number): Promise<void>;
+  };
+
+  distributionLists: {
+    /** The council's lists with their members, ordered by name. */
+    listByCouncil(councilId: number): Promise<DistributionListSummary[]>;
+    /**
+     * Creates a list owned by the actor (CreatedBy) with its members, all or nothing. Rejects INVALID_INPUT
+     * for a bad name, a name already used in the council (ignoring case), or a member who does not exist or
+     * belongs to another council.
+     */
+    create(actorId: number, list: NewDistributionList): Promise<DistributionListSummary>;
+    /** Renames the list and/or replaces its members, all or nothing, validated as in `create`. */
+    update(actorId: number, id: number, changes: DistributionListChanges): Promise<DistributionListSummary>;
+    /** Deletes the list and its member entries together. Messages already sent keep their read receipts. */
+    remove(actorId: number, id: number): Promise<void>;
   };
 
   members: {

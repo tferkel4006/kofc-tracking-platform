@@ -63,7 +63,9 @@ export type BusinessRuleCode =
   | 'NO_RECIPIENTS'
   | 'ADMIN_REQUIRED'
   | 'SUPER_ADMIN_REQUIRED'
-  | 'COUNCIL_ACCESS_DENIED';
+  | 'COUNCIL_ACCESS_DENIED'
+  | 'RECORD_NOT_FOUND'
+  | 'RECORD_IN_USE';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -310,7 +312,8 @@ const DONATION_METHOD_KINDS: Record<string, DonationMethodKind> = {
 export const donationMethodKind = (methodName: string): DonationMethodKind =>
   DONATION_METHOD_KINDS[methodName.trim().toLowerCase()] ?? 'other';
 
-const optionalText = (value: unknown, label: string, maxLength: number): string | null => {
+/** Trimmed optional text; undefined, null or blank becomes null. */
+export const optionalText = (value: unknown, label: string, maxLength: number): string | null => {
   if (value === undefined || value === null) return null;
   const text = assertText(value, label, maxLength, false);
   return text === '' ? null : text;
@@ -575,6 +578,40 @@ export function assertMayEditMemberExtensions(actor: MemberWriteActor, member: P
     );
   }
   assertAdminCouncil(actor, member.CouncilID, `change member ${member.id}'s skills and training`, member.id);
+}
+
+/**
+ * councils.create/update/remove: only an Active Super Admin maintains councils. `actor` is read from the
+ * database, like a member write's.
+ */
+export function assertMayMaintainCouncils(actor: MemberWriteActor, action: string): void {
+  if (hasSuperAdminRights(actor)) return;
+  throw new SecurityPrivilegeError(
+    'SUPER_ADMIN_REQUIRED',
+    `Only an active Super Admin can ${action}; member ${actor.memberId} is ${describeActor(actor)}.`,
+    { actorId: actor.memberId, actorType: actor.memberType ?? null },
+  );
+}
+
+/**
+ * Parishes, pastors, activities and distribution lists: an Active Admin maintains those of their own council,
+ * an Active Super Admin those of any council (permissions.canAdministerCouncil). Call once for every council a
+ * write touches, so moving a row between councils needs rights over both. `action` completes "cannot ...".
+ */
+export function assertMayMaintainCouncilRecords(actor: MemberWriteActor, councilId: number, action: string): void {
+  if (!hasAdminRights(actor)) {
+    throw new SecurityPrivilegeError(
+      'ADMIN_REQUIRED',
+      `Only an active Admin or Super Admin can ${action}; member ${actor.memberId} is ${describeActor(actor)}.`,
+      { actorId: actor.memberId, actorType: actor.memberType ?? null, councilId },
+    );
+  }
+  if (hasSuperAdminRights(actor) || actor.councilId === councilId) return;
+  throw new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Admin ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; an Admin maintains only their own council's records.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
+  );
 }
 
 /** members.update: applies `changes` over the stored row and validates the result as a whole member. */

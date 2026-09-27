@@ -5,6 +5,7 @@
 // of against Azure SQL. State is per browser tab and resets on reload.
 // Nothing outside /services may import this file.
 import {
+  ACTIVITY_COLUMNS,
   aggregateMeetingHours,
   assertActivityDateAllowed,
   assertDonationDateForEvent,
@@ -15,9 +16,13 @@ import {
   assertLookupUnused,
   assertMayCreateMember,
   assertMayEditMemberExtensions,
+  assertMayMaintainCouncilRecords,
+  assertMayMaintainCouncils,
   assertMayMaintainLookups,
   assertMayUpdateMember,
   assertPasswordAcceptable,
+  assertRecordUnused,
+  assertRecordValueUnique,
   assertShiftHasRoom,
   assertShiftInsideEvent,
   assertText,
@@ -28,26 +33,39 @@ import {
   buildThreadSummaries,
   buildWelcomeEmail,
   BusinessRuleError,
+  cleanActivity,
+  cleanCouncil,
   cleanCouncilIds,
+  cleanDistributionListChanges,
   cleanEventFields,
   cleanLookupValues,
   cleanMemberExtensions,
+  cleanNewDistributionList,
   cleanNewDonation,
   cleanNewEvent,
   cleanNewMember,
   cleanNewShift,
+  cleanParish,
+  cleanPastor,
   cleanShiftFields,
+  COUNCIL_COLUMNS,
   donationMethodKind,
   isSha256Hex,
   LOOKUP_META,
   mergeMemberChanges,
+  mergeRecordChanges,
   MEMBER_COLUMNS,
+  PARISH_COLUMNS,
   participantIds,
+  PASTOR_COLUMNS,
   planEventCopy,
+  RECORD_REFERENCES,
+  recordNotFound,
   toTimestamp,
   trainingDateToYear,
   trainingYearToDate,
   UNREGISTERED_PASSWORD,
+  type MaintainedTable,
   type MemberWriteActor,
   type MessagingRows,
 } from '@kofc/shared';
@@ -59,13 +77,21 @@ import type {
   CouncilDonationMethod,
   CouncilSkillEntry,
   DataService,
+  DistributionLists,
+  DistributionListSummary,
   Donation,
   DonationType,
   KOCTrainingClasses,
   MemberExtensions,
   MemberSkill,
   MemberTraining,
+  NewActivity,
+  NewCouncil,
   NewMember,
+  NewParish,
+  NewPastor,
+  Parish,
+  Pastor,
   Skill,
   SkillLevel,
   WorkingStatus,
@@ -133,6 +159,12 @@ const lower = (v: SeedValue | undefined) => String(v ?? '').toLowerCase();
 /** Soonest first: date, then start time, then id. */
 const compareShifts = (a: Shift, b: Shift) =>
   a.ShiftDate.localeCompare(b.ShiftDate) || a.StartTime.localeCompare(b.StartTime) || a.id - b.id;
+
+/** A cleaned row's `columns` as store values; optional fields left undefined are stored as NULL. */
+const rowValues = <T extends object>(columns: readonly (keyof T & string)[], clean: T): Record<string, SeedValue> =>
+  Object.fromEntries(columns.map((c) => [c, (clean[c] ?? null) as SeedValue]));
+
+const noParish = (parishId: number) => new BusinessRuleError('INVALID_INPUT', `No parish with id ${parishId}.`, { parishId });
 
 /** Matches SQLite's CURRENT_TIMESTAMP format ('YYYY-MM-DD HH:MM:SS', UTC). */
 const nowTimestamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -544,7 +576,154 @@ export class MemoryDataService implements DataService {
       linked.delete(councilId);
       return this.sortedCouncils(s).filter((c) => linked.has(c.id));
     },
+
+    create: async (actorId, council) => {
+      const s = await this.ready();
+      assertMayMaintainCouncils(this.memberWriteActor(s, actorId), 'add councils');
+      const clean = cleanCouncil(council);
+      return s.transaction(() => {
+        assertRecordValueUnique('Council', s.rows('Council'), 'CouncilNumber', clean.CouncilNumber, 'by another council');
+        return { ...s.insert('Council', rowValues(COUNCIL_COLUMNS, clean)) } as unknown as Council;
+      });
+    },
+
+    update: async (actorId, id, changes) => {
+      const s = await this.ready();
+      assertMayMaintainCouncils(this.memberWriteActor(s, actorId), `change council ${id}`);
+      const row = this.requireRecord(s, 'Council', id);
+      const clean = cleanCouncil(mergeRecordChanges<NewCouncil>(row, changes, COUNCIL_COLUMNS));
+      assertRecordValueUnique('Council', s.rows('Council'), 'CouncilNumber', clean.CouncilNumber, 'by another council', id);
+      Object.assign(row, rowValues(COUNCIL_COLUMNS, clean));
+      return { ...row } as unknown as Council;
+    },
+
+    remove: async (actorId, id) => {
+      const s = await this.ready();
+      assertMayMaintainCouncils(this.memberWriteActor(s, actorId), `delete council ${id}`);
+      const row = this.requireRecord(s, 'Council', id);
+      this.assertRecordUnused(s, 'Council', row, `${String(row.CouncilNumber)} ${String(row.CouncilName)}`);
+      s.remove('Council', (r) => r.id === id);
+    },
   };
+
+  // ---- council-level maintenance: parishes, pastors, activities, lists ----
+
+  parishes: DataService['parishes'] = {
+    listByCouncil: async (councilId) => {
+      const s = await this.ready();
+      return this.sortedParishes(s, (p) => p.CouncilID === councilId);
+    },
+
+    get: async (id) => {
+      const s = await this.ready();
+      const row = s.rows('Parish').find((p) => p.id === id);
+      return row ? ({ ...row } as unknown as Parish) : null;
+    },
+
+    create: async (actorId, parish) => {
+      const clean = cleanParish(parish);
+      const s = await this.ready();
+      assertMayMaintainCouncilRecords(this.memberWriteActor(s, actorId), clean.CouncilID, 'add parishes');
+      return s.transaction(() => {
+        this.assertCouncilsExist(s, [clean.CouncilID]);
+        this.assertParishNameUnique(s, clean);
+        return { ...s.insert('Parish', rowValues(PARISH_COLUMNS, clean)) } as unknown as Parish;
+      });
+    },
+
+    update: async (actorId, id, changes) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const row = this.requireRecord(s, 'Parish', id);
+      assertMayMaintainCouncilRecords(actor, row.CouncilID as number, `change parish ${id}`);
+      const clean = cleanParish(mergeRecordChanges<NewParish>(row, changes, PARISH_COLUMNS));
+      if (clean.CouncilID !== row.CouncilID) {
+        assertMayMaintainCouncilRecords(actor, clean.CouncilID, `move parish ${id}`);
+        this.assertCouncilsExist(s, [clean.CouncilID]);
+      }
+      this.assertParishNameUnique(s, clean, id);
+      Object.assign(row, rowValues(PARISH_COLUMNS, clean));
+      return { ...row } as unknown as Parish;
+    },
+
+    remove: async (actorId, id) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const row = this.requireRecord(s, 'Parish', id);
+      assertMayMaintainCouncilRecords(actor, row.CouncilID as number, `delete parish ${id}`);
+      this.assertRecordUnused(s, 'Parish', row, String(row.Name));
+      s.remove('Parish', (r) => r.id === id);
+    },
+  };
+
+  private sortedParishes(s: MemoryStore, keep: (row: Row) => boolean): Parish[] {
+    const rows = s.rows('Parish').filter(keep).map((r) => ({ ...r })) as unknown as Parish[];
+    return rows.sort((a, b) => a.Name.localeCompare(b.Name) || a.id - b.id);
+  }
+
+  private assertParishNameUnique(s: MemoryStore, clean: NewParish, ignoreId?: number): void {
+    const siblings = s.rows('Parish').filter((p) => p.CouncilID === clean.CouncilID);
+    assertRecordValueUnique('Parish', siblings, 'Name', clean.Name, `in council ${clean.CouncilID}`, ignoreId);
+  }
+
+  pastors: DataService['pastors'] = {
+    listByParish: async (parishId) => {
+      const s = await this.ready();
+      return this.sortedPastors(s, [parishId]);
+    },
+
+    listByCouncil: async (councilId) => {
+      const s = await this.ready();
+      const parishIds = s.rows('Parish').filter((p) => p.CouncilID === councilId).map((p) => p.id as number);
+      return this.sortedPastors(s, parishIds);
+    },
+
+    create: async (actorId, pastor) => {
+      const clean = cleanPastor(pastor);
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const parish = s.rows('Parish').find((p) => p.id === clean.ParishID);
+      // A non-admin hears ADMIN_REQUIRED even for an unknown parish; the parish only decides the tenant.
+      assertMayMaintainCouncilRecords(actor, (parish?.CouncilID as number | undefined) ?? actor.councilId, 'add pastors');
+      if (!parish) throw noParish(clean.ParishID);
+      return { ...s.insert('Pastor', rowValues(PASTOR_COLUMNS, clean)) } as unknown as Pastor;
+    },
+
+    update: async (actorId, id, changes) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const row = this.requireRecord(s, 'Pastor', id);
+      assertMayMaintainCouncilRecords(actor, this.parishCouncilId(s, row.ParishID as number), `change pastor ${id}`);
+      const clean = cleanPastor(mergeRecordChanges<NewPastor>(row, changes, PASTOR_COLUMNS));
+      if (clean.ParishID !== row.ParishID) {
+        const parish = s.rows('Parish').find((p) => p.id === clean.ParishID);
+        assertMayMaintainCouncilRecords(actor, (parish?.CouncilID as number | undefined) ?? actor.councilId, `move pastor ${id}`);
+        if (!parish) throw noParish(clean.ParishID);
+      }
+      Object.assign(row, rowValues(PASTOR_COLUMNS, clean));
+      return { ...row } as unknown as Pastor;
+    },
+
+    remove: async (actorId, id) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const row = this.requireRecord(s, 'Pastor', id);
+      assertMayMaintainCouncilRecords(actor, this.parishCouncilId(s, row.ParishID as number), `delete pastor ${id}`);
+      s.remove('Pastor', (r) => r.id === id);
+    },
+  };
+
+  private sortedPastors(s: MemoryStore, parishIds: readonly number[]): Pastor[] {
+    const rows = s
+      .rows('Pastor')
+      .filter((p) => parishIds.includes(p.ParishID as number))
+      .map((p) => ({ ...p })) as unknown as Pastor[];
+    return rows.sort((a, b) => a.LastName.localeCompare(b.LastName) || a.FirstName.localeCompare(b.FirstName) || a.id - b.id);
+  }
+
+  private parishCouncilId(s: MemoryStore, parishId: number): number {
+    return s.rows('Parish').find((p) => p.id === parishId)?.CouncilID as number;
+  }
 
   private sortedCouncils(s: MemoryStore): Council[] {
     const rows = s.rows('Council').map((r) => ({ ...r })) as unknown as Council[];
@@ -560,7 +739,164 @@ export class MemoryDataService implements DataService {
         .map((a) => ({ ...a })) as unknown as Activities[];
       return rows.sort((a, b) => a.ActivityName.localeCompare(b.ActivityName) || a.id - b.id);
     },
+
+    get: async (id) => {
+      const s = await this.ready();
+      const row = s.rows('Activities').find((a) => a.id === id);
+      return row ? ({ ...row } as unknown as Activities) : null;
+    },
+
+    create: async (actorId, activity) => {
+      const clean = cleanActivity(activity);
+      const s = await this.ready();
+      assertMayMaintainCouncilRecords(this.memberWriteActor(s, actorId), clean.CouncilID, 'add activities');
+      return s.transaction(() => {
+        this.assertActivityReferences(s, clean);
+        this.assertActivityNameUnique(s, clean);
+        return { ...s.insert('Activities', rowValues(ACTIVITY_COLUMNS, clean)) } as unknown as Activities;
+      });
+    },
+
+    update: async (actorId, id, changes) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const row = this.requireRecord(s, 'Activities', id);
+      assertMayMaintainCouncilRecords(actor, row.CouncilID as number, `change activity ${id}`);
+      const clean = cleanActivity(mergeRecordChanges<NewActivity>(row, changes, ACTIVITY_COLUMNS));
+      if (clean.CouncilID !== row.CouncilID) assertMayMaintainCouncilRecords(actor, clean.CouncilID, `move activity ${id}`);
+      this.assertActivityReferences(s, clean);
+      this.assertActivityNameUnique(s, clean, id);
+      Object.assign(row, rowValues(ACTIVITY_COLUMNS, clean));
+      return { ...row } as unknown as Activities;
+    },
+
+    remove: async (actorId, id) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const row = this.requireRecord(s, 'Activities', id);
+      assertMayMaintainCouncilRecords(actor, row.CouncilID as number, `delete activity ${id}`);
+      this.assertRecordUnused(s, 'Activities', row, String(row.ActivityName));
+      s.remove('Activities', (r) => r.id === id);
+    },
   };
+
+  private assertActivityReferences(s: MemoryStore, clean: NewActivity): void {
+    this.assertCouncilsExist(s, [clean.CouncilID]);
+    this.assertRowExists(s, 'Category', clean.CategoryID, 'activity category');
+  }
+
+  private assertActivityNameUnique(s: MemoryStore, clean: NewActivity, ignoreId?: number): void {
+    const siblings = s.rows('Activities').filter((a) => a.CouncilID === clean.CouncilID);
+    assertRecordValueUnique('Activities', siblings, 'ActivityName', clean.ActivityName, `in council ${clean.CouncilID}`, ignoreId);
+  }
+
+  distributionLists: DataService['distributionLists'] = {
+    listByCouncil: async (councilId) => {
+      const s = await this.ready();
+      return s
+        .rows('DistributionLists')
+        .filter((l) => l.CouncilID === councilId)
+        .map((l) => this.listSummary(s, l))
+        .sort((a, b) => (a.list.ListName ?? '').localeCompare(b.list.ListName ?? '') || a.list.id - b.list.id);
+    },
+
+    create: async (actorId, list) => {
+      const clean = cleanNewDistributionList(list);
+      const s = await this.ready();
+      assertMayMaintainCouncilRecords(this.memberWriteActor(s, actorId), clean.CouncilID, 'create distribution lists');
+      const row = s.transaction(() => {
+        this.assertCouncilsExist(s, [clean.CouncilID]);
+        this.assertListNameUnique(s, clean.CouncilID, clean.ListName);
+        this.assertListMembers(s, clean.CouncilID, clean.memberIds);
+        const created = s.insert('DistributionLists', { ListName: clean.ListName, CouncilID: clean.CouncilID, CreatedBy: actorId });
+        for (const memberId of clean.memberIds) s.insert('DistributionListMembers', { ListID: created.id, MemberID: memberId });
+        return created;
+      });
+      return this.listSummary(s, row);
+    },
+
+    update: async (actorId, id, changes) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const row = this.requireRecord(s, 'DistributionLists', id);
+      const councilId = (row.CouncilID as number | null) ?? 0;
+      assertMayMaintainCouncilRecords(actor, councilId, `change distribution list ${id}`);
+      const clean = cleanDistributionListChanges(changes);
+      const saved = s.transaction(() => {
+        // Inside a transaction the store works on copied rows, so change the copy, not `row`.
+        const current = this.requireRecord(s, 'DistributionLists', id);
+        if (clean.ListName !== undefined) {
+          this.assertListNameUnique(s, councilId, clean.ListName, id);
+          current.ListName = clean.ListName;
+        }
+        if (clean.memberIds !== undefined) {
+          this.assertListMembers(s, councilId, clean.memberIds);
+          s.remove('DistributionListMembers', (m) => m.ListID === id);
+          for (const memberId of clean.memberIds) s.insert('DistributionListMembers', { ListID: id, MemberID: memberId });
+        }
+        return current;
+      });
+      return this.listSummary(s, saved);
+    },
+
+    remove: async (actorId, id) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const row = this.requireRecord(s, 'DistributionLists', id);
+      assertMayMaintainCouncilRecords(actor, (row.CouncilID as number | null) ?? 0, `delete distribution list ${id}`);
+      s.transaction(() => {
+        s.remove('DistributionListMembers', (m) => m.ListID === id);
+        s.remove('DistributionLists', (l) => l.id === id);
+      });
+    },
+  };
+
+  private listSummary(s: MemoryStore, row: Row): DistributionListSummary {
+    const memberIds = s
+      .rows('DistributionListMembers')
+      .filter((m) => m.ListID === row.id)
+      .map((m) => m.MemberID as number)
+      .sort((a, b) => a - b);
+    return { list: { ...row } as unknown as DistributionLists, memberIds };
+  }
+
+  private assertListNameUnique(s: MemoryStore, councilId: number, name: string, ignoreId?: number): void {
+    const siblings = s.rows('DistributionLists').filter((l) => l.CouncilID === councilId);
+    assertRecordValueUnique('DistributionLists', siblings, 'ListName', name, `in council ${councilId}`, ignoreId);
+  }
+
+  /** Every list member must exist and belong to the list's council. */
+  private assertListMembers(s: MemoryStore, councilId: number, memberIds: readonly number[]): void {
+    for (const memberId of memberIds) {
+      const member = s.rows('Member').find((m) => m.id === memberId);
+      if (!member || member.CouncilID !== councilId) {
+        throw new BusinessRuleError(
+          'INVALID_INPUT',
+          member
+            ? `Member ${memberId} belongs to council ${String(member.CouncilID)}, not council ${councilId}; a distribution list holds only its own council's members.`
+            : `No member with id ${memberId}.`,
+          { memberId, councilId },
+        );
+      }
+    }
+  }
+
+  // ---- maintenance helpers ------------------------------------------------
+
+  private requireRecord(s: MemoryStore, table: MaintainedTable, id: number): Row {
+    const row = s.rows(table).find((r) => r.id === id);
+    if (!row) throw recordNotFound(table, id);
+    return row;
+  }
+
+  private assertRecordUnused(s: MemoryStore, table: MaintainedTable, row: Row, name: string): void {
+    assertRecordUnused(
+      table,
+      row.id as number,
+      name,
+      RECORD_REFERENCES[table].map((ref) => ({ ...ref, count: s.rows(ref.table).filter((r) => r[ref.column] === row.id).length })),
+    );
+  }
 
   members: DataService['members'] = {
     get: async (id) => {

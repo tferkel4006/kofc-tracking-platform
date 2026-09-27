@@ -14,9 +14,13 @@ import emblem from './kofc-logo.png';
 
 const AREAS: Record<PortalArea, { href: string; label: string; hint: string }> = {
   lookups: { href: '/lookups', label: 'System lookups', hint: 'Maintain the global tables' },
+  councils: { href: '/councils', label: 'Councils', hint: 'Add, edit and delete councils' },
+  parishes: { href: '/parishes', label: 'Parishes & pastors', hint: 'Parishes and their pastors' },
   members: { href: '/members', label: 'Member roster', hint: 'Members, types and skills' },
+  activities: { href: '/activities', label: 'Activities catalog', hint: 'Standing council activities' },
   events: { href: '/events', label: 'Event planner', hint: 'Events, shifts and councils' },
   meetings: { href: '/meetings', label: 'Meeting center', hint: 'Meetings, invitations, minutes' },
+  'distribution-lists': { href: '/distribution-lists', label: 'Distribution lists', hint: 'Member lists for council blasts' },
   ledger: { href: '/ledger', label: 'Post-event ledger', hint: 'Spend, funds raised, lessons' },
 };
 
