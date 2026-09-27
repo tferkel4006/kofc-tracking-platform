@@ -33,6 +33,13 @@
     background-color: #FFFFFF;
     color: var(--color-navy);
   }
+  /* Browsers give form controls their own system font; the manual calls for Arial in every field. */
+  input,
+  select,
+  textarea,
+  button {
+    font-family: Arial, sans-serif;
+  }
   /* Visible keyboard focus on every surface: navy on white, gold on navy (both 6:1 or better). */
   :focus-visible {
     outline: 3px solid var(--color-navy);

@@ -1003,6 +1003,7 @@ export class MemoryDataService implements DataService {
       councilId: actor.CouncilID as number,
       memberType: this.memberTypeName(s, actor.MemberTypeID as number),
       active: actor.StatusID === this.activeStatusId(s),
+      roles: this.rolesFor(s, actorId).map((r) => r.Role),
     };
   }
 

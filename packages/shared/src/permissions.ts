@@ -10,9 +10,11 @@
 // identity yet, so until the remote driver's API enforces them server-side they are a usability gate.
 // =========================================================================
 import type { SessionUser } from './contract';
-import type { Event, Member, MemberType } from './types';
+import { holdsFinanceRole } from './rules';
+import type { Donation, Event, Member, MemberType } from './types';
 
-type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'>;
+/** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. */
+type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'> & { roles?: readonly string[] };
 
 /** Each area is also its route: RequireArea links to `/${area}`. */
 export type PortalArea =
@@ -24,7 +26,11 @@ export type PortalArea =
   | 'events'
   | 'meetings'
   | 'distribution-lists'
-  | 'ledger';
+  | 'ledger'
+  | 'donations'
+  | 'dashboard'
+  | 'messages'
+  | 'profile';
 
 export const isSuperAdmin = (u: Actor): boolean => u.memberType === 'Super Admin';
 export const isAdmin = (u: Actor): boolean => u.memberType === 'Admin' || isSuperAdmin(u);
@@ -74,6 +80,23 @@ export function grantableMemberTypes(u: Actor, currentType?: MemberType['Type'])
 }
 
 /** Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it. */
+/** Holds the Financial Secretary or Treasurer role (FINANCE_ROLE_NAMES). */
+export const isFinanceOfficer = (u: Actor): boolean => holdsFinanceRole(u.roles);
+
+/**
+ * The council's donation log, its donation form and its monthly summaries: its Admins, its Financial
+ * Secretary and Treasurer, and any Super Admin.
+ */
+export const canManageFinances = (u: Actor, councilId: number): boolean =>
+  canAdministerCouncil(u, councilId) || (isFinanceOfficer(u) && u.councilId === councilId);
+
+/**
+ * Edit and delete controls on a donation, mirroring the drivers' assertMayChangeDonation (activity status is
+ * checked there): its recorder, its event's owner, the council's finance officers and Admins, any Super Admin.
+ */
+export const canChangeDonation = (u: Actor, donation: Pick<Donation, 'CouncilID' | 'RecordedBy'>, eventOwnerId: number | null): boolean =>
+  donation.RecordedBy === u.memberId || eventOwnerId === u.memberId || canManageFinances(u, donation.CouncilID);
+
 export function portalAreas(u: Actor): PortalArea[] {
   const areas: PortalArea[] = [];
   if (canMaintainLookups(u)) areas.push('lookups');
@@ -82,6 +105,9 @@ export function portalAreas(u: Actor): PortalArea[] {
   if (canPlanEvents(u)) areas.push('events');
   if (isAdmin(u) || u.isOfficer) areas.push('meetings');
   if (isAdmin(u)) areas.push('distribution-lists');
+  if (isAdmin(u) || isFinanceOfficer(u)) areas.push('donations');
   areas.push('ledger');
+  if (isAdmin(u) || isFinanceOfficer(u)) areas.push('dashboard');
+  areas.push('messages', 'profile');
   return areas;
 }

@@ -22,11 +22,19 @@ const AREAS: Record<PortalArea, { href: string; label: string; hint: string }> =
   meetings: { href: '/meetings', label: 'Meeting center', hint: 'Meetings, invitations, minutes' },
   'distribution-lists': { href: '/distribution-lists', label: 'Distribution lists', hint: 'Member lists for council blasts' },
   ledger: { href: '/ledger', label: 'Post-event ledger', hint: 'Spend, funds raised, lessons' },
+  donations: { href: '/donations', label: 'Donations', hint: 'Record and review council donations' },
+  dashboard: { href: '/dashboard', label: 'Executive Summaries', hint: 'Monthly hours, members and funds' },
+  messages: { href: '/messages', label: 'Communications Hub', hint: 'Message threads and replies' },
+  profile: { href: '/profile', label: 'My Profile', hint: 'Contact details, skills, training' },
 };
 
-/** The council-supplied Knights of Columbus emblem; decorative, since the title beside it names the order. */
+/**
+ * The council-supplied Knights of Columbus emblem; decorative, since the title beside it names the order.
+ * The 737px source is served at 1x and 2x of `size` (next/image srcset) at quality 90, so it stays sharp on
+ * high-density screens.
+ */
 export function BrandMark({ size = 44 }: { size?: number }) {
-  return <Image src={emblem} alt="" width={size} height={size} preload className="shrink-0" />;
+  return <Image src={emblem} alt="" width={size} height={size} quality={90} preload className="shrink-0" />;
 }
 
 function SignIn() {

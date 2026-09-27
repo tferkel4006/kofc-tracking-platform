@@ -18,7 +18,9 @@ import {
   type Donation,
   type Event,
 } from '@kofc/shared';
+import type { MemoryDataService } from '../apps/web/services/drivers/memory';
 import { drivers, expectRule, MEMBER, NOW, shiftByName, type DriverUnderTest } from './helpers';
+import { openDatabases } from './shims/expo-sqlite';
 
 // Sprint 5K data plumbing: the event funds rollup on donation writes, RecordedBy and the donation correction
 // rights, donation history, profile options, activity history and the monthly executive summary.
@@ -94,6 +96,16 @@ async function otherCouncilAdmin(db: DataService): Promise<number> {
     MemberTypeID: types.find((t) => t.Type === 'Admin')!.id,
   });
   return admin.id;
+}
+
+/** Gives a member a Role straight in the backing store; the data service has no role-assignment method yet. */
+function grantRole(d: DriverUnderTest, db: DataService, memberId: number, role: string): void {
+  if (d.name === 'memory') {
+    const store = (db as MemoryDataService).debugStore;
+    store.insert('MemberRoles', { RoleID: store.rows('Role').find((r) => r.Role === role)!.id, MemberID: memberId });
+  } else {
+    openDatabases.at(-1)!.prepare('INSERT INTO [MemberRoles] ([RoleID], [MemberID]) SELECT [id], ? FROM [Role] WHERE [Role] = ?').run(memberId, role);
+  }
 }
 
 async function expectPrivilege(promise: Promise<unknown>, code: 'ADMIN_REQUIRED' | 'COUNCIL_ACCESS_DENIED') {
@@ -183,6 +195,13 @@ describe('donation totals and the event funds rollup', () => {
     expect(code(() => assertMayChangeDonation(actor(4, 'Member'), donation, 2, 'fix it'))).toBe('ADMIN_REQUIRED');
     expect(code(() => assertMayChangeDonation(actor(3, 'Member', 1, false), donation, null, 'fix it'))).toBe('ADMIN_REQUIRED');
     expect(code(() => assertMayChangeDonation(actor(8, 'Admin', 2), donation, null, 'fix it'))).toBe('COUNCIL_ACCESS_DENIED');
+
+    const officer = (roles: string[], councilId = 1, active = true) => ({ ...actor(5, 'Member', councilId, active), roles });
+    expect(code(() => assertMayChangeDonation(officer(['Treasurer']), donation, null, 'fix it'))).toBe('ok');
+    expect(code(() => assertMayChangeDonation(officer(['Financial Secretary']), donation, null, 'fix it'))).toBe('ok');
+    expect(code(() => assertMayChangeDonation(officer(['Treasurer'], 2), donation, null, 'fix it'))).toBe('ADMIN_REQUIRED');
+    expect(code(() => assertMayChangeDonation(officer(['Treasurer'], 1, false), donation, null, 'fix it'))).toBe('ADMIN_REQUIRED');
+    expect(code(() => assertMayChangeDonation(officer(['Grand Knight']), donation, null, 'fix it'))).toBe('ADMIN_REQUIRED');
   });
 });
 
@@ -383,6 +402,20 @@ describe.each(drivers)('$name driver: who may correct or delete a donation', (d:
     await expectPrivilege(db.donations.update(await otherCouncilAdmin(db), gift.id, { Donor: 'Wrong council' }), 'COUNCIL_ACCESS_DENIED');
     await expectRule(db.donations.update(999, gift.id, { Donor: 'Nobody' }), 'MEMBER_NOT_FOUND');
     expect((await db.donations.list(OWN))[0]).toMatchObject({ Donor: 'Super fix', RecordedBy: MEMBER.member });
+  });
+
+  it('lets the council’s Treasurer or Financial Secretary correct and delete any of its donations', async () => {
+    for (const role of ['Treasurer', 'Financial Secretary']) {
+      const db = await d.make();
+      const ids = await lookups(db);
+      const gift = await give(db, ids.cash, 10, null);
+      await expectPrivilege(db.donations.update(MEMBER.newMember, gift.id, { Donor: 'Not yet' }), 'ADMIN_REQUIRED');
+
+      grantRole(d, db, MEMBER.newMember, role);
+      expect((await db.donations.update(MEMBER.newMember, gift.id, { Donor: `${role} fix` })).Donor).toBe(`${role} fix`);
+      await db.donations.remove(MEMBER.newMember, gift.id);
+      expect(await db.donations.list(OWN)).toEqual([]);
+    }
   });
 
   it('lets the event’s owner correct and delete its donations, but not move one to an event they do not own', async () => {

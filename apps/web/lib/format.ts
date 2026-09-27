@@ -50,3 +50,14 @@ export function minutesFileName(url: string | undefined | null): string | null {
   const hash = url.indexOf('#');
   return hash >= 0 ? decodeURIComponent(url.slice(hash + 1)) : url;
 }
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** '2026-09-12' -> 'Sep 12, 2026', for logs that span years. Blank shows an en dash. */
+export function formatFullDate(date: string | null | undefined): string {
+  const m = date ? /^(\d{4})-(\d{2})-(\d{2})/.exec(date) : null;
+  return m ? `${MONTH_NAMES[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : '–';
+}
+
+/** Decimal hours for totals: 5.75 -> '5.75', 4 -> '4'. */
+export const formatDecimalHours = (hours: number): string => hours.toLocaleString('en-US', { maximumFractionDigits: 2 });

@@ -5,17 +5,17 @@ import {
   useId,
   useRef,
   type ButtonHTMLAttributes,
+  type ComponentProps,
   type InputHTMLAttributes,
   type KeyboardEvent,
   type ReactNode,
   type SelectHTMLAttributes,
-  type TextareaHTMLAttributes,
 } from 'react';
 
 export const cx = (...parts: (string | false | null | undefined)[]): string => parts.filter(Boolean).join(' ');
 
 const control =
-  'w-full rounded border border-navy bg-white px-2 py-1.5 text-sm text-navy placeholder:text-muted disabled:border-line disabled:text-muted';
+  'w-full rounded border border-navy bg-white px-2 py-1.5 font-sans text-sm text-navy placeholder:text-muted disabled:border-line disabled:text-muted';
 
 export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...rest} className={cx(control, className)} />;
@@ -29,7 +29,7 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
   );
 }
 
-export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function Textarea({ className, ...rest }: ComponentProps<'textarea'>) {
   return <textarea {...rest} className={cx(control, 'min-h-20', className)} />;
 }
 

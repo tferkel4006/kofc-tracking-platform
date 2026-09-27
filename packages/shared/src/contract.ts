@@ -655,8 +655,9 @@ export interface DataService {
     record(actorId: number, donation: NewDonation): Promise<Donation>;
     /**
      * Corrects a donation, validated as in `record` against the merged row; moving it to another event
-     * re-totals both events. Allowed for an Active member who recorded it or owns its event, and for an Active
-     * Admin of its council or any Active Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED); a move needs
+     * re-totals both events. Allowed for an Active member who recorded it or owns its event, an Active
+     * Financial Secretary or Treasurer of its council, an Active Admin of its council or any Active Super Admin
+     * (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED); a move needs
      * that right over the donation both before and after. RECORD_NOT_FOUND for an unknown donation.
      */
     update(actorId: number, id: number, changes: DonationChanges): Promise<Donation>;

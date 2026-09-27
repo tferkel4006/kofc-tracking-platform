@@ -3,6 +3,8 @@
 // came, the highlights, and the lessons learned. Admins do this for their councils' events; the event's
 // owner may too (canRecordLedger), which is why every role sees this section. Events still waiting for
 // results sit in the active queue; once anything is recorded (hasLedgerResults) they move to the archive.
+// While an event has cash or electronic donations its funds raised are synced from them (donations.record/update/
+// remove), so those two fields are shown read-only here and are corrected on the Donations page instead.
 import { useEffect, useState } from 'react';
 import {
   canRecordLedger,
@@ -57,6 +59,12 @@ const sum = (...parts: (number | undefined)[]): number | null => {
 
 function ResultsForm({ event, onSaved }: { event: Event; onSaved: () => void }) {
   const { message, setMessage, run } = useAction();
+  // Every council's donations count toward the event's funds, so ask through any council the event is linked to.
+  const donations = useLoad(async () => {
+    const [councilId] = await db.events.listCouncilIds(event.id);
+    return councilId === undefined ? null : ((await db.donations.listHistory(councilId, event.id)).events[0] ?? null);
+  }, [event.id]);
+  const managed = donations.data?.fundsManaged === true;
   const [spend, setSpend] = useState(toField(event.Spend));
   const [cash, setCash] = useState(toField(event['FundsRaised-Cash']));
   const [electronic, setElectronic] = useState(toField(event['FundsRaised-Electronic']));
@@ -79,8 +87,12 @@ function ResultsForm({ event, onSaved }: { event: Event; onSaved: () => void }) 
     run(async () => {
       const changes: EventChanges = {
         Spend: parseNumberField(spend, 'Spend'),
-        'FundsRaised-Cash': parseNumberField(cash, 'Cash funds raised'),
-        'FundsRaised-Electronic': parseNumberField(electronic, 'Electronic funds raised'),
+        ...(managed
+          ? {}
+          : {
+              'FundsRaised-Cash': parseNumberField(cash, 'Cash funds raised'),
+              'FundsRaised-Electronic': parseNumberField(electronic, 'Electronic funds raised'),
+            }),
         ActualNumberAttendees: parseNumberField(attendees, 'Actual attendees'),
         Highlights: highlights.trim() === '' ? null : highlights,
       };
@@ -107,12 +119,31 @@ function ResultsForm({ event, onSaved }: { event: Event; onSaved: () => void }) 
         <Field label="Actual attendees">
           {(id) => <Input id={id} inputMode="numeric" value={attendees} onChange={(e) => setAttendees(e.target.value)} />}
         </Field>
-        <Field label="Cash raised ($)">
-          {(id) => <Input id={id} inputMode="decimal" value={cash} onChange={(e) => setCash(e.target.value)} placeholder="0.00" />}
+        <Field label="Cash raised ($)" hint={managed ? 'Synced from donations' : undefined}>
+          {(id) => (
+            <Input id={id} inputMode="decimal" value={cash} readOnly={managed} disabled={managed} onChange={(e) => setCash(e.target.value)} placeholder="0.00" />
+          )}
         </Field>
-        <Field label="Electronic raised ($)">
-          {(id) => <Input id={id} inputMode="decimal" value={electronic} onChange={(e) => setElectronic(e.target.value)} placeholder="0.00" />}
+        <Field label="Electronic raised ($)" hint={managed ? 'Synced from donations' : undefined}>
+          {(id) => (
+            <Input
+              id={id}
+              inputMode="decimal"
+              value={electronic}
+              readOnly={managed}
+              disabled={managed}
+              onChange={(e) => setElectronic(e.target.value)}
+              placeholder="0.00"
+            />
+          )}
         </Field>
+        {managed && donations.data ? (
+          <p className="col-span-2 text-xs text-muted">
+            Funds raised total {donations.data.totals.count} recorded donation{donations.data.totals.count === 1 ? '' : 's'}
+            {donations.data.totals.itemValue > 0 ? ` (plus ${formatMoney(donations.data.totals.itemValue)} of donated items, not counted)` : ''}. Correct them
+            on the Donations page.
+          </p>
+        ) : null}
         <p className="col-span-2 text-sm font-bold" aria-live="polite">
           Raised {formatMoney(raised)} · Spent {formatMoney(spent)} · Net {formatMoney(net)}
         </p>

@@ -9,6 +9,8 @@ const config: NextConfig = {
   // Trace and resolve from the workspace root, where node_modules and the lockfile live.
   outputFileTracingRoot: monorepoRoot,
   turbopack: { root: monorepoRoot },
+  // 90 lets the emblem render crisply (see BrandMark); 75 is Next's default for everything else.
+  images: { qualities: [75, 90] },
 };
 
 export default config;

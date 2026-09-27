@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   canAdministerCouncil,
+  canChangeDonation,
   canMaintainCouncilRecords,
+  canManageFinances,
+  isFinanceOfficer,
   canMaintainCouncils,
   canMaintainLookups,
   canManageMeetings,
@@ -76,10 +79,52 @@ describe('portal permissions', () => {
       'events',
       'meetings',
       'distribution-lists',
+      'donations',
       'ledger',
+      'dashboard',
+      'messages',
+      'profile',
     ]);
-    expect(portalAreas(admin)).toEqual(['parishes', 'members', 'activities', 'events', 'meetings', 'distribution-lists', 'ledger']);
-    expect(portalAreas(officer)).toEqual(['meetings', 'ledger']);
-    expect(portalAreas(member)).toEqual(['ledger']);
+    expect(portalAreas(admin)).toEqual([
+      'parishes',
+      'members',
+      'activities',
+      'events',
+      'meetings',
+      'distribution-lists',
+      'donations',
+      'ledger',
+      'dashboard',
+      'messages',
+      'profile',
+    ]);
+    expect(portalAreas(officer)).toEqual(['meetings', 'ledger', 'messages', 'profile']);
+    expect(portalAreas(member)).toEqual(['ledger', 'messages', 'profile']);
+  });
+
+  it('opens donations and the executive summaries to the Treasurer and Financial Secretary', () => {
+    for (const role of ['Treasurer', 'Financial Secretary']) {
+      expect(portalAreas(actor({ isOfficer: true, roles: [role] }))).toEqual(['meetings', 'donations', 'ledger', 'dashboard', 'messages', 'profile']);
+    }
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Grand Knight', 'Recorder'] }))).toEqual(['meetings', 'ledger', 'messages', 'profile']);
+  });
+
+  it('lets finance officers manage only their own council’s finances', () => {
+    const treasurer = actor({ isOfficer: true, roles: ['Treasurer'] });
+    expect(isFinanceOfficer(treasurer)).toBe(true);
+    expect(isFinanceOfficer(officer)).toBe(false);
+    expect([canManageFinances(treasurer, 1), canManageFinances(treasurer, 2)]).toEqual([true, false]);
+    expect([canManageFinances(admin, 1), canManageFinances(admin, 2), canManageFinances(superAdmin, 2)]).toEqual([true, false, true]);
+    expect(canManageFinances(member, 1)).toBe(false);
+  });
+
+  it('offers donation corrections to the recorder, the event owner, finance officers and admins', () => {
+    const donation = { CouncilID: 1, RecordedBy: 42 };
+    expect(canChangeDonation(actor({ memberId: 42 }), donation, null)).toBe(true);
+    expect(canChangeDonation(actor({ memberId: 7 }), donation, 7)).toBe(true);
+    expect(canChangeDonation(actor({ roles: ['Financial Secretary'] }), donation, null)).toBe(true);
+    expect(canChangeDonation(actor({ roles: ['Treasurer'], councilId: 2 }), donation, null)).toBe(false);
+    expect(canChangeDonation(admin, donation, null)).toBe(true);
+    expect(canChangeDonation(member, donation, 11)).toBe(false);
   });
 });

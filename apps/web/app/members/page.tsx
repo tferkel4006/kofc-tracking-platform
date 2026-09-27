@@ -1,7 +1,8 @@
 'use client';
 // Member roster: a split screen. The council's members are on the left, filterable by name and status; the
 // selected member (or a blank "add member" form) opens on the right. The Skills drawer lists every skill held
-// in the council and messages everyone with one. Admins work on their own council, Super Admins pick any.
+// in the council and messages everyone with one; "Skills & training" opens the selected member's skills and
+// training classes for editing. Admins work on their own council, Super Admins pick any.
 // The member type choices come from grantableMemberTypes, and the drivers enforce the same tiers
 // (ADMIN_REQUIRED, SUPER_ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED), so a refusal is reported, never hidden.
 import { useEffect, useState } from 'react';
@@ -10,7 +11,6 @@ import {
   canEditMember,
   describeError,
   grantableMemberTypes,
-  type CouncilSkillEntry,
   type Degree,
   type Member,
   type MemberStatus,
@@ -18,7 +18,10 @@ import {
   type NewMember,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Td, Textarea } from '@/components/ui';
+import { Drawer } from '@/components/Drawer';
+import { ProfileExtensionsEditor } from '@/components/ProfileExtensionsEditor';
+import { SkillFilterDrawer } from '@/components/SkillFilterDrawer';
+import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Td } from '@/components/ui';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
@@ -256,112 +259,6 @@ function MemberForm({
   );
 }
 
-// ---- skills drawer -----------------------------------------------------------
-
-/** Right-hand drawer: council skills with how many members hold each, the holders of the chosen one, and a message to all of them. */
-function SkillDrawer({ councilId, onClose }: { councilId: number; onClose: () => void }) {
-  const user = useUser();
-  const roster = useLoad(() => db.communication.listCouncilSkills(councilId), [councilId]);
-  const [skillId, setSkillId] = useState<number | null>(null);
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const { message, setMessage } = useAction();
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
-  const bySkill = new Map<number, { name: string; holders: CouncilSkillEntry[] }>();
-  for (const entry of roster.data ?? []) {
-    const group = bySkill.get(entry.skill.id) ?? { name: entry.skill.SkillName, holders: [] };
-    group.holders.push(entry);
-    bySkill.set(entry.skill.id, group);
-  }
-  const chosen = skillId === null ? undefined : bySkill.get(skillId);
-  // The sender never receives their own bulk message, so they are not counted as a recipient.
-  const recipients = chosen?.holders.filter((h) => h.memberId !== user.memberId).length ?? 0;
-
-  const send = async () => {
-    if (skillId === null) return;
-    setBusy(true);
-    setMessage(null);
-    try {
-      const sentTo = (await db.communication.sendBulkToSkills(councilId, skillId, text, user.memberId)).recipientIds.length;
-      setMessage({ tone: 'info', text: `Sent to ${sentTo} active member${sentTo === 1 ? '' : 's'} with ${chosen?.name ?? 'the skill'}. Replies arrive in Messages.` });
-      setText('');
-    } catch (err) {
-      setMessage({ tone: 'error', text: describeError(err) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <aside aria-label="Council skills" className="fixed inset-y-0 right-0 z-10 flex w-[28rem] flex-col border-l-8 border-gold bg-white shadow-xl">
-      <header data-surface="navy" className="flex items-center justify-between bg-navy px-4 py-3 text-white">
-        <h2 className="font-serif text-lg font-bold">Council skills</h2>
-        <button type="button" onClick={onClose} className="font-bold underline">
-          Close
-        </button>
-      </header>
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
-        {roster.error ? <Notice tone="error">{roster.error}</Notice> : null}
-        {roster.data?.length === 0 ? <Empty>No member of this council has recorded a skill yet. Members add skills from their profile.</Empty> : null}
-        <ul className="flex flex-wrap gap-2" aria-label="Skills">
-          {[...bySkill.entries()].map(([id, group]) => (
-            <li key={id}>
-              <button
-                type="button"
-                aria-pressed={skillId === id}
-                onClick={() => {
-                  setSkillId(id);
-                  setMessage(null);
-                }}
-                className={cx('rounded-full border-2 px-3 py-1 text-sm font-bold', skillId === id ? 'border-gold bg-gold text-navy' : 'border-navy bg-white text-navy')}
-              >
-                {group.name} · {group.holders.length}
-              </button>
-            </li>
-          ))}
-        </ul>
-
-        {chosen ? (
-          <>
-            <Table caption={`Members with ${chosen.name}`} head={['Member', 'Level', 'Contact']}>
-              {chosen.holders.map((h) => (
-                <tr key={h.memberId}>
-                  <Td>
-                    {h.lastName}, {h.firstName}
-                  </Td>
-                  <Td>{h.level.SkillLevel}</Td>
-                  <Td className="text-xs">
-                    <a href={`mailto:${h.email}`} className="underline">
-                      {h.email}
-                    </a>
-                    <br />
-                    {h.phone}
-                  </Td>
-                </tr>
-              ))}
-            </Table>
-            <Banner message={message} onDismiss={() => setMessage(null)} />
-            <Field label={`Message everyone with ${chosen.name}`} hint="Only active members are messaged, and never you.">
-              {(id) => <Textarea id={id} value={text} onChange={(e) => setText(e.target.value)} maxLength={4000} />}
-            </Field>
-            <Button onClick={() => void send()} disabled={busy || text.trim() === '' || recipients === 0}>
-              {busy ? 'Sending…' : `Send to ${recipients} member${recipients === 1 ? '' : 's'}`}
-            </Button>
-          </>
-        ) : roster.data && roster.data.length > 0 ? (
-          <p className="text-sm text-muted">Choose a skill to see who has it and message them.</p>
-        ) : null}
-      </div>
-    </aside>
-  );
-}
-
 // ---- the page ----------------------------------------------------------------
 
 function Roster() {
@@ -371,6 +268,7 @@ function Roster() {
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<number | 'all'>('all');
   const [skillsOpen, setSkillsOpen] = useState(false);
+  const [extensionsOpen, setExtensionsOpen] = useState(false);
 
   const lookups = useLoad(async (): Promise<Lookups> => {
     const [statuses, degrees, types] = await Promise.all([db.lookups.list('MemberStatus'), db.lookups.list('Degree'), db.lookups.list('MemberType')]);
@@ -383,6 +281,7 @@ function Roster() {
   }, [scope.councilId]);
 
   useEffect(() => setSelected(null), [scope.councilId]);
+  useEffect(() => setExtensionsOpen(false), [selected]);
 
   const statusName = new Map((lookups.data?.statuses ?? []).map((s) => [s.id, s.Status]));
   const typeName = new Map((lookups.data?.types ?? []).map((t) => [t.id, t.Type]));
@@ -467,14 +366,28 @@ function Roster() {
               onSaved={(id) => void members.reload().then(() => setSelected(id))}
             />
           ) : current ? (
-            <MemberForm member={current} councilId={scope.councilId} lookups={lookups.data} onSaved={() => void members.reload()} />
+            <div className="flex flex-col gap-3">
+              {canEditMember(user, current) ? (
+                <div className="flex justify-end">
+                  <Button variant="secondary" onClick={() => setExtensionsOpen(true)} aria-expanded={extensionsOpen}>
+                    Skills &amp; training
+                  </Button>
+                </div>
+              ) : null}
+              <MemberForm member={current} councilId={scope.councilId} lookups={lookups.data} onSaved={() => void members.reload()} />
+            </div>
           ) : (
             <Empty>Choose a member to view or change their record{canCreateMembers(user, scope.councilId) ? ', or add a new one' : ''}.</Empty>
           )}
         </div>
       </div>
 
-      {skillsOpen ? <SkillDrawer councilId={scope.councilId} onClose={() => setSkillsOpen(false)} /> : null}
+      {skillsOpen ? <SkillFilterDrawer councilId={scope.councilId} onClose={() => setSkillsOpen(false)} /> : null}
+      {extensionsOpen && current ? (
+        <Drawer title={`Skills & training: ${current.MemberFirstName} ${current.MemberLastName}`} onClose={() => setExtensionsOpen(false)} wide>
+          <ProfileExtensionsEditor memberId={current.id} showWorkingStatus={false} />
+        </Drawer>
+      ) : null}
     </>
   );
 }

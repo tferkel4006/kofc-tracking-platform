@@ -1078,7 +1078,17 @@ export class SqliteDataService implements DataService {
       [actorId],
     );
     if (!actor) throw new BusinessRuleError('MEMBER_NOT_FOUND', `No member with id ${actorId}.`, { memberId: actorId });
-    return { memberId: actorId, councilId: actor.councilId, memberType: actor.type ?? undefined, active: actor.active === 1 };
+    const roles = await db.getAllAsync<{ Role: string }>(
+      'SELECT r.[Role] FROM [MemberRoles] mr JOIN [Role] r ON r.[id] = mr.[RoleID] WHERE mr.[MemberID] = ? ORDER BY r.[id]',
+      [actorId],
+    );
+    return {
+      memberId: actorId,
+      councilId: actor.councilId,
+      memberType: actor.type ?? undefined,
+      active: actor.active === 1,
+      roles: roles.map((r) => r.Role),
+    };
   }
 
   private async memberTypeName(db: SQLite.SQLiteDatabase, typeId: number): Promise<string | undefined> {

@@ -536,7 +536,15 @@ export interface MemberWriteActor {
   councilId: number;
   memberType: string | undefined;
   active: boolean;
+  /** Names of the Roles the caller holds; only the donation rules read them. */
+  roles?: readonly string[];
 }
+
+/** Officer roles that keep the council's books: they maintain its donations and read its monthly summaries. */
+export const FINANCE_ROLE_NAMES = ['Financial Secretary', 'Treasurer'] as const;
+
+export const holdsFinanceRole = (roles: readonly string[] | undefined): boolean =>
+  (roles ?? []).some((r) => (FINANCE_ROLE_NAMES as readonly string[]).includes(r));
 
 /**
  * Only an Active Super Admin may create a Super Admin or promote a member to Super Admin. `grantedType` is
@@ -714,7 +722,8 @@ export function assertMayMaintainCouncilRecords(actor: MemberWriteActor, council
 
 /**
  * donations.update/remove: the Active member who recorded the donation and the Active owner of its event may
- * correct it, as may an Active Admin of its council and any Active Super Admin. `eventOwnerId` is the OwnerID
+ * correct it, as may an Active Financial Secretary or Treasurer of its council, an Active Admin of its council
+ * and any Active Super Admin. `eventOwnerId` is the OwnerID
  * of the donation's event (null when standalone). Call once for the stored row and, on a move, once for the
  * result, so the right must hold on both sides.
  */
@@ -725,10 +734,11 @@ export function assertMayChangeDonation(
   action: string,
 ): void {
   if (actor.active && (donation.RecordedBy === actor.memberId || eventOwnerId === actor.memberId)) return;
+  if (actor.active && holdsFinanceRole(actor.roles) && actor.councilId === donation.CouncilID) return;
   if (!hasAdminRights(actor)) {
     throw new SecurityPrivilegeError(
       'ADMIN_REQUIRED',
-      `Member ${actor.memberId} cannot ${action}: only the member who recorded it, the event's owner, or an active Admin can; member ${actor.memberId} is ${describeActor(actor)}.`,
+      `Member ${actor.memberId} cannot ${action}: only the member who recorded it, the event's owner, the council's Financial Secretary or Treasurer, or an active Admin can; member ${actor.memberId} is ${describeActor(actor)}.`,
       { actorId: actor.memberId, actorType: actor.memberType ?? null, donationId: donation.id },
     );
   }
