@@ -17,6 +17,7 @@ const FIELDS: FormField[] = [
   { key: 'CouncilName', label: 'Council name', maxLength: 100 },
   { key: 'State', label: 'State', maxLength: 50 },
   { key: 'Phone', label: 'Phone', type: 'tel', maxLength: 50, optional: true },
+  { key: 'Email', label: 'Email', type: 'email', maxLength: 100, optional: true },
 ];
 
 const toDraft = (c: Council): Draft => ({
@@ -24,6 +25,7 @@ const toDraft = (c: Council): Draft => ({
   CouncilName: c.CouncilName,
   State: c.State,
   Phone: c.Phone ?? '',
+  Email: c.Email ?? '',
 });
 
 function Councils() {
@@ -37,10 +39,11 @@ function Councils() {
       CouncilName: d.CouncilName,
       State: d.State,
       Phone: blankToNull(d.Phone),
+      Email: blankToNull(d.Email),
     };
     const saved = row
       ? await db.councils.update(user.memberId, row.id, values)
-      : await db.councils.create(user.memberId, { ...values, Phone: values.Phone ?? undefined });
+      : await db.councils.create(user.memberId, { ...values, Phone: values.Phone ?? undefined, Email: values.Email ?? undefined });
     await councils.reload();
     return saved;
   };
@@ -58,9 +61,10 @@ function Councils() {
           { label: 'Council', render: (c) => `${c.CouncilNumber} · ${c.CouncilName}` },
           { label: 'State', render: (c) => c.State },
           { label: 'Phone', render: (c) => formatPhone(c.Phone), className: 'whitespace-nowrap' },
+          { label: 'Email', render: (c) => c.Email || '–' },
         ]}
         fields={FIELDS}
-        blank={() => ({ CouncilNumber: '', CouncilName: '', State: '', Phone: '' })}
+        blank={() => ({ CouncilNumber: '', CouncilName: '', State: '', Phone: '', Email: '' })}
         toDraft={toDraft}
         rowLabel={(c) => `Council ${c.CouncilNumber}`}
         matches={(c, q) => `${c.CouncilNumber} ${c.CouncilName} ${c.State}`.toLowerCase().includes(q)}

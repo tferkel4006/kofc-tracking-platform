@@ -56,6 +56,7 @@ export interface Council {
   CouncilName: string;
   State: string;
   Phone?: string;
+  Email?: string;
 }
 
 export interface AffiliatedCouncils {

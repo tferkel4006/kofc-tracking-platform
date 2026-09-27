@@ -64,7 +64,7 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
 };
 
 /** Columns each maintained table's create/update writes, besides its id. */
-export const COUNCIL_COLUMNS = ['CouncilNumber', 'CouncilName', 'State', 'Phone'] as const satisfies readonly (keyof NewCouncil)[];
+export const COUNCIL_COLUMNS = ['CouncilNumber', 'CouncilName', 'State', 'Phone', 'Email'] as const satisfies readonly (keyof NewCouncil)[];
 export const PARISH_COLUMNS = [
   'Name',
   'StreetAddress1',
@@ -94,11 +94,14 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function cleanCouncil(input: NewCouncil): NewCouncil {
   assertKnownFields(input, COUNCIL_COLUMNS, 'Council');
+  const email = optionalText(input.Email, 'Email', 100);
+  if (email !== null && !EMAIL.test(email)) throw invalid(`Email "${email}" is not a valid address.`, { email });
   return {
     CouncilNumber: assertInteger(input.CouncilNumber, 'Council number', 1),
     CouncilName: assertText(input.CouncilName ?? '', 'Council name', 100),
     State: assertText(input.State ?? '', 'State', 50),
     Phone: optionalText(input.Phone, 'Phone', 50) ?? undefined,
+    Email: email ?? undefined,
   };
 }
 

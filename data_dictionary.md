@@ -84,6 +84,7 @@ The core multi-tenant anchor entity representing individual local councils.
 •	CouncilName (VARCHAR(100), NOT NULL) — Explicit structural naming text.
 •	State (VARCHAR(50), NOT NULL) — State jurisdiction abbreviation or name.
 •	Phone (VARCHAR(50), NULL) — Optional administrative contact line.
+•	Email (VARCHAR(100), NULL) — Optional shared council contact address.
 [AffiliatedCouncils]
 Many-to-many relationship mapping shared data permissions between distinct councils.
 •	PrimaryCouncilID (INTEGER, NOT NULL) — Composite Primary Key / Foreign Key references Council(id).

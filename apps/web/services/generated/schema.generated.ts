@@ -310,6 +310,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "Email",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": []
@@ -2273,7 +2280,8 @@ export const SEED_DATA: readonly SeedTable[] = [
         "CouncilNumber": 15295,
         "CouncilName": "St. Jude Council",
         "State": "OR",
-        "Phone": "503-555-0199"
+        "Phone": "503-555-0199",
+        "Email": "kofc15295@gmail.com"
       }
     ]
   },

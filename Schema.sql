@@ -79,6 +79,7 @@ CREATE TABLE [Council] (
 	[CouncilName] VARCHAR(100) NOT NULL,
 	[State] VARCHAR(50) NOT NULL,
 	[Phone] VARCHAR(50),
+	[Email] VARCHAR(100) NULL,
 	PRIMARY KEY([id])
 );
 GO
