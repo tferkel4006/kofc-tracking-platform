@@ -14,6 +14,7 @@ import emblem from './kofc-logo.png';
 
 const AREAS: Record<PortalArea, { href: string; label: string; hint: string }> = {
   lookups: { href: '/lookups', label: 'System lookups', hint: 'Maintain the global tables' },
+  members: { href: '/members', label: 'Member roster', hint: 'Members, types and skills' },
   events: { href: '/events', label: 'Event planner', hint: 'Events, shifts and councils' },
   meetings: { href: '/meetings', label: 'Meeting center', hint: 'Meetings, invitations, minutes' },
   ledger: { href: '/ledger', label: 'Post-event ledger', hint: 'Spend, funds raised, lessons' },

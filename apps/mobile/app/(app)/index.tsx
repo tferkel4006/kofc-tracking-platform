@@ -1,16 +1,17 @@
 // Member Dashboard: the shifts I am signed up for (anything within two days in red), the rolling
-// one-year no-show badge, and the meetings I am invited to.
+// one-year no-show badge, and the meetings I am invited to (officers and admins can take attendance from them).
 import { View } from 'react-native';
-import { formatDate, formatTimeRange, isUrgent, noShowWindowStart, toIsoDate, type Meeting } from '@kofc/shared';
+import { useRouter } from 'expo-router';
+import { canManageMeetings, formatDate, formatTimeRange, isUrgent, noShowWindowStart, toIsoDate, type Meeting } from '@kofc/shared';
 import { NoShowBadge } from '@/components/NoShowBadge';
 import { ShiftCard, UrgentTag } from '@/components/ShiftCard';
-import { AppText, Card, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
+import { AppText, Button, Card, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
 import { useLoad } from '@/lib/use-async';
 import { color, space } from '@/lib/theme';
 import { db } from '@/services/db';
 
-const MeetingCard = ({ meeting }: { meeting: Meeting }) => (
+const MeetingCard = ({ meeting, onAttendance }: { meeting: Meeting; onAttendance?: () => void }) => (
   <Card accent={color.navy}>
     <AppText variant="title">{meeting['Meeting Name']}</AppText>
     <AppText>
@@ -24,11 +25,13 @@ const MeetingCard = ({ meeting }: { meeting: Meeting }) => (
         {meeting.Agenda}
       </AppText>
     ) : null}
+    {onAttendance ? <Button title="Take attendance" variant="secondary" onPress={onAttendance} /> : null}
   </Card>
 );
 
 export default function DashboardScreen() {
   const user = useUser();
+  const router = useRouter();
   const state = useLoad(async () => {
     const today = new Date();
     const [shifts, noShows, meetings] = await Promise.all([
@@ -78,7 +81,13 @@ export default function DashboardScreen() {
             {data.meetings.length === 0 ? (
               <EmptyState message="You have no meeting invitations." />
             ) : (
-              data.meetings.map((m) => <MeetingCard key={m.id} meeting={m} />)
+              data.meetings.map((m) => (
+                <MeetingCard
+                  key={m.id}
+                  meeting={m}
+                  onAttendance={canManageMeetings(user, m.CouncilID) ? () => router.push(`/meeting/${m.id}`) : undefined}
+                />
+              ))
             )}
           </Section>
         </>

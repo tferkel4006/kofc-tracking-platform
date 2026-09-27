@@ -14,7 +14,7 @@ import type { Event, Member, MemberType } from './types';
 
 type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'>;
 
-export type PortalArea = 'lookups' | 'events' | 'meetings' | 'ledger';
+export type PortalArea = 'lookups' | 'members' | 'events' | 'meetings' | 'ledger';
 
 export const isSuperAdmin = (u: Actor): boolean => u.memberType === 'Super Admin';
 export const isAdmin = (u: Actor): boolean => u.memberType === 'Admin' || isSuperAdmin(u);
@@ -58,6 +58,7 @@ export function grantableMemberTypes(u: Actor, currentType?: MemberType['Type'])
 export function portalAreas(u: Actor): PortalArea[] {
   const areas: PortalArea[] = [];
   if (canMaintainLookups(u)) areas.push('lookups');
+  if (isAdmin(u)) areas.push('members');
   if (canPlanEvents(u)) areas.push('events');
   if (isAdmin(u) || u.isOfficer) areas.push('meetings');
   areas.push('ledger');

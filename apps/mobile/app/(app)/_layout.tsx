@@ -1,4 +1,4 @@
-// The signed-in shell: navy header with the council banner, and four bottom tabs.
+// The signed-in shell: navy header with the council banner, and five bottom tabs.
 // The selected tab is marked with a gold bar; unread messages show as a gold badge on Messages.
 import { View } from 'react-native';
 import { Tabs } from 'expo-router/js-tabs';
@@ -36,7 +36,10 @@ export default function AppLayout() {
       <Tabs.Screen name="index" options={tab('Home')} />
       <Tabs.Screen name="shifts" options={tab('Shifts')} />
       <Tabs.Screen name="log" options={tab('Log time')} />
+      <Tabs.Screen name="donate" options={tab('Donate')} />
       <Tabs.Screen name="messages" options={{ ...tab('Messages'), tabBarBadge: unread > 0 ? unread : undefined }} />
+      {/* Opened from a meeting card on Home; not a tab of its own. */}
+      <Tabs.Screen name="meeting/[meetingId]" options={{ ...tab('Attendance'), href: null }} />
     </Tabs>
   );
 }

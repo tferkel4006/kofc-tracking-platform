@@ -53,8 +53,8 @@ describe('portal permissions', () => {
   });
 
   it('shows each role only the areas it can use', () => {
-    expect(portalAreas(superAdmin)).toEqual(['lookups', 'events', 'meetings', 'ledger']);
-    expect(portalAreas(admin)).toEqual(['events', 'meetings', 'ledger']);
+    expect(portalAreas(superAdmin)).toEqual(['lookups', 'members', 'events', 'meetings', 'ledger']);
+    expect(portalAreas(admin)).toEqual(['members', 'events', 'meetings', 'ledger']);
     expect(portalAreas(officer)).toEqual(['meetings', 'ledger']);
     expect(portalAreas(member)).toEqual(['ledger']);
   });
