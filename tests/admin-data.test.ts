@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LOOKUP_META, LOOKUP_TABLE_ORDER, SecurityPrivilegeError, type DataService } from '@kofc/shared';
 import { drivers, expectRule, MEMBER, shiftByName } from './helpers';
 
 // Dev seed, relative to 2026-09-20 (see helpers.ts). Council ids: 1 = 15295 (own), 2 = 1024 (affiliated),
@@ -10,65 +11,111 @@ const UNAFFILIATED = 3;
 describe.each(drivers)('$name driver: lookup maintenance', (d) => {
   it('creates a row, then refuses a duplicate key ignoring case and writes nothing', async () => {
     const db = await d.make();
-    const row = await db.lookups.create('Role', { Role: 'Sergeant-at-Arms', Officer: 1 });
+    const row = await db.lookups.create(MEMBER.superAdmin, 'Role', { Role: 'Sergeant-at-Arms', Officer: 1 });
     expect(row).toMatchObject({ Role: 'Sergeant-at-Arms', Officer: 1 });
     expect((await db.lookups.list('Role')).map((r) => r.Role)).toContain('Sergeant-at-Arms');
 
     const before = d.count(db, 'Role');
-    const err = await expectRule(db.lookups.create('Role', { Role: 'sergeant-at-arms', Officer: 0 }), 'INVALID_INPUT');
+    const err = await expectRule(db.lookups.create(MEMBER.superAdmin, 'Role', { Role: 'sergeant-at-arms', Officer: 0 }), 'INVALID_INPUT');
     expect(err.message).toContain('already exists');
     expect(d.count(db, 'Role')).toBe(before);
   });
 
   it('upper-cases the one-letter no-show code and rejects longer codes, unknown fields and blanks', async () => {
     const db = await d.make();
-    expect(await db.lookups.create('NoShowReason', { NoShowReasonCode: 'f', NoShowReasonDescription: 'Sick' })).toMatchObject({
+    expect(await db.lookups.create(MEMBER.superAdmin, 'NoShowReason', { NoShowReasonCode: 'f', NoShowReasonDescription: 'Sick' })).toMatchObject({
       NoShowReasonCode: 'F',
     });
-    await expectRule(db.lookups.create('NoShowReason', { NoShowReasonCode: 'AB', NoShowReasonDescription: 'x' }), 'INVALID_INPUT');
-    await expectRule(db.lookups.create('Degree', { Degree: 'Fifth', Colour: 'red' }), 'INVALID_INPUT');
-    await expectRule(db.lookups.create('Degree', { Degree: '   ' }), 'INVALID_INPUT');
-    await expectRule(db.lookups.create('Degree', { Degree: 'x'.repeat(11) }), 'INVALID_INPUT');
+    await expectRule(db.lookups.create(MEMBER.superAdmin, 'NoShowReason', { NoShowReasonCode: 'AB', NoShowReasonDescription: 'x' }), 'INVALID_INPUT');
+    await expectRule(db.lookups.create(MEMBER.superAdmin, 'Degree', { Degree: 'Fifth', Colour: 'red' }), 'INVALID_INPUT');
+    await expectRule(db.lookups.create(MEMBER.superAdmin, 'Degree', { Degree: '   ' }), 'INVALID_INPUT');
+    await expectRule(db.lookups.create(MEMBER.superAdmin, 'Degree', { Degree: 'x'.repeat(11) }), 'INVALID_INPUT');
   });
 
   it('renames a row but not a built-in value the application looks up by name', async () => {
     const db = await d.make();
     const statuses = await db.lookups.list('MemberStatus');
     const inactive = statuses.find((s) => s.Status === 'Inactive')!;
-    expect(await db.lookups.update('MemberStatus', inactive.id, { Status: 'Dormant' })).toMatchObject({ Status: 'Dormant' });
+    expect(await db.lookups.update(MEMBER.superAdmin, 'MemberStatus', inactive.id, { Status: 'Dormant' })).toMatchObject({ Status: 'Dormant' });
 
     const active = statuses.find((s) => s.Status === 'Active')!;
-    const err = await expectRule(db.lookups.update('MemberStatus', active.id, { Status: 'Enrolled' }), 'LOOKUP_PROTECTED');
+    const err = await expectRule(db.lookups.update(MEMBER.superAdmin, 'MemberStatus', active.id, { Status: 'Enrolled' }), 'LOOKUP_PROTECTED');
     expect(err.message).toContain('"Active"');
     expect((await db.lookups.list('MemberStatus')).find((s) => s.id === active.id)?.Status).toBe('Active');
-    await expectRule(db.lookups.update('MemberStatus', 9999, { Status: 'Ghost' }), 'INVALID_INPUT');
+    await expectRule(db.lookups.update(MEMBER.superAdmin, 'MemberStatus', 9999, { Status: 'Ghost' }), 'INVALID_INPUT');
   });
 
   it('refuses to rename a row to another row’s key', async () => {
     const db = await d.make();
     const cats = await db.lookups.list('Category');
     await expectRule(
-      db.lookups.update('Category', cats[0].id, { Category: 'service', CategoryDescription: 'dup' }),
+      db.lookups.update(MEMBER.superAdmin, 'Category', cats[0].id, { Category: 'service', CategoryDescription: 'dup' }),
       'INVALID_INPUT',
     );
   });
 
   it('deletes an unused row, and refuses one still referenced or protected, naming where it is used', async () => {
     const db = await d.make();
-    const fresh = await db.lookups.create('Category', { Category: 'Youth', CategoryDescription: 'Youth events' });
-    await db.lookups.remove('Category', fresh.id);
+    const fresh = await db.lookups.create(MEMBER.superAdmin, 'Category', { Category: 'Youth', CategoryDescription: 'Youth events' });
+    await db.lookups.remove(MEMBER.superAdmin, 'Category', fresh.id);
     expect((await db.lookups.list('Category')).some((c) => c.id === fresh.id)).toBe(false);
 
     const service = (await db.lookups.list('Category')).find((c) => c.Category === 'Service')!;
-    const inUse = await expectRule(db.lookups.remove('Category', service.id), 'LOOKUP_IN_USE');
+    const inUse = await expectRule(db.lookups.remove(MEMBER.superAdmin, 'Category', service.id), 'LOOKUP_IN_USE');
     expect(inUse.message).toMatch(/Event\.CategoryID/);
     expect((await db.lookups.list('Category')).some((c) => c.id === service.id)).toBe(true);
 
     const active = (await db.lookups.list('MemberStatus')).find((s) => s.Status === 'Active')!;
-    await expectRule(db.lookups.remove('MemberStatus', active.id), 'LOOKUP_PROTECTED');
-    await expectRule(db.lookups.remove('Degree', 9999), 'INVALID_INPUT');
+    await expectRule(db.lookups.remove(MEMBER.superAdmin, 'MemberStatus', active.id), 'LOOKUP_PROTECTED');
+    await expectRule(db.lookups.remove(MEMBER.superAdmin, 'Degree', 9999), 'INVALID_INPUT');
   });
 });
+
+describe.each(drivers)('$name driver: lookup maintenance is Super Admin only', (d) => {
+  const statusId = async (db: DataService, status: string) =>
+    (await db.lookups.list('MemberStatus')).find((s) => s.Status === status)!.id;
+
+  it.each(LOOKUP_TABLE_ORDER)('refuses a Council Admin and a Member adding, changing or deleting %s rows, and writes nothing', async (table) => {
+    const db = await d.make();
+    const rows = await db.lookups.list(table);
+    const first = rows[0] as unknown as Record<string, unknown>;
+    const keyField = LOOKUP_META[table].keyField;
+    const before = d.count(db, table);
+    for (const actor of [MEMBER.admin, MEMBER.member]) {
+      await expectPrivilege(db.lookups.create(actor, table, {}), 'SUPER_ADMIN_REQUIRED');
+      await expectPrivilege(db.lookups.update(actor, table, rows[0].id, {}), 'SUPER_ADMIN_REQUIRED');
+      await expectPrivilege(db.lookups.remove(actor, table, rows[0].id), 'SUPER_ADMIN_REQUIRED');
+    }
+    expect(d.count(db, table)).toBe(before);
+    expect((await db.lookups.list(table))[0]).toMatchObject({ [keyField]: first[keyField] });
+  });
+
+  it('names the table and the caller’s tier in the refusal', async () => {
+    const db = await d.make();
+    const err = await expectPrivilege(db.lookups.create(MEMBER.admin, 'Role', { Role: 'Lecturer', Officer: 1 }), 'SUPER_ADMIN_REQUIRED');
+    expect(err.message).toContain('Role lookup table');
+    expect(err.message).toContain('Admin');
+    expect(err.details).toMatchObject({ actorId: MEMBER.admin, table: 'Role' });
+  });
+
+  it('refuses a Super Admin who is no longer Active', async () => {
+    const db = await d.make();
+    await db.members.update(MEMBER.superAdmin, MEMBER.superAdmin, { StatusID: await statusId(db, 'Inactive') });
+    const err = await expectPrivilege(db.lookups.create(MEMBER.superAdmin, 'Degree', { Degree: 'Fifth' }), 'SUPER_ADMIN_REQUIRED');
+    expect(err.message).toContain('inactive');
+  });
+
+  it('rejects an unknown caller as MEMBER_NOT_FOUND', async () => {
+    const db = await d.make();
+    await expectRule(db.lookups.create(9999, 'Degree', { Degree: 'Fifth' }), 'MEMBER_NOT_FOUND');
+  });
+});
+
+async function expectPrivilege(promise: Promise<unknown>, code: 'SUPER_ADMIN_REQUIRED') {
+  const err = await expectRule(promise, code);
+  expect(err).toBeInstanceOf(SecurityPrivilegeError);
+  return err;
+}
 
 describe.each(drivers)('$name driver: councils and activities', (d) => {
   it('lists councils by ascending CouncilNumber', async () => {

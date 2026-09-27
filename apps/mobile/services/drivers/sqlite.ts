@@ -13,6 +13,7 @@ import {
   assertLookupUnused,
   assertMayCreateMember,
   assertMayEditMemberExtensions,
+  assertMayMaintainLookups,
   assertMayUpdateMember,
   assertPasswordAcceptable,
   assertShiftHasRoom,
@@ -442,11 +443,12 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       return db.getAllAsync<LookupRowMap[T]>(`SELECT * FROM [${table}] ORDER BY [id]`);
     },
-    create: async <T extends LookupTableName>(table: T, values: LookupValues): Promise<LookupRowMap[T]> => {
+    create: async <T extends LookupTableName>(actorId: number, table: T, values: LookupValues): Promise<LookupRowMap[T]> => {
       if (!LOOKUP_TABLES[table]) throw new Error(`Unknown lookup table: ${String(table)}`);
-      const cleaned = cleanLookupValues(table, values);
       const cols = LOOKUP_META[table].fields.map((f) => f.key);
       const db = await this.ready();
+      assertMayMaintainLookups(await this.memberWriteActor(db, actorId), table);
+      const cleaned = cleanLookupValues(table, values);
       let id = 0;
       await db.withTransactionAsync(async () => {
         assertLookupKeyUnique(table, await db.getAllAsync(`SELECT * FROM [${table}]`), cleaned);
@@ -459,11 +461,12 @@ export class SqliteDataService implements DataService {
       return (await db.getFirstAsync<LookupRowMap[T]>(`SELECT * FROM [${table}] WHERE [id] = ?`, [id]))!;
     },
 
-    update: async <T extends LookupTableName>(table: T, id: number, values: LookupValues): Promise<LookupRowMap[T]> => {
+    update: async <T extends LookupTableName>(actorId: number, table: T, id: number, values: LookupValues): Promise<LookupRowMap[T]> => {
       if (!LOOKUP_TABLES[table]) throw new Error(`Unknown lookup table: ${String(table)}`);
-      const cleaned = cleanLookupValues(table, values);
       const cols = LOOKUP_META[table].fields.map((f) => f.key);
       const db = await this.ready();
+      assertMayMaintainLookups(await this.memberWriteActor(db, actorId), table);
+      const cleaned = cleanLookupValues(table, values);
       await db.withTransactionAsync(async () => {
         const row = await this.requireLookupRow(db, table, id);
         assertLookupNotProtected(table, row, cleaned);
@@ -476,10 +479,11 @@ export class SqliteDataService implements DataService {
       return (await db.getFirstAsync<LookupRowMap[T]>(`SELECT * FROM [${table}] WHERE [id] = ?`, [id]))!;
     },
 
-    remove: async (table, id) => {
+    remove: async (actorId, table, id) => {
       if (!LOOKUP_TABLES[table]) throw new Error(`Unknown lookup table: ${String(table)}`);
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
+        assertMayMaintainLookups(await this.memberWriteActor(db, actorId), table);
         const row = await this.requireLookupRow(db, table, id);
         assertLookupNotProtected(table, row, null);
         const usage = [];

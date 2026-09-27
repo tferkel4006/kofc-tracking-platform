@@ -292,6 +292,11 @@ export interface DataService {
     signUp(email: string, password: string): Promise<SessionUser>;
   };
 
+  /**
+   * Anyone may read the lookups (screens need them for drop-downs). Writes take `actorId`, the signed-in
+   * member: only an Active Super Admin may change a lookup table (SecurityPrivilegeError
+   * SUPER_ADMIN_REQUIRED, nothing written), and an unknown actor rejects MEMBER_NOT_FOUND.
+   */
   lookups: {
     /** All rows of one lookup table, ordered by id. */
     list<T extends LookupTableName>(table: T): Promise<LookupRowMap[T][]>;
@@ -299,11 +304,11 @@ export interface DataService {
      * Adds a row. Rejects (INVALID_INPUT) when a field is missing, too long or malformed, or when the
      * table's key value (e.g. Role.Role) already exists, compared case-insensitively.
      */
-    create<T extends LookupTableName>(table: T, values: LookupValues): Promise<LookupRowMap[T]>;
+    create<T extends LookupTableName>(actorId: number, table: T, values: LookupValues): Promise<LookupRowMap[T]>;
     /** Changes a row's fields. Protected values the app depends on ('Active', the three member types) cannot be renamed. */
-    update<T extends LookupTableName>(table: T, id: number, values: LookupValues): Promise<LookupRowMap[T]>;
+    update<T extends LookupTableName>(actorId: number, table: T, id: number, values: LookupValues): Promise<LookupRowMap[T]>;
     /** Deletes a row nothing references (LOOKUP_IN_USE otherwise) and that is not protected (LOOKUP_PROTECTED). */
-    remove(table: LookupTableName, id: number): Promise<void>;
+    remove(actorId: number, table: LookupTableName, id: number): Promise<void>;
   };
 
   councils: {
@@ -335,8 +340,9 @@ export interface DataService {
      * email already used by a member or a login (case-insensitive). Once the row is stored, logs the
      * welcome email (what the app is, how to get it, how to sign in, who the council admin is).
      * `actorId` is the signed-in member making the change. Only an Active Admin or Super Admin may add
-     * members (SecurityPrivilegeError ADMIN_REQUIRED), and only an Active Super Admin may create a Super
-     * Admin (SUPER_ADMIN_REQUIRED); nothing is written either way. Rejects MEMBER_NOT_FOUND for an
+     * members (SecurityPrivilegeError ADMIN_REQUIRED), an Admin only in their own council
+     * (COUNCIL_ACCESS_DENIED), and only an Active Super Admin may create a Super Admin
+     * (SUPER_ADMIN_REQUIRED); nothing is written in any of these cases. Rejects MEMBER_NOT_FOUND for an
      * unknown actor.
      */
     create(actorId: number, member: NewMember): Promise<Member>;
@@ -344,8 +350,9 @@ export interface DataService {
      * Changes a member's fields; omitted fields keep their stored values, and the result is validated as
      * in `create`. An email change also renames the member's login. Privileges (SecurityPrivilegeError,
      * nothing written): a member without Active Admin rights may change only their own contact details
-     * (MEMBER_SELF_SERVICE_COLUMNS), otherwise ADMIN_REQUIRED; an Admin may not change a Super Admin's
-     * type or status, and only an Active Super Admin may promote to Super Admin (SUPER_ADMIN_REQUIRED).
+     * (MEMBER_SELF_SERVICE_COLUMNS), otherwise ADMIN_REQUIRED; an Admin may change only members of their
+     * own council and may not move one to another council (COUNCIL_ACCESS_DENIED); an Admin may not change
+     * a Super Admin's type or status, and only an Active Super Admin may promote to Super Admin (SUPER_ADMIN_REQUIRED).
      * Rejects MEMBER_NOT_FOUND for an unknown actor or member.
      */
     update(actorId: number, id: number, changes: Partial<NewMember>): Promise<Member>;
@@ -359,7 +366,8 @@ export interface DataService {
      * `skills` and `training` are the complete new lists (an empty array clears them); `workingStatusId`
      * null clears the status. Rejects MEMBER_NOT_FOUND, or INVALID_INPUT for an unknown lookup id, a skill
      * listed twice, the same class twice in one year, or a year outside 1882..this year. `actorId` is the
-     * signed-in member; without Active Admin rights they may change only their own (ADMIN_REQUIRED).
+     * signed-in member; without Active Admin rights they may change only their own (ADMIN_REQUIRED), and
+     * an Admin only those of their own council's members (COUNCIL_ACCESS_DENIED).
      */
     updateExtensions(
       actorId: number,

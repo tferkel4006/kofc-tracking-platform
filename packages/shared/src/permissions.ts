@@ -5,7 +5,8 @@
 // and the owner of an event may record its post-event results).
 //
 // These decide what the UI offers. Member writes (members.create/update, memberProfiles.updateExtensions)
-// take the caller's id and the drivers enforce the same rules (rules.ts); the other areas have no caller
+// and lookup writes (lookups.create/update/remove) take the caller's id and the drivers enforce the same
+// rules (rules.ts); the other areas have no caller
 // identity yet, so until the remote driver's API enforces them server-side they are a usability gate.
 // =========================================================================
 import type { SessionUser } from './contract';

@@ -15,6 +15,7 @@ import {
   assertLookupUnused,
   assertMayCreateMember,
   assertMayEditMemberExtensions,
+  assertMayMaintainLookups,
   assertMayUpdateMember,
   assertPasswordAcceptable,
   assertShiftHasRoom,
@@ -477,20 +478,22 @@ export class MemoryDataService implements DataService {
       return s.rows(table).map((r) => ({ ...r })) as unknown as LookupRowMap[T][];
     },
 
-    create: async <T extends LookupTableName>(table: T, values: LookupValues): Promise<LookupRowMap[T]> => {
+    create: async <T extends LookupTableName>(actorId: number, table: T, values: LookupValues): Promise<LookupRowMap[T]> => {
       if (!LOOKUP_TABLES[table]) throw new Error(`Unknown lookup table: ${String(table)}`);
-      const cleaned = cleanLookupValues(table, values);
       const s = await this.ready();
+      assertMayMaintainLookups(this.memberWriteActor(s, actorId), table);
+      const cleaned = cleanLookupValues(table, values);
       return s.transaction(() => {
         assertLookupKeyUnique(table, s.rows(table), cleaned);
         return { ...s.insert(table, cleaned) } as unknown as LookupRowMap[T];
       });
     },
 
-    update: async <T extends LookupTableName>(table: T, id: number, values: LookupValues): Promise<LookupRowMap[T]> => {
+    update: async <T extends LookupTableName>(actorId: number, table: T, id: number, values: LookupValues): Promise<LookupRowMap[T]> => {
       if (!LOOKUP_TABLES[table]) throw new Error(`Unknown lookup table: ${String(table)}`);
-      const cleaned = cleanLookupValues(table, values);
       const s = await this.ready();
+      assertMayMaintainLookups(this.memberWriteActor(s, actorId), table);
+      const cleaned = cleanLookupValues(table, values);
       const row = this.requireLookupRow(s, table, id);
       assertLookupNotProtected(table, row, cleaned);
       assertLookupKeyUnique(table, s.rows(table), cleaned, id);
@@ -498,9 +501,10 @@ export class MemoryDataService implements DataService {
       return { ...row } as unknown as LookupRowMap[T];
     },
 
-    remove: async (table, id) => {
+    remove: async (actorId, table, id) => {
       if (!LOOKUP_TABLES[table]) throw new Error(`Unknown lookup table: ${String(table)}`);
       const s = await this.ready();
+      assertMayMaintainLookups(this.memberWriteActor(s, actorId), table);
       const row = this.requireLookupRow(s, table, id);
       assertLookupNotProtected(table, row, null);
       assertLookupUnused(

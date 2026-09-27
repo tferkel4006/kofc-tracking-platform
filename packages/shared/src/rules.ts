@@ -452,6 +452,19 @@ export function assertMayGrantMemberType(actor: MemberWriteActor, grantedType: s
   );
 }
 
+/**
+ * lookups.create/update/remove: only an Active Super Admin maintains the eight global lookup tables
+ * (Specifications: "Super Admin Functions"). `actor` is read from the database, like a member write's.
+ */
+export function assertMayMaintainLookups(actor: MemberWriteActor, table: string): void {
+  if (hasSuperAdminRights(actor)) return;
+  throw new SecurityPrivilegeError(
+    'SUPER_ADMIN_REQUIRED',
+    `Only an active Super Admin can change the ${table} lookup table; member ${actor.memberId} is ${describeActor(actor)}.`,
+    { actorId: actor.memberId, actorType: actor.memberType ?? null, table },
+  );
+}
+
 const hasSuperAdminRights = (a: MemberWriteActor): boolean => a.active && a.memberType === SUPER_ADMIN_TYPE;
 const hasAdminRights = (a: MemberWriteActor): boolean => a.active && (a.memberType === 'Admin' || a.memberType === SUPER_ADMIN_TYPE);
 const describeActor = (a: MemberWriteActor): string => `${a.active ? '' : 'an inactive '}${a.memberType ?? 'of unknown type'}`;

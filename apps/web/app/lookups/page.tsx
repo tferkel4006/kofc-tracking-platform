@@ -2,10 +2,12 @@
 // System Lookups: one tab per global table, one generic grid driven by LOOKUP_META. Super Admins only.
 // Rows the application looks up by name (e.g. member status "Active") are marked built-in and cannot be
 // renamed or deleted; a row still referenced elsewhere cannot be deleted and the message says where.
+// The drivers enforce the same tier on every write (SUPER_ADMIN_REQUIRED), so hiding the page is not the only gate.
 import { useState } from 'react';
 import { describeError, LOOKUP_META, LOOKUP_TABLE_ORDER, type LookupTableName, type LookupValues } from '@kofc/shared';
 import { RequireArea } from '@/components/CouncilScope';
 import { Button, cx, Empty, Input, Notice, PageTitle, Pill, Table, Tabs, Td } from '@/components/ui';
+import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
@@ -15,6 +17,7 @@ const blankFor = (table: LookupTableName): LookupValues =>
   Object.fromEntries(LOOKUP_META[table].fields.map((f) => [f.key, f.kind === 'flag' ? 0 : '']));
 
 function LookupGrid({ table }: { table: LookupTableName }) {
+  const user = useUser();
   const meta = LOOKUP_META[table];
   const rows = useLoad(async () => (await db.lookups.list(table)) as unknown as Row[], [table]);
   const [adding, setAdding] = useState<LookupValues>(() => blankFor(table));
@@ -64,7 +67,7 @@ function LookupGrid({ table }: { table: LookupTableName }) {
 
   const add = () =>
     run(async () => {
-      await db.lookups.create(table, adding);
+      await db.lookups.create(user.memberId, table, adding);
       setAdding(blankFor(table));
     }, `Added to ${meta.label}.`);
 
@@ -98,7 +101,7 @@ function LookupGrid({ table }: { table: LookupTableName }) {
                 ? editor(
                     draft,
                     setDraft,
-                    () => void run(async () => { await db.lookups.update(table, row.id, draft); setEditingId(null); }, 'Saved.'),
+                    () => void run(async () => { await db.lookups.update(user.memberId, table, row.id, draft); setEditingId(null); }, 'Saved.'),
                     () => setEditingId(null),
                   )
                 : meta.fields.map((f) => (
@@ -109,7 +112,7 @@ function LookupGrid({ table }: { table: LookupTableName }) {
                 <div className="flex gap-2">
                   {editing ? (
                     <>
-                      <Button size="sm" onClick={() => void run(async () => { await db.lookups.update(table, row.id, draft); setEditingId(null); }, 'Saved.')}>
+                      <Button size="sm" onClick={() => void run(async () => { await db.lookups.update(user.memberId, table, row.id, draft); setEditingId(null); }, 'Saved.')}>
                         Save
                       </Button>
                       <Button size="sm" variant="secondary" onClick={() => setEditingId(null)}>
@@ -118,7 +121,7 @@ function LookupGrid({ table }: { table: LookupTableName }) {
                     </>
                   ) : confirmId === row.id ? (
                     <>
-                      <Button size="sm" variant="danger" onClick={() => void run(async () => { await db.lookups.remove(table, row.id); setConfirmId(null); }, 'Deleted.')}>
+                      <Button size="sm" variant="danger" onClick={() => void run(async () => { await db.lookups.remove(user.memberId, table, row.id); setConfirmId(null); }, 'Deleted.')}>
                         Confirm delete
                       </Button>
                       <Button size="sm" variant="secondary" onClick={() => setConfirmId(null)}>
