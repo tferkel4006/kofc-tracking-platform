@@ -1,5 +1,5 @@
-📖 Knights of Columbus Application Data Dictionary
-📂 1. Core Lookup Tables
+# Knights of Columbus Application Data Dictionary
+# 1. Core Lookup Tables
 [Credentials]
 Stores secure authentication keys. Linked 1:1 with the Member profile during onboarding.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -41,9 +41,42 @@ Standardized categories for structural council gatherings.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
 •	Type (VARCHAR(50), NULL) — Designations: Monthly, Officer, Community.
 •	Description (VARCHAR(255), NULL) — Statement outlining meeting requirements.
+[WorkingStatus]
+Global lookup table classifying a member's current employment profile.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	WorkingStatus (VARCHAR(25), NOT NULL) — Text label: Student, Full Time, Part Time, Retired, Unemployed.
+[DonationMethod]
+Global lookup table specifying allowed financial tracking channels.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	DonationMethod (VARCHAR(30), NOT NULL) — Text label: Cash, Credit Card, Venmo, Zelle, Zeffy, Parishsoft, Physical Items.
+[DonationType]
+Multi-tenant lookup configuring council-specific ledger accounts.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	DonationType (VARCHAR(100), NOT NULL) — Text label: Parking, Parish Event, Meals, Unsolicited.
+[Skill]
+Global lookup table cataloging specialized professional trades and tactical skillsets available within the council roster.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing internal identifier.
+•	SkillName (VARCHAR(30), NOT NULL) — Text label outlining the trade specialization (e.g., Plumbing, Electrical, Cooking, Finances).
+[SkillLevel]
+Global lookup table defining mastery tiers for member skill competencies.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing internal identifier.
+•	SkillLevel (VARCHAR(30), NOT NULL) — Text label mapping proficiency rank: Novice, Beginner, Intermediate, Senior, Expert.
+[KOCTrainingClasses]
+Global lookup tracking mandatory safety, structural compliance, and youth protection courses.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing internal identifier.
+•	ClassName (VARCHAR(100), NOT NULL) — Official title banner text for the course (e.g., Background Check, Preventing Abuse and Protecting Those We Serve).
+[CouncilDonationMethod]
+Multi-tenant lookup table detailing which electronic, physical, or cash donation collection strategies are toggled active for an isolated council.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing relational identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). Maps the config line directly to the local branch entity.
+•	DonationMethodID (INTEGER, NOT NULL) — Foreign Key references DonationMethod(id). Locks in the allowed channel link.
+•	DonationMethodURL (VARCHAR(255), NULL) — Storage bucket endpoint link holding the static QR code asset for that council's platform profile (Venmo, Zelle, Zeffy, etc.).
+________________________________________
+
 
 ________________________________________
-📂 2. Tenants & Organizational Structure
+# 2. Tenants & Organizational Structure
 [Council]
 The core multi-tenant anchor entity representing individual local councils.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -94,7 +127,7 @@ Tracks meeting rosters, invitations, and recorded user attendance.
 •	Attended (BIT, DEFAULT 0) — Attendance flag (1 = Present, 0 = Absent/No-Show).
 
 ________________________________________
-📂 3. Members & Relationships
+# 3. Members & Relationships
 [Member]
 The master roster directory storing personal and membership data.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -119,8 +152,21 @@ Bridge table enabling members to hold multiple concurrent roles or chairmanships
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
 •	RoleID (INTEGER, NOT NULL) — Foreign Key references Role(id).
 •	MemberID (INTEGER, NOT NULL) — Foreign Key references Member(id).
+[MemberTraining]
+The intersection table linking individual members to completed training modules, including a tracking constraint for year validation.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing relational identifier.
+•	MemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). Specifies which person completed the training assignment.
+•	TrainingClassID (INTEGER, NOT NULL) — Foreign Key references KOCTrainingClasses(id). Links to the specific class definition.
+•	YearTaken (DATE, NOT NULL) — Calendar date step indicating when the class was completed. Validated by system test constraints to block entries prior to 1882 or after the current calendar year.
+[MemberSkill]
+The many-to-many intersection entity bridging individual council members to their specific trades and corresponding expertise levels.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing relational identifier.
+•	SkillID (INTEGER, NOT NULL) — Foreign Key references Skill(id). Ties row to a specific trade descriptor.
+•	SkillLevelID (INTEGER, NOT NULL) — Foreign Key references SkillLevel(id). Establishes the experience classification.
+•	MemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). Binds the skill listing directly to a specific brother on the roster.
+
 ________________________________________
-📂 4. Events, Shifts, & Transactional Metrics
+# 4. Events, Shifts, & Transactional Metrics
 [Event]
 Multi-day calendar activities managed by councils.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -175,7 +221,19 @@ The post-event institutional knowledge base repository.
 •	LeassonsLearnedCategoryID (INTEGER, NOT NULL) — Foreign Key references LessonsLearnedCategory(id).
 •	LessonsLearnedDescription (VARCHAR(255), NOT NULL) — Explicit summary breakdown of what went well or needs fixing.
 ________________________________________
-📂 5. Unscheduled Council Activities
+[Donation]
+Transactional financial records tracking standalone or event-linked receipts.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	DonationDate (DATE, NOT NULL) — Calendar date the payment occurred.
+•	DonationMethodID (INTEGER, NOT NULL) — Foreign Key references DonationMethod(id).
+•	DonationTypeID (INTEGER, NOT NULL) — Foreign Key references DonationType(id).
+•	Donor (VARCHAR(100), NULL) — Optional field recording the donor's name.
+•	DonationDescription (VARCHAR(255), NULL) — Structural description notes.
+•	EventID (INTEGER, NOT NULL) — Foreign Key references Event(id).
+•	DonationAmount (MONEY, NOT NULL) — Dollar scale precision total entry.
+•	DonationPhotoURL (VARCHAR(255), NULL) — Storage bucket link for physical item verification images.
+# 5. Unscheduled Council Activities
 [Activities]
 Ongoing, non-scheduled initiatives localized to single councils.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -192,7 +250,7 @@ Volunteer time records logged directly against open activities without signup co
 •	Hours (DECIMAL(5,2), NOT NULL) — Total volume of recorded effort (restricted to 15-minute steps).
 •	ActivityNotes (VARCHAR(255), NULL) — Operational remarks summary detailing work completed.
 ________________________________________
-📂 6. Asynchronous Messaging Infrastructure
+# 6. Asynchronous Messaging Infrastructure
 [DistributionLists]
 Custom recipient groups assembled by administrators for bulk communication.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
