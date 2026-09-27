@@ -15,9 +15,13 @@ import { drivers, expectRule, MEMBER } from './helpers';
 
 // Member writes are gated by the caller's tier, which the driver reads from the database, so a Council Admin
 // or Member is refused whatever the client sends:
-//  - only an Active Admin or Super Admin adds members (ADMIN_REQUIRED);
+//  - only an Active Admin or Super Admin adds members (ADMIN_REQUIRED), an Admin only in their own council (COUNCIL_ACCESS_DENIED);
 //  - a Member changes only their own contact details, skills and training (ADMIN_REQUIRED);
 //  - only an Active Super Admin creates or promotes a Super Admin, or changes one's type or status (SUPER_ADMIN_REQUIRED).
+
+// Dev seed: council 1 is 15295, home of the seeded Super Admin, Admin and Member; council 2 is affiliated 1024.
+const OWN_COUNCIL = 1;
+const OTHER_COUNCIL = 2;
 
 async function typeId(db: DataService, type: string): Promise<number> {
   return (await db.lookups.list('MemberType')).find((t) => t.Type === type)!.id;
@@ -149,6 +153,54 @@ describe.each(drivers)('$name driver: Super Admin privilege guard', (d) => {
     expect(await db.members.get(MEMBER.member)).toEqual(before);
   });
 
+  it('lets a Council Admin create and edit members of their own council', async () => {
+    const db = await d.make();
+    const created = await db.members.create(MEMBER.admin, await recruit(db, 'Member'));
+    expect(created.CouncilID).toBe(OWN_COUNCIL);
+    expect(await db.members.update(MEMBER.admin, created.id, { Phone: '555-444-0000' })).toMatchObject({ Phone: '555-444-0000' });
+    expect(await db.members.update(MEMBER.admin, MEMBER.member, { City: 'Salem' })).toMatchObject({ City: 'Salem' });
+  });
+
+  it('refuses a Council Admin adding a member to another council and writes nothing', async () => {
+    const db = await d.make();
+    const members = d.count(db, 'Member');
+    const logins = d.count(db, 'Credentials');
+    const err = await expectRule(
+      db.members.create(MEMBER.admin, { ...(await recruit(db, 'Member')), CouncilID: OTHER_COUNCIL }),
+      'COUNCIL_ACCESS_DENIED',
+    );
+    expect(err).toBeInstanceOf(SecurityPrivilegeError);
+    expect(err.details).toMatchObject({ actorId: MEMBER.admin, actorCouncilId: OWN_COUNCIL, councilId: OTHER_COUNCIL });
+    expect(d.count(db, 'Member')).toBe(members);
+    expect(d.count(db, 'Credentials')).toBe(logins);
+  });
+
+  it('refuses a Council Admin editing, or pulling in, a member of another council and leaves the row unchanged', async () => {
+    const db = await d.make();
+    const outsider = await db.members.create(MEMBER.superAdmin, { ...(await recruit(db, 'Member')), CouncilID: OTHER_COUNCIL });
+    const before = await db.members.get(outsider.id);
+    const extensions = await db.memberProfiles.getExtensions(outsider.id);
+    await expectRule(db.members.update(MEMBER.admin, outsider.id, { Phone: '555-000-0000' }), 'COUNCIL_ACCESS_DENIED');
+    await expectRule(db.members.update(MEMBER.admin, outsider.id, { CouncilID: OWN_COUNCIL }), 'COUNCIL_ACCESS_DENIED');
+    await expectRule(db.memberProfiles.updateExtensions(MEMBER.admin, outsider.id, [], [], null), 'COUNCIL_ACCESS_DENIED');
+    expect(await db.members.get(outsider.id)).toEqual(before);
+    expect(await db.memberProfiles.getExtensions(outsider.id)).toEqual(extensions);
+  });
+
+  it('refuses a Council Admin moving their own council’s member to another council', async () => {
+    const db = await d.make();
+    const before = await db.members.get(MEMBER.member);
+    await expectRule(db.members.update(MEMBER.admin, MEMBER.member, { CouncilID: OTHER_COUNCIL }), 'COUNCIL_ACCESS_DENIED');
+    expect(await db.members.get(MEMBER.member)).toEqual(before);
+  });
+
+  it('lets a Super Admin add and edit members of any council', async () => {
+    const db = await d.make();
+    const outsider = await db.members.create(MEMBER.superAdmin, { ...(await recruit(db, 'Member')), CouncilID: OTHER_COUNCIL });
+    expect(await db.members.update(MEMBER.superAdmin, outsider.id, { Phone: '555-777-0000' })).toMatchObject({ Phone: '555-777-0000' });
+    expect(await db.members.update(MEMBER.superAdmin, outsider.id, { CouncilID: OWN_COUNCIL })).toMatchObject({ CouncilID: OWN_COUNCIL });
+  });
+
   it('lets a Council Admin maintain another member’s skills and training', async () => {
     const db = await d.make();
     const ext = await db.memberProfiles.updateExtensions(MEMBER.admin, MEMBER.member, [], [], null);
@@ -235,16 +287,20 @@ describe('member UI gates (permissions.ts)', () => {
   const admin = user('Admin', MEMBER.admin);
   const member = user('Member', MEMBER.member);
 
-  it('offers "Add member" to Admins and Super Admins only', () => {
-    expect(canCreateMembers(superAdmin)).toBe(true);
-    expect(canCreateMembers(admin)).toBe(true);
-    expect(canCreateMembers(member)).toBe(false);
+  it('offers "Add member" to Super Admins anywhere and to Admins in their own council only', () => {
+    expect(canCreateMembers(superAdmin, OTHER_COUNCIL)).toBe(true);
+    expect(canCreateMembers(admin, OWN_COUNCIL)).toBe(true);
+    expect(canCreateMembers(admin, OTHER_COUNCIL)).toBe(false);
+    expect(canCreateMembers(member, OWN_COUNCIL)).toBe(false);
   });
 
-  it('lets a Member open only their own profile for editing', () => {
-    expect(canEditMember(member, MEMBER.member)).toBe(true);
-    expect(canEditMember(member, MEMBER.admin)).toBe(false);
-    expect(canEditMember(admin, MEMBER.member)).toBe(true);
+  it('lets a Member open only their own profile, and an Admin only their own council’s', () => {
+    const own = (id: number) => ({ id, CouncilID: OWN_COUNCIL });
+    expect(canEditMember(member, own(MEMBER.member))).toBe(true);
+    expect(canEditMember(member, own(MEMBER.admin))).toBe(false);
+    expect(canEditMember(admin, own(MEMBER.member))).toBe(true);
+    expect(canEditMember(admin, { id: 99, CouncilID: OTHER_COUNCIL })).toBe(false);
+    expect(canEditMember(superAdmin, { id: 99, CouncilID: OTHER_COUNCIL })).toBe(true);
   });
 
   it('hides type and promotion controls from Members, and from Admins on a Super Admin', () => {

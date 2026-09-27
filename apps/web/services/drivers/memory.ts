@@ -586,7 +586,7 @@ export class MemoryDataService implements DataService {
       const clean = cleanNewMember(member, this.now());
       const s = await this.ready();
       const row = s.transaction(() => {
-        assertMayCreateMember(this.memberWriteActor(s, actorId), this.memberTypeName(s, clean.MemberTypeID));
+        assertMayCreateMember(this.memberWriteActor(s, actorId), clean, this.memberTypeName(s, clean.MemberTypeID));
         this.assertMemberReferences(s, clean);
         const email = clean.Email.toLowerCase();
         if (s.rows('Member').some((m) => lower(m.Email) === email) || s.rows('Credentials').some((c) => lower(c.Username) === email)) {
@@ -638,6 +638,7 @@ export class MemoryDataService implements DataService {
     const actor = this.requireMember(s, actorId);
     return {
       memberId: actorId,
+      councilId: actor.CouncilID as number,
       memberType: this.memberTypeName(s, actor.MemberTypeID as number),
       active: actor.StatusID === this.activeStatusId(s),
     };
@@ -700,7 +701,7 @@ export class MemoryDataService implements DataService {
       s.transaction(() => {
         const actor = this.memberWriteActor(s, actorId);
         const member = this.requireMember(s, memberId);
-        assertMayEditMemberExtensions(actor, memberId);
+        assertMayEditMemberExtensions(actor, member as unknown as Member);
         for (const sk of clean.skills) {
           this.assertRowExists(s, 'Skill', sk.skillId, 'skill');
           this.assertRowExists(s, 'SkillLevel', sk.skillLevelId, 'skill level');

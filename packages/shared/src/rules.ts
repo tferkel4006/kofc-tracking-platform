@@ -62,7 +62,8 @@ export type BusinessRuleCode =
   | 'DONATION_METHOD_NOT_ENABLED'
   | 'NO_RECIPIENTS'
   | 'ADMIN_REQUIRED'
-  | 'SUPER_ADMIN_REQUIRED';
+  | 'SUPER_ADMIN_REQUIRED'
+  | 'COUNCIL_ACCESS_DENIED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -81,7 +82,7 @@ export class BusinessRuleError extends Error {
  * failures report this one too; nothing has been written when it throws. The code names the tier needed.
  */
 export class SecurityPrivilegeError extends BusinessRuleError {
-  constructor(code: 'ADMIN_REQUIRED' | 'SUPER_ADMIN_REQUIRED', message: string, details: Record<string, unknown> = {}) {
+  constructor(code: 'ADMIN_REQUIRED' | 'SUPER_ADMIN_REQUIRED' | 'COUNCIL_ACCESS_DENIED', message: string, details: Record<string, unknown> = {}) {
     super(code, message, details);
     this.name = 'SecurityPrivilegeError';
   }
@@ -430,6 +431,8 @@ export const SUPER_ADMIN_TYPE = 'Super Admin';
 /** The caller of a member write, as the driver read it from the database, never as the client describes itself. */
 export interface MemberWriteActor {
   memberId: number;
+  /** The caller's own council: an Admin's writes stay inside it. */
+  councilId: number;
   memberType: string | undefined;
   active: boolean;
 }
@@ -465,11 +468,27 @@ export const MEMBER_SELF_SERVICE_COLUMNS = [
   'WorkingStatusID',
 ] as const satisfies readonly (typeof MEMBER_COLUMNS)[number][];
 
+/**
+ * Tenant boundary: a Super Admin writes members of any council, an Admin only of their own
+ * (permissions.canAdministerCouncil). Call only for callers with admin rights.
+ */
+function assertAdminCouncil(actor: MemberWriteActor, councilId: number, action: string, memberId?: number): void {
+  if (hasSuperAdminRights(actor) || actor.councilId === councilId) return;
+  throw new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Admin ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; an Admin manages only their own council's members.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId, ...(memberId === undefined ? {} : { memberId }) },
+  );
+}
+
 /** Fields a Super Admin's clearance rests on: an Admin changing either could demote or disable them. */
 const CLEARANCE_COLUMNS: readonly string[] = ['MemberTypeID', 'StatusID'];
 
-/** Only an active Admin or Super Admin may create members; a Super Admin row also needs a Super Admin. */
-export function assertMayCreateMember(actor: MemberWriteActor, grantedType: string | undefined): void {
+/**
+ * Only an active Admin or Super Admin may create members, an Admin only in their own council; a Super Admin
+ * row also needs a Super Admin.
+ */
+export function assertMayCreateMember(actor: MemberWriteActor, member: Pick<NewMember, 'CouncilID'>, grantedType: string | undefined): void {
   if (!hasAdminRights(actor)) {
     throw new SecurityPrivilegeError(
       'ADMIN_REQUIRED',
@@ -477,12 +496,14 @@ export function assertMayCreateMember(actor: MemberWriteActor, grantedType: stri
       { actorId: actor.memberId, actorType: actor.memberType ?? null },
     );
   }
+  assertAdminCouncil(actor, member.CouncilID, 'add a member');
   assertMayGrantMemberType(actor, grantedType);
 }
 
 /**
  * members.update. Without admin rights a member may change only their own contact details
- * (MEMBER_SELF_SERVICE_COLUMNS). An Admin may not change a Super Admin's type or status. Only a Super Admin
+ * (MEMBER_SELF_SERVICE_COLUMNS). An Admin may change only members of their own council, and may not move
+ * one to another council or change a Super Admin's type or status. Only a Super Admin
  * may grant Super Admin. `existing` is the stored row, `next` the validated result, and the types are
  * MemberType.Type names for `existing` and `next`.
  */
@@ -510,7 +531,11 @@ export function assertMayUpdateMember(
         { actorId: actor.memberId, fields: restricted },
       );
     }
-  } else if (types.current === SUPER_ADMIN_TYPE && !hasSuperAdminRights(actor)) {
+  } else {
+    assertAdminCouncil(actor, existing.CouncilID, `change member ${existing.id}`, existing.id);
+    assertAdminCouncil(actor, next.CouncilID, `move member ${existing.id}`, existing.id);
+  }
+  if (hasAdminRights(actor) && types.current === SUPER_ADMIN_TYPE && !hasSuperAdminRights(actor)) {
     const clearance = changed.filter((c) => CLEARANCE_COLUMNS.includes(c));
     if (clearance.length > 0) {
       throw new SecurityPrivilegeError(
@@ -523,14 +548,20 @@ export function assertMayUpdateMember(
   assertMayGrantMemberType(actor, types.next, types.current);
 }
 
-/** memberProfiles.updateExtensions: a member without admin rights maintains only their own skills and training. */
-export function assertMayEditMemberExtensions(actor: MemberWriteActor, memberId: number): void {
-  if (hasAdminRights(actor) || actor.memberId === memberId) return;
-  throw new SecurityPrivilegeError(
-    'ADMIN_REQUIRED',
-    `Member ${actor.memberId} may only change their own skills, training and working status, not member ${memberId}'s.`,
-    { actorId: actor.memberId, memberId },
-  );
+/**
+ * memberProfiles.updateExtensions: anyone maintains their own skills and training; otherwise an Admin
+ * those of their own council's members and a Super Admin anyone's.
+ */
+export function assertMayEditMemberExtensions(actor: MemberWriteActor, member: Pick<Member, 'id' | 'CouncilID'>): void {
+  if (actor.memberId === member.id) return;
+  if (!hasAdminRights(actor)) {
+    throw new SecurityPrivilegeError(
+      'ADMIN_REQUIRED',
+      `Member ${actor.memberId} may only change their own skills, training and working status, not member ${member.id}'s.`,
+      { actorId: actor.memberId, memberId: member.id },
+    );
+  }
+  assertAdminCouncil(actor, member.CouncilID, `change member ${member.id}'s skills and training`, member.id);
 }
 
 /** members.update: applies `changes` over the stored row and validates the result as a whole member. */

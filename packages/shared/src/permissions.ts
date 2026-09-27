@@ -9,7 +9,7 @@
 // identity yet, so until the remote driver's API enforces them server-side they are a usability gate.
 // =========================================================================
 import type { SessionUser } from './contract';
-import type { Event, MemberType } from './types';
+import type { Event, Member, MemberType } from './types';
 
 type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'>;
 
@@ -36,11 +36,12 @@ export const canManageMeetings = (u: Actor, councilId: number): boolean =>
 export const canRecordLedger = (u: Actor, event: Pick<Event, 'OwnerID'>, eventCouncilIds: readonly number[]): boolean =>
   event.OwnerID === u.memberId || eventCouncilIds.some((id) => canAdministerCouncil(u, id));
 
-/** "Add member" / "Create profile" controls: Admins and Super Admins only (drivers: ADMIN_REQUIRED). */
-export const canCreateMembers = (u: Actor): boolean => isAdmin(u);
+/** "Add member" / "Create profile" controls for a council: its Admins and Super Admins (drivers: ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). */
+export const canCreateMembers = (u: Actor, councilId: number): boolean => canAdministerCouncil(u, councilId);
 
-/** Edit controls on a member's profile: Admins edit anyone, a Member only their own contact details and skills. */
-export const canEditMember = (u: Actor, memberId: number): boolean => isAdmin(u) || u.memberId === memberId;
+/** Edit controls on a member's profile: their council's Admins and Super Admins, or the member themselves (contact details and skills). */
+export const canEditMember = (u: Actor, member: Pick<Member, 'id' | 'CouncilID'>): boolean =>
+  u.memberId === member.id || canAdministerCouncil(u, member.CouncilID);
 
 /**
  * Member types the user may pick for a member now of `currentType` (omit when adding one). Empty means

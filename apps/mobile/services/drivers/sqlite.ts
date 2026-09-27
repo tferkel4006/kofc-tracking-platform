@@ -568,7 +568,7 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       let id = 0;
       await db.withTransactionAsync(async () => {
-        assertMayCreateMember(await this.memberWriteActor(db, actorId), await this.memberTypeName(db, clean.MemberTypeID));
+        assertMayCreateMember(await this.memberWriteActor(db, actorId), clean, await this.memberTypeName(db, clean.MemberTypeID));
         await this.assertMemberReferences(db, clean);
         const taken = await db.getFirstAsync<{ n: number }>(
           `SELECT (SELECT COUNT(*) FROM [Member] WHERE [Email] = ? COLLATE NOCASE)
@@ -630,15 +630,15 @@ export class SqliteDataService implements DataService {
 
   /** The caller of a member write, read from the database so the client cannot claim a type it does not hold. */
   private async memberWriteActor(db: SQLite.SQLiteDatabase, actorId: number): Promise<MemberWriteActor> {
-    const actor = await db.getFirstAsync<{ type: string | null; active: number }>(
-      `SELECT t.[Type] AS type, (st.[Status] = 'Active') AS active FROM [Member] m
+    const actor = await db.getFirstAsync<{ councilId: number; type: string | null; active: number }>(
+      `SELECT m.[CouncilID] AS councilId, t.[Type] AS type, (st.[Status] = 'Active') AS active FROM [Member] m
          LEFT JOIN [MemberType] t ON t.[id] = m.[MemberTypeID]
          LEFT JOIN [MemberStatus] st ON st.[id] = m.[StatusID]
         WHERE m.[id] = ?`,
       [actorId],
     );
     if (!actor) throw new BusinessRuleError('MEMBER_NOT_FOUND', `No member with id ${actorId}.`, { memberId: actorId });
-    return { memberId: actorId, memberType: actor.type ?? undefined, active: actor.active === 1 };
+    return { memberId: actorId, councilId: actor.councilId, memberType: actor.type ?? undefined, active: actor.active === 1 };
   }
 
   private async memberTypeName(db: SQLite.SQLiteDatabase, typeId: number): Promise<string | undefined> {
@@ -697,7 +697,8 @@ export class SqliteDataService implements DataService {
       await db.withTransactionAsync(async () => {
         const actor = await this.memberWriteActor(db, actorId);
         await this.requireMember(db, memberId);
-        assertMayEditMemberExtensions(actor, memberId);
+        const target = (await db.getFirstAsync<{ CouncilID: number }>('SELECT [CouncilID] FROM [Member] WHERE [id] = ?', [memberId]))!;
+        assertMayEditMemberExtensions(actor, { id: memberId, CouncilID: target.CouncilID });
         for (const s of clean.skills) {
           await this.assertRowExists(db, 'Skill', s.skillId, 'skill');
           await this.assertRowExists(db, 'SkillLevel', s.skillLevelId, 'skill level');
