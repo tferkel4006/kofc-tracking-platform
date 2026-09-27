@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   assertMayMaintainCouncilRecords,
   assertMayMaintainCouncils,
+  BusinessRuleError,
   cleanCouncil,
   cleanPastor,
   RECORD_REFERENCES,
@@ -20,7 +21,12 @@ import { drivers, expectRule, MEMBER } from './helpers';
 const OWN = 1;
 const OTHER = 2;
 
-const parishFor = (councilId: number, name = 'St. Jude Parish'): NewParish => ({
+// Council.Email is VARCHAR(100): these sit exactly on and one past the limit.
+const EMAIL_AT_LIMIT = `${'a'.repeat(90)}@gmail.com`;
+const EMAIL_OVER_LIMIT = `${'a'.repeat(91)}@gmail.com`;
+const MALFORMED_EMAILS = ['kofc15295gmail.com', 'kofc15295@', 'kofc15295@gmail', '@gmail.com', 'kofc 15295@gmail.com'];
+
+const parishFor =(councilId: number, name = 'St. Jude Parish'): NewParish => ({
   Name: name,
   StreetAddress1: '100 Church St',
   City: 'Portland',
@@ -95,6 +101,27 @@ describe('maintenance rules', () => {
     expect(() => cleanCouncil({ CouncilNumber: 0, CouncilName: 'x', State: 'OR' })).toThrow(/whole number/);
     expect(() => cleanCouncil({ CouncilNumber: 1, CouncilName: 'x', State: 'OR', Motto: 'x' } as never)).toThrow(/no field "Motto"/);
     expect(() => cleanPastor({ FirstName: 'John', LastName: 'Doe', Email: 'not-an-email', ParishID: 1 })).toThrow(/not a valid address/);
+  });
+
+  it('keeps a valid council email, clears a blank one and rejects malformed or overlong addresses', () => {
+    const council = { CouncilNumber: 42, CouncilName: 'Holy Family', State: 'OR' };
+    expect(cleanCouncil({ ...council, Email: '  kofc15295@gmail.com ' }).Email).toBe('kofc15295@gmail.com');
+    expect(cleanCouncil({ ...council, Email: '   ' }).Email).toBeUndefined();
+    expect(cleanCouncil(council).Email).toBeUndefined();
+    expect(cleanCouncil({ ...council, Email: EMAIL_AT_LIMIT }).Email).toBe(EMAIL_AT_LIMIT);
+
+    const rejection = (Email: string) => {
+      try {
+        cleanCouncil({ ...council, Email });
+      } catch (e) {
+        expect(e).toBeInstanceOf(BusinessRuleError);
+        expect((e as BusinessRuleError).code).toBe('INVALID_INPUT');
+        return (e as BusinessRuleError).message;
+      }
+      throw new Error(`expected "${Email}" to be rejected`);
+    };
+    for (const email of MALFORMED_EMAILS) expect(rejection(email)).toContain('not a valid address');
+    expect(rejection(EMAIL_OVER_LIMIT)).toBe('Email must be at most 100 characters; received 101.');
   });
 
   it('lists every schema column that points at a maintained table, so no delete can orphan a row', () => {
@@ -196,6 +223,52 @@ describe.each(drivers)('$name driver: council maintenance', (d) => {
     const inUse = await expectRule(db.councils.remove(MEMBER.superAdmin, fresh.id), 'RECORD_IN_USE');
     expect(inUse.message).toContain('1 parish');
     expect(await db.councils.get(fresh.id)).not.toBeNull();
+  });
+});
+
+describe.each(drivers)('$name driver: council email', (d) => {
+  it('seeds the shared address on St. Jude Council #15295', async () => {
+    const db = await d.make();
+    expect(await db.councils.get(OWN)).toMatchObject({ CouncilNumber: 15295, Email: 'kofc15295@gmail.com' });
+  });
+
+  it('stores an email on create, then changes and clears it on update', async () => {
+    const db = await d.make();
+    const created = await db.councils.create(MEMBER.superAdmin, {
+      CouncilNumber: 8090,
+      CouncilName: 'Email Council',
+      State: 'OR',
+      Email: ' kofc8090@gmail.com ',
+    });
+    expect(created.Email).toBe('kofc8090@gmail.com');
+    expect((await db.councils.get(created.id))?.Email).toBe('kofc8090@gmail.com');
+
+    await db.councils.update(MEMBER.superAdmin, created.id, { Email: EMAIL_AT_LIMIT });
+    expect((await db.councils.get(created.id))?.Email).toBe(EMAIL_AT_LIMIT);
+
+    await db.councils.update(MEMBER.superAdmin, created.id, { Email: null });
+    expect((await db.councils.get(created.id))?.Email ?? null).toBeNull();
+
+    const noEmail = await db.councils.create(MEMBER.superAdmin, { CouncilNumber: 8091, CouncilName: 'No Email Council', State: 'OR' });
+    expect((await db.councils.get(noEmail.id))?.Email ?? null).toBeNull();
+  });
+
+  it('rejects a malformed or overlong email on create without adding a council', async () => {
+    const db = await d.make();
+    const before = d.count(db, 'Council');
+    for (const [i, Email] of [...MALFORMED_EMAILS, EMAIL_OVER_LIMIT].entries()) {
+      const council = { CouncilNumber: 8100 + i, CouncilName: `Bad Email Council ${i}`, State: 'OR', Email };
+      await expectRule(db.councils.create(MEMBER.superAdmin, council), 'INVALID_INPUT');
+    }
+    expect(d.count(db, 'Council')).toBe(before);
+  });
+
+  it('rejects a malformed or overlong email on update and keeps the stored one', async () => {
+    const db = await d.make();
+    for (const Email of [...MALFORMED_EMAILS, EMAIL_OVER_LIMIT]) {
+      await expectRule(db.councils.update(MEMBER.superAdmin, OWN, { Email }), 'INVALID_INPUT');
+    }
+    expect((await db.councils.get(OWN))?.Email).toBe('kofc15295@gmail.com');
   });
 });
 
