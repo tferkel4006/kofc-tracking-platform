@@ -57,7 +57,7 @@ describe.each(drivers)('$name driver: recording donations', (d) => {
     const ids = await lookups(db);
     const before = d.count(db, 'Donation');
 
-    const saved = await db.donations.record({ CouncilID: OWN, DonationMethodID: ids.cash, DonationTypeID: ids.unsolicited, DonationAmount: 20 });
+    const saved = await db.donations.record(MEMBER.member, { CouncilID: OWN, DonationMethodID: ids.cash, DonationTypeID: ids.unsolicited, DonationAmount: 20 });
 
     expect(d.count(db, 'Donation')).toBe(before + 1);
     const row = raw(d, db, 'Donation').find((r) => r.id === saved.id)!;
@@ -88,7 +88,7 @@ describe.each(drivers)('$name driver: recording donations', (d) => {
       DonationPhotoURL: 'https://blob.example/donations/hams.jpg',
     };
 
-    const saved = await db.donations.record(item);
+    const saved = await db.donations.record(MEMBER.member, item);
 
     expect(saved).toMatchObject(item);
     expect(raw(d, db, 'Donation').find((r) => r.id === saved.id)).toMatchObject({ ...item, EventID: null });
@@ -100,8 +100,8 @@ describe.each(drivers)('$name driver: recording donations', (d) => {
     const ids = await lookups(db);
     const before = d.count(db, 'Donation');
     const base = { CouncilID: OWN, DonationMethodID: ids.items, DonationTypeID: ids.meals, DonationAmount: 40 };
-    await expectRule(db.donations.record(base), 'INVALID_INPUT');
-    await expectRule(db.donations.record({ ...base, DonationDesciption: '   ' }), 'INVALID_INPUT');
+    await expectRule(db.donations.record(MEMBER.member, base), 'INVALID_INPUT');
+    await expectRule(db.donations.record(MEMBER.member, { ...base, DonationDesciption: '   ' }), 'INVALID_INPUT');
     expect(d.count(db, 'Donation')).toBe(before);
   });
 
@@ -110,9 +110,9 @@ describe.each(drivers)('$name driver: recording donations', (d) => {
     const ids = await lookups(db);
     const before = d.count(db, 'Donation');
     const base = { CouncilID: OWN, DonationMethodID: ids.cash, DonationTypeID: ids.parking, DonationAmount: 10 };
-    await expectRule(db.donations.record({ ...base, DonationAmount: 0 }), 'INVALID_INPUT');
-    await expectRule(db.donations.record({ ...base, DonationDate: '2026-09-21' }), 'INVALID_INPUT');
-    await expectRule(db.donations.record({ ...base, CouncilID: AFFILIATED }), 'DONATION_METHOD_NOT_ENABLED');
+    await expectRule(db.donations.record(MEMBER.member, { ...base, DonationAmount: 0 }), 'INVALID_INPUT');
+    await expectRule(db.donations.record(MEMBER.member, { ...base, DonationDate: '2026-09-21' }), 'INVALID_INPUT');
+    await expectRule(db.donations.record(MEMBER.member, { ...base, CouncilID: AFFILIATED }), 'DONATION_METHOD_NOT_ENABLED');
     expect(d.count(db, 'Donation')).toBe(before);
   });
 
@@ -120,14 +120,14 @@ describe.each(drivers)('$name driver: recording donations', (d) => {
     const db = await d.make();
     const ids = await lookups(db);
     const cleanup = await eventId(db, 'Fall Grounds Cleanup');
-    const linked = await db.donations.record({
+    const linked = await db.donations.record(MEMBER.member, {
       CouncilID: OWN,
       EventID: cleanup,
       DonationMethodID: ids.card,
       DonationTypeID: ids.parking,
       DonationAmount: 15,
     });
-    const standalone = await db.donations.record({ CouncilID: OWN, DonationMethodID: ids.cash, DonationTypeID: ids.parking, DonationAmount: 5 });
+    const standalone = await db.donations.record(MEMBER.member, { CouncilID: OWN, DonationMethodID: ids.cash, DonationTypeID: ids.parking, DonationAmount: 5 });
 
     expect(raw(d, db, 'Donation').find((r) => r.id === linked.id)?.EventID).toBe(cleanup);
     expect((await db.donations.list(OWN, { eventId: cleanup })).map((x) => x.id)).toEqual([linked.id]);
@@ -139,8 +139,8 @@ describe.each(drivers)('$name driver: recording donations', (d) => {
     const ids = await lookups(db);
     const before = d.count(db, 'Donation');
     const base = { CouncilID: OWN, DonationMethodID: ids.cash, DonationTypeID: ids.parking, DonationAmount: 10 };
-    await expectRule(db.donations.record({ ...base, EventID: await eventId(db, 'Neighborhood Blood Drive') }), 'INVALID_INPUT');
-    const early = await expectRule(db.donations.record({ ...base, EventID: await eventId(db, 'Parish Food Drive') }), 'INVALID_INPUT');
+    await expectRule(db.donations.record(MEMBER.member, { ...base, EventID: await eventId(db, 'Neighborhood Blood Drive') }), 'INVALID_INPUT');
+    const early = await expectRule(db.donations.record(MEMBER.member, { ...base, EventID: await eventId(db, 'Parish Food Drive') }), 'INVALID_INPUT');
     expect(early.message).toContain('before');
     expect(d.count(db, 'Donation')).toBe(before);
   });
@@ -151,7 +151,7 @@ describe.each(drivers)('$name driver: donation stream session', (d) => {
     const db = await d.make();
     const ids = await lookups(db);
     const cleanup = await eventId(db, 'Fall Grounds Cleanup');
-    const session = new DonationSessionController(db, OWN);
+    const session = new DonationSessionController(db, OWN, MEMBER.member);
 
     const started = await session.start(cleanup, { amount: 10, donationTypeId: ids.parking, description: 'Parking lot' });
     expect(started).toMatchObject({ active: true, eventId: cleanup, eventName: 'Fall Grounds Cleanup', recordedCount: 0, recordedTotal: 0 });
@@ -173,7 +173,7 @@ describe.each(drivers)('$name driver: donation stream session', (d) => {
   it('lets one donation override the defaults without changing the next one', async () => {
     const db = await d.make();
     const ids = await lookups(db);
-    const session = new DonationSessionController(db, OWN);
+    const session = new DonationSessionController(db, OWN, MEMBER.member);
     await session.start(await eventId(db, 'Fall Grounds Cleanup'), { amount: 10, donationTypeId: ids.parking });
 
     const big = await session.record({ DonationMethodID: ids.card, DonationAmount: 50.25, DonationTypeID: ids.meals, Donor: 'Parish Council' });
@@ -188,7 +188,7 @@ describe.each(drivers)('$name driver: donation stream session', (d) => {
     const db = await d.make();
     const ids = await lookups(db);
     const cleanup = await eventId(db, 'Fall Grounds Cleanup');
-    const session = new DonationSessionController(db, OWN);
+    const session = new DonationSessionController(db, OWN, MEMBER.member);
     await session.start(cleanup, { amount: 10, donationTypeId: ids.parking });
     await session.record({ DonationMethodID: ids.cash });
 
@@ -205,7 +205,7 @@ describe.each(drivers)('$name driver: donation stream session', (d) => {
   it('updates defaults mid-session, ignores updates when idle and notifies subscribers of each change', async () => {
     const db = await d.make();
     const ids = await lookups(db);
-    const session = new DonationSessionController(db, OWN);
+    const session = new DonationSessionController(db, OWN, MEMBER.member);
     const seen: DonationSessionState[] = [];
     const unsubscribe = session.subscribe((s) => seen.push(s));
 
@@ -231,7 +231,7 @@ describe.each(drivers)('$name driver: donation stream session', (d) => {
     const ids = await lookups(db);
     const cleanup = await eventId(db, 'Fall Grounds Cleanup');
     const retreat = await eventId(db, 'Spring Retreat Setup');
-    const session = new DonationSessionController(db, OWN);
+    const session = new DonationSessionController(db, OWN, MEMBER.member);
     await session.start(cleanup, { amount: 10, donationTypeId: ids.parking });
     await session.record({ DonationMethodID: ids.cash });
 
@@ -246,7 +246,7 @@ describe.each(drivers)('$name driver: donation stream session', (d) => {
     const db = await d.make();
     const ids = await lookups(db);
     const cleanup = await eventId(db, 'Fall Grounds Cleanup');
-    const session = new DonationSessionController(db, OWN);
+    const session = new DonationSessionController(db, OWN, MEMBER.member);
     await session.start(cleanup, { amount: 10, donationTypeId: ids.parking });
 
     const pending = session.record({ DonationMethodID: ids.cash });
@@ -259,7 +259,7 @@ describe.each(drivers)('$name driver: donation stream session', (d) => {
 
   it('refuses to start on an unknown event or one not linked to the council, and stays idle', async () => {
     const db = await d.make();
-    const session = new DonationSessionController(db, OWN);
+    const session = new DonationSessionController(db, OWN, MEMBER.member);
     await expectRule(session.start(999_999), 'EVENT_NOT_FOUND');
     await expectRule(session.start(await eventId(db, 'Neighborhood Blood Drive')), 'INVALID_INPUT');
     expect(session.state).toEqual({ active: false });
@@ -268,14 +268,15 @@ describe.each(drivers)('$name driver: donation stream session', (d) => {
 
 // The hook itself only hands controller.subscribe / controller.state to React's useSyncExternalStore,
 // which needs a rendering component; what matters here is that the pinned event survives screen changes.
-describe('mobile useDonationSession: one controller per council', () => {
-  it('returns the same controller for a council across screens and a separate one per council', async () => {
+describe('mobile useDonationSession: one controller per council and member', () => {
+  it('returns the same controller across screens and a separate one per council and per signed-in member', async () => {
     const { donationSessionFor } = await import('../apps/mobile/lib/use-donation-session');
 
-    const own = donationSessionFor(OWN);
+    const own = donationSessionFor(OWN, MEMBER.member);
     expect(own).toBeInstanceOf(DonationSessionController);
-    expect(donationSessionFor(OWN)).toBe(own);
-    expect(donationSessionFor(AFFILIATED)).not.toBe(own);
+    expect(donationSessionFor(OWN, MEMBER.member)).toBe(own);
+    expect(donationSessionFor(AFFILIATED, MEMBER.member)).not.toBe(own);
+    expect(donationSessionFor(OWN, MEMBER.admin)).not.toBe(own);
     expect(own.state).toEqual({ active: false });
   });
 });

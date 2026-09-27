@@ -9,9 +9,11 @@ import {
   assertDonationDateForEvent,
   assertDonationFitsMethod,
   assertEventRange,
+  assertFundsEditable,
   assertLookupKeyUnique,
   assertLookupNotProtected,
   assertLookupUnused,
+  assertMayChangeDonation,
   assertMayCreateMember,
   assertMayEditMemberExtensions,
   assertMayMaintainCouncilRecords,
@@ -27,6 +29,8 @@ import {
   assertText,
   assertThreadParticipant,
   assertValidHours,
+  buildActivityTimeLog,
+  buildDonationHistory,
   buildThreadMessages,
   buildThreadSummaries,
   buildWelcomeEmail,
@@ -47,12 +51,16 @@ import {
   cleanPastor,
   cleanShiftFields,
   COUNCIL_COLUMNS,
+  DONATION_EDITABLE_COLUMNS,
   donationMethodKind,
   EVENT_COLUMNS,
   isSha256Hex,
   LOOKUP_META,
+  mergeDonationChanges,
   mergeMemberChanges,
   mergeRecordChanges,
+  monthBounds,
+  nextEventFunds,
   MEMBER_COLUMNS,
   PARISH_COLUMNS,
   participantIds,
@@ -60,12 +68,17 @@ import {
   planEventCopy,
   RECORD_REFERENCES,
   recordNotFound,
+  rollupEventFunds,
   SHIFT_COLUMNS,
+  summarizeActivities,
+  summarizeMonth,
   toTimestamp,
   trainingDateToYear,
   trainingYearToDate,
   UNREGISTERED_PASSWORD,
+  type CleanDonation,
   type CouncilAdminDetails,
+  type EventFunds,
   type MaintainedTable,
   type MemberWriteActor,
   type MessagingRows,
@@ -81,6 +94,7 @@ import type {
   DistributionLists,
   DistributionListSummary,
   Donation,
+  DonationMethod,
   DonationType,
   KOCTrainingClasses,
   MemberExtensions,
@@ -93,6 +107,7 @@ import type {
   NewPastor,
   Parish,
   Pastor,
+  ProfileOptions,
   Skill,
   SkillLevel,
   WorkingStatus,
@@ -144,8 +159,9 @@ const DB_NAME = 'kofc.db';
  * Bump when Schema.sql changes; stored in PRAGMA user_version. Migrations are a later concern:
  * a dev database created at an older version must be wiped with reset() (or the app reinstalled).
  * 2: Phase 2 donations, skills, training and working status.
+ * 3: Donation.RecordedBy (Sprint 5K).
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -780,6 +796,18 @@ export class SqliteDataService implements DataService {
         await db.runAsync('DELETE FROM [Activities] WHERE [id] = ?', [id]);
       });
     },
+
+    listSummaries: async (councilId) => {
+      const activities = await this.activities.listByCouncil(councilId);
+      const db = await this.ready();
+      const times = await db.getAllAsync<Pick<ActivityTime, 'ActivityID' | 'ActivityDate' | 'Hours'>>(
+        `SELECT t.[ActivityID], t.[ActivityDate], t.[Hours] FROM [ActivityTime] t
+           JOIN [Activities] a ON a.[id] = t.[ActivityID]
+          WHERE a.[CouncilID] = ?`,
+        [councilId],
+      );
+      return summarizeActivities(activities, times);
+    },
   };
 
   private async assertActivityReferences(db: SQLite.SQLiteDatabase, clean: NewActivity): Promise<void> {
@@ -1097,6 +1125,17 @@ export class SqliteDataService implements DataService {
   // ---- Phase 2: member profiles, skill messaging, donations -------------
 
   memberProfiles: DataService['memberProfiles'] = {
+    listOptions: async () => {
+      const db = await this.ready();
+      const options: ProfileOptions = {
+        skills: await db.getAllAsync<Skill>('SELECT * FROM [Skill] ORDER BY [SkillName], [id]'),
+        skillLevels: await db.getAllAsync<SkillLevel>('SELECT * FROM [SkillLevel] ORDER BY [id]'),
+        trainingClasses: await db.getAllAsync<KOCTrainingClasses>('SELECT * FROM [KOCTrainingClasses] ORDER BY [ClassName], [id]'),
+        workingStatuses: await db.getAllAsync<WorkingStatus>('SELECT * FROM [WorkingStatus] ORDER BY [id]'),
+      };
+      return options;
+    },
+
     getExtensions: async (memberId) => {
       const db = await this.ready();
       await this.requireMember(db, memberId);
@@ -1265,69 +1304,194 @@ export class SqliteDataService implements DataService {
       );
     },
 
-    record: async (donation) => {
+    listHistory: async (councilId, eventId) => {
+      const db = await this.ready();
+      let events: CouncilEvent[];
+      let donations: Donation[];
+      if (eventId === undefined) {
+        events = await db.getAllAsync<CouncilEvent>(
+          'SELECT * FROM [Event] WHERE [id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)',
+          [councilId],
+        );
+        donations = await db.getAllAsync<Donation>(
+          `SELECT * FROM [Donation]
+            WHERE ([EventID] IS NULL AND [CouncilID] = ?)
+               OR [EventID] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)`,
+          [councilId, councilId],
+        );
+      } else {
+        const event = await this.requireEvent(db, eventId);
+        await this.assertEventLinked(db, event, councilId);
+        events = [event];
+        donations = await db.getAllAsync<Donation>('SELECT * FROM [Donation] WHERE [EventID] = ?', [eventId]);
+      }
+      const recorders = [...new Set(donations.map((d) => d.RecordedBy).filter((id): id is number => id != null))];
+      const members = await selectIn<{ id: number; MemberFirstName: string; MemberLastName: string }>(
+        db,
+        (m) => `SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member] WHERE [id] IN (${m})`,
+        recorders,
+      );
+      return buildDonationHistory(councilId, eventId, {
+        donations,
+        events,
+        methods: await db.getAllAsync<DonationMethod>('SELECT * FROM [DonationMethod]'),
+        types: await db.getAllAsync<DonationType>('SELECT * FROM [DonationType]'),
+        names: new Map(members.map((m) => [m.id, `${m.MemberFirstName} ${m.MemberLastName}`])),
+      });
+    },
+
+    record: async (actorId, donation) => {
       const clean = cleanNewDonation(donation, this.now());
       const db = await this.ready();
       let id = 0;
       await db.withTransactionAsync(async () => {
-        await this.assertCouncilsExist(db, [clean.CouncilID]);
-        const method = await db.getFirstAsync<{ DonationMethod: string }>('SELECT [DonationMethod] FROM [DonationMethod] WHERE [id] = ?', [
-          clean.DonationMethodID,
-        ]);
-        if (!method) {
-          throw new BusinessRuleError('INVALID_INPUT', `No donation method with id ${clean.DonationMethodID}.`, {
-            donationMethodId: clean.DonationMethodID,
-          });
-        }
-        const enabled = await db.getFirstAsync(
-          'SELECT [id] FROM [CouncilDonationMethod] WHERE [CouncilID] = ? AND [DonationMethodID] = ?',
-          [clean.CouncilID, clean.DonationMethodID],
-        );
-        if (!enabled) {
-          throw new BusinessRuleError(
-            'DONATION_METHOD_NOT_ENABLED',
-            `Council ${clean.CouncilID} has not enabled ${method.DonationMethod} donations.`,
-            { councilId: clean.CouncilID, donationMethodId: clean.DonationMethodID },
+        await this.requireMember(db, actorId);
+        await this.assertDonationReferences(db, clean);
+        await this.withFundsSync(db, [clean.EventID], async () => {
+          const res = await db.runAsync(
+            `INSERT INTO [Donation] ([CouncilID], [DonationDate], [DonationMethodID], [DonationTypeID], [Donor],
+                                     [DonationDesciption], [EventID], [DonationAmount], [DonationPhotoURL], [RecordedBy])
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              clean.CouncilID,
+              clean.DonationDate,
+              clean.DonationMethodID,
+              clean.DonationTypeID,
+              clean.Donor ?? null,
+              clean.DonationDesciption ?? null,
+              clean.EventID ?? null,
+              clean.DonationAmount,
+              clean.DonationPhotoURL ?? null,
+              actorId,
+            ],
           );
-        }
-        assertDonationFitsMethod(donationMethodKind(method.DonationMethod), clean);
-        if (!(await db.getFirstAsync('SELECT [id] FROM [DonationType] WHERE [id] = ? AND [CouncilID] = ?', [clean.DonationTypeID, clean.CouncilID]))) {
-          throw new BusinessRuleError('INVALID_INPUT', `Council ${clean.CouncilID} has no donation type with id ${clean.DonationTypeID}.`, {
-            councilId: clean.CouncilID,
-            donationTypeId: clean.DonationTypeID,
-          });
-        }
-        if (clean.EventID != null) {
-          const event = await this.requireEvent(db, clean.EventID);
-          if (!(await this.councilIdsOf(db, event.id)).includes(clean.CouncilID)) {
-            throw new BusinessRuleError('INVALID_INPUT', `"${event.EventName}" is not linked to council ${clean.CouncilID}.`, {
-              eventId: event.id,
-              councilId: clean.CouncilID,
-            });
-          }
-          assertDonationDateForEvent(clean.DonationDate, event);
-        }
-        const res = await db.runAsync(
-          `INSERT INTO [Donation] ([CouncilID], [DonationDate], [DonationMethodID], [DonationTypeID], [Donor],
-                                   [DonationDesciption], [EventID], [DonationAmount], [DonationPhotoURL])
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            clean.CouncilID,
-            clean.DonationDate,
-            clean.DonationMethodID,
-            clean.DonationTypeID,
-            clean.Donor ?? null,
-            clean.DonationDesciption ?? null,
-            clean.EventID ?? null,
-            clean.DonationAmount,
-            clean.DonationPhotoURL ?? null,
-          ],
-        );
-        id = res.lastInsertRowId;
+          id = res.lastInsertRowId;
+        });
       });
       return (await db.getFirstAsync<Donation>('SELECT * FROM [Donation] WHERE [id] = ?', [id]))!;
     },
+
+    update: async (actorId, id, changes) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const existing = await this.requireDonation(db, id);
+        assertMayChangeDonation(actor, existing, await this.eventOwnerOf(db, existing.EventID), `change donation ${id}`);
+        const clean = mergeDonationChanges(existing, changes, this.now());
+        if ((clean.EventID ?? null) !== (existing.EventID ?? null)) {
+          assertMayChangeDonation(actor, existing, await this.eventOwnerOf(db, clean.EventID), `move donation ${id} to another event`);
+        }
+        await this.assertDonationReferences(db, clean);
+        await this.withFundsSync(db, [existing.EventID, clean.EventID], async () => {
+          await db.runAsync(`UPDATE [Donation] SET ${DONATION_EDITABLE_COLUMNS.map((c) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [
+            ...DONATION_EDITABLE_COLUMNS.map((c) => (clean[c] ?? null) as Bind),
+            id,
+          ]);
+        });
+      });
+      return this.requireDonation(db, id);
+    },
+
+    remove: async (actorId, id) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const existing = await this.requireDonation(db, id);
+        assertMayChangeDonation(actor, existing, await this.eventOwnerOf(db, existing.EventID), `delete donation ${id}`);
+        await this.withFundsSync(db, [existing.EventID], async () => {
+          await db.runAsync('DELETE FROM [Donation] WHERE [id] = ?', [id]);
+        });
+      });
+    },
   };
+
+  /** The ids a donation points at must exist and belong together (method enabled, the council's type and event). */
+  private async assertDonationReferences(db: SQLite.SQLiteDatabase, clean: CleanDonation): Promise<void> {
+    await this.assertCouncilsExist(db, [clean.CouncilID]);
+    const method = await db.getFirstAsync<{ DonationMethod: string }>('SELECT [DonationMethod] FROM [DonationMethod] WHERE [id] = ?', [
+      clean.DonationMethodID,
+    ]);
+    if (!method) {
+      throw new BusinessRuleError('INVALID_INPUT', `No donation method with id ${clean.DonationMethodID}.`, {
+        donationMethodId: clean.DonationMethodID,
+      });
+    }
+    const enabled = await db.getFirstAsync(
+      'SELECT [id] FROM [CouncilDonationMethod] WHERE [CouncilID] = ? AND [DonationMethodID] = ?',
+      [clean.CouncilID, clean.DonationMethodID],
+    );
+    if (!enabled) {
+      throw new BusinessRuleError(
+        'DONATION_METHOD_NOT_ENABLED',
+        `Council ${clean.CouncilID} has not enabled ${method.DonationMethod} donations.`,
+        { councilId: clean.CouncilID, donationMethodId: clean.DonationMethodID },
+      );
+    }
+    assertDonationFitsMethod(donationMethodKind(method.DonationMethod), clean);
+    if (!(await db.getFirstAsync('SELECT [id] FROM [DonationType] WHERE [id] = ? AND [CouncilID] = ?', [clean.DonationTypeID, clean.CouncilID]))) {
+      throw new BusinessRuleError('INVALID_INPUT', `Council ${clean.CouncilID} has no donation type with id ${clean.DonationTypeID}.`, {
+        councilId: clean.CouncilID,
+        donationTypeId: clean.DonationTypeID,
+      });
+    }
+    if (clean.EventID != null) {
+      const event = await this.requireEvent(db, clean.EventID);
+      await this.assertEventLinked(db, event, clean.CouncilID);
+      assertDonationDateForEvent(clean.DonationDate, event);
+    }
+  }
+
+  private async assertEventLinked(db: SQLite.SQLiteDatabase, event: CouncilEvent, councilId: number): Promise<void> {
+    if (!(await this.councilIdsOf(db, event.id)).includes(councilId)) {
+      throw new BusinessRuleError('INVALID_INPUT', `"${event.EventName}" is not linked to council ${councilId}.`, {
+        eventId: event.id,
+        councilId,
+      });
+    }
+  }
+
+  private async requireDonation(db: SQLite.SQLiteDatabase, id: number): Promise<Donation> {
+    const row = await db.getFirstAsync<Donation>('SELECT * FROM [Donation] WHERE [id] = ?', [id]);
+    if (!row) throw new BusinessRuleError('RECORD_NOT_FOUND', `No donation with id ${id}.`, { table: 'Donation', id });
+    return row;
+  }
+
+  private async eventOwnerOf(db: SQLite.SQLiteDatabase, eventId: number | null | undefined): Promise<number | null> {
+    if (eventId == null) return null;
+    return (await db.getFirstAsync<{ OwnerID: number }>('SELECT [OwnerID] FROM [Event] WHERE [id] = ?', [eventId]))?.OwnerID ?? null;
+  }
+
+  /** The event's funds rollup from every donation now stored against it. */
+  private async eventFunds(db: SQLite.SQLiteDatabase, eventId: number): Promise<EventFunds | null> {
+    const rows = await db.getAllAsync<{ DonationAmount: number; MethodName: string }>(
+      `SELECT d.[DonationAmount], dm.[DonationMethod] AS MethodName FROM [Donation] d
+         JOIN [DonationMethod] dm ON dm.[id] = d.[DonationMethodID]
+        WHERE d.[EventID] = ?`,
+      [eventId],
+    );
+    return rollupEventFunds(rows.map((r) => ({ DonationAmount: r.DonationAmount, kind: donationMethodKind(r.MethodName) })));
+  }
+
+  /**
+   * The donation write hook: runs `write`, then overwrites the funds columns of every event it touched with
+   * the new rollup (see nextEventFunds). Callers are already inside a transaction, so both land together.
+   */
+  private async withFundsSync(db: SQLite.SQLiteDatabase, eventIds: readonly (number | null | undefined)[], write: () => Promise<void>): Promise<void> {
+    const ids = [...new Set(eventIds.filter((id): id is number => id != null))];
+    const before: (EventFunds | null)[] = [];
+    for (const id of ids) before.push(await this.eventFunds(db, id));
+    await write();
+    for (const [i, id] of ids.entries()) {
+      const next = nextEventFunds(before[i], await this.eventFunds(db, id));
+      if (next) {
+        await db.runAsync('UPDATE [Event] SET [FundsRaised-Cash] = ?, [FundsRaised-Electronic] = ? WHERE [id] = ?', [
+          next['FundsRaised-Cash'],
+          next['FundsRaised-Electronic'],
+          id,
+        ]);
+      }
+    }
+  }
 
   private rolesFor(db: SQLite.SQLiteDatabase, memberId: number): Promise<Role[]> {
     return db.getAllAsync<Role>(
@@ -1570,6 +1734,7 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
         const row = await this.requireEvent(db, id);
+        assertFundsEditable(row, clean, await this.eventFunds(db, id));
         assertEventRange(clean.StartDate ?? row.StartDate, clean.EndDate ?? row.EndDate);
         await this.assertOwnerAndCategory(db, clean);
         if (clean.StartDate !== undefined || clean.EndDate !== undefined) {
@@ -1827,6 +1992,46 @@ export class SqliteDataService implements DataService {
         timeId = ins.lastInsertRowId;
       });
       return (await db.getFirstAsync<ActivityTime>('SELECT * FROM [ActivityTime] WHERE [id] = ?', [timeId]))!;
+    },
+
+    listByActivity: async (activityId) => {
+      const db = await this.ready();
+      const activity = await db.getFirstAsync<Activities>('SELECT * FROM [Activities] WHERE [id] = ?', [activityId]);
+      if (!activity) throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${activityId}.`, { activityId });
+      const times = await db.getAllAsync<ActivityTime>('SELECT * FROM [ActivityTime] WHERE [ActivityID] = ?', [activityId]);
+      const members = await db.getAllAsync<{ id: number; MemberFirstName: string; MemberLastName: string }>(
+        `SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member]
+          WHERE [id] IN (SELECT [MemberID] FROM [ActivityTime] WHERE [ActivityID] = ?)`,
+        [activityId],
+      );
+      return buildActivityTimeLog(activity, times, new Map(members.map((m) => [m.id, m])));
+    },
+  };
+
+  reports: DataService['reports'] = {
+    monthlySummary: async (councilId, year, month) => {
+      const { fromDate, toDate } = monthBounds(year, month);
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      const councilEvents = 'SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?';
+      return summarizeMonth(councilId, year, month, {
+        events: await db.getAllAsync<CouncilEvent>(
+          `SELECT * FROM [Event] WHERE [id] IN (${councilEvents}) AND [StartDate] BETWEEN ? AND ?`,
+          [councilId, fromDate, toDate],
+        ),
+        eventTime: await db.getAllAsync<{ MemberID: number; Hours: number }>(
+          `SELECT t.[MemberID], t.[Hours] FROM [EventTime] t
+             JOIN [Shift] sh ON sh.[id] = t.[ShiftID]
+            WHERE sh.[EventID] IN (${councilEvents}) AND sh.[ShiftDate] BETWEEN ? AND ?`,
+          [councilId, fromDate, toDate],
+        ),
+        activityTime: await db.getAllAsync<{ MemberID: number; Hours: number }>(
+          `SELECT t.[MemberID], t.[Hours] FROM [ActivityTime] t
+             JOIN [Activities] a ON a.[id] = t.[ActivityID]
+            WHERE a.[CouncilID] = ? AND t.[ActivityDate] BETWEEN ? AND ?`,
+          [councilId, fromDate, toDate],
+        ),
+      });
     },
   };
 

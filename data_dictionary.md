@@ -180,7 +180,7 @@ Multi-day calendar activities managed by councils.
 •	CategoryID (INTEGER, NOT NULL) — Foreign Key references Category(id).
 •	Budget (MONEY, NULL) — Planned administrative expense ceiling allocation.
 •	Spend (MONEY, NULL) — Post-mortem actual dollar expenditure metric.
-•	FundsRaised (MONEY, NULL) — Total event revenue/donations accrued.
+•	FundsRaised (MONEY, NULL) — Total event revenue/donations accrued. Stored as FundsRaised-Cash and FundsRaised-Electronic; once the event has any cash or electronic Donation rows, the data service keeps both as read-only sums of those rows (physical items excluded), otherwise they are entered by hand.
 •	Highlights (TEXT, NULL) — Unbounded notes block detailing achievements.
 •	PlannedNumberAttendees (INTEGER, NULL) — Initial attendance estimate.
 •	ActualNumberAttendees (INTEGER, NULL) — Verified post-event foot-traffic count.
@@ -234,6 +234,7 @@ Transactional financial records tracking standalone or event-linked receipts.
 •	EventID (INTEGER, NOT NULL) — Foreign Key references Event(id).
 •	DonationAmount (MONEY, NOT NULL) — Dollar scale precision total entry.
 •	DonationPhotoURL (VARCHAR(255), NULL) — Storage bucket link for physical item verification images.
+•	RecordedBy (INTEGER, NULL) — Foreign Key references Member(id). The member who recorded the donation, stamped once when it is recorded and never changed; that member and the event's owner may correct or delete the row alongside council Admins and Super Admins.
 # 5. Unscheduled Council Activities
 [Activities]
 Ongoing, non-scheduled initiatives localized to single councils.

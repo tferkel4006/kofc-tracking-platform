@@ -221,6 +221,18 @@ export interface MemberTrainingInput {
   year: number;
 }
 
+/** Choices for the profile screens' pickers. */
+export interface ProfileOptions {
+  /** Ordered by name. */
+  skills: Skill[];
+  /** Ordered by id, which runs from least to most proficient. */
+  skillLevels: SkillLevel[];
+  /** Ordered by name. */
+  trainingClasses: KOCTrainingClasses[];
+  /** Ordered by id. */
+  workingStatuses: WorkingStatus[];
+}
+
 /** A member's self-maintained profile extensions, with lookup names resolved for display. */
 export interface MemberExtensions {
   workingStatus: WorkingStatus | null;
@@ -248,9 +260,53 @@ export interface BulkSkillMessageResult {
 // 7. DONATIONS (Phase 2)
 /**
  * Fields for a new donation. DonationDate defaults to today. EventID omitted or null records a
- * standalone donation. For 'Physical Items', DonationAmount is the estimated value.
+ * standalone donation. For 'Physical Items', DonationAmount is the estimated value. RecordedBy is not
+ * supplied: donations.record stamps it with the recording member's id.
  */
-export type NewDonation = Omit<Donation, 'id' | 'DonationDate'> & { DonationDate?: string };
+export type NewDonation = Omit<Donation, 'id' | 'DonationDate' | 'RecordedBy'> & { DonationDate?: string };
+
+/**
+ * Fields to change on a donation; omitted fields keep their stored values and EventID null makes it
+ * standalone. A donation keeps its council and its recorder for life.
+ */
+export type DonationChanges = Partial<Omit<NewDonation, 'CouncilID'>>;
+
+/** Money totals of a set of donations, to the cent. Physical items count only toward `itemValue`. */
+export interface DonationTotals {
+  count: number;
+  cash: number;
+  /** Credit card, QR (Venmo, Zelle, Zeffy, Parishsoft) and any other non-cash method. */
+  electronic: number;
+  /** Estimated value of physical items; never part of the funds raised. */
+  itemValue: number;
+  /** cash + electronic. */
+  raised: number;
+}
+
+/** One donation with its lookup names resolved, for the history log. */
+export interface DonationHistoryEntry {
+  donation: Donation;
+  methodName: string;
+  kind: DonationMethodKind;
+  typeName: string;
+  /** "First Last" of RecordedBy, or null for a row recorded before the column existed. */
+  recordedByName: string | null;
+}
+
+/** An event's donations in total. Counts every council's donations, so it matches the event's synced funds columns. */
+export interface EventDonationSummary {
+  event: Event;
+  totals: DonationTotals;
+  /** True while cash or electronic donations exist, so FundsRaised-Cash/-Electronic are read-only rollups. */
+  fundsManaged: boolean;
+}
+
+export interface DonationHistory {
+  /** Without an event: the council's standalone donations. With one: the council's donations to that event. Newest first. */
+  entries: DonationHistoryEntry[];
+  /** Without an event: every council event that has donations. With one: just that event. Newest StartDate first. */
+  events: EventDonationSummary[];
+}
 
 /** How the phone UI presents a method: a big button, a QR code to show the donor, or a camera for items. */
 export type DonationMethodKind = 'cash' | 'card' | 'qr' | 'item' | 'other';
@@ -316,7 +372,68 @@ export interface DistributionListSummary {
   memberIds: number[];
 }
 
-// 10. THE SERVICE
+// 10. ACTIVITY HISTORY AND MONTHLY REPORTS (Sprint 5K)
+/** One ActivityTime row with the name of the member who logged it. */
+export interface ActivityTimeEntry {
+  row: ActivityTime;
+  firstName: string;
+  lastName: string;
+}
+
+/** Every entry logged against an activity, newest ActivityDate first, and their total. */
+export interface ActivityTimeLog {
+  activity: Activities;
+  entries: ActivityTimeEntry[];
+  totalHours: number;
+}
+
+/** An activity with its logged time in total. */
+export interface ActivitySummary {
+  activity: Activities;
+  entryCount: number;
+  totalHours: number;
+  /** Latest ActivityDate logged, or null when nothing is logged. */
+  lastLoggedOn: string | null;
+  /** True once any time is logged: the activity moves from "Active Initiatives" to "Activity History". */
+  archived: boolean;
+}
+
+/** A non-blank Highlights entry of an event in the month. */
+export interface MonthlyHighlight {
+  eventId: number;
+  eventName: string;
+  startDate: string;
+  text: string;
+}
+
+/**
+ * A council's month at a glance. Events count toward the month of their StartDate, event time toward the
+ * month of its shift's ShiftDate, and activity time toward the month of its ActivityDate.
+ */
+export interface MonthlySummary {
+  councilId: number;
+  year: number;
+  /** 1-12. */
+  month: number;
+  /** First and last day of the month, YYYY-MM-DD. */
+  fromDate: string;
+  toDate: string;
+  /** EventTime on the council's events plus ActivityTime on the council's activities. */
+  laborHours: { events: number; activities: number; total: number };
+  /** Distinct MemberIDs across those EventTime and ActivityTime rows. */
+  uniqueMembers: number;
+  /**
+   * The month's events' ledger. Cash and electronic read the events' FundsRaised columns, which are the
+   * synced donation rollups wherever donations exist. Blank columns count as 0. net = raised - spend.
+   */
+  finances: { spend: number; cash: number; electronic: number; raised: number; net: number };
+  /** ActualNumberAttendees summed over the month's events (blank counts as 0), and how many events there were. */
+  outreach: { attendees: number; events: number };
+  /** Oldest StartDate first. */
+  highlights: MonthlyHighlight[];
+}
+
+// 11. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -427,6 +544,8 @@ export interface DataService {
     update(actorId: number, id: number, changes: RecordChanges<NewActivity>): Promise<Activities>;
     /** Refused (RECORD_IN_USE) once any time has been logged against the activity. */
     remove(actorId: number, id: number): Promise<void>;
+    /** The council's activities, ordered like `listByCouncil`, each with its logged time in total and its archive state. */
+    listSummaries(councilId: number): Promise<ActivitySummary[]>;
   };
 
   distributionLists: {
@@ -476,6 +595,8 @@ export interface DataService {
   };
 
   memberProfiles: {
+    /** Every Skill, SkillLevel, KOCTrainingClasses and WorkingStatus row, for the profile pickers. */
+    listOptions(): Promise<ProfileOptions>;
     /** The member's working status, skills and training, with lookup names resolved. */
     getExtensions(memberId: number): Promise<MemberExtensions>;
     /**
@@ -514,12 +635,33 @@ export interface DataService {
     /** The council's donations, newest first; with `eventId`, only that event's. */
     list(councilId: number, options?: { eventId?: number }): Promise<Donation[]>;
     /**
-     * Records a cash, credit card, QR (Venmo/Zelle/Zeffy/Parishsoft) or physical-item donation.
+     * The donation log (standalone donations or one event's) and per-event totals; see DonationHistory.
+     * With `eventId`, rejects EVENT_NOT_FOUND for an unknown event and INVALID_INPUT for one not linked to
+     * the council.
+     */
+    listHistory(councilId: number, eventId?: number): Promise<DonationHistory>;
+    /**
+     * Records a cash, credit card, QR (Venmo/Zelle/Zeffy/Parishsoft) or physical-item donation, stamping
+     * RecordedBy with `actorId`, the signed-in member (MEMBER_NOT_FOUND when unknown).
      * Rejects INVALID_INPUT for a bad field, a future date, an amount of 0, a type from another council,
      * an event not linked to the council, or a physical item without a description; and
      * DONATION_METHOD_NOT_ENABLED when the council has not enabled the method.
+     *
+     * Event funds rollup, run in the same transaction by record, update and remove: while an event has cash
+     * or electronic donations (from any council), its FundsRaised-Cash and FundsRaised-Electronic are
+     * overwritten with their sums (physical items excluded). When the last of them goes, both are cleared to
+     * null and become hand-editable again. A production driver must run the same rollup.
      */
-    record(donation: NewDonation): Promise<Donation>;
+    record(actorId: number, donation: NewDonation): Promise<Donation>;
+    /**
+     * Corrects a donation, validated as in `record` against the merged row; moving it to another event
+     * re-totals both events. Allowed for an Active member who recorded it or owns its event, and for an Active
+     * Admin of its council or any Active Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED); a move needs
+     * that right over the donation both before and after. RECORD_NOT_FOUND for an unknown donation.
+     */
+    update(actorId: number, id: number, changes: DonationChanges): Promise<Donation>;
+    /** Deletes one donation, with the same rights as `update`, and re-totals its event. */
+    remove(actorId: number, id: number): Promise<void>;
   };
 
   events: {
@@ -563,7 +705,11 @@ export interface DataService {
     listCouncilIds(eventId: number): Promise<number[]>;
     /** Creates an event linked to `councilIds` (at least one). Rejects INVALID_INPUT on any bad field. */
     create(event: NewEvent, councilIds: number[]): Promise<Event>;
-    /** Changes event fields, including the post-event ledger (Spend, funds raised, attendance, Highlights). */
+    /**
+     * Changes event fields, including the post-event ledger (Spend, funds raised, attendance, Highlights).
+     * While the event has cash or electronic donations its funds columns are rollups: a change to either
+     * value is refused (FUNDS_MANAGED_BY_DONATIONS, nothing written); resending the current value is allowed.
+     */
     update(id: number, changes: EventChanges): Promise<Event>;
     /** Replaces the event's council links (at least one). */
     setCouncils(eventId: number, councilIds: number[]): Promise<void>;
@@ -604,6 +750,20 @@ export interface DataService {
      * 6 months in the past (ACTIVITY_DATE_TOO_OLD).
      */
     logHours(memberId: number, activityId: number, hours: number, date: string, notes?: string): Promise<ActivityTime>;
+    /**
+     * Every entry logged against the activity (ActivityTime joined to Member), newest ActivityDate first,
+     * with the total hours. Rejects ACTIVITY_NOT_FOUND for an unknown activity.
+     */
+    listByActivity(activityId: number): Promise<ActivityTimeLog>;
+  };
+
+  reports: {
+    /**
+     * The council's month in totals: labor hours, unique members, the events' ledger, attendance and
+     * highlights (see MonthlySummary). Rejects INVALID_INPUT for an unknown council, a year before 1882 or
+     * after 9999, or a month outside 1-12.
+     */
+    monthlySummary(councilId: number, year: number, month: number): Promise<MonthlySummary>;
   };
 
   meetings: {

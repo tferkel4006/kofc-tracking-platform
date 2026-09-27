@@ -310,6 +310,7 @@ export interface Donation {
   EventID?: number | null;            // null for a standalone donation
   DonationAmount: number;             // for physical items, the estimated value
   DonationPhotoURL?: string | null;
+  RecordedBy?: number | null;         // the member who recorded it; stamped by donations.record, never changed
 }
 
 export interface Skill {

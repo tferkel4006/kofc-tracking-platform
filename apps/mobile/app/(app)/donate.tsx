@@ -196,7 +196,7 @@ function DonationForm({
 
 export default function DonateScreen() {
   const user = useUser();
-  const { controller, state: session } = useDonationSession(user.councilId);
+  const { controller, state: session } = useDonationSession(user.councilId, user.memberId);
   const [picked, setPicked] = useState<CouncilDonationOption | null>(null);
   const [starting, setStarting] = useState(false);
   const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);

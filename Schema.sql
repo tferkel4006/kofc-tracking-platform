@@ -634,6 +634,7 @@ CREATE TABLE [Donation] (
 	[EventID] INTEGER, -- NULL for a standalone donation
 	[DonationAmount] MONEY NOT NULL,
 	[DonationPhotoURL] VARCHAR(255),
+	[RecordedBy] INTEGER NULL, -- Sprint 5K audit: the member who recorded the donation; stamped once, never changed
 	PRIMARY KEY([id])
 );
 GO
@@ -745,6 +746,11 @@ GO
 ALTER TABLE [Donation]
 ADD FOREIGN KEY([DonationTypeID])
 REFERENCES [DonationType]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [Donation]
+ADD FOREIGN KEY([RecordedBy])
+REFERENCES [Member]([id])
 ON UPDATE NO ACTION ON DELETE NO ACTION;
 GO
 ALTER TABLE [MemberSkill]

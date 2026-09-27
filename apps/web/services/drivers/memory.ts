@@ -11,9 +11,11 @@ import {
   assertDonationDateForEvent,
   assertDonationFitsMethod,
   assertEventRange,
+  assertFundsEditable,
   assertLookupKeyUnique,
   assertLookupNotProtected,
   assertLookupUnused,
+  assertMayChangeDonation,
   assertMayCreateMember,
   assertMayEditMemberExtensions,
   assertMayMaintainCouncilRecords,
@@ -29,6 +31,8 @@ import {
   assertValidHours,
   assertShiftReportAllowed,
   assertThreadParticipant,
+  buildActivityTimeLog,
+  buildDonationHistory,
   buildThreadMessages,
   buildThreadSummaries,
   buildWelcomeEmail,
@@ -52,8 +56,11 @@ import {
   donationMethodKind,
   isSha256Hex,
   LOOKUP_META,
+  mergeDonationChanges,
   mergeMemberChanges,
   mergeRecordChanges,
+  monthBounds,
+  nextEventFunds,
   MEMBER_COLUMNS,
   PARISH_COLUMNS,
   participantIds,
@@ -61,10 +68,15 @@ import {
   planEventCopy,
   RECORD_REFERENCES,
   recordNotFound,
+  rollupEventFunds,
+  summarizeActivities,
+  summarizeMonth,
   toTimestamp,
   trainingDateToYear,
   trainingYearToDate,
   UNREGISTERED_PASSWORD,
+  type CleanDonation,
+  type EventFunds,
   type MaintainedTable,
   type MemberWriteActor,
   type MessagingRows,
@@ -80,6 +92,7 @@ import type {
   DistributionLists,
   DistributionListSummary,
   Donation,
+  DonationMethod,
   DonationType,
   KOCTrainingClasses,
   MemberExtensions,
@@ -92,6 +105,7 @@ import type {
   NewPastor,
   Parish,
   Pastor,
+  ProfileOptions,
   Skill,
   SkillLevel,
   WorkingStatus,
@@ -779,6 +793,13 @@ export class MemoryDataService implements DataService {
       this.assertRecordUnused(s, 'Activities', row, String(row.ActivityName));
       s.remove('Activities', (r) => r.id === id);
     },
+
+    listSummaries: async (councilId) => {
+      const activities = await this.activities.listByCouncil(councilId);
+      const s = await this.ready();
+      const ids = new Set(activities.map((a) => a.id));
+      return summarizeActivities(activities, s.rows('ActivityTime').filter((t) => ids.has(t.ActivityID as number)) as unknown as ActivityTime[]);
+    },
   };
 
   private assertActivityReferences(s: MemoryStore, clean: NewActivity): void {
@@ -1030,6 +1051,19 @@ export class MemoryDataService implements DataService {
   // ---- Phase 2: member profiles, skill messaging, donations -------------
 
   memberProfiles: DataService['memberProfiles'] = {
+    listOptions: async () => {
+      const s = await this.ready();
+      const copy = <T>(table: string) => s.rows(table).map((r) => ({ ...r })) as unknown as T[];
+      const byId = <T extends { id: number }>(rows: T[]) => rows.sort((a, b) => a.id - b.id);
+      const options: ProfileOptions = {
+        skills: copy<Skill>('Skill').sort((a, b) => a.SkillName.localeCompare(b.SkillName) || a.id - b.id),
+        skillLevels: byId(copy<SkillLevel>('SkillLevel')),
+        trainingClasses: copy<KOCTrainingClasses>('KOCTrainingClasses').sort((a, b) => a.ClassName.localeCompare(b.ClassName) || a.id - b.id),
+        workingStatuses: byId(copy<WorkingStatus>('WorkingStatus')),
+      };
+      return options;
+    },
+
     getExtensions: async (memberId) => {
       const s = await this.ready();
       this.requireMember(s, memberId);
@@ -1169,45 +1203,147 @@ export class MemoryDataService implements DataService {
       return rows.sort((a, b) => b.DonationDate.localeCompare(a.DonationDate) || b.id - a.id);
     },
 
-    record: async (donation) => {
+    listHistory: async (councilId, eventId) => {
+      const s = await this.ready();
+      let events: CouncilEvent[];
+      if (eventId === undefined) {
+        const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+        events = s.rows('Event').filter((e) => linked.has(e.id)).map((e) => ({ ...e })) as unknown as CouncilEvent[];
+      } else {
+        const event = { ...this.requireEvent(s, eventId) } as unknown as CouncilEvent;
+        this.assertEventLinked(s, event, councilId);
+        events = [event];
+      }
+      const eventIds = new Set(events.map((e) => e.id));
+      const donations = s
+        .rows('Donation')
+        .filter((d) => (d.EventID == null ? d.CouncilID === councilId : eventIds.has(d.EventID as number)))
+        .map((d) => ({ ...d })) as unknown as Donation[];
+      const names = new Map(s.rows('Member').map((m) => [m.id as number, `${m.MemberFirstName} ${m.MemberLastName}`]));
+      return buildDonationHistory(councilId, eventId, {
+        donations,
+        events,
+        methods: s.rows('DonationMethod').map((m) => ({ ...m })) as unknown as DonationMethod[],
+        types: s.rows('DonationType').map((t) => ({ ...t })) as unknown as DonationType[],
+        names,
+      });
+    },
+
+    record: async (actorId, donation) => {
       const clean = cleanNewDonation(donation, this.now());
       const s = await this.ready();
       return s.transaction(() => {
-        this.assertCouncilsExist(s, [clean.CouncilID]);
-        const method = s.rows('DonationMethod').find((m) => m.id === clean.DonationMethodID);
-        if (!method) {
-          throw new BusinessRuleError('INVALID_INPUT', `No donation method with id ${clean.DonationMethodID}.`, {
-            donationMethodId: clean.DonationMethodID,
-          });
+        this.requireMember(s, actorId);
+        this.assertDonationReferences(s, clean);
+        return this.withFundsSync(s, [clean.EventID], () => ({ ...s.insert('Donation', { ...clean, RecordedBy: actorId }) }) as unknown as Donation);
+      });
+    },
+
+    update: async (actorId, id, changes) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const row = this.requireDonation(s, id);
+        const existing = { ...row } as unknown as Donation;
+        assertMayChangeDonation(actor, existing, this.eventOwnerOf(s, existing.EventID), `change donation ${id}`);
+        const clean = mergeDonationChanges(existing, changes, this.now());
+        if ((clean.EventID ?? null) !== (existing.EventID ?? null)) {
+          assertMayChangeDonation(actor, existing, this.eventOwnerOf(s, clean.EventID), `move donation ${id} to another event`);
         }
-        if (!s.rows('CouncilDonationMethod').some((r) => r.CouncilID === clean.CouncilID && r.DonationMethodID === clean.DonationMethodID)) {
-          throw new BusinessRuleError(
-            'DONATION_METHOD_NOT_ENABLED',
-            `Council ${clean.CouncilID} has not enabled ${method.DonationMethod} donations.`,
-            { councilId: clean.CouncilID, donationMethodId: clean.DonationMethodID },
-          );
-        }
-        assertDonationFitsMethod(donationMethodKind(method.DonationMethod as string), clean);
-        if (!s.rows('DonationType').some((t) => t.id === clean.DonationTypeID && t.CouncilID === clean.CouncilID)) {
-          throw new BusinessRuleError('INVALID_INPUT', `Council ${clean.CouncilID} has no donation type with id ${clean.DonationTypeID}.`, {
-            councilId: clean.CouncilID,
-            donationTypeId: clean.DonationTypeID,
-          });
-        }
-        if (clean.EventID != null) {
-          const event = this.requireEvent(s, clean.EventID) as unknown as CouncilEvent;
-          if (!this.councilIdsOf(s, event.id).includes(clean.CouncilID)) {
-            throw new BusinessRuleError('INVALID_INPUT', `"${event.EventName}" is not linked to council ${clean.CouncilID}.`, {
-              eventId: event.id,
-              councilId: clean.CouncilID,
-            });
-          }
-          assertDonationDateForEvent(clean.DonationDate, event);
-        }
-        return { ...s.insert('Donation', { ...clean }) } as unknown as Donation;
+        this.assertDonationReferences(s, clean);
+        return this.withFundsSync(s, [existing.EventID, clean.EventID], () => {
+          Object.assign(row, clean);
+          return { ...row } as unknown as Donation;
+        });
+      });
+    },
+
+    remove: async (actorId, id) => {
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const existing = { ...this.requireDonation(s, id) } as unknown as Donation;
+        assertMayChangeDonation(actor, existing, this.eventOwnerOf(s, existing.EventID), `delete donation ${id}`);
+        this.withFundsSync(s, [existing.EventID], () => s.remove('Donation', (r) => r.id === id));
       });
     },
   };
+
+  /** The ids a donation points at must exist and belong together (method enabled, the council's type and event). */
+  private assertDonationReferences(s: MemoryStore, clean: CleanDonation): void {
+    this.assertCouncilsExist(s, [clean.CouncilID]);
+    const method = s.rows('DonationMethod').find((m) => m.id === clean.DonationMethodID);
+    if (!method) {
+      throw new BusinessRuleError('INVALID_INPUT', `No donation method with id ${clean.DonationMethodID}.`, {
+        donationMethodId: clean.DonationMethodID,
+      });
+    }
+    if (!s.rows('CouncilDonationMethod').some((r) => r.CouncilID === clean.CouncilID && r.DonationMethodID === clean.DonationMethodID)) {
+      throw new BusinessRuleError(
+        'DONATION_METHOD_NOT_ENABLED',
+        `Council ${clean.CouncilID} has not enabled ${method.DonationMethod} donations.`,
+        { councilId: clean.CouncilID, donationMethodId: clean.DonationMethodID },
+      );
+    }
+    assertDonationFitsMethod(donationMethodKind(method.DonationMethod as string), clean);
+    if (!s.rows('DonationType').some((t) => t.id === clean.DonationTypeID && t.CouncilID === clean.CouncilID)) {
+      throw new BusinessRuleError('INVALID_INPUT', `Council ${clean.CouncilID} has no donation type with id ${clean.DonationTypeID}.`, {
+        councilId: clean.CouncilID,
+        donationTypeId: clean.DonationTypeID,
+      });
+    }
+    if (clean.EventID != null) {
+      const event = this.requireEvent(s, clean.EventID) as unknown as CouncilEvent;
+      this.assertEventLinked(s, event, clean.CouncilID);
+      assertDonationDateForEvent(clean.DonationDate, event);
+    }
+  }
+
+  private assertEventLinked(s: MemoryStore, event: CouncilEvent, councilId: number): void {
+    if (!this.councilIdsOf(s, event.id).includes(councilId)) {
+      throw new BusinessRuleError('INVALID_INPUT', `"${event.EventName}" is not linked to council ${councilId}.`, {
+        eventId: event.id,
+        councilId,
+      });
+    }
+  }
+
+  private requireDonation(s: MemoryStore, id: number): Row {
+    const row = s.rows('Donation').find((d) => d.id === id);
+    if (!row) throw new BusinessRuleError('RECORD_NOT_FOUND', `No donation with id ${id}.`, { table: 'Donation', id });
+    return row;
+  }
+
+  private eventOwnerOf(s: MemoryStore, eventId: number | null | undefined): number | null {
+    if (eventId == null) return null;
+    return (s.rows('Event').find((e) => e.id === eventId)?.OwnerID as number | undefined) ?? null;
+  }
+
+  /** The event's funds rollup from every donation now stored against it. */
+  private eventFunds(s: MemoryStore, eventId: number): EventFunds | null {
+    const kinds = new Map(s.rows('DonationMethod').map((m) => [m.id, donationMethodKind(m.DonationMethod as string)]));
+    return rollupEventFunds(
+      s
+        .rows('Donation')
+        .filter((d) => d.EventID === eventId)
+        .map((d) => ({ DonationAmount: d.DonationAmount as number, kind: kinds.get(d.DonationMethodID) ?? 'other' })),
+    );
+  }
+
+  /**
+   * The donation write hook: runs `write`, then overwrites the funds columns of every event it touched with
+   * the new rollup (see nextEventFunds). Callers are already inside a transaction, so both land together.
+   */
+  private withFundsSync<T>(s: MemoryStore, eventIds: readonly (number | null | undefined)[], write: () => T): T {
+    const ids = [...new Set(eventIds.filter((id): id is number => id != null))];
+    const before = ids.map((id) => this.eventFunds(s, id));
+    const result = write();
+    ids.forEach((id, i) => {
+      const next = nextEventFunds(before[i], this.eventFunds(s, id));
+      if (next) Object.assign(this.requireEvent(s, id), next);
+    });
+    return result;
+  }
 
   private activeStatusId(s: MemoryStore): number | undefined {
     return s.rows('MemberStatus').find((st) => st.Status === 'Active')?.id as number | undefined;
@@ -1384,6 +1520,7 @@ export class MemoryDataService implements DataService {
       const s = await this.ready();
       return s.transaction(() => {
         const row = this.requireEvent(s, id);
+        assertFundsEditable(row as unknown as CouncilEvent, clean, this.eventFunds(s, id));
         assertEventRange((clean.StartDate ?? row.StartDate) as string, (clean.EndDate ?? row.EndDate) as string);
         this.assertOwnerAndCategory(s, clean);
         if (clean.StartDate !== undefined || clean.EndDate !== undefined) {
@@ -1600,6 +1737,36 @@ export class MemoryDataService implements DataService {
           ActivityNotes: notes ?? null,
         });
         return { ...row } as unknown as ActivityTime;
+      });
+    },
+
+    listByActivity: async (activityId) => {
+      const s = await this.ready();
+      const activity = s.rows('Activities').find((a) => a.id === activityId);
+      if (!activity) throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${activityId}.`, { activityId });
+      const times = s.rows('ActivityTime').filter((t) => t.ActivityID === activityId).map((t) => ({ ...t })) as unknown as ActivityTime[];
+      const members = new Map(
+        s.rows('Member').map((m) => [m.id as number, { MemberFirstName: m.MemberFirstName as string, MemberLastName: m.MemberLastName as string }]),
+      );
+      return buildActivityTimeLog({ ...activity } as unknown as Activities, times, members);
+    },
+  };
+
+  reports: DataService['reports'] = {
+    monthlySummary: async (councilId, year, month) => {
+      const { fromDate, toDate } = monthBounds(year, month);
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      const inMonth = (date: unknown) => (date as string) >= fromDate && (date as string) <= toDate;
+      const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+      const events = s.rows('Event').filter((e) => linked.has(e.id) && inMonth(e.StartDate)).map((e) => ({ ...e })) as unknown as CouncilEvent[];
+      const shifts = new Set(s.rows('Shift').filter((sh) => linked.has(sh.EventID) && inMonth(sh.ShiftDate)).map((sh) => sh.id));
+      const activities = new Set(s.rows('Activities').filter((a) => a.CouncilID === councilId).map((a) => a.id));
+      const hours = (t: Row) => ({ MemberID: t.MemberID as number, Hours: t.Hours as number });
+      return summarizeMonth(councilId, year, month, {
+        events,
+        eventTime: s.rows('EventTime').filter((t) => shifts.has(t.ShiftID)).map(hours),
+        activityTime: s.rows('ActivityTime').filter((t) => activities.has(t.ActivityID) && inMonth(t.ActivityDate)).map(hours),
       });
     },
   };

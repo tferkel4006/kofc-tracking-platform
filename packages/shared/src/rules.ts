@@ -9,14 +9,17 @@
 // Dates are local-time YYYY-MM-DD strings, matching the schema's DATE columns.
 // =========================================================================
 import type {
+  DonationChanges,
   DonationMethodKind,
+  DonationTotals,
+  EventChanges,
   MeetingHoursEntry,
   MemberSkillInput,
   MemberTrainingInput,
   NewDonation,
   NewMember,
 } from './contract';
-import type { Meeting, Member, Shift } from './types';
+import type { Donation, Meeting, Member, Shift } from './types';
 
 /** Time entries move in 15-minute steps (Blueprint: "Time Increments & History Boundaries"). */
 export const HOURS_STEP = 0.25;
@@ -65,7 +68,8 @@ export type BusinessRuleCode =
   | 'SUPER_ADMIN_REQUIRED'
   | 'COUNCIL_ACCESS_DENIED'
   | 'RECORD_NOT_FOUND'
-  | 'RECORD_IN_USE';
+  | 'RECORD_IN_USE'
+  | 'FUNDS_MANAGED_BY_DONATIONS';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -363,6 +367,100 @@ export function assertDonationDateForEvent(date: string, event: { id: number; Ev
   }
 }
 
+// ---- Sprint 5K: donation corrections and the event funds rollup ---------------
+
+/** Donation columns a correction may change. CouncilID and RecordedBy are fixed for the life of the row. */
+export const DONATION_EDITABLE_COLUMNS = [
+  'DonationDate',
+  'DonationMethodID',
+  'DonationTypeID',
+  'Donor',
+  'DonationDesciption',
+  'EventID',
+  'DonationAmount',
+  'DonationPhotoURL',
+] as const satisfies readonly (keyof DonationChanges)[];
+
+/**
+ * donations.update: applies `changes` over the stored row and validates the result as a whole donation.
+ * Unknown fields, CouncilID and RecordedBy are refused (INVALID_INPUT). The driver still checks the ids.
+ */
+export function mergeDonationChanges(existing: Donation, changes: DonationChanges, now: Date): CleanDonation {
+  const editable: readonly string[] = DONATION_EDITABLE_COLUMNS;
+  for (const key of Object.keys(changes ?? {})) {
+    if (key === 'CouncilID' || key === 'RecordedBy') {
+      throw invalid(`A donation's ${key} cannot be changed; delete it and record it again instead.`, { field: key });
+    }
+    if (!editable.includes(key)) throw invalid(`A donation has no field "${key}".`, { field: key });
+  }
+  const current = Object.fromEntries(DONATION_EDITABLE_COLUMNS.map((c) => [c, existing[c] ?? null]));
+  const merged = { ...current, ...changes, CouncilID: existing.CouncilID } as NewDonation;
+  return cleanNewDonation(merged, now);
+}
+
+/** Which event funds column a donation method feeds; physical items feed neither. */
+export const donationFundsBucket = (kind: DonationMethodKind): 'cash' | 'electronic' | null =>
+  kind === 'item' ? null : kind === 'cash' ? 'cash' : 'electronic';
+
+/** Totals of `donations` to the cent, summed in whole cents so no floating-point drift builds up. */
+export function summarizeDonations(donations: readonly { DonationAmount: number; kind: DonationMethodKind }[]): DonationTotals {
+  const cents = { cash: 0, electronic: 0, item: 0 };
+  for (const d of donations) cents[donationFundsBucket(d.kind) ?? 'item'] += Math.round(d.DonationAmount * 100);
+  return {
+    count: donations.length,
+    cash: cents.cash / 100,
+    electronic: cents.electronic / 100,
+    itemValue: cents.item / 100,
+    raised: (cents.cash + cents.electronic) / 100,
+  };
+}
+
+/** The synced value of an event's FundsRaised columns. */
+export interface EventFunds {
+  'FundsRaised-Cash': number;
+  'FundsRaised-Electronic': number;
+}
+
+/**
+ * The event's funds rollup from all of its donations, or null when none of them is cash or electronic
+ * (then the columns are the ledger's hand-entered values).
+ */
+export function rollupEventFunds(donations: readonly { DonationAmount: number; kind: DonationMethodKind }[]): EventFunds | null {
+  if (!donations.some((d) => donationFundsBucket(d.kind) !== null)) return null;
+  const totals = summarizeDonations(donations);
+  return { 'FundsRaised-Cash': totals.cash, 'FundsRaised-Electronic': totals.electronic };
+}
+
+/**
+ * What a donation write must store in the event's funds columns, given the rollup before and after it:
+ * the new sums while donations remain, null in both when the last one went, and nothing (null result)
+ * when the event had no cash or electronic donations either side, so hand-entered values survive.
+ */
+export function nextEventFunds(
+  before: EventFunds | null,
+  after: EventFunds | null,
+): { 'FundsRaised-Cash': number | null; 'FundsRaised-Electronic': number | null } | null {
+  if (after) return after;
+  return before ? { 'FundsRaised-Cash': null, 'FundsRaised-Electronic': null } : null;
+}
+
+/**
+ * events.update: while donations drive an event's funds columns (`rollup` not null), a change to either is
+ * refused. Resending the stored value is allowed, so a ledger form that saves every field still works.
+ */
+export function assertFundsEditable(event: { id: number; EventName: string }, changes: EventChanges, rollup: EventFunds | null): void {
+  if (!rollup) return;
+  for (const key of ['FundsRaised-Cash', 'FundsRaised-Electronic'] as const) {
+    if (changes[key] !== undefined && changes[key] !== rollup[key]) {
+      throw new BusinessRuleError(
+        'FUNDS_MANAGED_BY_DONATIONS',
+        `"${event.EventName}" totals its ${key} from its recorded donations (${rollup[key].toFixed(2)}); correct the donations instead of the total.`,
+        { eventId: event.id, field: key, rollup: rollup[key], received: changes[key] },
+      );
+    }
+  }
+}
+
 /** The Knights of Columbus was founded in 1882; no training can predate it. */
 export const EARLIEST_TRAINING_YEAR = 1882;
 
@@ -611,6 +709,34 @@ export function assertMayMaintainCouncilRecords(actor: MemberWriteActor, council
     'COUNCIL_ACCESS_DENIED',
     `Admin ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; an Admin maintains only their own council's records.`,
     { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
+  );
+}
+
+/**
+ * donations.update/remove: the Active member who recorded the donation and the Active owner of its event may
+ * correct it, as may an Active Admin of its council and any Active Super Admin. `eventOwnerId` is the OwnerID
+ * of the donation's event (null when standalone). Call once for the stored row and, on a move, once for the
+ * result, so the right must hold on both sides.
+ */
+export function assertMayChangeDonation(
+  actor: MemberWriteActor,
+  donation: Pick<Donation, 'id' | 'CouncilID' | 'RecordedBy'>,
+  eventOwnerId: number | null,
+  action: string,
+): void {
+  if (actor.active && (donation.RecordedBy === actor.memberId || eventOwnerId === actor.memberId)) return;
+  if (!hasAdminRights(actor)) {
+    throw new SecurityPrivilegeError(
+      'ADMIN_REQUIRED',
+      `Member ${actor.memberId} cannot ${action}: only the member who recorded it, the event's owner, or an active Admin can; member ${actor.memberId} is ${describeActor(actor)}.`,
+      { actorId: actor.memberId, actorType: actor.memberType ?? null, donationId: donation.id },
+    );
+  }
+  if (hasSuperAdminRights(actor) || actor.councilId === donation.CouncilID) return;
+  throw new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Admin ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${donation.CouncilID}; an Admin maintains only their own council's records.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId: donation.CouncilID, donationId: donation.id },
   );
 }
 

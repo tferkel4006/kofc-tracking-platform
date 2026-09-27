@@ -44,9 +44,11 @@ export class DonationSessionController {
   private current: DonationSessionState = { active: false };
   private readonly listeners = new Set<Listener>();
 
+  /** `recordedBy` is the signed-in member; every donation this controller records is stamped with it. */
   constructor(
     private readonly db: DataService,
     private readonly councilId: number,
+    private readonly recordedBy: number,
   ) {}
 
   get state(): DonationSessionState {
@@ -102,7 +104,7 @@ export class DonationSessionController {
   /** Records one donation, auto-linked to the pinned event while a session is active. */
   async record(entry: DonationEntry): Promise<Donation> {
     const pinned = this.current.active ? this.current.eventId : null;
-    const saved = await this.db.donations.record(this.compose(entry));
+    const saved = await this.db.donations.record(this.recordedBy, this.compose(entry));
     // Only count it if the same session is still running (stop() may have been pressed while saving).
     if (this.current.active && this.current.eventId === pinned) {
       this.set({

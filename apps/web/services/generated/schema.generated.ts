@@ -1751,6 +1751,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "RecordedBy",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -1772,6 +1779,11 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "DonationTypeID",
         "refTable": "DonationType",
+        "refColumn": "id"
+      },
+      {
+        "column": "RecordedBy",
+        "refTable": "Member",
         "refColumn": "id"
       }
     ]
