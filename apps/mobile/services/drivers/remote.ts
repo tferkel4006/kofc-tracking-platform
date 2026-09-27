@@ -91,6 +91,7 @@ export function createRemoteDataService(): DataService {
       countNoShows: notImplemented('events.countNoShows'),
       listByCouncil: notImplemented('events.listByCouncil'),
       listShifts: notImplemented('events.listShifts'),
+      listTurnout: notImplemented('events.listTurnout'),
       listCouncilIds: notImplemented('events.listCouncilIds'),
       create: notImplemented('events.create'),
       update: notImplemented('events.update'),

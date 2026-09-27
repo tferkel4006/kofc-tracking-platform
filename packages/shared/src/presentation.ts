@@ -7,7 +7,7 @@
 import type { ShiftFeedItem, ThreadMessage } from './contract';
 import { daysBetween } from './planning';
 import { assertValidHours, BusinessRuleError, HOURS_STEP, subtractMonths, toIsoDate } from './rules';
-import type { Council, Member, Shift } from './types';
+import type { Council, Event, Member, Shift } from './types';
 
 /** Shifts starting within this many days are shown in Secondary Red. */
 export const URGENT_WITHIN_DAYS = 2;
@@ -233,6 +233,27 @@ export function memberDropdownOptions(
     .map((m) => ({ value: m.id, council: councilName.get(m.CouncilID) ?? '', last: m.MemberLastName, first: m.MemberFirstName }))
     .sort((a, b) => a.council.localeCompare(b.council) || a.last.localeCompare(b.last) || a.first.localeCompare(b.first))
     .map((m) => ({ value: m.value, label: `${m.last}, ${m.first} – ${m.council}` }));
+}
+
+// ---- post-event ledger -------------------------------------------------------
+
+/**
+ * True once anything has been recorded for the event after it ran: Spend, cash or electronic funds
+ * raised, actual attendees, non-blank Highlights, or at least one lesson learned. Until then the
+ * ledger shows the event as "Results needed"; afterwards it moves to the history archive.
+ */
+export function hasLedgerResults(
+  event: Pick<Event, 'Spend' | 'FundsRaised-Cash' | 'FundsRaised-Electronic' | 'ActualNumberAttendees' | 'Highlights'>,
+  lessonCount = 0,
+): boolean {
+  return (
+    event.Spend != null ||
+    event['FundsRaised-Cash'] != null ||
+    event['FundsRaised-Electronic'] != null ||
+    event.ActualNumberAttendees != null ||
+    (event.Highlights ?? '').trim() !== '' ||
+    lessonCount > 0
+  );
 }
 
 // ---- errors ----------------------------------------------------------------

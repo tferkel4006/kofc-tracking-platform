@@ -17,6 +17,7 @@ import {
   formatShiftWhen,
   formatTime,
   formatTimestamp,
+  hasLedgerResults,
   HOUR_OPTIONS,
   hoursToPicker,
   isUnread,
@@ -296,5 +297,26 @@ describe('attachments, timestamps and the member dropdown', () => {
       { value: 12, label: 'Adams, Bo – St. Jude Council' },
       { value: 10, label: 'Adams, Zed – St. Jude Council' },
     ]);
+  });
+});
+
+describe('hasLedgerResults', () => {
+  it('is false until something is recorded', () => {
+    expect(hasLedgerResults({})).toBe(false);
+    expect(hasLedgerResults({ Highlights: '   ' })).toBe(false);
+  });
+
+  it.each([
+    ['Spend', { Spend: 0 }],
+    ['cash raised', { 'FundsRaised-Cash': 120 }],
+    ['electronic raised', { 'FundsRaised-Electronic': 45.5 }],
+    ['actual attendees', { ActualNumberAttendees: 30 }],
+    ['highlights', { Highlights: 'Record turnout' }],
+  ] as const)('counts %s on its own', (_label, event) => {
+    expect(hasLedgerResults(event)).toBe(true);
+  });
+
+  it('counts a lesson learned on its own', () => {
+    expect(hasLedgerResults({}, 1)).toBe(true);
   });
 });

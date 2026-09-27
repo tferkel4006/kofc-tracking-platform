@@ -109,6 +109,7 @@ import type {
   MeetingInviteMode,
   Member,
   MemberShift,
+  VolunteerTurnout,
   Message,
   MessageAttachment,
   MessagePageOptions,
@@ -1504,6 +1505,47 @@ export class SqliteDataService implements DataService {
       return db.getAllAsync<Shift>('SELECT * FROM [Shift] WHERE [EventID] = ? ORDER BY [ShiftDate], [StartTime], [id]', [
         eventId,
       ]);
+    },
+
+    listTurnout: async (eventId) => {
+      const db = await this.ready();
+      const rows = await db.getAllAsync<{ SignupID: number; MemberFirstName: string; MemberLastName: string; Hours: number | null }>(
+        `SELECT es.[id] AS SignupID, m.[MemberFirstName], m.[MemberLastName], et.[Hours]
+           FROM [EventSignup] es
+           JOIN [Shift] s ON s.[id] = es.[ShiftID]
+           JOIN [Member] m ON m.[id] = es.[MemberID]
+           LEFT JOIN [EventTime] et ON et.[ShiftID] = es.[ShiftID] AND et.[MemberID] = es.[MemberID]
+          WHERE s.[EventID] = ?
+          ORDER BY s.[ShiftDate], s.[StartTime], s.[id], m.[MemberLastName], m.[MemberFirstName], es.[id]`,
+        [eventId],
+      );
+      if (rows.length === 0) return [];
+      const shifts = new Map(
+        (await db.getAllAsync<Shift>('SELECT * FROM [Shift] WHERE [EventID] = ?', [eventId])).map((s) => [s.id, s]),
+      );
+      const signups = new Map(
+        (
+          await selectIn<EventSignup>(
+            db,
+            (m) => `SELECT * FROM [EventSignup] WHERE [id] IN (${m})`,
+            rows.map((r) => r.SignupID),
+          )
+        ).map((e) => [e.id, e]),
+      );
+      const out: VolunteerTurnout[] = [];
+      for (const row of rows) {
+        const signup = signups.get(row.SignupID);
+        const shift = signup && shifts.get(signup.ShiftID);
+        if (!signup || !shift) continue;
+        out.push({
+          signup,
+          shift,
+          MemberFirstName: row.MemberFirstName,
+          MemberLastName: row.MemberLastName,
+          hoursLogged: row.Hours ?? null,
+        });
+      }
+      return out;
     },
 
     listCouncilIds: async (eventId) => {

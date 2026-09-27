@@ -107,6 +107,7 @@ import type {
   MeetingInviteMode,
   Member,
   MemberShift,
+  VolunteerTurnout,
   Message,
   MessageAttachment,
   LookupValues,
@@ -1340,6 +1341,32 @@ export class MemoryDataService implements DataService {
         .rows('Shift')
         .filter((sh) => sh.EventID === eventId)
         .map((sh) => ({ ...sh })) as unknown as Shift[]).sort(compareShifts);
+    },
+
+    listTurnout: async (eventId) => {
+      const s = await this.ready();
+      const out: VolunteerTurnout[] = [];
+      for (const shift of s.rows('Shift').filter((sh) => sh.EventID === eventId)) {
+        for (const signup of s.rows('EventSignup').filter((e) => e.ShiftID === shift.id)) {
+          const member = s.rows('Member').find((m) => m.id === signup.MemberID);
+          if (!member) continue;
+          const time = s.rows('EventTime').find((t) => t.ShiftID === shift.id && t.MemberID === signup.MemberID);
+          out.push({
+            signup: { ...signup } as unknown as EventSignup,
+            shift: { ...shift } as unknown as Shift,
+            MemberFirstName: member.MemberFirstName as string,
+            MemberLastName: member.MemberLastName as string,
+            hoursLogged: time ? (time.Hours as number) : null,
+          });
+        }
+      }
+      return out.sort(
+        (a, b) =>
+          compareShifts(a.shift, b.shift) ||
+          a.MemberLastName.localeCompare(b.MemberLastName) ||
+          a.MemberFirstName.localeCompare(b.MemberFirstName) ||
+          a.signup.id - b.signup.id,
+      );
     },
 
     listCouncilIds: async (eventId) => this.councilIdsOf(await this.ready(), eventId),

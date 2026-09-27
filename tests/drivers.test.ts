@@ -182,3 +182,34 @@ describe.each(drivers)('$name driver: activityTime.logHours', (d) => {
     expect(d.count(db, 'ActivityTime')).toBe(0);
   });
 });
+
+describe.each(drivers)('$name driver: events.listTurnout', (d) => {
+  it('lists every signup on the event with the member name and hours logged, or null', async () => {
+    const db = await d.make();
+    const shift = await shiftByName(db, 'Leaf Raking'); // member 3 signed up
+    await db.events.signupForShift(MEMBER.admin, shift.id);
+    await db.eventTime.logHours(MEMBER.member, shift.id, 2.75);
+
+    const turnout = await db.events.listTurnout(shift.EventID);
+    expect(turnout).toHaveLength(2);
+    for (const row of turnout) {
+      expect(row.shift).toMatchObject({ id: shift.id, ShiftName: 'Leaf Raking' });
+      expect(row.MemberFirstName).not.toBe('');
+      expect(row.MemberLastName).not.toBe('');
+    }
+    const byMember = new Map(turnout.map((r) => [r.signup.MemberID, r]));
+    expect(byMember.get(MEMBER.member)?.hoursLogged).toBe(2.75);
+    expect(byMember.get(MEMBER.admin)?.hoursLogged).toBeNull();
+  });
+
+  it('carries the NoShow flag and is empty for an event nobody signed up for', async () => {
+    const db = await d.make();
+    const coatSort = await shiftByName(db, 'Coat Sort'); // member 3 was a no-show
+    const [row] = await db.events.listTurnout(coatSort.EventID);
+    expect(row.signup).toMatchObject({ MemberID: MEMBER.member, NoShow: 1 });
+
+    const toySorting = await shiftByName(db, 'Toy Sorting');
+    expect(await db.events.listTurnout(toySorting.EventID)).toEqual([]);
+    expect(await db.events.listTurnout(9999)).toEqual([]);
+  });
+});

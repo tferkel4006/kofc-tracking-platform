@@ -138,6 +138,16 @@ export interface MemberShift {
   hoursLogged: number | null;
 }
 
+/** One signup on an event's shifts, for the post-event volunteer turnout summary. */
+export interface VolunteerTurnout {
+  signup: EventSignup;
+  shift: Shift;
+  MemberFirstName: string;
+  MemberLastName: string;
+  /** Hours recorded in EventTime, or null when none are recorded yet. */
+  hoursLogged: number | null;
+}
+
 /** One row of the shift signup feed. */
 export interface ShiftFeedItem {
   shift: Shift;
@@ -544,6 +554,11 @@ export interface DataService {
     /** Events linked to the council, newest StartDate first. */
     listByCouncil(councilId: number): Promise<Event[]>;
     listShifts(eventId: number): Promise<Shift[]>;
+    /**
+     * Every signup on the event's shifts with the member's name and any hours logged in EventTime
+     * (EventSignup joined to EventTime on ShiftID and MemberID), in shift order, then last and first name.
+     */
+    listTurnout(eventId: number): Promise<VolunteerTurnout[]>;
     /** Ids of every council the event is linked to. */
     listCouncilIds(eventId: number): Promise<number[]>;
     /** Creates an event linked to `councilIds` (at least one). Rejects INVALID_INPUT on any bad field. */

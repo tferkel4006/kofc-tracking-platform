@@ -220,8 +220,10 @@ export function Table({ head, children, caption }: { head: readonly ReactNode[];
   );
 }
 
-export const Td = ({ children, className }: { children?: ReactNode; className?: string }) => (
-  <td className={cx('border-t border-line px-3 py-1.5 align-middle', className)}>{children}</td>
+export const Td = ({ children, className, colSpan }: { children?: ReactNode; className?: string; colSpan?: number }) => (
+  <td colSpan={colSpan} className={cx('border-t border-line px-3 py-1.5 align-middle', className)}>
+    {children}
+  </td>
 );
 
 export function Empty({ children }: { children: ReactNode }) {

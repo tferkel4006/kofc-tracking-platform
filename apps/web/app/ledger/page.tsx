@@ -1,19 +1,22 @@
 'use client';
 // Post-event ledger: after an event has started, record what it really cost and raised, how many people
 // came, the highlights, and the lessons learned. Admins do this for their councils' events; the event's
-// owner may too (canRecordLedger), which is why every role sees this section.
-import { useState } from 'react';
+// owner may too (canRecordLedger), which is why every role sees this section. Events still waiting for
+// results sit in the active queue; once anything is recorded (hasLedgerResults) they move to the archive.
+import { useEffect, useState } from 'react';
 import {
   canRecordLedger,
   describeError,
   formatDate,
+  formatHours,
+  hasLedgerResults,
   toIsoDate,
   type Event,
   type EventChanges,
   type LessonsLearnedCategory,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Td, Textarea } from '@/components/ui';
+import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td, Textarea } from '@/components/ui';
 import { formatMoney, parseNumberField, toField } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -126,15 +129,19 @@ function ResultsForm({ event, onSaved }: { event: Event; onSaved: () => void }) 
 
 // ---- lessons learned -----------------------------------------------------------
 
-function LessonsPanel({ eventId, categories }: { eventId: number; categories: LessonsLearnedCategory[] }) {
+function LessonsPanel({ eventId, categories, onChanged }: { eventId: number; categories: LessonsLearnedCategory[]; onChanged: () => void }) {
   const lessons = useLoad(() => db.lessonsLearned.list(eventId), [eventId]);
   const { message, setMessage, run } = useAction();
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? 0);
   const [text, setText] = useState('');
   const label = new Map(categories.map((c) => [c.id, c.LessonsLearnedCategory]));
 
+  // A lesson counts as a result, so adding the first or removing the last moves the event between tabs.
   const change = async (action: () => Promise<void>, done: string) => {
-    if (await run(action, done)) await lessons.reload();
+    if (await run(action, done)) {
+      await lessons.reload();
+      onChanged();
+    }
   };
 
   return (
@@ -192,6 +199,50 @@ function LessonsPanel({ eventId, categories }: { eventId: number; categories: Le
   );
 }
 
+// ---- volunteer turnout ---------------------------------------------------------
+
+function TurnoutPanel({ eventId }: { eventId: number }) {
+  const turnout = useLoad(() => db.events.listTurnout(eventId), [eventId]);
+  const rows = turnout.data ?? [];
+  const total = rows.reduce((hours, r) => hours + (r.hoursLogged ?? 0), 0);
+  return (
+    <Panel title="Fraternal Volunteer Turnout Summary">
+      {turnout.error ? <Notice tone="error">{turnout.error}</Notice> : null}
+      {turnout.data?.length === 0 ? (
+        <Empty>Nobody signed up for this event&apos;s shifts.</Empty>
+      ) : (
+        <Table caption="Volunteers who signed up for this event's shifts, with hours logged" head={['Brother', 'Shift', 'Date', 'Hours']}>
+          {rows.map((r) => (
+            <tr key={r.signup.id}>
+              <Td>
+                <span className="font-bold">
+                  {r.MemberFirstName} {r.MemberLastName}
+                </span>
+                {r.signup.NoShow === 1 ? (
+                  <span className="ml-2">
+                    <Pill tone="red">No-show</Pill>
+                  </span>
+                ) : null}
+              </Td>
+              <Td>{r.shift.ShiftName}</Td>
+              <Td>{formatDate(r.shift.ShiftDate)}</Td>
+              <Td>{r.hoursLogged === null ? '—' : formatHours(r.hoursLogged)}</Td>
+            </tr>
+          ))}
+          {rows.length > 0 ? (
+            <tr>
+              <Td className="font-bold" colSpan={3}>
+                Total ({rows.length} {rows.length === 1 ? 'signup' : 'signups'})
+              </Td>
+              <Td className="font-bold">{formatHours(total)}</Td>
+            </tr>
+          ) : null}
+        </Table>
+      )}
+    </Panel>
+  );
+}
+
 // ---- the selected event ------------------------------------------------------
 
 function EventLedger({ eventId, onSaved }: { eventId: number; onSaved: () => void }) {
@@ -216,51 +267,81 @@ function EventLedger({ eventId, onSaved }: { eventId: number; onSaved: () => voi
           onSaved();
         }}
       />
-      <LessonsPanel eventId={eventId} categories={categories.data} />
+      <TurnoutPanel eventId={eventId} />
+      <LessonsPanel eventId={eventId} categories={categories.data} onChanged={onSaved} />
     </div>
   );
 }
 
 // ---- the page ----------------------------------------------------------------
 
+type LedgerTab = 'queue' | 'archive';
+
 function Ledger() {
   const user = useUser();
   const scope = useCouncilScope();
   const [selected, setSelected] = useState<number | null>(null);
+  const [tab, setTab] = useState<LedgerTab>('queue');
   const today = toIsoDate(new Date());
 
-  // Only events that have started and that this member may record for.
+  // Only events that have started and that this member may record for, each marked with whether
+  // anything has been recorded yet (hasLedgerResults, which also counts lessons learned).
   const events = useLoad(async () => {
     const all = (await db.events.listByCouncil(scope.councilId)).filter((e) => e.StartDate <= today);
     const allowed = await Promise.all(all.map(async (e) => canRecordLedger(user, e, await db.events.listCouncilIds(e.id))));
-    return all.filter((_, i) => allowed[i]);
+    const mine = all.filter((_, i) => allowed[i]);
+    const lessons = await Promise.all(mine.map((e) => db.lessonsLearned.list(e.id)));
+    return mine.map((event, i) => ({ event, recorded: hasLedgerResults(event, lessons[i].length) }));
   }, [scope.councilId, today, user.memberId]);
+
+  const queue = (events.data ?? []).filter((e) => !e.recorded);
+  const archive = (events.data ?? []).filter((e) => e.recorded);
+  const shown = tab === 'queue' ? queue : archive;
+
+  // Keep the open event's tab in view: once its results are saved it moves to the archive, and back to
+  // the queue if everything is cleared.
+  const selectedRecorded = events.data?.find((e) => e.event.id === selected)?.recorded;
+  useEffect(() => {
+    if (selectedRecorded !== undefined) setTab(selectedRecorded ? 'archive' : 'queue');
+  }, [selectedRecorded]);
 
   return (
     <>
       <PageTitle actions={<CouncilSelect scope={scope} />}>Post-event ledger</PageTitle>
       <div className="grid grid-cols-[20rem_minmax(0,1fr)] items-start gap-4">
         <Panel title="Events">
-          {events.error ? <Notice tone="error">{events.error}</Notice> : null}
-          {events.data?.length === 0 ? <Empty>No events you can record results for have started yet.</Empty> : null}
-          <ul className="flex flex-col gap-1">
-            {(events.data ?? []).map((e: Event) => (
-              <li key={e.id}>
-                <button
-                  type="button"
-                  aria-current={selected === e.id ? 'true' : undefined}
-                  onClick={() => setSelected(e.id)}
-                  className={cx('block w-full border-l-8 px-3 py-2 text-left', selected === e.id ? 'border-gold bg-white outline outline-1 outline-line' : 'border-transparent hover:underline')}
-                >
-                  <span className="block text-sm font-bold">{e.EventName}</span>
-                  <span className="block text-xs text-muted">{formatDate(e.EndDate)}</span>
-                  <span className="mt-1 block">
-                    {e.Spend == null && e['FundsRaised-Cash'] == null && e['FundsRaised-Electronic'] == null ? <Pill tone="gold">Results needed</Pill> : <Pill tone="outline">Recorded</Pill>}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <Tabs
+            tabs={[
+              { id: 'queue', label: `Active queue (${queue.length})` },
+              { id: 'archive', label: `Historic archive (${archive.length})` },
+            ]}
+            value={tab}
+            onChange={setTab}
+            label="Ledger events"
+            idPrefix="ledger"
+          />
+          <div id="ledger-panel" role="tabpanel" aria-labelledby={`ledger-tab-${tab}`} className="flex flex-col gap-2 pt-3">
+            {events.error ? <Notice tone="error">{events.error}</Notice> : null}
+            {events.data && shown.length === 0 ? (
+              <Empty>{tab === 'queue' ? 'No events are waiting for results.' : 'No events have recorded results yet.'}</Empty>
+            ) : null}
+            <ul className="flex flex-col gap-1">
+              {shown.map(({ event: e, recorded }: { event: Event; recorded: boolean }) => (
+                <li key={e.id}>
+                  <button
+                    type="button"
+                    aria-current={selected === e.id ? 'true' : undefined}
+                    onClick={() => setSelected(e.id)}
+                    className={cx('block w-full border-l-8 px-3 py-2 text-left', selected === e.id ? 'border-gold bg-white outline outline-1 outline-line' : 'border-transparent hover:underline')}
+                  >
+                    <span className="block text-sm font-bold">{e.EventName}</span>
+                    <span className="block text-xs text-muted">{formatDate(e.EndDate)}</span>
+                    <span className="mt-1 block">{recorded ? <Pill tone="outline">Recorded</Pill> : <Pill tone="gold">Results needed</Pill>}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </Panel>
         <div>
           {selected === null ? (
