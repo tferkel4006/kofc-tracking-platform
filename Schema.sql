@@ -1149,6 +1149,7 @@ CREATE TABLE [CharityDonationProposal] (
 	[ExistingCharityID] INTEGER NULL, -- the registry entry, once the member or the paying officer names one
 	[Status] VARCHAR(50) NOT NULL, -- Pending, Approved, Rejected
 	[MeetingMinutesID] INTEGER NULL, -- the council meeting whose minutes record the vote
+	[RejectionReason] VARCHAR(2000) NULL, -- Sprint 5V-2: why leadership rejected the proposal (charities.rejectProposal)
 	PRIMARY KEY([id])
 );
 GO
@@ -1162,6 +1163,7 @@ CREATE TABLE [CharitableDisbursementLedger] (
 	[DisbursedByID] INTEGER NOT NULL,
 	[PayoutDate] DATE NOT NULL,
 	[Notes] TEXT NULL,
+	[ProposalID] INTEGER NULL, -- Sprint 5V-2: the proposal the check paid (audit trail)
 	PRIMARY KEY([id])
 );
 GO
@@ -1221,5 +1223,11 @@ CREATE INDEX [CouncilCharityLink_Charity_Idx] ON [CouncilCharityLink] ([CharityI
 GO
 CREATE INDEX [CharityDonationProposal_Council_Status_Idx] ON [CharityDonationProposal] ([CouncilID], [Status]);
 GO
+ALTER TABLE [CharitableDisbursementLedger]
+ADD FOREIGN KEY([ProposalID])
+REFERENCES [CharityDonationProposal]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
 CREATE INDEX [CharitableDisbursementLedger_Council_Payout_Idx] ON [CharitableDisbursementLedger] ([CouncilID], [PayoutDate]);
 GO

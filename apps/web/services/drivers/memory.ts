@@ -169,6 +169,10 @@ import {
   seatHolderId,
   seatHolderIdByName,
   assertMayAddGlobalCharity,
+  assertMayReviewCharityProposals,
+  assertOneCharitySource,
+  buildCharityProposalDetails,
+  buildCouncilCharityLedger,
   assertMayConnectCouncilCharity,
   assertMayDisburseCharity,
   assertMayProposeCharityGift,
@@ -198,6 +202,7 @@ import {
 } from '@kofc/shared';
 import type {
   CharitableDisbursementLedger,
+  CharityProposalDetail,
   CharityDonationProposal,
   CouncilCharityLink,
   GlobalCharityRegistry,
@@ -2852,6 +2857,7 @@ export class MemoryDataService implements DataService {
     hydrateAndDisburse: async (actorId, councilId, proposalId, checkDetails, globalCharityData) => {
       const check = cleanCharityCheck(checkDetails);
       const incoming = globalCharityData === undefined ? null : cleanGlobalCharity(globalCharityData);
+      assertOneCharitySource(check, incoming !== null);
       const s = await this.ready();
       return s.transaction(() => {
         assertMayDisburseCharity(this.memberWriteActor(s, actorId), councilId, `record charity checks for council ${councilId}`);
@@ -2876,6 +2882,8 @@ export class MemoryDataService implements DataService {
             charity = s.insert('GlobalCharityRegistry', { ...incoming });
             charityRegistered = true;
           }
+        } else if (check.CharityID !== null) {
+          charity = this.requireCharity(s, check.CharityID);
         } else if (proposal.ExistingCharityID != null) {
           charity = this.requireCharity(s, proposal.ExistingCharityID as number);
         } else {
@@ -2891,6 +2899,7 @@ export class MemoryDataService implements DataService {
           DisbursedByID: actorId,
           PayoutDate: check.PayoutDate,
           Notes: check.Notes,
+          ProposalID: proposalId,
         });
         Object.assign(proposal, {
           Status: 'Approved',
@@ -2906,7 +2915,55 @@ export class MemoryDataService implements DataService {
         };
       });
     },
+
+    listMyProposals: async (actorId) => {
+      const s = await this.ready();
+      this.requireMember(s, actorId);
+      return this.charityProposalDetails(s, (p) => p.SubmitterMemberID === actorId, 'newest');
+    },
+
+    listCouncilProposals: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReviewCharityProposals(this.memberWriteActor(s, actorId), councilId, `review the charity proposals of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return this.charityProposalDetails(s, (p) => p.CouncilID === councilId, 'queue');
+    },
+
+    listCouncilLedger: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReviewCharityProposals(this.memberWriteActor(s, actorId), councilId, `read the charity ledger of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return buildCouncilCharityLedger(
+        s.rows('CouncilCharityLink').filter((l) => l.CouncilID === councilId) as unknown as CouncilCharityLink[],
+        this.charityRows(s),
+        s.rows('CharitableDisbursementLedger').filter((d) => d.CouncilID === councilId) as unknown as CharitableDisbursementLedger[],
+      ).map((e) => ({ ...e, charity: { ...e.charity }, disbursements: e.disbursements.map((d) => ({ ...d })) }));
+    },
+
+    rejectProposal: async (actorId, proposalId, reason) => {
+      const clean = cleanRejectionReason(reason);
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const proposal = s.rows('CharityDonationProposal').find((p) => p.id === proposalId);
+        if (!proposal) throw charityProposalNotFound(proposalId);
+        assertMayReviewCharityProposals(actor, proposal.CouncilID as number, `reject charity proposal ${proposalId}`);
+        assertProposalPending(proposal as unknown as CharityDonationProposal, 'be rejected');
+        Object.assign(proposal, { Status: 'Rejected', RejectionReason: clean });
+      });
+      return this.charityProposalDetails(s, (p) => p.id === proposalId, 'newest')[0];
+    },
   };
+
+  private charityProposalDetails(s: MemoryStore, keep: (p: Row) => boolean, order: 'queue' | 'newest'): CharityProposalDetail[] {
+    return buildCharityProposalDetails(
+      s.rows('CharityDonationProposal').filter(keep).map((p) => ({ ...p })) as unknown as CharityDonationProposal[],
+      s.rows('Member') as unknown as Member[],
+      this.charityRows(s).map((c) => ({ ...c })),
+      s.rows('CharitableDisbursementLedger').map((d) => ({ ...d })) as unknown as CharitableDisbursementLedger[],
+      order,
+    );
+  }
 
   private charityRows(s: MemoryStore): readonly GlobalCharityRegistry[] {
     return s.rows('GlobalCharityRegistry') as unknown as GlobalCharityRegistry[];

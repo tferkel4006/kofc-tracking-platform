@@ -37,6 +37,9 @@ export type PortalArea =
   | 'expenses'
   | 'expenses/queue'
   | 'expenses/disbursements'
+  | 'charities/propose'
+  | 'charities/registry'
+  | 'charities/queue'
   | 'lessons-registry'
   | 'donations'
   | 'dashboard'
@@ -195,6 +198,24 @@ export const canAppointOfficers = (u: Actor): boolean => isSuperAdmin(u) || (u.r
 export const canConfigureBallot = (u: Actor, councilId: number): boolean => canAdministerCouncil(u, councilId);
 
 /**
+ * The Global Charities Registry screen and its "add a charity" form, mirroring assertMayAddGlobalCharity (Sprint 5V):
+ * Admins and Super Admins. Every member may search the registry from the proposal desk.
+ */
+export const canManageCharityRegistry = (u: Actor): boolean => isAdmin(u);
+
+/** Connect controls on the registry's suggestions, mirroring assertMayConnectCouncilCharity: the council's leadership. */
+export const canConnectCouncilCharity = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
+
+/** The council's charity proposals, ledger and reject control, mirroring assertMayReviewCharityProposals. */
+export const canReviewCharityProposals = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
+
+/**
+ * The Charitable Disbursements Ledger, mirroring assertMayDisburseCharity (Sprint 5V): the council's Financial Secretary
+ * and Treasurer, and any Super Admin. Charity checks come out of the same checkbook as expense checks.
+ */
+export const canDisburseCharity = (u: Actor, councilId: number): boolean => canDisburseCouncilExpenses(u, councilId);
+
+/**
  * Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it, and the
  * meeting center because a meeting's owner may be any member (it is read-only for everyone else without rights).
  */
@@ -213,10 +234,12 @@ export function portalAreas(u: Actor): PortalArea[] {
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('donations');
   // Every member files their own expense reports; the council's leadership audits them; only its finance officers
   // (or a Super Admin) pay them.
-  areas.push('ledger', 'expenses');
+  // Every member may propose a charity grant (Sprint 5V).
+  areas.push('ledger', 'expenses', 'charities/propose');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/queue');
-  if (isSuperAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/disbursements');
+  if (isSuperAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/disbursements', 'charities/queue');
   if (canBrowseLessonsRegistry(u)) areas.push('lessons-registry');
+  if (canManageCharityRegistry(u)) areas.push('charities/registry');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('dashboard', 'supreme-sync');
   areas.push('messages', 'profile');
   return areas;
@@ -235,15 +258,15 @@ export interface PortalNavGroup {
 
 /** Every sidebar link in its group, in display order (Sprint 5S). Each PortalArea but 'profile' appears exactly once. */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
-  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, items: ['member-actions', 'messages', 'help'] },
+  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, items: ['member-actions', 'charities/propose', 'messages', 'help'] },
   {
     id: 'volunteer',
     label: 'Volunteer Operations',
     collapsible: true,
     items: ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
   },
-  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements'] },
-  { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'] },
+  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/queue'] },
+  { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'] },
 ];
 
 /** The sidebar for `u`: each group holding only the links portalAreas allows (help is for everyone); empty groups are dropped. */

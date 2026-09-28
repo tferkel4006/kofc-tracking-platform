@@ -3020,6 +3020,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "RejectionReason",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -3106,6 +3113,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "ProposalID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -3122,6 +3136,11 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "DisbursedByID",
         "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "ProposalID",
+        "refTable": "CharityDonationProposal",
         "refColumn": "id"
       }
     ],

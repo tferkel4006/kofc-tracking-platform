@@ -361,7 +361,39 @@ One push of a council's compliance answers to an Alchemer survey (supreme.syncAl
 •	Status (VARCHAR(10), NOT NULL) — Success, or Failed when the Alchemer post threw or was refused.
 ________________________________________
 
-# 9. Charitable Giving and Disbursements (Sprint 5V)
+# 9. Officer Elections and Leadership History (Sprint 5U)
+Offices are matched by Role name in the shared rules (Grand Knight, Deputy Grand Knight, Trustee 1-3 and the appointed offices), never by id. A seat's holder is whoever holds the role in MemberRoles; these tables record the ballot and the terms. The fraternal year runs July 1 to June 30 and is written '2026-2027'.
+[CouncilElectionBallot]
+Whether one of a council's elected seats is open for nomination this cycle. Opened and closed by the council's Admins or a Super Admin (elections.toggleRoleBallotStatus); an abdication from an elected seat opens a mid-year election.
+•	CouncilID (INTEGER, NOT NULL) — Composite Primary Key; Foreign Key references Council(id).
+•	RoleID (INTEGER, NOT NULL) — Composite Primary Key; Foreign Key references Role(id). An elected office.
+•	IsUpForElection (BIT, NOT NULL, DEFAULT 0) — 1 while the seat takes nominations.
+•	IsMidYearElection (BIT, NOT NULL, DEFAULT 0) — 1 when an abdication opened the seat mid-term.
+•	NominationsCloseAt (DATETIME, NULL) — Mid-year elections only: two weeks after the abdication (UTC).
+[OfficerNominations]
+One member put up for one seat in one term (elections.submitNomination), by any Active member of the council or a Super Admin.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	OfficeRoleID (INTEGER, NOT NULL) — Foreign Key references Role(id). The elected seat.
+•	NomineeMemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). An Active member of the council.
+•	NominatedByMemberID (INTEGER, NOT NULL) — Foreign Key references Member(id).
+•	NominatedAt (DATETIME, NOT NULL, DEFAULT getdate()) — When the nomination was made (UTC).
+•	FraternalYear (VARCHAR(9), NOT NULL) — The term the election fills, e.g. '2027-2028'. Unique together with CouncilID, OfficeRoleID and NomineeMemberID.
+•	IsEligible (BIT, NOT NULL, DEFAULT 1) — 0 for a Grand Knight nominee who has never served as Deputy Grand Knight or Grand Knight; the nomination still counts.
+[CouncilLeadershipHistory]
+One member's time in one seat. A NULL EndDate marks the sitting holder.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	MemberID (INTEGER, NOT NULL) — Foreign Key references Member(id).
+•	RoleID (INTEGER, NOT NULL) — Foreign Key references Role(id).
+•	FraternalYear (VARCHAR(9), NOT NULL) — The term, e.g. '2026-2027'.
+•	StartDate (DATE, NOT NULL) — When the member took the seat.
+•	EndDate (DATE, NULL) — When the member left it; NULL while they hold it.
+•	ExitReason (VARCHAR(50), NULL) — TermConcluded or Abdicated.
+•	AppointedByID (INTEGER, NULL) — Foreign Key references Member(id). The Grand Knight or Super Admin who appointed the member; NULL when elected or backfilled.
+________________________________________
+
+# 10. Charitable Giving and Disbursements (Sprint 5V)
 [GlobalCharityRegistry]
 One charity in the registry every council shares. Any member may search it; only an Active Admin or Super Admin adds entries directly (charities.addGlobalCharity), and a Financial Secretary or Treasurer registers one while paying it (charities.hydrateAndDisburse). A charity is a duplicate of an entry with the same EIN or, when either EIN is missing, the same Name and State ignoring case; duplicates are refused with CHARITY_ALREADY_REGISTERED.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -375,7 +407,7 @@ One charity in the registry every council shares. Any member may search it; only
 •	Address (VARCHAR(512), NULL) — Mailing address, where checks are sent.
 •	ZipCode (VARCHAR(20), NULL) — Mailing ZIP code.
 •	IsCatholic (BIT, NOT NULL, DEFAULT 0) — Whether the charity is a Catholic ministry; Catholic charities are suggested first.
-•	CharityType (VARCHAR(100), NOT NULL) — The charity's cause, e.g. Food Security, Housing, Youth.
+•	CharityType (VARCHAR(100), NOT NULL) — The charity's cause, one of the six core types (Sprint 5V-2): Food Security, Women and Children, Faith, Protecting Life, Homelessness or Parish.
 [CouncilCharityLink]
 A council's connection to a registry charity. Made by council leadership (charities.connectCouncilToCharity) or automatically when a charity check is paid.
 •	CouncilID (INTEGER, NOT NULL) — Composite Primary Key; Foreign Key references Council(id).
@@ -389,8 +421,9 @@ A member's proposal that the council give to a charity (charities.proposeDonatio
 •	ProposedCharityName (VARCHAR(255), NOT NULL) — The charity as the member named it; the registry entry's Name when the member picked one.
 •	ProposedAmount (DECIMAL(18,2), NOT NULL) — The proposed gift, more than 0.
 •	ExistingCharityID (INTEGER, NULL) — Foreign Key references GlobalCharityRegistry(id). Set when the member picks a registry entry, or when a finance officer pays the proposal.
-•	Status (VARCHAR(50), NOT NULL) — Pending, Approved (paid) or Rejected.
+•	Status (VARCHAR(50), NOT NULL) — Pending, Approved (paid by hydrateAndDisburse) or Rejected (by council leadership, charities.rejectProposal).
 •	MeetingMinutesID (INTEGER, NULL) — Foreign Key references Meeting(id). The council meeting whose minutes record the vote.
+•	RejectionReason (VARCHAR(2000), NULL) — Why leadership rejected the proposal (Sprint 5V-2); set only when Status is Rejected.
 [CharitableDisbursementLedger]
 One check a council paid to a charity, written by charities.hydrateAndDisburse (the council's Active Financial Secretary or Treasurer, or an Active Super Admin). reports.monthlySummary counts it as charitable giving, and so as spend, in the month of its PayoutDate.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -401,5 +434,6 @@ One check a council paid to a charity, written by charities.hydrateAndDisburse (
 •	DisbursedByID (INTEGER, NOT NULL) — Foreign Key references Member(id). The officer who issued the check.
 •	PayoutDate (DATE, NOT NULL) — The date on the check.
 •	Notes (TEXT, NULL) — Optional memo; at most 2,000 characters.
+•	ProposalID (INTEGER, NULL) — Foreign Key references CharityDonationProposal(id). The proposal the check paid (Sprint 5V-2), for the audit trail.
 ________________________________________
 

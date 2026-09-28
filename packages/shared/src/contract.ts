@@ -876,6 +876,35 @@ export interface CharityProposalInput {
 export interface CharityCheckDetails extends DisbursementCheckDetails {
   Amount?: number | null;
   MeetingMinutesID?: number | null;
+  /**
+   * A registry entry to pay instead of the proposal's ExistingCharityID ("link an existing charity"). Cannot be
+   * combined with hydrateAndDisburse's `globalCharityData`.
+   */
+  CharityID?: number | null;
+}
+
+/** One gift proposal with its submitter, its registry entry (if any) and the check that paid it (if any). */
+export interface CharityProposalDetail {
+  proposal: CharityDonationProposal;
+  submitterFirstName: string;
+  submitterLastName: string;
+  charity: GlobalCharityRegistry | null;
+  disbursement: CharitableDisbursementLedger | null;
+  /**
+   * True while the proposal cannot be paid as it stands: it names no registry entry, or the entry has no mailing
+   * Address or ZipCode (charityNeedsHydration). The officer links an entry or types in the full record.
+   */
+  needsHydration: boolean;
+}
+
+/** One charity the council is connected to, with every check the council paid it. */
+export interface CouncilCharityLedgerEntry {
+  charity: GlobalCharityRegistry;
+  connectedAt: string;
+  /** Newest PayoutDate first, then newest id. */
+  disbursements: CharitableDisbursementLedger[];
+  /** Sum of the checks, to the cent. */
+  totalGiven: number;
 }
 
 export interface CharityDisbursementResult {
@@ -1564,11 +1593,12 @@ export interface DataService {
     /**
      * Pays a 'Pending' proposal in one transaction: resolves the charity (from `globalCharityData` when given - an
      * existing duplicate is reused with its blank fields filled in, otherwise the entry is registered - else from the
-     * proposal's ExistingCharityID), connects the council to it, writes the ledger row with DisbursedByID = actorId,
+     * checkDetails.CharityID, else the proposal's ExistingCharityID), connects the council to it, writes the ledger row
+     * with DisbursedByID = actorId and ProposalID = proposalId,
      * and marks the proposal 'Approved' with ExistingCharityID set. The council's Active Financial Secretary or
      * Treasurer, or an Active Super Admin (FINANCE_OFFICER_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects RECORD_NOT_FOUND for
-     * a proposal outside the council, PROPOSAL_STATUS_CONFLICT for one no longer 'Pending', INVALID_INPUT when no
-     * charity can be resolved, for a bad field, a meeting outside the council, or a check number the council already
+     * a proposal outside the council or an unknown CharityID, PROPOSAL_STATUS_CONFLICT for one no longer 'Pending',
+     * INVALID_INPUT when no charity can be resolved, for both CharityID and `globalCharityData`, for a bad field, a meeting outside the council, or a check number the council already
      * used on any check (charity or expense); INVALID_DATE for a malformed payout date.
      */
     hydrateAndDisburse(
@@ -1578,6 +1608,23 @@ export interface DataService {
       checkDetails: CharityCheckDetails,
       globalCharityData?: NewGlobalCharity,
     ): Promise<CharityDisbursementResult>;
+    /** The actor's own proposals in every status, newest (highest id) first. Open to every member. */
+    listMyProposals(actorId: number): Promise<CharityProposalDetail[]>;
+    /**
+     * The council's proposals in every status: 'Pending' first (oldest first, the payout queue), then the rest newest
+     * first. Council leadership: an Active Admin, Financial Secretary or Treasurer of the council, or an Active Super
+     * Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED).
+     */
+    listCouncilProposals(actorId: number, councilId: number): Promise<CharityProposalDetail[]>;
+    /** The charities the council is connected to, Name A-Z, each with its checks. Council leadership, as above. */
+    listCouncilLedger(actorId: number, councilId: number): Promise<CouncilCharityLedgerEntry[]>;
+    /**
+     * Rejects a 'Pending' proposal: Status 'Rejected' and RejectionReason the trimmed `reason`. Council leadership of
+     * the proposal's council, as above. Rejects INVALID_INPUT for a blank reason or one over
+     * REJECTION_REASON_MAX_LENGTH characters, RECORD_NOT_FOUND for an unknown proposal, PROPOSAL_STATUS_CONFLICT for one
+     * no longer 'Pending'.
+     */
+    rejectProposal(actorId: number, proposalId: number, reason: string): Promise<CharityProposalDetail>;
   };
 
   feedback: {

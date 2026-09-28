@@ -5,6 +5,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   assertMayAddGlobalCharity,
+  buildCharityProposalDetails,
+  buildCouncilCharityLedger,
+  charityNeedsHydration,
   assertMayConnectCouncilCharity,
   assertMayDisburseCharity,
   assertMayProposeCharityGift,
@@ -135,6 +138,9 @@ describe('charity helpers (pure)', () => {
     expect(cleanGlobalCharity(charity({ EIN: '' })).EIN).toBeNull();
     expect(() => cleanGlobalCharity(charity({ Description: ' ' }))).toThrow(/Description is required/);
     expect(() => cleanGlobalCharity(charity({ CharityType: 'x'.repeat(101) }))).toThrow(/at most 100/);
+    // Sprint 5V-2: only the six core types, stored in their canonical spelling.
+    expect(cleanGlobalCharity(charity({ CharityType: ' protecting LIFE ' })).CharityType).toBe('Protecting Life');
+    expect(() => cleanGlobalCharity(charity({ CharityType: 'Housing' }))).toThrow(/Food Security, Women and Children, Faith, Protecting Life, Homelessness, Parish/);
     expect(() => cleanGlobalCharity(charity({ ContactEmail: 'not-an-email' }))).toThrow(/email address/);
     expect(() => cleanGlobalCharity({ ...charity(), id: 5 } as unknown as NewGlobalCharity)).toThrow(/no field "id"/);
   });
@@ -197,9 +203,45 @@ describe('charity helpers (pure)', () => {
     expect(() => cleanCharityProposal({ ProposedAmount: 250 })).toThrow(/name or a charity/);
     expect(() => cleanCharityProposal({ ProposedCharityName: 'X', ProposedAmount: 0 })).toThrow(/more than 0/);
     expect(() => cleanCharityProposal({ ProposedCharityName: 'X', ProposedAmount: 10.005 })).toThrow(/two decimal places/);
-    expect(cleanCharityCheck(CHECK)).toEqual({ ...CHECK, Amount: null, MeetingMinutesID: null });
+    expect(cleanCharityCheck(CHECK)).toEqual({ ...CHECK, Amount: null, MeetingMinutesID: null, CharityID: null });
     expect(() => cleanCharityCheck({ ...CHECK, Amount: -5 })).toThrow(/Check amount/);
     expect(() => cleanCharityCheck({ ...CHECK, CheckNumber: ' ' })).toThrow(/Check number is required/);
+  });
+
+  it('flags a charity without a mailing address for hydration, and builds the proposal and ledger views', () => {
+    expect(charityNeedsHydration(null)).toBe(true);
+    expect(charityNeedsHydration(registryRow(1, { Address: '1 Main St', ZipCode: null }))).toBe(true);
+    expect(charityNeedsHydration(registryRow(1, { Address: '1 Main St', ZipCode: '97301' }))).toBe(false);
+
+    const proposal = (id: number, Status: 'Pending' | 'Approved' | 'Rejected', ExistingCharityID: number | null = null) => ({
+      id,
+      CouncilID: OWN,
+      SubmitterMemberID: 3,
+      ProposedCharityName: `Gift ${id}`,
+      ProposedAmount: 10,
+      ExistingCharityID,
+      Status,
+    });
+    const charities = [registryRow(7, { Address: '1 Main St', ZipCode: '97301' })];
+    const paid = { id: 1, CouncilID: OWN, CharityID: 7, Amount: 10, CheckNumber: '1', DisbursedByID: 2, PayoutDate: '2026-09-01', ProposalID: 2 };
+    const details = buildCharityProposalDetails(
+      [proposal(1, 'Rejected'), proposal(2, 'Approved', 7), proposal(3, 'Pending', 7), proposal(4, 'Pending')],
+      [{ id: 3, MemberFirstName: 'Pat', MemberLastName: 'Knight' }],
+      charities,
+      [paid],
+      'queue',
+    );
+    expect(details.map((d) => [d.proposal.id, d.needsHydration])).toEqual([[3, false], [4, true], [2, false], [1, false]]);
+    expect(details[2]).toMatchObject({ submitterLastName: 'Knight', charity: { id: 7 }, disbursement: { id: 1 } });
+
+    const ledger = buildCouncilCharityLedger(
+      [{ CouncilID: OWN, CharityID: 7, ConnectedAt: '2026-09-01 10:00:00' }],
+      charities,
+      [paid, { ...paid, id: 2, Amount: 5.55, PayoutDate: '2026-09-15', ProposalID: null }, { ...paid, id: 3, CouncilID: OTHER }],
+    );
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0].disbursements.map((d) => d.id)).toEqual([2, 1]);
+    expect(ledger[0].totalGiven).toBe(15.55);
   });
 
   it('adds charitable giving to the month’s spend and nets it against funds raised', () => {
@@ -276,13 +318,13 @@ describe.each(drivers)('$name driver: charitable giving', (d) => {
   it('searches the registry for any member and suggests unlinked local charities', async () => {
     const db = await d.make();
     const svdp = await db.charities.addGlobalCharity(MEMBER.admin, charity());
-    const shelter = await db.charities.addGlobalCharity(MEMBER.admin, charity({ EIN: null, Name: 'Hope Shelter', IsCatholic: false, CharityType: 'Housing' }));
-    await db.charities.addGlobalCharity(MEMBER.admin, charity({ EIN: null, Name: 'Evergreen Youth', State: 'WA', CharityType: 'Youth' }));
+    const shelter = await db.charities.addGlobalCharity(MEMBER.admin, charity({ EIN: null, Name: 'Hope Shelter', IsCatholic: false, CharityType: 'Homelessness' }));
+    await db.charities.addGlobalCharity(MEMBER.admin, charity({ EIN: null, Name: 'Evergreen Youth', State: 'WA', CharityType: 'Faith' }));
 
     expect((await db.charities.searchGlobalRegistry(MEMBER.member)).map((c) => c.Name)).toEqual(['Evergreen Youth', 'Hope Shelter', 'St. Vincent de Paul Salem']);
     expect((await db.charities.searchGlobalRegistry(MEMBER.member, { state: 'or', name: 'hope' })).map((c) => c.id)).toEqual([shelter.id]);
     expect((await db.charities.searchGlobalRegistry(MEMBER.member, { ein: '930386970' })).map((c) => c.id)).toEqual([svdp.id]);
-    expect((await db.charities.searchGlobalRegistry(MEMBER.member, { charityType: 'youth' })).map((c) => c.State)).toEqual(['WA']);
+    expect((await db.charities.searchGlobalRegistry(MEMBER.member, { charityType: 'faith' })).map((c) => c.State)).toEqual(['WA']);
     await expectRule(db.charities.searchGlobalRegistry(MEMBER.member, { ein: '123' }), 'INVALID_INPUT');
 
     expect((await db.charities.listSuggestedLocal(MEMBER.member, OWN, 'or')).map((c) => c.id)).toEqual([svdp.id, shelter.id]);
@@ -343,7 +385,7 @@ describe.each(drivers)('$name driver: charitable giving', (d) => {
       OWN,
       proposal.id,
       { ...CHECK, MeetingMinutesID: meeting.id },
-      charity({ Name: 'Mercy House', EIN: '45-6789012', IsCatholic: false, CharityType: 'Housing' }),
+      charity({ Name: 'Mercy House', EIN: '45-6789012', IsCatholic: false, CharityType: 'Homelessness' }),
     );
     expect(result.charityRegistered).toBe(true);
     expect(result.charity).toMatchObject({ Name: 'Mercy House', EIN: '45-6789012', IsCatholic: 0 });
@@ -418,6 +460,73 @@ describe.each(drivers)('$name driver: charitable giving', (d) => {
     for (const table of ['GlobalCharityRegistry', 'CouncilCharityLink', 'CharitableDisbursementLedger']) expect(d.count(db, table)).toBe(0);
 
     expect((await pay(treasurer)).disbursement.DisbursedByID).toBe(treasurer);
+  });
+
+  it('stamps the check with its proposal and pays a registry charity chosen on the check', async () => {
+    const db = await d.make();
+    const svdp = await db.charities.addGlobalCharity(MEMBER.admin, charity({ Address: '445 Lancaster Dr NE', ZipCode: '97301' }));
+    const proposal = await db.charities.proposeDonation(MEMBER.member, OWN, { ProposedCharityName: 'The pantry on Lancaster', ProposedAmount: 90 });
+    await expectRule(db.charities.hydrateAndDisburse(MEMBER.admin, OWN, proposal.id, { ...CHECK, CharityID: svdp.id }, charity()), 'INVALID_INPUT');
+    await expectRule(db.charities.hydrateAndDisburse(MEMBER.admin, OWN, proposal.id, { ...CHECK, CharityID: 999_999 }), 'RECORD_NOT_FOUND');
+    const result = await db.charities.hydrateAndDisburse(MEMBER.admin, OWN, proposal.id, { ...CHECK, CharityID: svdp.id });
+    expect(result.disbursement).toMatchObject({ ProposalID: proposal.id, CharityID: svdp.id });
+    expect(result.proposal.ExistingCharityID).toBe(svdp.id);
+  });
+
+  it('lists a member’s own proposals and the council’s queue with their charities and checks', async () => {
+    const db = await d.make();
+    const svdp = await db.charities.addGlobalCharity(MEMBER.admin, charity({ Address: '445 Lancaster Dr NE', ZipCode: '97301' }));
+    const first = await db.charities.proposeDonation(MEMBER.member, OWN, { ProposedAmount: 75, ExistingCharityID: svdp.id });
+    const second = await db.charities.proposeDonation(MEMBER.member, OWN, { ProposedCharityName: 'Mercy House', ProposedAmount: 150 });
+    const third = await db.charities.proposeDonation(MEMBER.admin, OWN, { ProposedCharityName: 'Hope Shelter', ProposedAmount: 40 });
+    await db.charities.hydrateAndDisburse(MEMBER.admin, OWN, first.id, CHECK);
+
+    const mine = await db.charities.listMyProposals(MEMBER.member);
+    expect(mine.map((m) => m.proposal.id)).toEqual([second.id, first.id]);
+    expect(mine[1]).toMatchObject({ proposal: { Status: 'Approved' }, charity: { id: svdp.id }, disbursement: { CheckNumber: '2001' }, needsHydration: false });
+    expect(mine[0]).toMatchObject({ charity: null, disbursement: null, needsHydration: true });
+
+    const queue = await db.charities.listCouncilProposals(MEMBER.admin, OWN);
+    expect(queue.map((q) => q.proposal.id)).toEqual([second.id, third.id, first.id]);
+    expect(queue[1]).toMatchObject({ submitterFirstName: expect.any(String), proposal: { SubmitterMemberID: MEMBER.admin } });
+    await expectPrivilege(db.charities.listCouncilProposals(MEMBER.member, OWN), 'ADMIN_REQUIRED');
+    await expectPrivilege(db.charities.listCouncilProposals(MEMBER.admin, OTHER), 'COUNCIL_ACCESS_DENIED');
+    expect(await db.charities.listCouncilProposals(MEMBER.superAdmin, OTHER)).toEqual([]);
+    await expectRule(db.charities.listMyProposals(999_999), 'MEMBER_NOT_FOUND');
+  });
+
+  it('lists the council’s linked charities with every check it paid them', async () => {
+    const db = await d.make();
+    const svdp = await db.charities.addGlobalCharity(MEMBER.admin, charity());
+    const shelter = await db.charities.addGlobalCharity(MEMBER.admin, charity({ EIN: null, Name: 'Hope Shelter', CharityType: 'Homelessness' }));
+    await db.charities.connectCouncilToCharity(MEMBER.admin, OWN, shelter.id);
+    for (const [n, amount] of [['2001', 100], ['2002', 25.5]] as const) {
+      const p = await db.charities.proposeDonation(MEMBER.member, OWN, { ProposedAmount: amount, ExistingCharityID: svdp.id });
+      await db.charities.hydrateAndDisburse(MEMBER.admin, OWN, p.id, { ...CHECK, CheckNumber: n });
+    }
+    const ledger = await db.charities.listCouncilLedger(MEMBER.admin, OWN);
+    expect(ledger.map((e) => [e.charity.Name, e.disbursements.length, e.totalGiven])).toEqual([
+      ['Hope Shelter', 0, 0],
+      ['St. Vincent de Paul Salem', 2, 125.5],
+    ]);
+    expect(ledger[1].disbursements.map((d) => d.CheckNumber)).toEqual(['2002', '2001']);
+    await expectPrivilege(db.charities.listCouncilLedger(MEMBER.member, OWN), 'ADMIN_REQUIRED');
+    expect(await db.charities.listCouncilLedger(MEMBER.superAdmin, OTHER)).toEqual([]);
+  });
+
+  it('lets council leadership reject a Pending proposal with a reason', async () => {
+    const db = await d.make();
+    const proposal = await db.charities.proposeDonation(MEMBER.member, OWN, { ProposedCharityName: 'Mercy House', ProposedAmount: 150 });
+    await expectPrivilege(db.charities.rejectProposal(MEMBER.member, proposal.id, 'No'), 'ADMIN_REQUIRED');
+    const foreignAdmin = await addMember(db, OTHER, 'Admin', 'foreign.admin.charity@example.com');
+    await expectPrivilege(db.charities.rejectProposal(foreignAdmin, proposal.id, 'No'), 'COUNCIL_ACCESS_DENIED');
+    await expectRule(db.charities.rejectProposal(MEMBER.admin, proposal.id, '  '), 'INVALID_INPUT');
+    await expectRule(db.charities.rejectProposal(MEMBER.admin, 999_999, 'No'), 'RECORD_NOT_FOUND');
+
+    const rejected = await db.charities.rejectProposal(MEMBER.admin, proposal.id, '  Over this year’s giving budget  ');
+    expect(rejected.proposal).toMatchObject({ Status: 'Rejected', RejectionReason: 'Over this year’s giving budget' });
+    await expectRule(db.charities.rejectProposal(MEMBER.admin, proposal.id, 'Again'), 'PROPOSAL_STATUS_CONFLICT');
+    await expectRule(db.charities.hydrateAndDisburse(MEMBER.admin, OWN, proposal.id, CHECK, charity()), 'PROPOSAL_STATUS_CONFLICT');
   });
 
   it('shares one checkbook between expense checks and charity checks', async () => {

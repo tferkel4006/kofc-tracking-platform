@@ -501,6 +501,7 @@ export interface CharityDonationProposal {
   ExistingCharityID?: number | null; // the registry entry, once known
   Status: CharityProposalStatus;
   MeetingMinutesID?: number | null; // the council meeting whose minutes record the vote
+  RejectionReason?: string | null; // why leadership rejected it (charities.rejectProposal)
 }
 
 /** One check a council paid to a charity. */
@@ -513,4 +514,5 @@ export interface CharitableDisbursementLedger {
   DisbursedByID: number;
   PayoutDate: string; // YYYY-MM-DD
   Notes?: string | null;
+  ProposalID?: number | null; // the proposal the check paid
 }

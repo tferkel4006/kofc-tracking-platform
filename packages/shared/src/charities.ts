@@ -7,10 +7,25 @@
 // (assertMayAddGlobalCharity, assertMayConnectCouncilCharity,
 // assertMayProposeCharityGift, assertMayDisburseCharity).
 // =========================================================================
-import type { CharityCheckDetails, CharityProposalInput, CharitySearchFilters, NewGlobalCharity } from './contract';
-import { cleanDisbursementCheck } from './expenses';
+import type {
+  CharityCheckDetails,
+  CharityProposalDetail,
+  CharityProposalInput,
+  CharitySearchFilters,
+  CouncilCharityLedgerEntry,
+  NewGlobalCharity,
+} from './contract';
+import { cleanDisbursementCheck, sumAmounts } from './expenses';
 import { assertMoney, assertText, BusinessRuleError, optionalText } from './rules';
-import type { CharityDonationProposal, CharityProposalStatus, GlobalCharityRegistry, Meeting } from './types';
+import type {
+  CharitableDisbursementLedger,
+  CharityDonationProposal,
+  CharityProposalStatus,
+  CouncilCharityLink,
+  GlobalCharityRegistry,
+  Meeting,
+  Member,
+} from './types';
 
 /** Longest GlobalCharityRegistry.Name and CharityDonationProposal.ProposedCharityName (VARCHAR(255)). */
 export const CHARITY_NAME_MAX_LENGTH = 255;
@@ -31,6 +46,18 @@ export const CHARITY_SEARCH_DEFAULT_LIMIT = 100;
 export const CHARITY_SEARCH_MAX_LIMIT = 500;
 
 export const CHARITY_PROPOSAL_STATUSES: readonly CharityProposalStatus[] = ['Pending', 'Approved', 'Rejected'];
+
+/** The core causes a registry entry is filed under (Sprint 5V-2); CharityType must be one of them. */
+export const CHARITY_TYPES = ['Food Security', 'Women and Children', 'Faith', 'Protecting Life', 'Homelessness', 'Parish'] as const;
+export type CharityType = (typeof CHARITY_TYPES)[number];
+
+/** One of CHARITY_TYPES, matched ignoring case and surrounding spaces, in its canonical spelling. */
+export function assertCharityType(value: unknown): CharityType {
+  const text = assertText(value, 'Charity type', CHARITY_TYPE_MAX_LENGTH).toLowerCase();
+  const found = CHARITY_TYPES.find((type) => type.toLowerCase() === text);
+  if (!found) throw invalid(`Charity type must be one of ${CHARITY_TYPES.join(', ')}; received ${JSON.stringify(value)}.`, { value });
+  return found;
+}
 
 /** Columns a registry write stores, besides its id; the only ones a driver may interpolate into SQL. */
 export const CHARITY_COLUMNS = [
@@ -117,7 +144,7 @@ export function cleanGlobalCharity(input: NewGlobalCharity): CleanGlobalCharity 
     Address: optionalText(input.Address, 'Address', CHARITY_ADDRESS_MAX_LENGTH),
     ZipCode: optionalText(input.ZipCode, 'Zip code', CHARITY_ZIP_MAX_LENGTH),
     IsCatholic: input.IsCatholic ? 1 : 0,
-    CharityType: assertText(input.CharityType, 'Charity type', CHARITY_TYPE_MAX_LENGTH),
+    CharityType: assertCharityType(input.CharityType),
   };
 }
 
@@ -251,6 +278,8 @@ export interface CleanCharityCheck {
   Amount: number | null;
   /** null: keep the proposal's MeetingMinutesID. */
   MeetingMinutesID: number | null;
+  /** null: no registry entry chosen on the check itself. */
+  CharityID: number | null;
 }
 
 export function cleanCharityCheck(details: CharityCheckDetails): CleanCharityCheck {
@@ -259,6 +288,7 @@ export function cleanCharityCheck(details: CharityCheckDetails): CleanCharityChe
     ...base,
     Amount: details.Amount === undefined || details.Amount === null ? null : positiveAmount(details.Amount, 'Check amount'),
     MeetingMinutesID: optionalId(details.MeetingMinutesID, 'Meeting'),
+    CharityID: optionalId(details.CharityID, 'Charity'),
   };
 }
 
@@ -284,3 +314,138 @@ export function assertMinutesMeetingInCouncil(meeting: Pick<Meeting, 'id' | 'Cou
 /** hydrateAndDisburse was given no charity details for a proposal that names no registry entry. */
 export const noCharityToPay = (proposalId: number): BusinessRuleError =>
   invalid(`Charity proposal ${proposalId} names no registered charity; supply the charity's details to register it.`, { proposalId });
+
+/** hydrateAndDisburse may be told which entry to pay by a CharityID or by full charity details, not both. */
+export function assertOneCharitySource(check: Pick<CleanCharityCheck, 'CharityID'>, hasCharityData: boolean): void {
+  if (check.CharityID !== null && hasCharityData) {
+    throw invalid('Pay either the linked registry charity or the charity details typed in, not both.', { charityId: check.CharityID });
+  }
+}
+
+// ---- proposal and ledger views (Sprint 5V-2) ----------------------------------
+
+/** A check needs a registry entry with a mailing address; without one the officer must hydrate the record first. */
+export const charityNeedsHydration = (charity: Pick<GlobalCharityRegistry, 'Address' | 'ZipCode'> | null | undefined): boolean =>
+  !charity || !charity.Address || !charity.ZipCode;
+
+/** 'Pending' first, oldest first (the payout queue); then every other status newest first. */
+const compareProposals = (a: CharityDonationProposal, b: CharityDonationProposal) => {
+  const pa = a.Status === 'Pending' ? 0 : 1;
+  const pb = b.Status === 'Pending' ? 0 : 1;
+  return pa - pb || (pa === 0 ? a.id - b.id : b.id - a.id);
+};
+
+/**
+ * Joins proposals with their submitters, registry entries and the checks that paid them (by ProposalID). `order`
+ * 'queue' sorts Pending first; 'newest' sorts by id, newest first.
+ */
+export function buildCharityProposalDetails(
+  proposals: readonly CharityDonationProposal[],
+  members: readonly Pick<Member, 'id' | 'MemberFirstName' | 'MemberLastName'>[],
+  charities: readonly GlobalCharityRegistry[],
+  ledger: readonly CharitableDisbursementLedger[],
+  order: 'queue' | 'newest',
+): CharityProposalDetail[] {
+  const sorted = [...proposals].sort(order === 'queue' ? compareProposals : (a, b) => b.id - a.id);
+  return sorted.map((proposal) => {
+    const member = members.find((m) => m.id === proposal.SubmitterMemberID);
+    const charity = charities.find((c) => c.id === proposal.ExistingCharityID) ?? null;
+    return {
+      proposal,
+      submitterFirstName: member?.MemberFirstName ?? '',
+      submitterLastName: member?.MemberLastName ?? '',
+      charity,
+      disbursement: ledger.find((d) => d.ProposalID === proposal.id) ?? null,
+      needsHydration: proposal.Status === 'Pending' && charityNeedsHydration(charity),
+    };
+  });
+}
+
+/** charities.listCouncilLedger from the council's links, the registry entries they name and the council's checks. */
+export function buildCouncilCharityLedger(
+  links: readonly CouncilCharityLink[],
+  charities: readonly GlobalCharityRegistry[],
+  ledger: readonly CharitableDisbursementLedger[],
+): CouncilCharityLedgerEntry[] {
+  const entries: CouncilCharityLedgerEntry[] = [];
+  for (const link of links) {
+    const charity = charities.find((c) => c.id === link.CharityID);
+    if (!charity) continue;
+    const disbursements = ledger
+      .filter((d) => d.CouncilID === link.CouncilID && d.CharityID === charity.id)
+      .sort((a, b) => b.PayoutDate.localeCompare(a.PayoutDate) || b.id - a.id);
+    entries.push({ charity, connectedAt: link.ConnectedAt, disbursements, totalGiven: sumAmounts(disbursements.map((d) => d.Amount)) });
+  }
+  return entries.sort((a, b) => compareCharities(a.charity, b.charity));
+}
+
+// ---- screen helpers (Sprint 5V-2) ---------------------------------------------
+
+/** Two-letter codes for the 50 states and DC, for the registry's state pickers. */
+export const US_STATE_CODES = [
+  'AK', 'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'DE', 'FL', 'GA', 'HI', 'IA', 'ID', 'IL', 'IN', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME', 'MI', 'MN', 'MO', 'MS',
+  'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV', 'NY', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VA', 'VT', 'WA', 'WI', 'WV', 'WY',
+] as const;
+
+/** The status chip of a proposal: Pending in gold, Approved (paid) in navy, Rejected outlined in red. */
+export function charityProposalStatusBadge(proposal: Pick<CharityDonationProposal, 'Status'>): {
+  label: string;
+  tone: 'gold' | 'navy' | 'redOutline';
+} {
+  const tone = { Pending: 'gold', Approved: 'navy', Rejected: 'redOutline' } as const;
+  return { label: proposal.Status, tone: tone[proposal.Status] };
+}
+
+/** A registry entry as the forms hold it: text exactly as typed. */
+export interface CharityDraft {
+  Name: string;
+  Description: string;
+  EIN: string;
+  State: string;
+  Phone: string;
+  ContactName: string;
+  ContactEmail: string;
+  Address: string;
+  ZipCode: string;
+  IsCatholic: boolean;
+  CharityType: string;
+}
+
+/** An empty form, or one started from what is known (a registry entry, a proposed name, a state). */
+export function charityDraftFrom(
+  charity: Partial<Pick<GlobalCharityRegistry, keyof CharityDraft | 'IsCatholic'>> | null,
+  defaults: { Name?: string; State?: string } = {},
+): CharityDraft {
+  const text = (v: string | null | undefined) => v ?? '';
+  return {
+    Name: text(charity?.Name ?? defaults.Name),
+    Description: text(charity?.Description),
+    EIN: text(charity?.EIN),
+    State: text(charity?.State ?? defaults.State),
+    Phone: text(charity?.Phone),
+    ContactName: text(charity?.ContactName),
+    ContactEmail: text(charity?.ContactEmail),
+    Address: text(charity?.Address),
+    ZipCode: text(charity?.ZipCode),
+    IsCatholic: charity?.IsCatholic === 1,
+    CharityType: text(charity?.CharityType),
+  };
+}
+
+/** The form's text as a NewGlobalCharity; the drivers validate it (cleanGlobalCharity), so nothing is refused here. */
+export const charityFromDraft = (draft: CharityDraft): NewGlobalCharity => ({
+  ...draft,
+  EIN: draft.EIN.trim() || null,
+  Phone: draft.Phone.trim() || null,
+  ContactName: draft.ContactName.trim() || null,
+  ContactEmail: draft.ContactEmail.trim() || null,
+  Address: draft.Address.trim() || null,
+  ZipCode: draft.ZipCode.trim() || null,
+});
+
+/** A search box's text as filters: nine digits (in any punctuation) search the EIN, anything else the name. */
+export function charitySearchFromText(text: string): Pick<CharitySearchFilters, 'name' | 'ein'> {
+  const trimmed = text.trim();
+  if (trimmed === '') return {};
+  return /^\d{2}[\s-]?\d{7}$/.test(trimmed) ? { ein: trimmed } : { name: trimmed };
+}

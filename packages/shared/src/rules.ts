@@ -1147,6 +1147,15 @@ export const mayConnectCouncilCharity = (actor: MemberWriteActor, councilId: num
   councilLeadershipDenial(actor, councilId, 'connect charities', '') === null;
 
 /**
+ * charities.listCouncilProposals, listCouncilLedger and rejectProposal (Sprint 5V-2): the council's leadership, as for
+ * the expense queue. `action` completes "cannot ...".
+ */
+export function assertMayReviewCharityProposals(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = councilLeadershipDenial(actor, councilId, action, "a council's charity proposals are reviewed only by its own leadership");
+  if (denial) throw denial;
+}
+
+/**
  * charities.addGlobalCharity (Sprint 5V): the registry is shared by every council, and any Active Admin or Super Admin
  * may add to it. Finance officers register a charity only while paying it (hydrateAndDisburse).
  */
