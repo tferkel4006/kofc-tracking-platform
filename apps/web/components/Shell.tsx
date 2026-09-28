@@ -40,6 +40,20 @@ export function BrandMark({ size = 44 }: { size?: number }) {
   return <Image src={emblem} alt="" width={size} height={size} quality={90} preload className="shrink-0" />;
 }
 
+/** Question mark in a circle, drawn in currentColor so it follows the link's navy or white text. */
+function HelpIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
+      <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+/** Help is for every signed-in member, so it sits below the permission-driven areas rather than in portalAreas. */
+const HELP = { href: '/help', label: 'Online Help Center', hint: 'Answers from the user manuals' };
+
 function SignIn() {
   const { signIn } = useSession();
   const [username, setUsername] = useState('');
@@ -91,6 +105,7 @@ function Frame({ children }: { children: ReactNode }) {
   const council = useLoad(() => (user ? db.councils.get(user.councilId) : Promise.resolve(null)), [user?.councilId]);
   if (!user) return null;
   const areas = portalAreas(user);
+  const helpCurrent = pathname === HELP.href;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -130,6 +145,20 @@ function Frame({ children }: { children: ReactNode }) {
               );
             })}
           </ul>
+          <Link
+            href={HELP.href}
+            aria-current={helpCurrent ? 'page' : undefined}
+            className={cx(
+              'mt-4 flex items-start gap-2 border-l-8 border-t border-t-gold px-4 pb-2 pt-3',
+              helpCurrent ? 'border-l-gold bg-white text-navy' : 'border-l-transparent hover:underline',
+            )}
+          >
+            <HelpIcon />
+            <span>
+              <span className="block text-sm font-bold">{HELP.label}</span>
+              <span className={cx('block text-xs', helpCurrent ? 'text-muted' : 'text-white')}>{HELP.hint}</span>
+            </span>
+          </Link>
         </nav>
         <main className="min-w-0 flex-1 bg-white p-6">{children}</main>
       </div>

@@ -1,0 +1,374 @@
+# Knights of Columbus Tracking Platform — Administrator Operations Manual
+
+**Audience:** Council Admins, Super Admins, council officers, Treasurers and Financial Secretaries.
+**Covers:** the desktop portal's management screens: planning, roster, meetings, audits, ledger, lookups, donations and executive summaries.
+
+> Administrators volunteer too. For signing up, logging hours and taking donations on the phone, see [MEMBER_USER_GUIDE.md](MEMBER_USER_GUIDE.md).
+
+---
+
+## Contents
+
+1. [Roles and what each one sees](#1-roles-and-what-each-one-sees)
+2. [Choosing the council you are working on](#2-choosing-the-council-you-are-working-on)
+3. [Building multi-day events](#3-building-multi-day-events)
+4. [Copying an event as a twin](#4-copying-an-event-as-a-twin)
+5. [The member roster and the trade skills drawer](#5-the-member-roster-and-the-trade-skills-drawer)
+6. [Meetings](#6-meetings)
+7. [Executive audits: no-shows and shifts awaiting hours](#7-executive-audits-no-shows-and-shifts-awaiting-hours)
+8. [The post-event ledger and lessons learned](#8-the-post-event-ledger-and-lessons-learned)
+9. [Configuring council lookups](#9-configuring-council-lookups)
+10. [The donations workspace](#10-the-donations-workspace)
+11. [Interpreting the executive scorecard (monthly summaries)](#11-interpreting-the-executive-scorecard-monthly-summaries)
+12. [Super Admin: system lookups and councils](#12-super-admin-system-lookups-and-councils)
+13. [Data protection rules](#13-data-protection-rules)
+14. [Administrator troubleshooting reference](#14-administrator-troubleshooting-reference)
+
+---
+
+## 1. Roles and what each one sees
+
+The sidebar shows only the sections your role can use. **Member Actions**, **Post-event ledger**, **Communications Hub**, **My Profile** and **Online Help Center** appear for everyone.
+
+| Section | Member | Officer | Treasurer / Fin. Secretary | Admin | Super Admin |
+|---|:-:|:-:|:-:|:-:|:-:|
+| Member Actions | ✔ | ✔ | ✔ | ✔ | ✔ |
+| System lookups | | | | | ✔ |
+| Councils | | | | | ✔ |
+| Council lookups | | | Donation lookups only | ✔ own council | ✔ any council |
+| Parishes & pastors, Member roster, Activities catalog | | | | ✔ own council | ✔ any council |
+| Event planner | | | | ✔ | ✔ |
+| Meeting center | | ✔ own council | | ✔ | ✔ |
+| Distribution lists | | | | ✔ | ✔ |
+| Donations | | | ✔ own council | ✔ | ✔ |
+| Post-event ledger | Owners of an event | Owners of an event | Owners of an event | ✔ | ✔ |
+| Lessons registry | | | | ✔ (read all councils) | ✔ |
+| Executive Summaries | | | Monthly summary only | ✔ incl. audits | ✔ incl. audits |
+
+Key points:
+- **Admins act only on their own council.** Super Admins act on any council.
+- **Treasurers and Financial Secretaries** have Admin-level access to their own council's **donations**, **donation lookups** and **monthly summaries**. The personnel audits, which name members and their no-show reasons, remain for Admins and Super Admins only.
+- **Officers** (any role flagged *Officer*) may schedule meetings, invite members and upload minutes for their council.
+- An **event's owner** may record that event's post-event results and lessons, even as an ordinary member.
+- These rules are enforced by the data service as well as the screens. A refused action shows a message and **changes nothing**.
+
+![Image: Admin Sidebar By Role]
+
+---
+
+## 2. Choosing the council you are working on
+
+Most management screens have a **Council** selector at the top:
+- **Admins** see their own council.
+- **Super Admins** can switch to any council.
+
+The navy header always shows the council you belong to, next to your name, member type and officer status.
+
+---
+
+## 3. Building multi-day events
+
+**Path:** sidebar → **Event planner**
+
+The planner is a split screen: the event list is on the left, and the selected event is on the right.
+
+### 3.1 Create the event
+
+1. Select **New event**.
+2. Fill in **Event details**:
+
+| Field | Notes |
+|---|---|
+| **Event name** | Up to 100 characters. |
+| **Description** | What volunteers should know. |
+| **Starts / Ends** | An event may span several days. **Ends** cannot be before **Starts**. |
+| **Location** | Where volunteers report. |
+| **Category** | For example Fellowship, Service, Faith Building or Fundraising. Categories drive the reports and the lessons registry. |
+| **Owner** | A member of the roster. *"The owner may also record the post-event results."* |
+| **Budget ($)** | Optional. Planned spend. |
+| **Planned attendees** | Optional. Expected community turnout. |
+| **Councils sharing this event** | Tick every council co-hosting the event. Its shifts will appear in each of those councils' shift feeds. At least one council is required. |
+
+3. Save. You will see *"Event created. Add its shifts below."*
+
+### 3.2 Add shifts
+
+In the **Shifts** panel, fill in the top **New shift** row and select **Add shift**:
+- **Shift name** and optional description.
+- **Date:** it must fall **inside the event's dates**.
+- **Start and end time.**
+- **Volunteers needed:** the minimum number of volunteers. When this many members have signed up, the shift **locks automatically**.
+
+Repeat for each day and time slot of a multi-day event.
+
+**Shift status pills**
+
+| Pill | Meaning |
+|---|---|
+| **Full** (navy) | Locked. No more sign-ups. |
+| **Needs *n* soon** (red) | Within 48 hours and still short of volunteers. |
+| **Needs *n*** (gold) | Priority: nobody has signed up yet, or the shift starts within 7 days. |
+| **Needs *n*** (outline) | Open, with time to fill. |
+
+To change or remove a shift, use **Edit** (then **Save** or **Cancel**) or **Delete** (then **Confirm delete** or **Keep**). A shift that members have signed up for or logged time against cannot be deleted (see §13).
+
+![Image: Event Planner Split Screen]
+
+![Image: Shift Grid]
+
+---
+
+## 4. Copying an event as a twin
+
+Use this for recurring projects such as a monthly pancake breakfast or an annual Tootsie Roll drive.
+
+1. Open the past event in the **Event planner**.
+2. In the **Copy as a twin** panel:
+   - **New event name:** defaults to the same name. Change it if needed, for example to add the month.
+   - **New first day:** the twin's start date.
+3. Select **Copy event**. You will see *"Copied. The twin is open on the right."*
+
+| Copied | Not copied |
+|---|---|
+| Description, location, category, owner, budget, planned attendees | Sign-ups |
+| Council links | Logged hours |
+| Every shift, **moved by the same number of days** so the pattern is kept (a Friday–Sunday event stays Friday–Sunday) | Post-event results (spend, funds, attendees, highlights) and lessons |
+
+After copying, review the twin's shifts and adjust anything that changed.
+
+![Image: Copy As Twin]
+
+---
+
+## 5. The member roster and the trade skills drawer
+
+**Path:** sidebar → **Member roster**
+
+### 5.1 Finding members
+
+- **Search:** by name, email or member number.
+- **Status:** filter by Active, Inactive and so on.
+- The panel title shows *"Members (shown of total)"*. If nothing matches: *"No members match. Clear the search or status filter."*
+
+### 5.2 Adding and editing members
+
+1. Select **Add member** and complete the form. **Email (also the login)** is the address the member will use to onboard.
+2. Save. You will see *"Added *name*. A welcome email with sign-in instructions was queued."* The member then follows the phone onboarding in the member guide.
+3. **Member type:** Admins may grant *Admin* or *Member*. Only a Super Admin may grant *Super Admin* or change a Super Admin's type or status.
+4. Admins cannot move a member to another council.
+
+### 5.3 The trade skills drawer
+
+When a project needs specific trades (electricians, carpenters, cooks and so on):
+
+1. Select **Skills** next to the council selector. The **Council skills** drawer opens.
+2. Every skill recorded in the council is listed with the number of members who hold it.
+3. Choose a skill to see **Members with *skill***.
+4. Optional: write a note under **Message everyone with *skill*** and select **Send to *n* members**.
+   - Only **active** members are messaged, and you are never included.
+   - Replies arrive in the **Communications Hub**.
+
+If the drawer says *"No member of this council has recorded a skill yet,"* ask members to add their skills under **My Profile**. You can also edit a member's skills and training for them from their record (**Skills & training**).
+
+![Image: Skills Filter Drawer]
+
+---
+
+## 6. Meetings
+
+**Path:** sidebar → **Meeting center** (Admins, Super Admins and council officers)
+
+1. Select **New meeting** and fill in **Meeting name**, **Type**, **Date**, **Location**, **Starts**, **Ends**, **Description** and **Agenda**.
+2. **Invite:** choose **All active members**, **Officers only** or **Choose members…**. Invited members get a message in the app.
+3. Select **Schedule meeting**. You will see *"Meeting scheduled and invitations sent."*
+4. **Minutes:** open the meeting and select **Upload minutes** (or **Replace minutes**). Members can then read them from their phones.
+5. **Invitations and attendance:** tick who attended and save. This feeds each member's meeting-hour totals. If members joined the council after the meeting was scheduled, select **Invite all active members** to invite every active member who is missing.
+
+Officers see **Take attendance** on each meeting on their phone's Home tab.
+
+![Image: Meeting Center]
+
+---
+
+## 7. Executive audits: no-shows and shifts awaiting hours
+
+**Path:** sidebar → **Executive Summaries** → **Executive audits**. These audits are for the council's Admins and Super Admins only.
+
+### 7.1 No-show audit (last 6 months)
+
+This panel lists every sign-up flagged as a no-show by members of the council **on shifts in the trailing 6 months**, newest first.
+
+| Column | Use |
+|---|---|
+| Member / Member # | Who missed the shift. |
+| Shift date, Event, Shift | Which commitment it was (with the shift number, for reference). |
+| Reason | The reason code and description, for example *Forgot* or *Wrong Time*, or a red **No reason provided** pill. |
+
+- The header's red pill counts **no-shows without a reason**. Follow up on these first.
+- Members see their own rolling **12-month** badge on the phone. The 6-month audit is the council's working view.
+- No-show reasons come from the **No-Show Reason** system lookup (§12).
+
+### 7.2 Shifts awaiting hours
+
+This panel lists members who signed up for a past shift, were **not** marked as no-shows, and have **not logged hours** yet.
+
+| Column / marker | Meaning |
+|---|---|
+| **Phone** | So you can follow up personally. |
+| **Days since** | Days since the shift. It turns red from day 5. |
+| **First reminder on day 5** | Still within the grace period. |
+| **⚠ Overdue** | Day 5 or later. Shows how many text reminders have been due so far, and the **log by** date. |
+| **Closed: past 3 months** | The logging window has closed and the hours can no longer be recorded. |
+
+- **Reminder cadence:** the first text goes out on **day 5**, then **once a week**, and reminders stop once the shift is more than 3 months old.
+- The header's red pill counts the rows that are past day 5.
+
+![Image: Executive Audits]
+
+---
+
+## 8. The post-event ledger and lessons learned
+
+**Path:** sidebar → **Post-event ledger**. This is open to Admins for their councils' events, and to each event's owner.
+
+1. The left list has two tabs:
+   - **Active queue:** events waiting for results, marked **Results needed**.
+   - **Historic archive:** events with results, marked **Recorded**.
+2. Choose an event and fill in **Results**:
+   - **Spend ($)** and **Actual attendees**.
+   - **Cash raised ($)** and **Electronic raised ($)**. Once cash or electronic donations have been recorded for the event, these fields show **Synced from donations** and are read-only, because the donations are the source of truth. Physical items never count toward these totals.
+   - **Highlights:** short notes that appear on the monthly executive summary.
+3. Select **Save results**. You will see *"Results saved."*
+4. **Fraternal Volunteer Turnout Summary** lists every volunteer, their shift, their logged hours (**—** if none) and any **No-show** flag, with a total.
+5. **Lessons learned:** choose a **Category**, write **What did we learn?**, and select **Add lesson**.
+
+### 8.1 Lessons registry
+
+**Path:** sidebar → **Lessons registry** (Admins and Super Admins)
+
+Search lessons across **every council**:
+- Filter by text, event dates, councils, event categories and lessons categories.
+- The newest events are listed first.
+- Lessons from your own council's events are **marked in gold**. You change them on the post-event ledger, not here.
+
+![Image: Post Event Ledger]
+
+---
+
+## 9. Configuring council lookups
+
+**Path:** sidebar → **Council lookups**
+
+| Tab | Who | Columns |
+|---|---|---|
+| **Activities** | Admins, Super Admins | Activity name, Description, Category |
+| **Donation types** | Admins, Super Admins, Treasurer, Financial Secretary | Donation type (for example *General Fund*, *Coats for Kids*) |
+| **Enabled donation methods** | Admins, Super Admins, Treasurer, Financial Secretary | Method, **QR code image URL** |
+
+- Edit rows in place. Changed rows are marked **Edited**.
+- **Changes are saved together:** select **Save changes**. If any row is refused, **none** are written, so fix the reported row and save again.
+- **Enable a QR method** (Venmo, Zelle, Zeffy, ParishSoft) by adding it and pasting the link to the council's QR image. Until a link is saved, members see *"Your council has not uploaded this QR code yet."*
+- Activities belong to one council and are **not shared** with sister councils.
+- Finance officers see only the two donation tabs, with the note *"As your council's finance officer you maintain its donation types and enabled donation methods."*
+
+![Image: Council Lookups]
+
+---
+
+## 10. The donations workspace
+
+**Path:** sidebar → **Donations** (Admins, Super Admins, Treasurer, Financial Secretary)
+
+- **Event donations** summarises each event's donations as **Cash**, **Electronic** and **Items (est.)**. Events whose ledger is driven by donations show **Ledger synced from donations**.
+- **Standalone donations** lists donations not tied to any event.
+- **Record a donation:** choose the **Method**, **Type**, **Amount** (or **Estimated value ($)** for physical items), **Date** and **Event** (or *Standalone (no event)*). Optionally add the **Donor**, a **Description** (required for physical items) and a **Photo link**.
+- **Correcting or deleting a donation:** allowed for the member who recorded it, the event's owner, and the council's finance officers, Admins and any Super Admin. A donation's council and its recorder cannot be changed.
+- Event donations must be dated **on or after the event's start**.
+
+![Image: Donations Workspace]
+
+---
+
+## 11. Interpreting the executive scorecard (monthly summaries)
+
+**Path:** sidebar → **Executive Summaries**. Choose the **Month** and **Year**.
+
+### 11.1 Scorecard tiles
+
+| Tile | What it measures |
+|---|---|
+| **Total labor hours** | Hours logged on the council's event shifts plus its activities in the month. |
+| **Unique Knights participating** | Distinct members who logged any shift or activity time in the month. |
+| **Net balance** | Funds raised (cash + electronic) minus spend, for the month's events. |
+| **Community outreach** | Actual attendees across the month's events. |
+
+### 11.2 Financial ledger
+
+*"Ledger for *Month Year*"*: **Cash raised**, **Electronic raised**, **Total raised**, **Spend** and **Net balance**, all taken from the post-event results. Figures are summed to the cent.
+
+### 11.3 Monthly highlights
+
+The **Highlights** text of each of the month's events, in date order. If none appear, add them in the post-event ledger.
+
+### 11.4 Reading the numbers
+
+- **Low hours but many unique Knights?** Participation is wide but shallow. Consider longer or more shifts.
+- **A negative net balance** is normal for service events with no fundraising. Check it against the event's budget.
+- **Numbers look low early in the month?** Hours arrive as members log them (up to 3 months later for shifts). Re-check after the reminder cycle.
+
+![Image: Executive Scorecard]
+
+---
+
+## 12. Super Admin: system lookups and councils
+
+### 12.1 System lookups
+
+**Path:** sidebar → **System lookups** (Super Admins only)
+
+| Table | Holds |
+|---|---|
+| **Member Status** | Active, Inactive, and similar |
+| **Role** | Officer positions (Grand Knight, Treasurer, …), each with an **Officer** flag |
+| **Degree** | First through Fourth |
+| **Member Type** | Super Admin, Admin, Member |
+| **Category** | Event and activity categories |
+| **No-Show Reason** | One-letter code plus description |
+| **Meeting Type** | Regular Monthly, Officer, and similar |
+| **Lessons Learned Category** | Planning, Budgeting, Execution, and similar |
+
+Values marked **Built in** (*"The application depends on this value"*) cannot be renamed or deleted. These are the **Active** member status and the **Super Admin**, **Admin** and **Member** types.
+
+> **Caution:** finance access is granted by the role **names** *Treasurer* and *Financial Secretary*. These roles are not locked, so renaming either one (for example to "Treasurer (2026)") silently removes finance access from the officers who hold it. Keep those two names exactly as they are.
+
+### 12.2 Councils
+
+**Path:** sidebar → **Councils**. Only a Super Admin may add, edit or delete a council. Admins manage their council's parishes, pastors, activities and distribution lists instead.
+
+---
+
+## 13. Data protection rules
+
+- **Nothing cascades.** A record that other records still point to cannot be deleted. You will see a **record in use** message naming what depends on it. For example, a shift with sign-ups, a member with logged hours, or a lookup value in use are all protected, which keeps the council's history of hours, donations and messages intact. Remove or reassign the dependent records first, or leave the record in place.
+- The only exception: deleting a distribution list also clears its member list.
+- **Time windows** protect records: shift hours can be logged up to 3 months back, and activity hours up to 6 months back.
+
+---
+
+## 14. Administrator troubleshooting reference
+
+| Symptom / message | Cause | Fix |
+|---|---|---|
+| A section is missing from the sidebar | Your member type or role does not include it (§1). | Ask a Super Admin to check your member type or roles. |
+| *"…cannot …"* refusal when saving | You are acting outside your council, or without the required tier. | Switch the **Council** selector, or ask a Super Admin. |
+| Shift date refused | It is outside the event's Starts–Ends range. | Adjust the event dates or the shift date. |
+| Event date refused | **Ends** is before **Starts**. | Correct the dates. |
+| Delete refused (record in use) | Other records depend on it (§13). | Clear the dependants first, or keep the record. |
+| Cash or electronic fields locked on the ledger | Donations now drive those totals. | Correct the donations in **Donations** instead. |
+| Council lookups save refused | One row failed, so nothing was saved. | Fix the row named in the message and save again. |
+| Member cannot find their QR code | No **QR code image URL** is on file. | Add it under **Council lookups → Enabled donation methods**. |
+| *"Your role cannot maintain this council's lookups."* | Finance officer on another council, or no finance role. | A council Admin or Super Admin must make the change. |
+| Audits missing from Executive Summaries | Finance officers see the monthly summary only. | Ask an Admin for the audit figures. |
+| New member cannot sign in | They have not onboarded, or their roster email is wrong. | Check the **Email (also the login)** field. They must create a password on the phone first. |
+
+Quick answers are also in the portal's **Online Help Center**.
