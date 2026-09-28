@@ -1,6 +1,7 @@
 // Sprint 5T step 1: smartphone push alert plumbing (notifications.registerDeviceToken, listMemberAlerts and
 // dispatchHighPriorityAlert) and the Supreme Council Alchemer sync (supreme.syncAlchemerReport): their role gates,
-// the Expo and Alchemer stubs, and the rows they log.
+// the Expo and Alchemer stubs, and the rows they log. Step 2: notifications.markAsRead, shift rosters reaching
+// sister-council volunteers, supreme.previewReport, chosen reporting periods and supreme.listSyncHistory.
 import { describe, expect, it, vi } from 'vitest';
 import {
   ALCHEMER_SHORTNAMES,
@@ -12,11 +13,14 @@ import {
   EXPO_PUSH_ENDPOINT,
   mayDispatchCouncilAlerts,
   maySyncSupremeReports,
+  resolveSupremePeriod,
   SecurityPrivilegeError,
+  supremePeriodOptions,
   supremeReportingPeriod,
   type DataService,
   type ExpoPushMessage,
   type MemberWriteActor,
+  type SupremePeriodChoice,
 } from '@kofc/shared';
 import { MemoryDataService } from '../apps/web/services/drivers/memory';
 import { SqliteDataService } from '../apps/mobile/services/drivers/sqlite';
@@ -356,5 +360,136 @@ describe.each(drivers)('$name driver: Supreme Council Alchemer sync', (d) => {
 
     grantRole(d, db, MEMBER.member, 'Financial Secretary');
     expect((await db.supreme.syncAlchemerReport(MEMBER.member, OWN, 'AnnualSurvey', '123')).sync.Status).toBe('Success');
+  });
+});
+
+// ---- Sprint 5T step 2: read receipts, sister-council rosters, previews, period choices and sync history ----
+
+/** An Active member of `councilId`, added by the seeded Super Admin. */
+async function addMember(db: DataService, councilId: number, email: string): Promise<number> {
+  const types = await db.lookups.list('MemberType');
+  const statuses = await db.lookups.list('MemberStatus');
+  const member = await db.members.create(MEMBER.superAdmin, {
+    CouncilID: councilId,
+    MemberNumber: 8800000 + email.length,
+    MemberFirstName: 'Sister',
+    MemberLastName: 'Volunteer',
+    Phone: '503-555-0170',
+    StreetAddress1: '2 Charity Way',
+    City: 'Salem',
+    State: 'OR',
+    ZipCode: '97301',
+    Email: email,
+    DateOfBirth: '1971-06-06',
+    StatusID: statuses.find((s) => s.Status === 'Active')!.id,
+    DegreeID: 3,
+    MemberTypeID: types.find((t) => t.Type === 'Member')!.id,
+  });
+  return member.id;
+}
+
+describe('Supreme period choices', () => {
+  it('lists completed periods newest first and refuses periods that have not ended', () => {
+    expect(supremePeriodOptions('CouncilAudit', NOW, 3).map((o) => o.period.label)).toEqual(['January-June 2026', 'July-December 2025', 'January-June 2025']);
+    expect(supremePeriodOptions('AnnualSurvey', NOW, 2).map((o) => o.choice)).toEqual([{ year: 2025 }, { year: 2024 }]);
+    expect(resolveSupremePeriod('CouncilAudit', { year: 2025, half: 2 }, NOW)).toEqual({ fromDate: '2025-07-01', toDate: '2025-12-31', label: 'July-December 2025' });
+    expect(resolveSupremePeriod('AnnualSurvey', undefined, NOW).label).toBe('2025');
+    for (const [form, choice] of [
+      ['AnnualSurvey', { year: 2026 }],
+      ['CouncilAudit', { year: 2026, half: 2 }],
+      ['CouncilAudit', { year: 2025 }],
+      ['AnnualSurvey', { year: 1800 }],
+    ] as const) {
+      expect(() => resolveSupremePeriod(form, choice as SupremePeriodChoice, NOW)).toThrow();
+    }
+  });
+});
+
+describe.each(drivers)('$name driver: alert read receipts and sister-council rosters', (d) => {
+  it("marks only the member's own alert read, and hides other members' alert ids", async () => {
+    const db = await d.make();
+    const skillId = await giveSkill(db, MEMBER.member);
+    const { logs } = await db.notifications.dispatchHighPriorityAlert(MEMBER.admin, OWN, { skillIds: [skillId] }, ALERT);
+    const alertId = logs[0].id;
+
+    await expectRule(db.notifications.markAsRead(MEMBER.admin, alertId), 'RECORD_NOT_FOUND');
+    await expectRule(db.notifications.markAsRead(MEMBER.member, 9999), 'RECORD_NOT_FOUND');
+    await expectRule(db.notifications.markAsRead(999, alertId), 'MEMBER_NOT_FOUND');
+    expect((await db.notifications.listMemberAlerts(MEMBER.member))[0].IsRead).toBe(0);
+
+    expect(await db.notifications.markAsRead(MEMBER.member, alertId)).toMatchObject({ id: alertId, IsRead: 1 });
+    expect(await db.notifications.markAsRead(MEMBER.member, alertId)).toMatchObject({ IsRead: 1 }); // again: no change
+    expect((await db.notifications.listMemberAlerts(MEMBER.member))[0].IsRead).toBe(1);
+  });
+
+  it("alerts every volunteer on a shared event's shift roster, sister councils included, but keeps skill networks in the council", async () => {
+    const db = await d.make();
+    const [category] = await db.lookups.list('Category');
+    const event = await db.events.create(
+      {
+        EventName: 'Joint Fish Fry',
+        EventDescription: 'Shared with the sister council',
+        OwnerID: MEMBER.admin,
+        StartDate: '2026-10-02',
+        EndDate: '2026-10-02',
+        Location: 'Parish Hall',
+        CategoryID: category.id,
+      },
+      [OWN, OTHER],
+    );
+    const shift = await db.events.createShift({
+      EventID: event.id,
+      ShiftName: 'Fryer crew',
+      ShiftDescription: 'Batter and fry',
+      ShiftDate: '2026-10-02',
+      StartTime: '16:00:00',
+      EndTime: '19:00:00',
+      MinNumberVolunteers: 4,
+    });
+    const sister = await addMember(db, OTHER, 'sister.volunteer@kofc.org');
+    await db.events.signupForShift(sister, shift.id);
+    await db.events.signupForShift(MEMBER.member, shift.id);
+    const skillId = await giveSkill(db, sister); // a skill held only outside the sending council
+
+    const roster = await db.notifications.dispatchHighPriorityAlert(MEMBER.admin, OWN, { shiftIds: [shift.id] }, ALERT);
+    expect(roster.recipientIds).toEqual([MEMBER.member, sister].sort((a, b) => a - b));
+    expect(roster.logs.every((l) => l.CouncilID === OWN)).toBe(true);
+    expect((await db.notifications.listMemberAlerts(sister)).map((a) => a.Title)).toEqual([ALERT.title]);
+
+    await expectRule(db.notifications.dispatchHighPriorityAlert(MEMBER.admin, OWN, { skillIds: [skillId] }, ALERT), 'NO_RECIPIENTS');
+  });
+});
+
+describe.each(drivers)('$name driver: Supreme preview, period choice and history', (d) => {
+  it('previews exactly what a sync files, for a chosen period, without writing anything', async () => {
+    const db = await makeWith(d, { log: vi.fn() });
+    const [activity] = await db.activities.listByCouncil(OWN);
+    await db.activityTime.logHours(MEMBER.member, activity.id, 1.5, '2026-04-10');
+    const preview = await db.supreme.previewReport(MEMBER.admin, OWN, 'CouncilAudit', { year: 2026, half: 1 });
+    expect(preview.volunteerHours.total).toBe(1.5);
+    expect(d.count(db, 'SupremeReportingSync')).toBe(0);
+
+    const older = await db.supreme.previewReport(MEMBER.admin, OWN, 'CouncilAudit', { year: 2025, half: 2 });
+    expect(older.period.label).toBe('July-December 2025');
+    expect(older.volunteerHours.total).toBe(0);
+
+    const synced = await db.supreme.syncAlchemerReport(MEMBER.admin, OWN, 'CouncilAudit', '555', { year: 2026, half: 1 });
+    expect(synced.snapshot).toEqual(preview);
+    expect(synced.request.surveyId).toBe('555');
+
+    await expectRule(db.supreme.previewReport(MEMBER.admin, OWN, 'CouncilAudit', { year: 2026, half: 2 }), 'INVALID_INPUT');
+    await expectPrivilege(db.supreme.previewReport(MEMBER.member, OWN, 'AnnualSurvey'), 'ADMIN_REQUIRED');
+  });
+
+  it("lists the council's sync history newest first with who ran each, for leadership only", async () => {
+    const db = await makeWith(d, { log: vi.fn() });
+    await db.supreme.syncAlchemerReport(MEMBER.admin, OWN, 'AnnualSurvey', '111');
+    await db.supreme.syncAlchemerReport(MEMBER.superAdmin, OWN, 'CouncilAudit', '222');
+    await db.supreme.syncAlchemerReport(MEMBER.superAdmin, OTHER, 'CouncilAudit', '333');
+    const history = await db.supreme.listSyncHistory(MEMBER.admin, OWN);
+    expect(history.map((h) => h.sync.AlchemerSurveyID)).toEqual(['222', '111']);
+    expect(history[1].syncedByName).toMatch(/\S+ \S+/);
+    await expectPrivilege(db.supreme.listSyncHistory(MEMBER.member, OWN), 'ADMIN_REQUIRED');
+    await expectPrivilege(db.supreme.listSyncHistory(MEMBER.admin, OTHER), 'COUNCIL_ACCESS_DENIED');
   });
 });

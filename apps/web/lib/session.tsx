@@ -18,6 +18,10 @@ interface SessionValue {
   profileVersion: number;
   /** Call after saving the signed-in member's own profile photo or details. */
   profileChanged(): void;
+  /** Bumped by alertsChanged(), so the header bell reloads its alert log. */
+  alertsVersion: number;
+  /** Call after sending or reading alerts, so the bell's unread count catches up at once. */
+  alertsChanged(): void;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -46,10 +50,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => setUser(null), []);
   const [profileVersion, setProfileVersion] = useState(0);
   const profileChanged = useCallback(() => setProfileVersion((v) => v + 1), []);
+  const [alertsVersion, setAlertsVersion] = useState(0);
+  const alertsChanged = useCallback(() => setAlertsVersion((v) => v + 1), []);
 
   const value = useMemo(
-    () => ({ user, ready, startupError, signIn, signOut, profileVersion, profileChanged }),
-    [user, ready, startupError, signIn, signOut, profileVersion, profileChanged],
+    () => ({ user, ready, startupError, signIn, signOut, profileVersion, profileChanged, alertsVersion, alertsChanged }),
+    [user, ready, startupError, signIn, signOut, profileVersion, profileChanged, alertsVersion, alertsChanged],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

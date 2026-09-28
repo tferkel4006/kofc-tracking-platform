@@ -1,12 +1,13 @@
 'use client';
-// The portal frame: navy header (logo, the calling council's number and name, and the member menu with the avatar
-// that opens My Profile), a navy side navigation folded into accordion groups (portalNavGroups) with a gold marker
+// The portal frame: navy header (logo, the calling council's number and name, the alert bell, and the member menu with
+// the avatar that opens My Profile), a navy side navigation folded into accordion groups (portalNavGroups) with a gold marker
 // on the current section, and a white content area. Nothing renders behind the sign-in gate.
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { councilLabel, portalNavGroups, type PortalNavGroup, type PortalNavItem } from '@kofc/shared';
+import { AlertBell } from '@/components/AlertBell';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { Button, cx, Field, Input, Notice } from '@/components/ui';
 import { useSession } from '@/lib/session';
@@ -34,6 +35,7 @@ const NAV: Record<PortalNavItem | 'profile', { href: string; label: string; hint
   'expenses/queue': { href: '/expenses/queue', label: 'Leadership Auditing Queue', hint: 'Approve or return submitted reports' },
   'expenses/disbursements': { href: '/expenses/disbursements', label: 'Bulk Check Disbursements', hint: 'Pay approved reports by check' },
   'council-lookups': { href: '/council-lookups', label: 'Council Lookup Tables', hint: 'Activities, donation types, methods' },
+  'supreme-sync': { href: '/supreme-sync', label: 'Supreme Council Sync', hint: 'Audit and file Forms 1728 and 1295' },
   lookups: { href: '/lookups', label: 'Global Governance Matrices', hint: 'Maintain the global lookup tables' },
   parishes: { href: '/parishes', label: 'Parish & Pastors Linkage', hint: 'Parishes and their pastors' },
   councils: { href: '/councils', label: 'Councils', hint: 'Add, edit and delete councils' },
@@ -280,6 +282,7 @@ function Frame({ children }: { children: ReactNode }) {
           <p className="font-serif text-xl font-bold leading-tight">Knights of Columbus</p>
           <p className="text-sm">{council.data ? councilLabel(council.data) : ' '}</p>
         </div>
+        <AlertBell />
         <MemberMenu />
       </header>
       <div className="flex flex-1">

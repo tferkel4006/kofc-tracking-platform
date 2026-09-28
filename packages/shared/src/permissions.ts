@@ -37,6 +37,7 @@ export type PortalArea =
   | 'lessons-registry'
   | 'donations'
   | 'dashboard'
+  | 'supreme-sync'
   | 'messages'
   | 'profile';
 
@@ -173,6 +174,15 @@ export const canLinkMeetingDrive = (u: Actor, meeting: Pick<Meeting, 'CouncilID'
   meeting.OwnerID === u.memberId || canManageFinances(u, meeting.CouncilID);
 
 /**
+ * The Communications Hub's alert dispatch tile, mirroring assertMayDispatchCouncilAlerts (Sprint 5T; activity status is
+ * checked there): the council's Admins, Financial Secretary and Treasurer, and any Super Admin.
+ */
+export const canDispatchCouncilAlerts = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
+
+/** The Supreme Compliance Center's preview and transmit controls, mirroring assertMaySyncSupremeReports (Sprint 5T). */
+export const canSyncSupremeReports = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
+
+/**
  * Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it, and the
  * meeting center because a meeting's owner may be any member (it is read-only for everyone else without rights).
  */
@@ -193,7 +203,7 @@ export function portalAreas(u: Actor): PortalArea[] {
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/queue');
   if (isSuperAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/disbursements');
   if (canBrowseLessonsRegistry(u)) areas.push('lessons-registry');
-  if (isAdmin(u) || isFinanceOfficer(u)) areas.push('dashboard');
+  if (isAdmin(u) || isFinanceOfficer(u)) areas.push('dashboard', 'supreme-sync');
   areas.push('messages', 'profile');
   return areas;
 }
@@ -219,7 +229,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
     items: ['calendar', 'activities', 'members', 'events', 'meetings', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
   },
   { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements'] },
-  { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'lookups', 'parishes', 'councils'] },
+  { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'supreme-sync', 'lookups', 'parishes', 'councils'] },
 ];
 
 /** The sidebar for `u`: each group holding only the links portalAreas allows (help is for everyone); empty groups are dropped. */

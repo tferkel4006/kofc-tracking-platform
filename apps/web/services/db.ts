@@ -10,6 +10,7 @@
 // components ("use client"); each browser tab gets its own copy.
 // =========================================================================
 import type { DataService } from '@kofc/shared';
+import { postAlchemerViaServer } from './alchemer-transport';
 import { MemoryDataService } from './drivers/memory';
 import { createRemoteDataService } from './drivers/remote';
 
@@ -17,7 +18,8 @@ function createDataService(): DataService {
   const driver = process.env.NEXT_PUBLIC_DATA_DRIVER ?? 'memory';
   switch (driver) {
     case 'memory':
-      return new MemoryDataService();
+      // Supreme reports go through the server route, which holds the Alchemer credentials.
+      return new MemoryDataService({ postAlchemer: postAlchemerViaServer });
     case 'remote':
       return createRemoteDataService();
     default:

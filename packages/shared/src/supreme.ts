@@ -14,11 +14,24 @@
 // is configured yet, so the credentials are placeholders and the default
 // transport prints the request with console.log instead of sending it.
 // =========================================================================
-import type { AlchemerRequest, AlchemerResponse, DonationMethodKind, SupremeComplianceSnapshot, SupremeReportingPeriod } from './contract';
-import { BusinessRuleError, summarizeDonations, toIsoDate } from './rules';
-import type { SupremeFormType, SupremeSyncStatus } from './types';
+import type {
+  AlchemerRequest,
+  AlchemerResponse,
+  DonationMethodKind,
+  SupremeComplianceSnapshot,
+  SupremePeriodChoice,
+  SupremeReportingPeriod,
+  SupremeSyncHistoryEntry,
+} from './contract';
+import { assertInteger, BusinessRuleError, summarizeDonations, toIsoDate } from './rules';
+import type { SupremeFormType, SupremeReportingSync, SupremeSyncStatus } from './types';
 
 export const SUPREME_FORM_TYPES: readonly SupremeFormType[] = ['AnnualSurvey', 'CouncilAudit'];
+/** How screens name each form. */
+export const SUPREME_FORM_LABELS: Record<SupremeFormType, { form: string; title: string }> = {
+  AnnualSurvey: { form: 'Form 1728', title: 'Annual Survey of Fraternal Activity' },
+  CouncilAudit: { form: 'Form 1295', title: 'Semiannual Council Audit' },
+};
 /** Longest SupremeReportingSync.AlchemerSurveyID (VARCHAR(100)). */
 export const ALCHEMER_SURVEY_ID_MAX_LENGTH = 100;
 export const ALCHEMER_API_BASE = 'https://api.alchemer.com/v5';
@@ -51,13 +64,53 @@ export function cleanAlchemerSurveyId(surveyId: unknown): string {
  * (CouncilAudit) the previous half-year, January-June or July-December.
  */
 export function supremeReportingPeriod(formType: SupremeFormType, now: Date): SupremeReportingPeriod {
+  return periodOf(formType, latestSupremeChoice(formType, now));
+}
+
+/** The choice naming the form's last completed period on `now`. */
+function latestSupremeChoice(formType: SupremeFormType, now: Date): SupremePeriodChoice {
   const year = now.getFullYear();
-  if (formType === 'AnnualSurvey') {
-    return { fromDate: `${year - 1}-01-01`, toDate: `${year - 1}-12-31`, label: `${year - 1}` };
+  if (formType === 'AnnualSurvey') return { year: year - 1 };
+  return now.getMonth() < 6 ? { year: year - 1, half: 2 } : { year, half: 1 };
+}
+
+/** The dates of a choice (already validated). */
+function periodOf(formType: SupremeFormType, { year, half }: SupremePeriodChoice): SupremeReportingPeriod {
+  if (formType === 'AnnualSurvey') return { fromDate: `${year}-01-01`, toDate: `${year}-12-31`, label: `${year}` };
+  return half === 1
+    ? { fromDate: `${year}-01-01`, toDate: `${year}-06-30`, label: `January-June ${year}` }
+    : { fromDate: `${year}-07-01`, toDate: `${year}-12-31`, label: `July-December ${year}` };
+}
+
+/**
+ * The period a caller picked, or the form's last completed one when `choice` is omitted. Supreme reports cover
+ * completed periods only, so a period ending today or later rejects INVALID_INPUT, as do a bad year and, for the
+ * CouncilAudit, a half other than 1 or 2. The half is ignored for the AnnualSurvey.
+ */
+export function resolveSupremePeriod(formType: SupremeFormType, choice: SupremePeriodChoice | undefined, now: Date): SupremeReportingPeriod {
+  if (choice === undefined) return supremeReportingPeriod(formType, now);
+  assertInteger(choice?.year, 'Year', 1882);
+  if (choice.year > 9999) throw invalid(`Year must be at most 9999; received ${choice.year}.`, { year: choice.year });
+  if (formType === 'CouncilAudit' && choice.half !== 1 && choice.half !== 2) {
+    throw invalid(`A council audit covers half 1 (January-June) or half 2 (July-December); received ${String(choice.half)}.`, { half: choice.half });
   }
-  return now.getMonth() < 6
-    ? { fromDate: `${year - 1}-07-01`, toDate: `${year - 1}-12-31`, label: `July-December ${year - 1}` }
-    : { fromDate: `${year}-01-01`, toDate: toIsoDate(new Date(year, 5, 30)), label: `January-June ${year}` };
+  const period = periodOf(formType, choice);
+  if (period.toDate >= toIsoDate(now)) {
+    throw invalid(`The ${period.label} period has not ended yet; Supreme reports cover completed periods only.`, { ...period });
+  }
+  return period;
+}
+
+/** The `count` most recent completed periods of the form, newest first, for a period picker. */
+export function supremePeriodOptions(formType: SupremeFormType, now: Date, count = 6): { choice: SupremePeriodChoice; period: SupremeReportingPeriod }[] {
+  const out = [];
+  let choice = latestSupremeChoice(formType, now);
+  for (let i = 0; i < count; i++) {
+    out.push({ choice, period: periodOf(formType, choice) });
+    choice =
+      formType === 'AnnualSurvey' ? { year: choice.year - 1 } : choice.half === 2 ? { year: choice.year, half: 1 } : { year: choice.year - 1, half: 2 };
+  }
+  return out;
 }
 
 /** The raw rows a driver reads for a snapshot, already limited to the council and the period. */
@@ -135,6 +188,9 @@ export const ALCHEMER_SHORTNAMES = {
   ],
 } as const satisfies Record<SupremeFormType, readonly string[]>;
 
+/** Every question shortname any form uses; the web server route accepts answers under these keys only. */
+export const ALL_ALCHEMER_SHORTNAMES: ReadonlySet<string> = new Set<string>(Object.values(ALCHEMER_SHORTNAMES).flat());
+
 /** The snapshot as answers keyed by question shortname, in ALCHEMER_SHORTNAMES order. */
 export function alchemerAnswers(snapshot: SupremeComplianceSnapshot): Record<string, string | number> {
   const s = snapshot;
@@ -177,6 +233,7 @@ export function buildAlchemerRequest(
     url: `${ALCHEMER_API_BASE}/survey/${encodeURIComponent(surveyId)}/surveyresponse?${query.toString()}`,
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
+    surveyId,
     answers,
   };
 }
@@ -203,4 +260,15 @@ export async function postAlchemerReport(
   } catch (err) {
     return { status: 'Failed', error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** Sync attempts with their officers' names, newest SyncDate first, then newest id. */
+export function buildSyncHistory(
+  syncs: readonly SupremeReportingSync[],
+  members: readonly { id: number; MemberFirstName: string; MemberLastName: string }[],
+): SupremeSyncHistoryEntry[] {
+  const names = new Map(members.map((m) => [m.id, `${m.MemberFirstName} ${m.MemberLastName}`]));
+  return [...syncs]
+    .sort((a, b) => b.SyncDate.localeCompare(a.SyncDate) || b.id - a.id)
+    .map((sync) => ({ sync, syncedByName: names.get(sync.SyncedByID) ?? `Member ${sync.SyncedByID}` }));
 }

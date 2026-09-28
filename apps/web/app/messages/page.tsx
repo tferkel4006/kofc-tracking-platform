@@ -2,11 +2,14 @@
 // Communications Hub: every signed-in member's message threads (messages.listThreads) on the left and the open
 // thread on the right, laid out as a nested conversation (replies sit under the message they answer). Any
 // message can be answered inline, and opening a thread marks what the member received as read. Admins also get
-// "New message", which opens the skills filter drawer to message everyone in the council with a chosen trade.
+// "New message", which opens the skills filter drawer to message everyone in the council with a chosen trade. Council
+// leadership (Admins, Financial Secretary, Treasurer, Super Admins) also gets the emergency dispatch tile (Sprint 5T),
+// which opens the drawer that sends a high-priority push alert to trade networks or shift rosters.
 import { useEffect, useRef, useState } from 'react';
 import {
   attachmentKind,
   canAdministerCouncil,
+  canDispatchCouncilAlerts,
   describeError,
   flattenReplies,
   formatTimestamp,
@@ -15,6 +18,7 @@ import {
   type ThreadMessage,
   type ThreadSummary,
 } from '@kofc/shared';
+import { AlertDispatchDrawer } from '@/components/AlertDispatchDrawer';
 import { RequireArea } from '@/components/CouncilScope';
 import { SkillFilterDrawer } from '@/components/SkillFilterDrawer';
 import { Button, cx, Empty, Field, Notice, PageTitle, Panel, Pill, Textarea } from '@/components/ui';
@@ -190,12 +194,29 @@ function OpenThread({ threadId, onChanged }: { threadId: number; onChanged: () =
   );
 }
 
+/** The high-visibility entry to the alert dispatch drawer, for council leadership only. */
+function DispatchTile({ onOpen }: { onOpen: () => void }) {
+  return (
+    <section aria-label="Emergency dispatch" className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded border-2 border-brand-red border-l-8 bg-white px-4 py-3">
+      <div>
+        <h2 className="font-serif text-lg font-bold">Dispatch High-Priority Push Notification Alert</h2>
+        <p className="text-sm text-muted">Reach a trade skill network or an event shift roster on their phones at once: weather closures, venue changes, urgent calls for help.</p>
+      </div>
+      <Button variant="danger" onClick={onOpen}>
+        Open emergency dispatch
+      </Button>
+    </section>
+  );
+}
+
 function Hub() {
   const user = useUser();
   const threads = useLoad(() => db.messages.listThreads(user.memberId), [user.memberId]);
   const [openId, setOpenId] = useState<number | null>(null);
   const [composing, setComposing] = useState(false);
   const canBroadcast = canAdministerCouncil(user, user.councilId);
+  const canDispatch = canDispatchCouncilAlerts(user, user.councilId);
+  const [dispatching, setDispatching] = useState(false);
   const reloadThreads = threads.reload;
   const unread = (threads.data ?? []).reduce((n, t) => n + t.unreadCount, 0);
 
@@ -217,6 +238,7 @@ function Hub() {
       >
         Communications Hub
       </PageTitle>
+      {canDispatch ? <DispatchTile onOpen={() => setDispatching(true)} /> : null}
       {threads.error ? <Notice tone="error">{threads.error}</Notice> : null}
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[22rem_minmax(0,1fr)]">
         <Panel title={`Conversations${unread > 0 ? ` (${unread} unread)` : ''}`}>
@@ -240,6 +262,7 @@ function Hub() {
           }}
         />
       ) : null}
+      {dispatching ? <AlertDispatchDrawer councilId={user.councilId} onClose={() => setDispatching(false)} /> : null}
     </>
   );
 }

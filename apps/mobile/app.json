@@ -22,7 +22,8 @@
           "photosPermission": false,
           "microphonePermission": false
         }
-      ]
+      ],
+      ["expo-notifications", { "color": "#002855" }]
     ]
   }
 }

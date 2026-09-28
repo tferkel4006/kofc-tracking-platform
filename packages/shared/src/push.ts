@@ -162,3 +162,10 @@ export function deliverAlertsByStub(
     unreachableMemberIds: logs.filter((l) => !tokens.get(l.TargetMemberID)).map((l) => l.TargetMemberID),
   };
 }
+
+/** markAsRead: an unknown alert, or one sent to someone else (so ids reveal nothing). */
+export const alertNotFound = (alertId: number): BusinessRuleError =>
+  new BusinessRuleError('RECORD_NOT_FOUND', `Alert ${alertId} does not exist.`, { table: 'NotificationLog', id: alertId });
+
+/** Unread alerts in a list (IsRead = 0), for the bell's badge. */
+export const countUnreadAlerts = (alerts: readonly Pick<NotificationLog, 'IsRead'>[]): number => alerts.filter((a) => !a.IsRead).length;

@@ -37,7 +37,9 @@ import {
   noAlertRecipients,
   postAlchemerReport,
   sortAlerts,
-  supremeReportingPeriod,
+  resolveSupremePeriod,
+  buildSyncHistory,
+  alertNotFound,
   withoutPushToken,
   type SupremeSnapshotRows,
   assertNoSelfPayout,
@@ -148,6 +150,9 @@ import type {
   AlchemerRequest,
   AlchemerResponse,
   NotificationLog,
+  SupremeComplianceSnapshot,
+  SupremeFormType,
+  SupremePeriodChoice,
   SupremeReportingPeriod,
   SupremeReportingSync,
   ActivityTime,
@@ -2349,6 +2354,15 @@ export class MemoryDataService implements DataService {
       );
     },
 
+    markAsRead: async (actorId, alertId) => {
+      const s = await this.ready();
+      this.requireMember(s, actorId);
+      const row = s.rows('NotificationLog').find((n) => n.id === alertId && n.TargetMemberID === actorId);
+      if (!row) throw alertNotFound(alertId);
+      row.IsRead = 1;
+      return { ...row } as unknown as NotificationLog;
+    },
+
     dispatchHighPriorityAlert: async (actorId, councilId, filters, payload) => {
       const target = cleanAlertFilters(filters);
       const alert = cleanAlertPayload(payload);
@@ -2367,14 +2381,13 @@ export class MemoryDataService implements DataService {
         }
         const skills = new Set<SeedValue>(target.skillIds);
         const shifts = new Set<SeedValue>(target.shiftIds);
-        const candidates = new Set([
-          ...s.rows('MemberSkill').filter((r) => skills.has(r.SkillID)).map((r) => r.MemberID),
-          ...s.rows('EventSignup').filter((r) => shifts.has(r.ShiftID)).map((r) => r.MemberID),
-        ]);
+        const skillHolders = new Set(s.rows('MemberSkill').filter((r) => skills.has(r.SkillID)).map((r) => r.MemberID));
+        const roster = new Set(s.rows('EventSignup').filter((r) => shifts.has(r.ShiftID)).map((r) => r.MemberID));
         const activeId = this.activeStatusId(s);
+        // Skill networks stay inside the council; a shift roster includes sister-council volunteers on a shared event.
         const recipientIds = s
           .rows('Member')
-          .filter((m) => m.CouncilID === councilId && m.StatusID === activeId && candidates.has(m.id))
+          .filter((m) => m.StatusID === activeId && ((m.CouncilID === councilId && skillHolders.has(m.id)) || roster.has(m.id)))
           .map((m) => m.id as number)
           .sort((a, b) => a - b);
         if (recipientIds.length === 0) throw noAlertRecipients(councilId, target);
@@ -2398,15 +2411,16 @@ export class MemoryDataService implements DataService {
   };
 
   supreme: DataService['supreme'] = {
-    syncAlchemerReport: async (actorId, councilId, formType, surveyId) => {
-      const form = cleanSupremeFormType(formType);
+    previewReport: async (actorId, councilId, formType, period) => {
+      const s = await this.ready();
+      return this.compileSupremeReport(s, actorId, councilId, formType, period);
+    },
+
+    syncAlchemerReport: async (actorId, councilId, formType, surveyId, period) => {
       const survey = cleanAlchemerSurveyId(surveyId);
       const s = await this.ready();
-      assertMaySyncSupremeReports(this.memberWriteActor(s, actorId), councilId, `file Supreme reports for council ${councilId}`);
-      this.assertCouncilsExist(s, [councilId]);
-      // The store is synchronous, so this read is a consistent snapshot.
-      const period = supremeReportingPeriod(form, this.now());
-      const snapshot = compileSupremeSnapshot(form, period, this.supremeSnapshotRows(s, councilId, period));
+      const snapshot = this.compileSupremeReport(s, actorId, councilId, formType, period);
+      const form = snapshot.formType;
       const request = buildAlchemerRequest(survey, alchemerAnswers(snapshot));
       const { status, error } = await postAlchemerReport(this.postAlchemer, request);
       const row = s.insert('SupremeReportingSync', {
@@ -2419,7 +2433,32 @@ export class MemoryDataService implements DataService {
       });
       return { sync: { ...row } as unknown as SupremeReportingSync, snapshot, request, error };
     },
+
+    listSyncHistory: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMaySyncSupremeReports(this.memberWriteActor(s, actorId), councilId, `read the Supreme sync history of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return buildSyncHistory(
+        s.rows('SupremeReportingSync').filter((r) => r.CouncilID === councilId).map((r) => ({ ...r })) as unknown as SupremeReportingSync[],
+        s.rows('Member') as unknown as Member[],
+      );
+    },
   };
+
+  /** Checks the caller and compiles the snapshot; the store is synchronous, so the read is consistent. */
+  private compileSupremeReport(
+    s: MemoryStore,
+    actorId: number,
+    councilId: number,
+    formType: SupremeFormType,
+    choice: SupremePeriodChoice | undefined,
+  ): SupremeComplianceSnapshot {
+    const form = cleanSupremeFormType(formType);
+    const period = resolveSupremePeriod(form, choice, this.now());
+    assertMaySyncSupremeReports(this.memberWriteActor(s, actorId), councilId, `file Supreme reports for council ${councilId}`);
+    this.assertCouncilsExist(s, [councilId]);
+    return compileSupremeSnapshot(form, period, this.supremeSnapshotRows(s, councilId, period));
+  }
 
   /** The council's hours, events, donations and expense checks in the period, for compileSupremeSnapshot. */
   private supremeSnapshotRows(s: MemoryStore, councilId: number, period: SupremeReportingPeriod): SupremeSnapshotRows {

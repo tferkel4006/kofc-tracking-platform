@@ -612,8 +612,10 @@ export interface ExpenseDisbursementResult {
 
 // 15. PUSH ALERTS AND SUPREME COUNCIL REPORTING (Sprint 5T)
 /**
- * Who notifications.dispatchHighPriorityAlert reaches: Active members of the council who hold any of `skillIds` or are
- * signed up for any of `shiftIds` (shifts of events linked to the council). At least one id is required.
+ * Who notifications.dispatchHighPriorityAlert reaches: Active members of the council who hold any of `skillIds`, and
+ * every Active member signed up for any of `shiftIds` (shifts of events linked to the council), whatever their own
+ * council, so volunteers from affiliated sister councils on a shared event hear about their shift too. At least one
+ * id is required.
  */
 export interface AlertFilters {
   skillIds?: readonly number[];
@@ -696,6 +698,8 @@ export interface AlchemerRequest {
   headers: Record<string, string>;
   /** Form-encoded data[<shortname>][value]=... pairs plus status=Complete. */
   body: string;
+  /** The Alchemer survey the response is filed to. */
+  surveyId: string;
   /** The same answers keyed by question shortname, for display and tests. */
   answers: Record<string, string | number>;
 }
@@ -704,6 +708,18 @@ export interface AlchemerRequest {
 export interface AlchemerResponse {
   result_ok: boolean;
   message?: string;
+}
+
+/** A reporting period picked on screen: a calendar year and, for CouncilAudit, its half (1 = January-June, 2 = July-December). */
+export interface SupremePeriodChoice {
+  year: number;
+  half?: 1 | 2;
+}
+
+/** One past sync attempt with the name of the officer who ran it. */
+export interface SupremeSyncHistoryEntry {
+  sync: SupremeReportingSync;
+  syncedByName: string;
 }
 
 export interface SupremeSyncResult {
@@ -1247,25 +1263,47 @@ export interface DataService {
     /** The alerts sent to the actor in the trailing ALERT_HISTORY_MONTHS (6) months, newest first. */
     listMemberAlerts(actorId: number): Promise<NotificationLog[]>;
     /**
+     * Sets IsRead = 1 on one of the actor's own alerts and resolves to it; marking a read alert again changes nothing.
+     * Another member's alert rejects RECORD_NOT_FOUND like an unknown id, so ids reveal nothing.
+     */
+    markAsRead(actorId: number, alertId: number): Promise<NotificationLog>;
+    /**
      * Logs one NotificationLog row per recipient (see AlertFilters) in one transaction, then builds the Expo Push API
      * requests for recipients with a registered device and prints them with console.log (no push credentials exist
      * yet). Rejects INVALID_INPUT for an unknown council, no filter, an unknown skill, a shift that is unknown or not
      * on an event linked to the council, a blank or over-long title or body, or an unknown priority; NO_RECIPIENTS
-     * when the filters match no Active member of the council.
+     * when the filters match nobody.
      */
     dispatchHighPriorityAlert(actorId: number, councilId: number, filters: AlertFilters, payload: AlertPayload): Promise<AlertDispatchResult>;
   };
 
-  /** Supreme Council reporting (Sprint 5T), with the same leadership rule as notifications.dispatchHighPriorityAlert. */
+  /**
+   * Supreme Council reporting (Sprint 5T), with the same leadership rule as notifications.dispatchHighPriorityAlert.
+   * `period` picks a completed period (resolveSupremePeriod); omitted, the form's last completed one
+   * (supremeReportingPeriod). A period that has not ended rejects INVALID_INPUT.
+   */
   supreme: {
     /**
-     * Compiles the council's compliance snapshot for the form's last completed period (supremeReportingPeriod) from
-     * one consistent read of its logged hours, events, donations and expense checks; files it to Alchemer survey
-     * `surveyId` as an API v5 survey response (a stub that prints the request until Alchemer is configured); and
-     * records the attempt in SupremeReportingSync: 'Success', or 'Failed' with `error` when the post fails.
-     * Rejects INVALID_INPUT for an unknown council or form type, or a survey id that is not a number.
+     * The compliance snapshot syncAlchemerReport would file, compiled the same way but neither posted nor recorded,
+     * so officers can audit it first. Rejects INVALID_INPUT for an unknown council, form type or period.
      */
-    syncAlchemerReport(actorId: number, councilId: number, formType: SupremeFormType, surveyId: string): Promise<SupremeSyncResult>;
+    previewReport(actorId: number, councilId: number, formType: SupremeFormType, period?: SupremePeriodChoice): Promise<SupremeComplianceSnapshot>;
+    /**
+     * Compiles the council's compliance snapshot for the period from one consistent read of its logged hours, events,
+     * donations and expense checks; files it to Alchemer survey `surveyId` as an API v5 survey response (through the
+     * driver's transport: a logging stub by default, the server route on the web); and records the attempt in
+     * SupremeReportingSync: 'Success', or 'Failed' with `error` when the post fails. Rejects INVALID_INPUT for an
+     * unknown council, form type or period, or a survey id that is not a number.
+     */
+    syncAlchemerReport(
+      actorId: number,
+      councilId: number,
+      formType: SupremeFormType,
+      surveyId: string,
+      period?: SupremePeriodChoice,
+    ): Promise<SupremeSyncResult>;
+    /** The council's sync attempts, newest SyncDate first, with who ran each. Rejects INVALID_INPUT for an unknown council. */
+    listSyncHistory(actorId: number, councilId: number): Promise<SupremeSyncHistoryEntry[]>;
   };
 
   feedback: {

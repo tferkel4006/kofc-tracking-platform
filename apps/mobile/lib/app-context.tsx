@@ -1,8 +1,10 @@
 // Session and startup state for the whole app.
 // Owns the OnboardingController (services/onboarding.ts), which does all the sign-in rules; screens
-// only render its state. Also opens the local database and runs the reminder scheduler while signed in.
+// only render its state. Also opens the local database, runs the reminder scheduler while signed in, and links the
+// phone for push alerts after sign-in (lib/push-registration.ts).
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { startNotificationScheduler, type SessionUser } from '@kofc/shared';
+import { configureAlertDisplay, registerForPushAlerts, unregisterPushAlerts } from '@/lib/push-registration';
 import { db } from '@/services/db';
 import { getConfiguredCouncilNumber, OnboardingController, type OnboardingState } from '@/services/onboarding';
 import { sessionStore } from '@/services/session';
@@ -56,6 +58,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => (user ? startNotificationScheduler(db) : undefined), [user]);
 
   const memberId = user?.memberId;
+
+  // Push alerts (Sprint 5T): once per sign-in, ask for notification permission and link this phone's token.
+  useEffect(() => {
+    if (memberId === undefined) return;
+    configureAlertDisplay();
+    registerForPushAlerts(memberId).catch((err: unknown) => console.warn('[push] registration failed:', err));
+  }, [memberId]);
   const refreshUnread = useCallback(async () => {
     if (memberId === undefined) return setUnread(0);
     try {
@@ -78,7 +87,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [controller],
   );
   const restart = useCallback(() => setOnboarding(controller.restart()), [controller]);
-  const signOut = useCallback(async () => setOnboarding(await controller.signOut()), [controller]);
+  const signOut = useCallback(async () => {
+    // Unlink the phone first, while the member is still known; a failure must not block signing out.
+    if (memberId !== undefined) await unregisterPushAlerts(memberId).catch(() => undefined);
+    setOnboarding(await controller.signOut());
+  }, [controller, memberId]);
 
   const value = useMemo<AppContextValue>(
     () => ({

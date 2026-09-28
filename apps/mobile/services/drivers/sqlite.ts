@@ -34,7 +34,9 @@ import {
   logAlchemerRequest,
   noAlertRecipients,
   postAlchemerReport,
-  supremeReportingPeriod,
+  resolveSupremePeriod,
+  buildSyncHistory,
+  alertNotFound,
   withoutPushToken,
   type SupremeSnapshotRows,
   assertNoSelfPayout,
@@ -149,6 +151,9 @@ import type {
   AlchemerRequest,
   AlchemerResponse,
   NotificationLog,
+  SupremeComplianceSnapshot,
+  SupremeFormType,
+  SupremePeriodChoice,
   SupremeReportingPeriod,
   SupremeReportingSync,
   ActivityTime,
@@ -2757,6 +2762,14 @@ export class SqliteDataService implements DataService {
       );
     },
 
+    markAsRead: async (actorId, alertId) => {
+      const db = await this.ready();
+      await this.requireMember(db, actorId);
+      const res = await db.runAsync('UPDATE [NotificationLog] SET [IsRead] = 1 WHERE [id] = ? AND [TargetMemberID] = ?', [alertId, actorId]);
+      if (res.changes === 0) throw alertNotFound(alertId);
+      return (await db.getFirstAsync<NotificationLog>('SELECT * FROM [NotificationLog] WHERE [id] = ?', [alertId]))!;
+    },
+
     dispatchHighPriorityAlert: async (actorId, councilId, filters, payload) => {
       const target = cleanAlertFilters(filters);
       const alert = cleanAlertPayload(payload);
@@ -2776,12 +2789,23 @@ export class SqliteDataService implements DataService {
             throw new BusinessRuleError('INVALID_INPUT', `Shift ${shiftId} is not on an event of council ${councilId}.`, { shiftId, councilId });
           }
         }
-        const candidates = new Set([
-          ...(await selectIn<{ MemberID: number }>(db, (m) => `SELECT [MemberID] FROM [MemberSkill] WHERE [SkillID] IN (${m})`, target.skillIds)),
-          ...(await selectIn<{ MemberID: number }>(db, (m) => `SELECT [MemberID] FROM [EventSignup] WHERE [ShiftID] IN (${m})`, target.shiftIds)),
-        ].map((r) => r.MemberID));
-        const active = await db.getAllAsync<{ id: number }>(`SELECT m.[id] FROM [Member] m WHERE ${ACTIVE_MEMBER_FILTER} ORDER BY m.[id]`, [councilId]);
-        const recipientIds = active.map((r) => r.id).filter((id) => candidates.has(id));
+        const skillHolders = new Set(
+          (await selectIn<{ MemberID: number }>(db, (m) => `SELECT [MemberID] FROM [MemberSkill] WHERE [SkillID] IN (${m})`, target.skillIds)).map((r) => r.MemberID),
+        );
+        const roster = new Set(
+          (await selectIn<{ MemberID: number }>(db, (m) => `SELECT [MemberID] FROM [EventSignup] WHERE [ShiftID] IN (${m})`, target.shiftIds)).map((r) => r.MemberID),
+        );
+        const active = await selectIn<{ id: number; CouncilID: number }>(
+          db,
+          (m) => `SELECT m.[id], m.[CouncilID] FROM [Member] m
+                   WHERE m.[StatusID] = (SELECT [id] FROM [MemberStatus] WHERE [Status] = 'Active') AND m.[id] IN (${m})`,
+          [...new Set([...skillHolders, ...roster])],
+        );
+        // Skill networks stay inside the council; a shift roster includes sister-council volunteers on a shared event.
+        const recipientIds = active
+          .filter((m) => (m.CouncilID === councilId && skillHolders.has(m.id)) || roster.has(m.id))
+          .map((m) => m.id)
+          .sort((a, b) => a - b);
         if (recipientIds.length === 0) throw noAlertRecipients(councilId, target);
         const sentAt = toTimestamp(this.now());
         for (const memberId of recipientIds) {
@@ -2803,19 +2827,14 @@ export class SqliteDataService implements DataService {
   };
 
   supreme: DataService['supreme'] = {
-    syncAlchemerReport: async (actorId, councilId, formType, surveyId) => {
-      const form = cleanSupremeFormType(formType);
+    previewReport: async (actorId, councilId, formType, period) =>
+      this.compileSupremeReport(await this.ready(), actorId, councilId, formType, period),
+
+    syncAlchemerReport: async (actorId, councilId, formType, surveyId, period) => {
       const survey = cleanAlchemerSurveyId(surveyId);
       const db = await this.ready();
-      assertMaySyncSupremeReports(await this.memberWriteActor(db, actorId), councilId, `file Supreme reports for council ${councilId}`);
-      await this.assertCouncilsExist(db, [councilId]);
-      const period = supremeReportingPeriod(form, this.now());
-      let rows!: SupremeSnapshotRows;
-      // One transaction, so every figure comes from the same state of the ledgers.
-      await db.withTransactionAsync(async () => {
-        rows = await this.supremeSnapshotRows(db, councilId, period);
-      });
-      const snapshot = compileSupremeSnapshot(form, period, rows);
+      const snapshot = await this.compileSupremeReport(db, actorId, councilId, formType, period);
+      const form = snapshot.formType;
       const request = buildAlchemerRequest(survey, alchemerAnswers(snapshot));
       const { status, error } = await postAlchemerReport(this.postAlchemer, request);
       const res = await db.runAsync(
@@ -2826,7 +2845,39 @@ export class SqliteDataService implements DataService {
       const sync = (await db.getFirstAsync<SupremeReportingSync>('SELECT * FROM [SupremeReportingSync] WHERE [id] = ?', [res.lastInsertRowId]))!;
       return { sync, snapshot, request, error };
     },
+
+    listSyncHistory: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMaySyncSupremeReports(await this.memberWriteActor(db, actorId), councilId, `read the Supreme sync history of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const syncs = await db.getAllAsync<SupremeReportingSync>('SELECT * FROM [SupremeReportingSync] WHERE [CouncilID] = ?', [councilId]);
+      const members = await selectIn<Member>(
+        db,
+        (m) => `SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member] WHERE [id] IN (${m})`,
+        [...new Set(syncs.map((s) => s.SyncedByID))],
+      );
+      return buildSyncHistory(syncs, members);
+    },
   };
+
+  /** Checks the caller and compiles the snapshot from one transaction, so every figure comes from the same state of the ledgers. */
+  private async compileSupremeReport(
+    db: SQLite.SQLiteDatabase,
+    actorId: number,
+    councilId: number,
+    formType: SupremeFormType,
+    choice: SupremePeriodChoice | undefined,
+  ): Promise<SupremeComplianceSnapshot> {
+    const form = cleanSupremeFormType(formType);
+    const period = resolveSupremePeriod(form, choice, this.now());
+    assertMaySyncSupremeReports(await this.memberWriteActor(db, actorId), councilId, `file Supreme reports for council ${councilId}`);
+    await this.assertCouncilsExist(db, [councilId]);
+    let rows!: SupremeSnapshotRows;
+    await db.withTransactionAsync(async () => {
+      rows = await this.supremeSnapshotRows(db, councilId, period);
+    });
+    return compileSupremeSnapshot(form, period, rows);
+  }
 
   /** The council's hours, events, donations and expense checks in the period, for compileSupremeSnapshot. */
   private async supremeSnapshotRows(db: SQLite.SQLiteDatabase, councilId: number, period: SupremeReportingPeriod): Promise<SupremeSnapshotRows> {

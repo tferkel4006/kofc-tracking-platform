@@ -3,7 +3,9 @@ import {
   canAdministerCouncil,
   canChangeDonation,
   canMaintainCouncilRecords,
+  canDispatchCouncilAlerts,
   canManageFinances,
+  canSyncSupremeReports,
   isFinanceOfficer,
   canMaintainCouncils,
   canMaintainLookups,
@@ -95,6 +97,7 @@ describe('portal permissions', () => {
       'expenses/disbursements',
       'lessons-registry',
       'dashboard',
+      'supreme-sync',
       'messages',
       'profile',
     ]);
@@ -115,6 +118,7 @@ describe('portal permissions', () => {
       'expenses/queue',
       'lessons-registry',
       'dashboard',
+      'supreme-sync',
       'messages',
       'profile',
     ]);
@@ -164,7 +168,7 @@ describe('portal permissions', () => {
         ['Self-Service Hub', ['member-actions', 'messages', 'help']],
         ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
         ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements']],
-        ['Administrative Lookups', ['council-lookups', 'lookups', 'parishes', 'councils']],
+        ['Administrative Lookups', ['council-lookups', 'supreme-sync', 'lookups', 'parishes', 'councils']],
       ]);
     });
 
@@ -173,7 +177,7 @@ describe('portal permissions', () => {
         ['Self-Service Hub', ['member-actions', 'messages', 'help']],
         ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
         ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue']],
-        ['Administrative Lookups', ['council-lookups', 'parishes']],
+        ['Administrative Lookups', ['council-lookups', 'supreme-sync', 'parishes']],
       ]);
     });
 
@@ -182,7 +186,7 @@ describe('portal permissions', () => {
         ['Self-Service Hub', ['member-actions', 'messages', 'help']],
         ['Volunteer Operations', ['calendar', 'meetings', 'gallery', 'ledger']],
         ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements']],
-        ['Administrative Lookups', ['council-lookups']],
+        ['Administrative Lookups', ['council-lookups', 'supreme-sync']],
       ]);
     });
 
@@ -234,11 +238,23 @@ describe('portal permissions', () => {
         'expenses/queue',
         'expenses/disbursements',
         'dashboard',
+        'supreme-sync',
         'messages',
         'profile',
       ]);
     }
     expect(portalAreas(actor({ isOfficer: true, roles: ['Grand Knight', 'Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'expenses', 'messages', 'profile']);
+  });
+
+  it('gives council leadership the Supreme sync and the alert dispatch, each for their own council (Sprint 5T)', () => {
+    const treasurer = actor({ isOfficer: true, roles: ['Treasurer'] });
+    const secretary = actor({ isOfficer: true, roles: ['Financial Secretary'] });
+    for (const u of [superAdmin, admin, treasurer, secretary]) expect(portalAreas(u)).toContain('supreme-sync');
+    for (const u of [officer, member, actor({ isOfficer: true, roles: ['Grand Knight'] })]) expect(portalAreas(u)).not.toContain('supreme-sync');
+    for (const check of [canDispatchCouncilAlerts, canSyncSupremeReports]) {
+      expect([superAdmin, admin, treasurer, secretary, officer, member].map((u) => check(u, 1))).toEqual([true, true, true, true, false, false]);
+      expect([superAdmin, admin, treasurer].map((u) => check(u, 2))).toEqual([true, false, false]);
+    }
   });
 
   it('lets finance officers manage only their own council’s finances', () => {

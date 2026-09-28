@@ -6,6 +6,7 @@
 import { useState, type FormEvent } from 'react';
 import {
   ACTIVITY_HISTORY_MONTHS,
+  ALERT_HISTORY_MONTHS,
   councilLabel,
   describeError,
   FEEDBACK_MAX_LENGTH,
@@ -184,6 +185,20 @@ const SECTIONS: Section[] = [
         a: ['Member Actions → Fraternal roster lists active members of your council and its sister councils with phone and email. You can also message them through the Communications Hub.'],
       },
       {
+        q: 'What is the bell next to my name?',
+        a: [
+          `It holds the alerts your council leadership sent you in the last ${ALERT_HISTORY_MONTHS} months. The red number counts the ones you have not opened yet.`,
+          'Select the bell to open your notification log, newest first. Unread alerts sit on a gold background; open one to mark it read and the count drops.',
+        ],
+      },
+      {
+        q: 'How do I get alerts on my phone?',
+        a: [
+          'Sign in to the phone app and choose Allow when it asks to send notifications. Your phone is then linked to your record and urgent alerts arrive as push notifications.',
+          'If you chose Don’t Allow, turn notifications on for KofC Tracker in your phone’s settings and sign in again. Alerts still reach your bell either way.',
+        ],
+      },
+      {
         q: 'How do I update my phone, email or skills?',
         a: [
           'Open My Profile from the member menu (your name and photo, top right). Save contact details to update phone, email and address; changing the email changes your sign-in too.',
@@ -302,6 +317,28 @@ const SECTIONS: Section[] = [
       {
         q: 'A Treasurer lost access to Donations after a role was renamed.',
         a: ['Finance access follows the role names “Treasurer” and “Financial Secretary”. A Super Admin should restore the exact name under Global Governance Matrices → Role.'],
+      },
+    ],
+  },
+  {
+    title: 'Emergency alerts and Supreme reporting',
+    audience: 'Admins & officers',
+    topics: [
+      {
+        q: 'How do I send an urgent alert to volunteers?',
+        a: [
+          'Communications Hub → Open emergency dispatch. Enter a title and message, choose a priority, then tick trade skill networks, upcoming shift rosters, or both.',
+          'Skill networks reach your own council’s active members. A shift roster reaches everyone signed up for it, including volunteers from sister councils sharing the event.',
+          'Every recipient sees the alert in their bell; members who allowed notifications on their phone also get a push. Admins, the Financial Secretary, the Treasurer and Super Admins can dispatch.',
+        ],
+      },
+      {
+        q: 'How do I file Form 1728 or Form 1295?',
+        a: [
+          'Administrative Lookups → Supreme Council Sync. Choose the form and a completed reporting period: a calendar year for Form 1728, a half-year for Form 1295.',
+          'Check the Simulate and Audit Compliance Report figures against your books, enter the Alchemer survey id Supreme gave you, and select Transmit Report to Supreme via Alchemer API.',
+          'Every attempt appears on the Sync history timeline: a gold dot for success, a red one for a failure with its reason. Periods that have not ended cannot be filed.',
+        ],
       },
     ],
   },

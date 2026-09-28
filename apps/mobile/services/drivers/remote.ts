@@ -149,10 +149,13 @@ export function createRemoteDataService(): DataService {
     notifications: {
       registerDeviceToken: notImplemented('notifications.registerDeviceToken'),
       listMemberAlerts: notImplemented('notifications.listMemberAlerts'),
+      markAsRead: notImplemented('notifications.markAsRead'),
       dispatchHighPriorityAlert: notImplemented('notifications.dispatchHighPriorityAlert'),
     },
     supreme: {
+      previewReport: notImplemented('supreme.previewReport'),
       syncAlchemerReport: notImplemented('supreme.syncAlchemerReport'),
+      listSyncHistory: notImplemented('supreme.listSyncHistory'),
     },
     feedback: {
       submit: notImplemented('feedback.submit'),
