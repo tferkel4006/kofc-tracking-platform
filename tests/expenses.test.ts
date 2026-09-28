@@ -1,13 +1,26 @@
 // Sprint 5R: expense reporting (expenses.listUserReports, listCouncilQueue, submitReport, approveReport and
 // recordDisbursement), its role gates and its tenant isolation. Sprint 5R-1.5: no self-approval, rejectReport, and
-// approved expenses in reports.monthlySummary.
+// approved expenses in reports.monthlySummary. Sprint 5R-2: no self-payout and the shared expense form helpers.
 import { describe, expect, it } from 'vitest';
 import {
+  assertNoSelfPayout,
   assertNotSelfApproval,
+  blankExpenseLine,
+  BusinessRuleError,
   canApproveExpenseReport,
   canAuditCouncilExpenses,
+  canPayExpenseReport,
   cleanExpenseLineItems,
+  expenseDraftTotal,
+  expenseLineDraftFrom,
+  expenseLinesFromDrafts,
+  expenseReferenceChoices,
+  expenseReferenceKey,
+  expenseReferenceLabel,
+  expenseStatusBadge,
+  listExpenseReferences,
   mayAuditCouncilExpenses,
+  parseExpenseReferenceKey,
   REJECTION_REASON_MAX_LENGTH,
   summarizeMonth,
   SecurityPrivilegeError,
@@ -291,7 +304,7 @@ describe.each(drivers)('expense reporting ($name driver)', (d) => {
     it('pays approved sheets with one check, totals them and stamps each Reimbursed', async () => {
       const db = await d.make();
       const a = await approvedReport(db, MEMBER.member, [receipt({ Amount: 19.99 }), receipt({ Amount: 0.01 })]);
-      const b = await approvedReport(db, MEMBER.admin, [receipt({ Amount: 100.1 })]);
+      const b = await approvedReport(db, MEMBER.superAdmin, [receipt({ Amount: 100.1 })]);
       const result = await db.expenses.recordDisbursement(MEMBER.admin, OWN, [b, a], CHECK);
       expect(result.disbursement).toMatchObject({ CouncilID: OWN, CheckNumber: '1042', PayoutDate: '2026-09-20', TotalAmount: 120.1, Notes: 'September reimbursements' });
       expect(result.reports.map((r) => [r.report.id, r.report.Status, r.report.DisbursementID])).toEqual([
@@ -485,7 +498,7 @@ describe.each(drivers)('financial controls ($name driver, Sprint 5R-1.5)', (d) =
 
     await approvedReport(db, MEMBER.member, [receipt({ Amount: 20, DateOfExpense: '2026-09-05' }), receipt({ Amount: 7, DateOfExpense: '2026-08-30' })]);
     const paid = await approvedReport(db, MEMBER.admin, [receipt({ Amount: 5.55, DateOfExpense: '2026-09-19' })]);
-    await db.expenses.recordDisbursement(MEMBER.admin, OWN, [paid], CHECK);
+    await db.expenses.recordDisbursement(MEMBER.superAdmin, OWN, [paid], CHECK);
     // Not counted: pending, draft and returned sheets, and another council's approved sheet.
     await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt({ Amount: 100 })]);
     await db.expenses.submitReport(MEMBER.member, { Status: 'Draft' }, [receipt({ Amount: 100 })]);
@@ -503,5 +516,144 @@ describe.each(drivers)('financial controls ($name driver, Sprint 5R-1.5)', (d) =
     });
     expect((await db.reports.monthlySummary(OWN, 2026, 8)).finances.expenses).toBe(august.finances.expenses + 7);
     expect((await db.reports.monthlySummary(OTHER, 2026, 9)).finances.expenses).toBe(50);
+  });
+});
+
+describe('self-payout and the expense forms (pure, Sprint 5R-2)', () => {
+  const actor = (over: Partial<MemberWriteActor> = {}): MemberWriteActor => ({ memberId: 10, councilId: OWN, memberType: 'Admin', active: true, ...over });
+  const user = (over = {}) => ({ memberId: 10, councilId: OWN, memberType: 'Admin' as const, isOfficer: false, ...over });
+
+  it('blocks paying your own sheet unless you are an active Super Admin', () => {
+    let err: unknown;
+    try {
+      assertNoSelfPayout(actor(), { id: 7, SubmitterMemberID: 10 });
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(BusinessRuleError);
+    expect(err).toMatchObject({ code: 'SELF_PAYOUT_BLOCKED', message: 'For accounting controls, an officer cannot issue a check that pays their own expense report.' });
+    expect(() => assertNoSelfPayout(actor({ roles: ['Financial Secretary'], memberType: 'Member' }), { id: 7, SubmitterMemberID: 10 })).toThrow();
+    expect(() => assertNoSelfPayout(actor({ memberType: 'Super Admin', active: false }), { id: 7, SubmitterMemberID: 10 })).toThrow();
+    expect(() => assertNoSelfPayout(actor({ memberType: 'Super Admin' }), { id: 7, SubmitterMemberID: 10 })).not.toThrow();
+    expect(() => assertNoSelfPayout(actor(), { id: 7, SubmitterMemberID: 11 })).not.toThrow();
+  });
+
+  it('mirrors the rule in the pay checkbox', () => {
+    expect(canPayExpenseReport(user(), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(true);
+    expect(canPayExpenseReport(user(), { CouncilID: OWN, SubmitterMemberID: 10 })).toBe(false);
+    expect(canPayExpenseReport(user(), { CouncilID: OTHER, SubmitterMemberID: 11 })).toBe(false);
+    expect(canPayExpenseReport(user({ memberType: 'Member', roles: ['Treasurer'] }), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(true);
+    expect(canPayExpenseReport(user({ memberType: 'Member', roles: ['Treasurer'] }), { CouncilID: OWN, SubmitterMemberID: 10 })).toBe(false);
+    expect(canPayExpenseReport(user({ memberType: 'Super Admin' }), { CouncilID: OTHER, SubmitterMemberID: 10 })).toBe(true);
+    expect(canPayExpenseReport(user({ memberType: 'Member' }), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(false);
+  });
+
+  it('round-trips the single Event-or-Meeting picker key', () => {
+    expect(expenseReferenceKey({ LinkedEventID: 12, LinkedMeetingID: null })).toBe('event:12');
+    expect(expenseReferenceKey({ LinkedEventID: null, LinkedMeetingID: 3 })).toBe('meeting:3');
+    expect(expenseReferenceKey({})).toBe('');
+    expect(expenseReferenceKey({ LinkedEventID: 12, LinkedMeetingID: 3 })).toBe('event:12');
+    expect(parseExpenseReferenceKey('event:12')).toEqual({ LinkedEventID: 12, LinkedMeetingID: null });
+    expect(parseExpenseReferenceKey('meeting:3')).toEqual({ LinkedEventID: null, LinkedMeetingID: 3 });
+    expect(parseExpenseReferenceKey('')).toEqual({ LinkedEventID: null, LinkedMeetingID: null });
+    expect(parseExpenseReferenceKey('council:1')).toEqual({ LinkedEventID: null, LinkedMeetingID: null });
+  });
+
+  it('labels the picker choices and a sheet’s reference', () => {
+    const refs = {
+      events: [{ id: 12, EventName: 'Pancake Breakfast', StartDate: '2026-09-12' } as never],
+      meetings: [{ id: 3, 'Meeting Name': 'Business Meeting', Date: '2025-12-02' } as never],
+    };
+    expect(expenseReferenceChoices(refs)).toEqual([
+      { group: 'Events', key: 'event:12', label: 'Pancake Breakfast · Sat, Sep 12, 2026' },
+      { group: 'Meetings', key: 'meeting:3', label: 'Business Meeting · Tue, Dec 2, 2025' },
+    ]);
+    expect(expenseReferenceLabel({ LinkedEventID: 12 }, refs)).toBe('Event: Pancake Breakfast');
+    expect(expenseReferenceLabel({ LinkedMeetingID: 3 }, refs)).toBe('Meeting: Business Meeting');
+    expect(expenseReferenceLabel({ LinkedEventID: 99 }, refs)).toBe('Event: #99');
+    expect(expenseReferenceLabel({}, refs)).toBe('General council expense');
+  });
+
+  it('marks a returned draft in red and each status in its brand tone', () => {
+    expect(expenseStatusBadge({ Status: 'Draft', RejectionReason: 'Missing receipt' })).toEqual({ label: 'Returned', tone: 'redOutline' });
+    expect(expenseStatusBadge({ Status: 'Draft', RejectionReason: null })).toEqual({ label: 'Draft', tone: 'outline' });
+    expect(expenseStatusBadge({ Status: 'Submitted' })).toEqual({ label: 'Submitted', tone: 'gold' });
+    expect(expenseStatusBadge({ Status: 'Approved' })).toEqual({ label: 'Approved', tone: 'navy' });
+    expect(expenseStatusBadge({ Status: 'Reimbursed' })).toEqual({ label: 'Reimbursed', tone: 'navy' });
+  });
+
+  it('turns form rows into line items, dropping untouched rows and naming a bad amount', () => {
+    const today = '2026-09-28';
+    const filled = { ...blankExpenseLine(today), VendorName: 'Costco', ExpenseDescription: 'Pancake mix', Amount: '$1,042.50 ', ReceiptPhotoURL: ' file:///media/receipt-1.jpg ' };
+    expect(expenseLinesFromDrafts([filled, blankExpenseLine(today)])).toEqual([
+      { DateOfExpense: today, Amount: 1042.5, VendorName: 'Costco', ExpenseDescription: 'Pancake mix', ReceiptPhotoURL: 'file:///media/receipt-1.jpg' },
+    ]);
+    expect(expenseLinesFromDrafts([{ ...filled, ReceiptPhotoURL: '' }])[0].ReceiptPhotoURL).toBeNull();
+    expect(() => expenseLinesFromDrafts([filled, { ...filled, Amount: '' }])).toThrow('Line item 2 needs an amount.');
+    expect(() => expenseLinesFromDrafts([{ ...filled, Amount: 'twelve' }])).toThrow('Line item 1 amount must be a dollar amount such as 42.50; received "twelve".');
+    // A row holding only a scanned receipt is kept, so the missing amount is reported rather than the photo lost.
+    expect(() => expenseLinesFromDrafts([{ ...blankExpenseLine(today), ReceiptPhotoURL: 'file:///media/r.jpg' }])).toThrow('Line item 1 needs an amount.');
+    expect(expenseLinesFromDrafts([blankExpenseLine(today)])).toEqual([]);
+    expect(expenseLineDraftFrom({ DateOfExpense: today, Amount: 42.5, VendorName: 'Costco', ExpenseDescription: 'Mix', ReceiptPhotoURL: null })).toEqual({
+      DateOfExpense: today,
+      Amount: '42.5',
+      VendorName: 'Costco',
+      ExpenseDescription: 'Mix',
+      ReceiptPhotoURL: '',
+    });
+  });
+
+  it('keeps a running total to the cent, skipping amounts not yet typed as numbers', () => {
+    const line = (Amount: string) => ({ ...blankExpenseLine('2026-09-28'), Amount });
+    expect(expenseDraftTotal([line('19.99'), line('0.01'), line(''), line('abc'), line('$1,000')])).toBe(1020);
+  });
+});
+
+describe.each(drivers)('self-payout ($name driver, Sprint 5R-2)', (d) => {
+  it('stops an Admin paying their own sheet and writes nothing, even alongside a colleague’s', async () => {
+    const db = await d.make();
+    const own = await approvedReport(db, MEMBER.admin);
+    const colleague = await approvedReport(db, MEMBER.member);
+    const err = await expectRule(db.expenses.recordDisbursement(MEMBER.admin, OWN, [colleague, own], CHECK), 'SELF_PAYOUT_BLOCKED');
+    expect(err.message).toBe('For accounting controls, an officer cannot issue a check that pays their own expense report.');
+    await expectRule(db.expenses.recordDisbursement(MEMBER.admin, OWN, [own], CHECK), 'SELF_PAYOUT_BLOCKED');
+    expect(d.count(db, 'ExpenseDisbursement')).toBe(0);
+    expect((await db.expenses.listCouncilQueue(MEMBER.admin, OWN)).map((q) => q.report.Status)).toEqual(['Approved', 'Approved']);
+  });
+
+  it('stops a Treasurer paying their own sheet, but not a colleague’s', async () => {
+    const db = await d.make();
+    grantRole(d, db, MEMBER.member, 'Treasurer');
+    const own = await approvedReport(db, MEMBER.member);
+    const colleague = await approvedReport(db, MEMBER.admin);
+    await expectRule(db.expenses.recordDisbursement(MEMBER.member, OWN, [own], CHECK), 'SELF_PAYOUT_BLOCKED');
+    const paid = await db.expenses.recordDisbursement(MEMBER.member, OWN, [colleague], CHECK);
+    expect(paid.reports.map((r) => r.report.Status)).toEqual(['Reimbursed']);
+    // Another officer then pays the Treasurer's own sheet.
+    await db.expenses.recordDisbursement(MEMBER.admin, OWN, [own], { ...CHECK, CheckNumber: '1043' });
+    expect(d.count(db, 'ExpenseDisbursement')).toBe(2);
+  });
+
+  it('lets a Super Admin pay their own sheet as the override', async () => {
+    const db = await d.make();
+    const own = await approvedReport(db, MEMBER.superAdmin);
+    const result = await db.expenses.recordDisbursement(MEMBER.superAdmin, OWN, [own], CHECK);
+    expect(result.reports[0].report).toMatchObject({ Status: 'Reimbursed', DisbursementID: result.disbursement.id });
+  });
+
+  it('checks leadership before looking at who submitted', async () => {
+    const db = await d.make();
+    const own = await approvedReport(db, MEMBER.member);
+    await expectPrivilege(db.expenses.recordDisbursement(MEMBER.member, OWN, [own], CHECK), 'ADMIN_REQUIRED');
+  });
+
+  it('lists the council’s events and meetings, newest first, for the Event-or-Meeting picker', async () => {
+    const db = await d.make();
+    const refs = await listExpenseReferences(db, OWN);
+    expect(refs.events).toEqual(await db.events.listByCouncil(OWN));
+    expect(refs.meetings.length).toBeGreaterThan(0);
+    expect(refs.meetings.every((m) => m.CouncilID === OWN)).toBe(true);
+    const dates = refs.meetings.map((m) => m.Date);
+    expect(dates).toEqual([...dates].sort().reverse());
   });
 });

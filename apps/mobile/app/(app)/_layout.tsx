@@ -40,6 +40,8 @@ export default function AppLayout() {
       <Tabs.Screen name="messages" options={{ ...tab('Messages'), tabBarBadge: unread > 0 ? unread : undefined }} />
       {/* Opened from a meeting card on Home; not a tab of its own. */}
       <Tabs.Screen name="meeting/[meetingId]" options={{ ...tab('Attendance'), href: null }} />
+      {/* Opened from the expense card on Home. */}
+      <Tabs.Screen name="expenses" options={{ ...tab('Expenses'), href: null }} />
     </Tabs>
   );
 }

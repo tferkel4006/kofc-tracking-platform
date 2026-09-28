@@ -72,7 +72,8 @@ export type BusinessRuleCode =
   | 'FUNDS_MANAGED_BY_DONATIONS'
   | 'NO_SHOW_HAS_HOURS'
   | 'EXPENSE_STATUS_CONFLICT'
-  | 'SELF_APPROVAL_BLOCKED';
+  | 'SELF_APPROVAL_BLOCKED'
+  | 'SELF_PAYOUT_BLOCKED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -1012,6 +1013,20 @@ export function assertNotSelfApproval(actor: MemberWriteActor, report: { id: num
   }
 }
 
+/**
+ * expenses.recordDisbursement: an officer may not issue a check that pays their own expense sheet (accounting
+ * controls, Sprint 5R-2). An Active Super Admin may, as the override. Call after assertMayAuditCouncilExpenses.
+ */
+export function assertNoSelfPayout(actor: MemberWriteActor, report: { id: number; SubmitterMemberID: number }): void {
+  if (!mayApproveOwnExpense(actor, report)) {
+    throw new BusinessRuleError('SELF_PAYOUT_BLOCKED', 'For accounting controls, an officer cannot issue a check that pays their own expense report.', {
+      actorId: actor.memberId,
+      reportId: report.id,
+    });
+  }
+}
+
+/** Approving or paying one's own sheet: only an Active Super Admin may. */
 const mayApproveOwnExpense = (actor: MemberWriteActor, report: { SubmitterMemberID: number }): boolean =>
   report.SubmitterMemberID !== actor.memberId || hasSuperAdminRights(actor);
 

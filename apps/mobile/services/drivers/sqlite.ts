@@ -18,6 +18,7 @@ import {
   appendPhotoPaths,
   assertMayAttachEventMedia,
   assertMayAuditCouncilExpenses,
+  assertNoSelfPayout,
   assertNotSelfApproval,
   cleanRejectionReason,
   EXPENSE_SPEND_STATUSES,
@@ -1759,12 +1760,14 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       let disbursementId = 0;
       await db.withTransactionAsync(async () => {
-        assertMayAuditCouncilExpenses(await this.memberWriteActor(db, actorId), councilId, `record expense checks for council ${councilId}`);
+        const actor = await this.memberWriteActor(db, actorId);
+        assertMayAuditCouncilExpenses(actor, councilId, `record expense checks for council ${councilId}`);
         await this.assertCouncilsExist(db, [councilId]);
         for (const id of ids) {
           const row = await this.requireExpenseReport(db, id);
           assertReportInCouncil(row, councilId);
           assertExpenseStatus(row, 'Approved', 'be paid');
+          assertNoSelfPayout(actor, row);
         }
         assertCheckNumberUnused(
           check.CheckNumber,

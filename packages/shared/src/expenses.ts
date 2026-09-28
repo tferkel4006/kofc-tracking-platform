@@ -3,11 +3,13 @@
 // Pure helpers behind the expenses.* service methods: input cleaning, the
 // status life cycle and the report details the screens read. Drivers load rows,
 // call these, then only store. Who may review a council's sheets is decided in
-// rules.ts (assertMayAuditCouncilExpenses).
+// rules.ts (assertMayAuditCouncilExpenses). The form helpers at the end are
+// shared by the web portal and the phone app (Sprint 5R-2).
 // =========================================================================
-import type { DisbursementCheckDetails, ExpenseLineItemInput, ExpenseReportDetail, ExpenseReportInput } from './contract';
+import type { DataService, DisbursementCheckDetails, ExpenseLineItemInput, ExpenseReportDetail, ExpenseReportInput } from './contract';
+import { formatDate } from './presentation';
 import { assertIsoDate, assertMoney, assertText, BusinessRuleError, optionalText, toIsoDate } from './rules';
-import type { ExpenseDisbursement, ExpenseLineItem, ExpenseReport, ExpenseReportStatus, Meeting, Member } from './types';
+import type { Event, ExpenseDisbursement, ExpenseLineItem, ExpenseReport, ExpenseReportStatus, Meeting, Member } from './types';
 
 /** Every ExpenseReport.Status, in life-cycle order. */
 export const EXPENSE_REPORT_STATUSES: readonly ExpenseReportStatus[] = ['Draft', 'Submitted', 'Approved', 'Reimbursed'];
@@ -207,3 +209,124 @@ export function buildExpenseReportDetails(
     };
   });
 }
+
+// ---- expense forms (web portal and phone app) ----------------------------------------
+
+/** 'Thu, Sep 24, 2026': expense sheets name events and meetings from earlier years too. */
+const datedLabel = (date: string): string => `${formatDate(date)}, ${date.slice(0, 4)}`;
+
+/** The events and meetings an expense sheet of the council may name, newest first. */
+export interface ExpenseReferenceOptions {
+  events: Event[];
+  meetings: Meeting[];
+}
+
+/** Every event linked to the council and every meeting of it, past and future, newest first. */
+export async function listExpenseReferences(db: Pick<DataService, 'events' | 'meetings'>, councilId: number): Promise<ExpenseReferenceOptions> {
+  const [events, meetings] = await Promise.all([db.events.listByCouncil(councilId), db.meetings.listUpcoming(councilId, { fromDate: '0001-01-01' })]);
+  return { events, meetings: [...meetings].reverse() };
+}
+
+/**
+ * The single Event-or-Meeting picker on the expense forms stores one key: '' for no reference, 'event:<id>' or
+ * 'meeting:<id>'. A sheet naming both (the data allows it; the forms never write it) reads as its event.
+ */
+export function expenseReferenceKey(report: Pick<ExpenseReport, 'LinkedEventID' | 'LinkedMeetingID'>): string {
+  if (report.LinkedEventID != null) return `event:${report.LinkedEventID}`;
+  if (report.LinkedMeetingID != null) return `meeting:${report.LinkedMeetingID}`;
+  return '';
+}
+
+/** A picker key back to the sheet's link columns. Anything unrecognised is no reference. */
+export function parseExpenseReferenceKey(key: string): { LinkedEventID: number | null; LinkedMeetingID: number | null } {
+  const m = /^(event|meeting):(\d+)$/.exec(key);
+  const id = m ? Number(m[2]) : null;
+  return { LinkedEventID: m?.[1] === 'event' ? id : null, LinkedMeetingID: m?.[1] === 'meeting' ? id : null };
+}
+
+/** The picker's choices, events first; each label names its date. */
+export function expenseReferenceChoices(refs: ExpenseReferenceOptions): { group: 'Events' | 'Meetings'; key: string; label: string }[] {
+  return [
+    ...refs.events.map((e) => ({ group: 'Events' as const, key: `event:${e.id}`, label: `${e.EventName} · ${datedLabel(e.StartDate)}` })),
+    ...refs.meetings.map((m) => ({ group: 'Meetings' as const, key: `meeting:${m.id}`, label: `${m['Meeting Name']} · ${datedLabel(m.Date)}` })),
+  ];
+}
+
+/** What a sheet was spent on, for grids and cards: 'Event: Pancake Breakfast', 'Meeting: …' or 'General council expense'. */
+export function expenseReferenceLabel(report: Pick<ExpenseReport, 'LinkedEventID' | 'LinkedMeetingID'>, refs: ExpenseReferenceOptions): string {
+  if (report.LinkedEventID != null) {
+    const event = refs.events.find((e) => e.id === report.LinkedEventID);
+    return `Event: ${event?.EventName ?? `#${report.LinkedEventID}`}`;
+  }
+  if (report.LinkedMeetingID != null) {
+    const meeting = refs.meetings.find((m) => m.id === report.LinkedMeetingID);
+    return `Meeting: ${meeting?.['Meeting Name'] ?? `#${report.LinkedMeetingID}`}`;
+  }
+  return 'General council expense';
+}
+
+/** Status chip on both platforms. A draft leadership sent back reads 'Returned' in red until it is resubmitted. */
+export function expenseStatusBadge(report: Pick<ExpenseReport, 'Status' | 'RejectionReason'>): {
+  label: string;
+  tone: 'outline' | 'gold' | 'navy' | 'redOutline';
+} {
+  if (report.Status === 'Draft' && report.RejectionReason) return { label: 'Returned', tone: 'redOutline' };
+  const tone = { Draft: 'outline', Submitted: 'gold', Approved: 'navy', Reimbursed: 'navy' } as const;
+  return { label: report.Status, tone: tone[report.Status] };
+}
+
+/** One receipt row as the forms hold it: text exactly as typed. ReceiptPhotoURL '' means no receipt attached. */
+export interface ExpenseLineDraft {
+  DateOfExpense: string;
+  Amount: string;
+  VendorName: string;
+  ExpenseDescription: string;
+  ReceiptPhotoURL: string;
+}
+
+export const blankExpenseLine = (today: string): ExpenseLineDraft => ({
+  DateOfExpense: today,
+  Amount: '',
+  VendorName: '',
+  ExpenseDescription: '',
+  ReceiptPhotoURL: '',
+});
+
+export const expenseLineDraftFrom = (item: ExpenseLineItemInput): ExpenseLineDraft => ({
+  DateOfExpense: item.DateOfExpense,
+  Amount: String(item.Amount),
+  VendorName: item.VendorName,
+  ExpenseDescription: item.ExpenseDescription,
+  ReceiptPhotoURL: item.ReceiptPhotoURL ?? '',
+});
+
+/**
+ * Form rows to expenses.submitReport line items. A row left completely empty (only its default date) is dropped,
+ * so an unused blank row never blocks saving; a missing or non-numeric amount is refused naming the row. Everything
+ * else is validated again by the driver (cleanExpenseLineItems), whose messages use the same row numbers as long as
+ * the empty rows come last.
+ */
+export function expenseLinesFromDrafts(lines: readonly ExpenseLineDraft[]): ExpenseLineItemInput[] {
+  const used = lines.filter((l) => [l.Amount, l.VendorName, l.ExpenseDescription, l.ReceiptPhotoURL].some((v) => v.trim() !== ''));
+  return used.map((line, i) => {
+    const text = line.Amount.trim().replace(/[$,\s]/g, '');
+    const amount = Number(text);
+    if (text === '' || !Number.isFinite(amount)) {
+      throw invalid(
+        text === '' ? `Line item ${i + 1} needs an amount.` : `Line item ${i + 1} amount must be a dollar amount such as 42.50; received "${line.Amount}".`,
+        { index: i },
+      );
+    }
+    return {
+      DateOfExpense: line.DateOfExpense.trim(),
+      Amount: amount,
+      VendorName: line.VendorName,
+      ExpenseDescription: line.ExpenseDescription,
+      ReceiptPhotoURL: line.ReceiptPhotoURL.trim() || null,
+    };
+  });
+}
+
+/** The running total of the rows' amounts, ignoring any that are blank or not yet a number. */
+export const expenseDraftTotal = (lines: readonly ExpenseLineDraft[]): number =>
+  sumAmounts(lines.map((l) => Number(l.Amount.trim().replace(/[$,\s]/g, ''))).filter((n) => Number.isFinite(n)));

@@ -919,7 +919,8 @@ export interface DataService {
      * ExpenseDisbursement with TotalAmount set to the sheets' total, then stamps every sheet 'Reimbursed' with its
      * DisbursementID, all in one transaction. Rejects INVALID_INPUT for an empty or repeated id list, a sheet of
      * another council, a blank or over-long check number, or a check number the council already used; INVALID_DATE for a
-     * malformed payout date; RECORD_NOT_FOUND for an unknown sheet; EXPENSE_STATUS_CONFLICT for a sheet not 'Approved'.
+     * malformed payout date; RECORD_NOT_FOUND for an unknown sheet; EXPENSE_STATUS_CONFLICT for a sheet not 'Approved';
+     * SELF_PAYOUT_BLOCKED for a sheet the actor submitted, unless they are an Active Super Admin (Sprint 5R-2).
      */
     recordDisbursement(
       actorId: number,

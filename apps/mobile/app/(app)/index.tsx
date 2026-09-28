@@ -3,6 +3,7 @@
 // Each of my shifts can report my own absence with a reason (events.setNoShow); only an Admin can clear one.
 // Events I worked that have ended are listed too, where the event's owner and council officers can capture
 // verification photos with the phone camera (events.uploadPhotos). A meeting's owner can open it like an officer.
+// An expense card links to My expense reports and flags any report leadership returned for changes.
 import { useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -155,12 +156,13 @@ export default function DashboardScreen() {
   const state = useLoad(async () => {
     const today = new Date();
     const todayIso = toIsoDate(today);
-    const [shifts, noShows, meetings, reasons, worked] = await Promise.all([
+    const [shifts, noShows, meetings, reasons, worked, expenses] = await Promise.all([
       db.events.listMemberShifts(user.memberId, { fromDate: todayIso }),
       db.events.countNoShows(user.memberId, noShowWindowStart(today)),
       db.meetings.listUpcoming(user.councilId, { memberId: user.memberId }),
       db.lookups.list('NoShowReason'),
       db.events.listMemberShifts(user.memberId, { fromDate: subtractMonths(today, SHIFT_HISTORY_MONTHS), toDate: addDays(todayIso, -1) }),
+      db.expenses.listUserReports(user.memberId),
     ]);
     // Events I worked in the last 3 months that have ended, newest first, once each.
     const ended = new Map<number, Event>();
@@ -168,7 +170,11 @@ export default function DashboardScreen() {
     const completed = await Promise.all(
       [...ended.values()].map(async (event) => ({ event, canAddPhotos: canAttachEventMedia(user, event, await db.events.listCouncilIds(event.id)) })),
     );
-    return { today, shifts, noShows, meetings, reasons, completed };
+    const expenseSummary = {
+      returned: expenses.filter((d) => d.report.Status === 'Draft' && d.report.RejectionReason).length,
+      open: expenses.filter((d) => d.report.Status !== 'Reimbursed').length,
+    };
+    return { today, shifts, noShows, meetings, reasons, completed, expenseSummary };
   }, [user.memberId, user.councilId]);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -235,6 +241,23 @@ export default function DashboardScreen() {
               ))}
             </Section>
           ) : null}
+
+          <Section title="Expense reports">
+            <Card accent={data.expenseSummary.returned > 0 ? color.red : color.navy}>
+              {data.expenseSummary.returned > 0 ? (
+                <Notice
+                  tone="error"
+                  message={`${data.expenseSummary.returned} of your expense reports ${data.expenseSummary.returned === 1 ? 'was' : 'were'} returned for changes.`}
+                />
+              ) : null}
+              <AppText>
+                {data.expenseSummary.open === 0
+                  ? 'Bought something for the council? Scan the receipt and claim a reimbursement.'
+                  : `${data.expenseSummary.open} report${data.expenseSummary.open === 1 ? '' : 's'} not yet reimbursed.`}
+              </AppText>
+              <Button title="My expense reports" variant="secondary" onPress={() => router.push('/expenses')} />
+            </Card>
+          </Section>
 
           <Section title="Upcoming meetings">
             {data.meetings.length === 0 ? (

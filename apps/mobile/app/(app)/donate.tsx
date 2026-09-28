@@ -5,12 +5,13 @@
 //     donation is standalone.
 //  2. The method is one tap on a large tile. Venmo/Zelle/Zeffy/Parishsoft show the council's QR code for
 //     the donor to scan; physical items ask for a description and estimated value, and may carry a
-//     verification photo taken with the phone camera (stored in DonationPhotoURL).
+//     verification photo taken with the phone camera from the "Take Verification Photo" tile (stored in
+//     DonationPhotoURL).
 //  3. The form is pre-filled from the session defaults; the member corrects the amount if the donor gave
 //     something different, then records it or cancels.
 // While a session is running, the event's donations from every phone are listed, newest first.
 import { useEffect, useState } from 'react';
-import { Image, View } from 'react-native';
+import { View } from 'react-native';
 import {
   formatDate,
   toIsoDate,
@@ -19,10 +20,10 @@ import {
   type DonationType,
   type Event,
 } from '@kofc/shared';
-import { CapturePhotoButton } from '@/components/CapturePhotoButton';
 import { DonationMethodGrid } from '@/components/DonationMethodGrid';
 import { DonationQr } from '@/components/DonationQr';
 import { Dropdown } from '@/components/Dropdown';
+import { ReceiptScanTile, VERIFICATION_PHOTO_TITLE } from '@/components/ReceiptScanTile';
 import { AppInput, AppText, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
 import { color, space } from '@/lib/theme';
@@ -179,16 +180,15 @@ function DonationForm({
         ) : null}
         {isItem ? (
           <Field label="VERIFICATION PHOTO (OPTIONAL)">
-            {photoPath ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-                <Image source={{ uri: photoPath }} style={{ width: 88, height: 88, borderRadius: 6 }} accessibilityLabel="Photo of the donated items" />
-                <View style={{ flex: 1, gap: space.xs }}>
-                  <Pill label="PHOTO ATTACHED" tone="navy" />
-                  <Button title="Remove photo" variant="secondary" onPress={() => setPhotoPath(null)} />
-                </View>
-              </View>
-            ) : null}
-            <CapturePhotoButton prefix="donation" onCaptured={setPhotoPath} title={photoPath ? 'Retake verification photo' : undefined} />
+            <ReceiptScanTile
+              prefix="donation"
+              title={VERIFICATION_PHOTO_TITLE}
+              hint="Photograph the donated items or the donor's paper receipt."
+              photoPath={photoPath}
+              photoLabel="Photo of the donated items"
+              onCaptured={setPhotoPath}
+              onRemove={() => setPhotoPath(null)}
+            />
           </Field>
         ) : null}
         <Field label={amountLabel.toUpperCase()}>

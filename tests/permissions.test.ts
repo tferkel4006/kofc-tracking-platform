@@ -88,6 +88,9 @@ describe('portal permissions', () => {
       'distribution-lists',
       'donations',
       'ledger',
+      'expenses',
+      'expenses/queue',
+      'expenses/disbursements',
       'lessons-registry',
       'dashboard',
       'messages',
@@ -106,13 +109,25 @@ describe('portal permissions', () => {
       'distribution-lists',
       'donations',
       'ledger',
+      'expenses',
+      'expenses/queue',
+      'expenses/disbursements',
       'lessons-registry',
       'dashboard',
       'messages',
       'profile',
     ]);
-    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'messages', 'profile']);
-    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'messages', 'profile']);
+    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'expenses', 'messages', 'profile']);
+    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'expenses', 'messages', 'profile']);
+  });
+
+  it('gives every member their own expense reports and only council leadership the audit queue and check disbursements', () => {
+    const leadership = [superAdmin, admin, actor({ isOfficer: true, roles: ['Treasurer'] }), actor({ isOfficer: true, roles: ['Financial Secretary'] })];
+    for (const u of [...leadership, officer, member]) expect(portalAreas(u)).toContain('expenses');
+    for (const u of leadership) expect(portalAreas(u)).toEqual(expect.arrayContaining(['expenses/queue', 'expenses/disbursements']));
+    for (const u of [officer, member, actor({ isOfficer: true, roles: ['Grand Knight'] })]) {
+      expect(portalAreas(u).filter((a) => a.startsWith('expenses/'))).toEqual([]);
+    }
   });
 
   it('leads every role, Admins included, with the Member Actions hub', () => {
@@ -148,12 +163,15 @@ describe('portal permissions', () => {
         'meetings',
         'donations',
         'ledger',
+        'expenses',
+        'expenses/queue',
+        'expenses/disbursements',
         'dashboard',
         'messages',
         'profile',
       ]);
     }
-    expect(portalAreas(actor({ isOfficer: true, roles: ['Grand Knight', 'Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'messages', 'profile']);
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Grand Knight', 'Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'expenses', 'messages', 'profile']);
   });
 
   it('lets finance officers manage only their own council’s finances', () => {

@@ -16,7 +16,7 @@ import type { Donation, Event, ExpenseReport, Meeting, Member, MemberType } from
 /** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. */
 type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'> & { roles?: readonly string[] };
 
-/** Each area is also its route: RequireArea links to `/${area}`. */
+/** Each area is also its route: RequireArea links to `/${area}` (so 'expenses/queue' is /expenses/queue). */
 export type PortalArea =
   | 'member-actions'
   | 'calendar'
@@ -31,6 +31,9 @@ export type PortalArea =
   | 'meetings'
   | 'distribution-lists'
   | 'ledger'
+  | 'expenses'
+  | 'expenses/queue'
+  | 'expenses/disbursements'
   | 'lessons-registry'
   | 'donations'
   | 'dashboard'
@@ -145,6 +148,13 @@ export const canApproveExpenseReport = (u: Actor, report: Pick<ExpenseReport, 'C
   canAuditCouncilExpenses(u, report.CouncilID) && (report.SubmitterMemberID !== u.memberId || isSuperAdmin(u));
 
 /**
+ * The pay checkbox on one approved expense sheet (drivers: assertMayAuditCouncilExpenses, then assertNoSelfPayout):
+ * council leadership, but never on their own sheet unless they are a Super Admin.
+ */
+export const canPayExpenseReport = (u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID'>): boolean =>
+  canApproveExpenseReport(u, report);
+
+/**
  * Photo upload controls on an event, mirroring the drivers' assertMayAttachEventMedia (activity status is checked
  * there): its owner, an Admin or finance officer of a council it is linked to, any Super Admin.
  */
@@ -170,7 +180,9 @@ export function portalAreas(u: Actor): PortalArea[] {
   areas.push('meetings');
   if (isAdmin(u)) areas.push('distribution-lists');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('donations');
-  areas.push('ledger');
+  // Every member files their own expense reports; the council's leadership audits and pays them.
+  areas.push('ledger', 'expenses');
+  if (isAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/queue', 'expenses/disbursements');
   if (canBrowseLessonsRegistry(u)) areas.push('lessons-registry');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('dashboard');
   areas.push('messages', 'profile');
