@@ -14,8 +14,11 @@ import type {
   Activities,
   ActivityTime,
   Category,
+  CharitableDisbursementLedger,
+  CharityDonationProposal,
   ChatThread,
   Council,
+  CouncilCharityLink,
   CouncilDonationMethod,
   CouncilElectionBallot,
   CouncilLeadershipHistory,
@@ -26,6 +29,7 @@ import type {
   DonationType,
   Event,
   EventSignup,
+  GlobalCharityRegistry,
   EventTime,
   ExpenseDisbursement,
   ExpenseLineItem,
@@ -459,9 +463,19 @@ export interface MonthlySummary {
    * The month's ledger. Cash and electronic read the month's events' FundsRaised columns, which are the synced
    * donation rollups wherever donations exist; blank columns count as 0. `eventSpend` sums those events' Spend;
    * `expenses` sums the line items dated in the month on the council's 'Approved' and 'Reimbursed' expense sheets
-   * (Sprint 5R-1.5). spend = eventSpend + expenses, and net = raised - spend.
+   * (Sprint 5R-1.5); `charitableGiving` sums the council's CharitableDisbursementLedger checks with a PayoutDate in the
+   * month (Sprint 5V). spend = eventSpend + expenses + charitableGiving, and net = raised - spend.
    */
-  finances: { spend: number; eventSpend: number; expenses: number; cash: number; electronic: number; raised: number; net: number };
+  finances: {
+    spend: number;
+    eventSpend: number;
+    expenses: number;
+    charitableGiving: number;
+    cash: number;
+    electronic: number;
+    raised: number;
+    net: number;
+  };
   /** ActualNumberAttendees summed over the month's events (blank counts as 0), and how many events there were. */
   outreach: { attendees: number; events: number };
   /** Oldest StartDate first. */
@@ -821,7 +835,62 @@ export interface FraternalYearConclusion {
   ballotsReset: number;
 }
 
-// 17. THE SERVICE
+// 17. CHARITABLE GIVING AND DISBURSEMENTS (Sprint 5V)
+/**
+ * charities.searchGlobalRegistry. Every filter is optional and they combine with AND: `name` matches any part of the
+ * Name ignoring case, `charityType` the whole CharityType ignoring case, `state` the two-letter State, `ein` the EIN
+ * in any punctuation ('123456789' finds '12-3456789'), and `isCatholic` the IsCatholic flag.
+ */
+export interface CharitySearchFilters {
+  name?: string | null;
+  charityType?: string | null;
+  state?: string | null;
+  ein?: string | null;
+  isCatholic?: boolean | null;
+  /** At most this many rows, 1 to CHARITY_SEARCH_MAX_LIMIT; default CHARITY_SEARCH_DEFAULT_LIMIT. */
+  limit?: number | null;
+}
+
+/**
+ * A registry entry for charities.addGlobalCharity and hydrateAndDisburse. State is folded to upper case and EIN to
+ * 'NN-NNNNNNN'; blank optional text is stored as NULL.
+ */
+export type NewGlobalCharity = Omit<GlobalCharityRegistry, 'id' | 'IsCatholic'> & { IsCatholic?: boolean };
+
+/**
+ * A member's gift proposal for charities.proposeDonation. Name a registry entry with ExistingCharityID, a charity not
+ * yet registered with ProposedCharityName, or both (a blank name then takes the registry entry's Name). The council
+ * comes from the call and the Status is always 'Pending'.
+ */
+export interface CharityProposalInput {
+  ProposedCharityName?: string | null;
+  ProposedAmount: number;
+  ExistingCharityID?: number | null;
+}
+
+/**
+ * The check for charities.hydrateAndDisburse. Amount defaults to the proposal's ProposedAmount (a council may vote a
+ * different sum). MeetingMinutesID, when given, is the council meeting whose minutes record the vote and replaces the
+ * proposal's.
+ */
+export interface CharityCheckDetails extends DisbursementCheckDetails {
+  Amount?: number | null;
+  MeetingMinutesID?: number | null;
+}
+
+export interface CharityDisbursementResult {
+  /** The registry entry that was paid, as stored after any blanks were filled in. */
+  charity: GlobalCharityRegistry;
+  /** True when this call added the charity to the registry. */
+  charityRegistered: boolean;
+  /** The council's link to the charity, made by this call if it did not exist. */
+  link: CouncilCharityLink;
+  /** The proposal, now 'Approved' with ExistingCharityID set. */
+  proposal: CharityDonationProposal;
+  disbursement: CharitableDisbursementLedger;
+}
+
+// 18. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -1454,6 +1523,61 @@ export interface DataService {
      * incoming Grand Knight is not an Active member of the council.
      */
     concludeFraternalYear(actorId: number, councilId: number, newGrandKnightId: number): Promise<FraternalYearConclusion>;
+  };
+
+  /**
+   * Charitable giving (Sprint 5V). GlobalCharityRegistry is shared by every council; a council connects to entries
+   * through CouncilCharityLink. Members propose gifts, and a finance officer settles a proposal by paying it into
+   * CharitableDisbursementLedger, which reports.monthlySummary counts as spend. A charity is a duplicate of an entry
+   * with the same EIN or, when either EIN is missing, the same Name and State ignoring case (findRegisteredCharity).
+   * Writes are all or nothing; an unknown actor rejects MEMBER_NOT_FOUND, an unknown council INVALID_INPUT.
+   */
+  charities: {
+    /**
+     * Registry entries matching every given filter, Name A-Z (ignoring case), then State and id. Open to every member.
+     * Rejects INVALID_INPUT for a state that is not two letters, an EIN that is not nine digits, or a bad limit.
+     */
+    searchGlobalRegistry(actorId: number, filters?: CharitySearchFilters): Promise<GlobalCharityRegistry[]>;
+    /**
+     * Registry entries in `stateCode` the council is not yet connected to: Catholic charities first, then Name A-Z.
+     * The council's own members or an Active Super Admin (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for a state
+     * code that is not two letters.
+     */
+    listSuggestedLocal(actorId: number, councilId: number, stateCode: string): Promise<GlobalCharityRegistry[]>;
+    /**
+     * Connects the council to a registry entry and resolves to the link. Idempotent: an existing link is returned
+     * unchanged. Council leadership: an Active Admin, Financial Secretary or Treasurer of the council, or an Active
+     * Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects RECORD_NOT_FOUND for an unknown charity.
+     */
+    connectCouncilToCharity(actorId: number, councilId: number, charityId: number): Promise<CouncilCharityLink>;
+    /**
+     * Records a 'Pending' gift proposal from the actor. Any Active member of the council, or an Active Super Admin
+     * (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for an amount of 0 or with fractions of a cent, a name over 255
+     * characters, or neither a name nor a charity; RECORD_NOT_FOUND for an unknown ExistingCharityID.
+     */
+    proposeDonation(actorId: number, councilId: number, data: CharityProposalInput): Promise<CharityDonationProposal>;
+    /**
+     * Adds a charity to the global registry. An Active Admin or Super Admin (ADMIN_REQUIRED). Rejects
+     * CHARITY_ALREADY_REGISTERED (details.charityId names the entry) for a duplicate, and INVALID_INPUT for a bad field.
+     */
+    addGlobalCharity(actorId: number, globalCharityData: NewGlobalCharity): Promise<GlobalCharityRegistry>;
+    /**
+     * Pays a 'Pending' proposal in one transaction: resolves the charity (from `globalCharityData` when given - an
+     * existing duplicate is reused with its blank fields filled in, otherwise the entry is registered - else from the
+     * proposal's ExistingCharityID), connects the council to it, writes the ledger row with DisbursedByID = actorId,
+     * and marks the proposal 'Approved' with ExistingCharityID set. The council's Active Financial Secretary or
+     * Treasurer, or an Active Super Admin (FINANCE_OFFICER_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects RECORD_NOT_FOUND for
+     * a proposal outside the council, PROPOSAL_STATUS_CONFLICT for one no longer 'Pending', INVALID_INPUT when no
+     * charity can be resolved, for a bad field, a meeting outside the council, or a check number the council already
+     * used on any check (charity or expense); INVALID_DATE for a malformed payout date.
+     */
+    hydrateAndDisburse(
+      actorId: number,
+      councilId: number,
+      proposalId: number,
+      checkDetails: CharityCheckDetails,
+      globalCharityData?: NewGlobalCharity,
+    ): Promise<CharityDisbursementResult>;
   };
 
   feedback: {

@@ -148,8 +148,10 @@ function parseSchema(sql) {
     } else if ((m = stmt.match(/^ALTER TABLE \[([^\]]+)\]\s+ADD FOREIGN KEY\s*\(\[([^\]]+)\]\)\s+REFERENCES\s+\[?([^\s(\]]+)\]?\s*(?:\(\[?([^\])]+)\]?\))?(?:\s+ON\s+(?:UPDATE|DELETE)\s+NO\s+ACTION)*$/i))) {
       // ON UPDATE/DELETE NO ACTION is SQLite's default too, so the clauses need no translation.
       alters.push({ table: m[1], column: m[2], refTable: m[3], refColumn: m[4] ?? null, stmt });
-    } else if ((m = stmt.match(/^CREATE (UNIQUE )?INDEX \[([^\]]+)\]\s+ON\s+\[([^\]]+)\]\s*\(([^)]*)\)(?:\s*INCLUDE\s*\([^)]*\))?$/i))) {
-      indexes.push({ unique: Boolean(m[1]), name: m[2], table: m[3], columns: m[4].trim(), stmt });
+    } else if ((m = stmt.match(/^CREATE (UNIQUE )?INDEX \[([^\]]+)\]\s+ON\s+\[([^\]]+)\]\s*\(([^)]*)\)(?:\s*INCLUDE\s*\([^)]*\))?(?:\s+WHERE\s+\[([^\]]+)\]\s+IS\s+NOT\s+NULL)?$/i))) {
+      // A filtered index may only skip NULLs: SQLite's partial index keeps the same rule, and the web mock already
+      // lets a unique key holding a NULL repeat (SQLite semantics), so the filter needs nothing more there.
+      indexes.push({ unique: Boolean(m[1]), name: m[2], table: m[3], columns: m[4].trim(), notNullColumn: m[5] ?? null, stmt });
     } else if ((m = stmt.match(/^CREATE OR ALTER VIEW \[([^\]]+)\]\s+AS\s+([\s\S]+)$/i))) {
       views.push({ name: m[1], body: m[2].trim() });
     } else {
@@ -168,6 +170,7 @@ function parseSchema(sql) {
   }
   for (const ix of indexes) {
     const t = tables.get(ix.table) ?? fail(`Index [${ix.name}] on unknown table [${ix.table}]`, ix.stmt);
+    if (ix.notNullColumn && !t.columns.some((x) => x.name === ix.notNullColumn)) fail(`Index filter column [${ix.table}].[${ix.notNullColumn}] does not exist`, ix.stmt);
     if (!ix.unique) continue;
     // A unique index is a uniqueness rule the web mock enforces too, so its columns must be plain names.
     const cols = splitTopLevel(ix.columns).map((c) => c.match(/^\[([^\]]+)\]$/)?.[1] ?? fail(`Unique index [${ix.name}] may list only [column] names`, ix.stmt));
@@ -200,7 +203,10 @@ function sqliteCreateTable(name, t) {
 function sqliteSchemaStatements({ tables, indexes, views }) {
   const out = [];
   for (const [name, t] of tables) out.push(sqliteCreateTable(name, t));
-  for (const ix of indexes) out.push(`CREATE ${ix.unique ? 'UNIQUE ' : ''}INDEX [${ix.name}] ON [${ix.table}] (${ix.columns});`);
+  for (const ix of indexes) {
+    const filter = ix.notNullColumn ? ` WHERE [${ix.notNullColumn}] IS NOT NULL` : '';
+    out.push(`CREATE ${ix.unique ? 'UNIQUE ' : ''}INDEX [${ix.name}] ON [${ix.table}] (${ix.columns})${filter};`);
+  }
   for (const v of views) {
     out.push(`DROP VIEW IF EXISTS [${v.name}];`);
     out.push(`CREATE VIEW [${v.name}] AS\n${v.body};`);

@@ -361,3 +361,45 @@ One push of a council's compliance answers to an Alchemer survey (supreme.syncAl
 •	Status (VARCHAR(10), NOT NULL) — Success, or Failed when the Alchemer post threw or was refused.
 ________________________________________
 
+# 9. Charitable Giving and Disbursements (Sprint 5V)
+[GlobalCharityRegistry]
+One charity in the registry every council shares. Any member may search it; only an Active Admin or Super Admin adds entries directly (charities.addGlobalCharity), and a Financial Secretary or Treasurer registers one while paying it (charities.hydrateAndDisburse). A charity is a duplicate of an entry with the same EIN or, when either EIN is missing, the same Name and State ignoring case; duplicates are refused with CHARITY_ALREADY_REGISTERED.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	Name (VARCHAR(255), NOT NULL) — The charity's name.
+•	Description (TEXT, NOT NULL) — What the charity does; at most 2,000 characters.
+•	EIN (VARCHAR(20), NULL) — IRS Employer Identification Number, stored as NN-NNNNNNN. Unique when present (a filtered unique index skips NULLs).
+•	State (VARCHAR(2), NOT NULL) — Two-letter postal code, upper case; drives charities.listSuggestedLocal.
+•	Phone (VARCHAR(50), NULL) — The charity's phone number.
+•	ContactName (VARCHAR(255), NULL) — The charity's contact person.
+•	ContactEmail (VARCHAR(255), NULL) — The contact's email address.
+•	Address (VARCHAR(512), NULL) — Mailing address, where checks are sent.
+•	ZipCode (VARCHAR(20), NULL) — Mailing ZIP code.
+•	IsCatholic (BIT, NOT NULL, DEFAULT 0) — Whether the charity is a Catholic ministry; Catholic charities are suggested first.
+•	CharityType (VARCHAR(100), NOT NULL) — The charity's cause, e.g. Food Security, Housing, Youth.
+[CouncilCharityLink]
+A council's connection to a registry charity. Made by council leadership (charities.connectCouncilToCharity) or automatically when a charity check is paid.
+•	CouncilID (INTEGER, NOT NULL) — Composite Primary Key; Foreign Key references Council(id).
+•	CharityID (INTEGER, NOT NULL) — Composite Primary Key; Foreign Key references GlobalCharityRegistry(id).
+•	ConnectedAt (DATETIME, NOT NULL, DEFAULT getdate()) — When the council connected to the charity (UTC).
+[CharityDonationProposal]
+A member's proposal that the council give to a charity (charities.proposeDonation), open to every Active member of the council.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	SubmitterMemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). The member who proposed the gift.
+•	ProposedCharityName (VARCHAR(255), NOT NULL) — The charity as the member named it; the registry entry's Name when the member picked one.
+•	ProposedAmount (DECIMAL(18,2), NOT NULL) — The proposed gift, more than 0.
+•	ExistingCharityID (INTEGER, NULL) — Foreign Key references GlobalCharityRegistry(id). Set when the member picks a registry entry, or when a finance officer pays the proposal.
+•	Status (VARCHAR(50), NOT NULL) — Pending, Approved (paid) or Rejected.
+•	MeetingMinutesID (INTEGER, NULL) — Foreign Key references Meeting(id). The council meeting whose minutes record the vote.
+[CharitableDisbursementLedger]
+One check a council paid to a charity, written by charities.hydrateAndDisburse (the council's Active Financial Secretary or Treasurer, or an Active Super Admin). reports.monthlySummary counts it as charitable giving, and so as spend, in the month of its PayoutDate.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	CharityID (INTEGER, NOT NULL) — Foreign Key references GlobalCharityRegistry(id).
+•	Amount (DECIMAL(18,2), NOT NULL) — The check amount, more than 0; the proposal's amount unless the council voted another.
+•	CheckNumber (VARCHAR(50), NOT NULL) — Unique per council across this ledger and ExpenseDisbursement: one checkbook pays both.
+•	DisbursedByID (INTEGER, NOT NULL) — Foreign Key references Member(id). The officer who issued the check.
+•	PayoutDate (DATE, NOT NULL) — The date on the check.
+•	Notes (TEXT, NULL) — Optional memo; at most 2,000 characters.
+________________________________________
+

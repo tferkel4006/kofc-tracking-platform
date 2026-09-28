@@ -1104,3 +1104,122 @@ CREATE INDEX [CouncilLeadershipHistory_Council_Role_Idx] ON [CouncilLeadershipHi
 GO
 CREATE INDEX [CouncilLeadershipHistory_Member_Idx] ON [CouncilLeadershipHistory] ([MemberID]);
 GO
+
+
+-- =========================================================================
+-- 13. CHARITABLE GIVING AND DISBURSEMENTS (Sprint 5V)
+-- GlobalCharityRegistry is one registry shared by every council; a charity is registered once (EIN is unique
+-- when known, stored as 'NN-NNNNNNN') and councils connect to it through CouncilCharityLink. A member proposes a
+-- gift in CharityDonationProposal (ProposedCharityName is free text, ExistingCharityID set when the member picked a
+-- registry entry); a Financial Secretary or Treasurer settles it by paying a check into CharitableDisbursementLedger,
+-- which the monthly summary counts as spend. Status ('Pending', 'Approved', 'Rejected') is enforced by the shared
+-- rules layer as elsewhere (no CHECK). MeetingMinutesID is the council meeting whose minutes record the vote.
+-- =========================================================================
+CREATE TABLE [GlobalCharityRegistry] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[Name] VARCHAR(255) NOT NULL,
+	[Description] TEXT NOT NULL,
+	[EIN] VARCHAR(20) NULL, -- IRS Employer Identification Number, 'NN-NNNNNNN'; unique when present
+	[State] VARCHAR(2) NOT NULL, -- two-letter postal code, upper case
+	[Phone] VARCHAR(50) NULL,
+	[ContactName] VARCHAR(255) NULL,
+	[ContactEmail] VARCHAR(255) NULL,
+	[Address] VARCHAR(512) NULL,
+	[ZipCode] VARCHAR(20) NULL,
+	[IsCatholic] BIT NOT NULL DEFAULT 0,
+	[CharityType] VARCHAR(100) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [CouncilCharityLink] (
+	[CouncilID] INTEGER NOT NULL,
+	[CharityID] INTEGER NOT NULL,
+	[ConnectedAt] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([CouncilID], [CharityID])
+);
+GO
+
+CREATE TABLE [CharityDonationProposal] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[SubmitterMemberID] INTEGER NOT NULL,
+	[ProposedCharityName] VARCHAR(255) NOT NULL,
+	[ProposedAmount] DECIMAL(18,2) NOT NULL,
+	[ExistingCharityID] INTEGER NULL, -- the registry entry, once the member or the paying officer names one
+	[Status] VARCHAR(50) NOT NULL, -- Pending, Approved, Rejected
+	[MeetingMinutesID] INTEGER NULL, -- the council meeting whose minutes record the vote
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [CharitableDisbursementLedger] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[CharityID] INTEGER NOT NULL,
+	[Amount] DECIMAL(18,2) NOT NULL,
+	[CheckNumber] VARCHAR(50) NOT NULL, -- unique per council across this ledger and ExpenseDisbursement (one checkbook)
+	[DisbursedByID] INTEGER NOT NULL,
+	[PayoutDate] DATE NOT NULL,
+	[Notes] TEXT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CouncilCharityLink]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilCharityLink]
+ADD FOREIGN KEY([CharityID])
+REFERENCES [GlobalCharityRegistry]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharityDonationProposal]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharityDonationProposal]
+ADD FOREIGN KEY([SubmitterMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharityDonationProposal]
+ADD FOREIGN KEY([ExistingCharityID])
+REFERENCES [GlobalCharityRegistry]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharityDonationProposal]
+ADD FOREIGN KEY([MeetingMinutesID])
+REFERENCES [Meeting]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableDisbursementLedger]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableDisbursementLedger]
+ADD FOREIGN KEY([CharityID])
+REFERENCES [GlobalCharityRegistry]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableDisbursementLedger]
+ADD FOREIGN KEY([DisbursedByID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+-- Filtered: SQL Server treats NULLs as equal in a plain unique index, and many small charities have no EIN on file.
+CREATE UNIQUE INDEX [GlobalCharityRegistry_EIN_Idx] ON [GlobalCharityRegistry] ([EIN]) WHERE [EIN] IS NOT NULL;
+GO
+CREATE INDEX [GlobalCharityRegistry_State_Name_Idx] ON [GlobalCharityRegistry] ([State], [Name]);
+GO
+CREATE INDEX [CouncilCharityLink_Charity_Idx] ON [CouncilCharityLink] ([CharityID]);
+GO
+CREATE INDEX [CharityDonationProposal_Council_Status_Idx] ON [CharityDonationProposal] ([CouncilID], [Status]);
+GO
+CREATE INDEX [CharitableDisbursementLedger_Council_Payout_Idx] ON [CharitableDisbursementLedger] ([CouncilID], [PayoutDate]);
+GO

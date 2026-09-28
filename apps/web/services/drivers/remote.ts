@@ -162,6 +162,14 @@ export function createRemoteDataService(): DataService {
       assignAppointedRole: notImplemented('elections.assignAppointedRole'),
       concludeFraternalYear: notImplemented('elections.concludeFraternalYear'),
     },
+    charities: {
+      searchGlobalRegistry: notImplemented('charities.searchGlobalRegistry'),
+      listSuggestedLocal: notImplemented('charities.listSuggestedLocal'),
+      connectCouncilToCharity: notImplemented('charities.connectCouncilToCharity'),
+      proposeDonation: notImplemented('charities.proposeDonation'),
+      addGlobalCharity: notImplemented('charities.addGlobalCharity'),
+      hydrateAndDisburse: notImplemented('charities.hydrateAndDisburse'),
+    },
     supreme: {
       previewReport: notImplemented('supreme.previewReport'),
       syncAlchemerReport: notImplemented('supreme.syncAlchemerReport'),

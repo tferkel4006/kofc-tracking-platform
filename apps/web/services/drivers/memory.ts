@@ -168,6 +168,25 @@ import {
   roleOccupied,
   seatHolderId,
   seatHolderIdByName,
+  assertMayAddGlobalCharity,
+  assertMayConnectCouncilCharity,
+  assertMayDisburseCharity,
+  assertMayProposeCharityGift,
+  assertMinutesMeetingInCouncil,
+  assertProposalPending,
+  charityAlreadyRegistered,
+  charityBlankFills,
+  charityNotFound,
+  charityProposalNotFound,
+  cleanCharityCheck,
+  cleanCharityProposal,
+  cleanCharitySearchFilters,
+  cleanGlobalCharity,
+  findRegisteredCharity,
+  noCharityToPay,
+  normalizeStateCode,
+  searchCharityRegistry,
+  suggestLocalCharities,
   type CleanDonation,
   type ElectionRows,
   type EventFunds,
@@ -178,6 +197,10 @@ import {
   type SignupContextRow,
 } from '@kofc/shared';
 import type {
+  CharitableDisbursementLedger,
+  CharityDonationProposal,
+  CouncilCharityLink,
+  GlobalCharityRegistry,
   CouncilElectionBallot,
   CouncilLeadershipHistory,
   OfficerNominations,
@@ -373,6 +396,8 @@ class MemoryStore {
       throw new Error(`UNIQUE constraint failed: ${meta.primaryKey.map((k) => `${table}.${k}`).join(', ')}`);
     }
     for (const key of meta.uniqueKeys) {
+      // As in SQLite (and a WHERE ... IS NOT NULL filtered index), a key holding a NULL never collides.
+      if (key.some((k) => row[k] === null)) continue;
       if (stored.some((r) => key.every((k) => r[k] === row[k]))) {
         throw new Error(`UNIQUE constraint failed: ${key.map((k) => `${table}.${k}`).join(', ')}`);
       }
@@ -1639,11 +1664,7 @@ export class MemoryDataService implements DataService {
           assertExpenseStatus(row as unknown as ExpenseReport, 'Approved', 'be paid');
           assertNoSelfPayout(actor, row as unknown as ExpenseReport);
         }
-        assertCheckNumberUnused(
-          check.CheckNumber,
-          councilId,
-          s.rows('ExpenseDisbursement').filter((d) => d.CouncilID === councilId) as unknown as ExpenseDisbursement[],
-        );
+        assertCheckNumberUnused(check.CheckNumber, councilId, this.councilCheckNumbers(s, councilId));
         const total = sumAmounts(
           s
             .rows('ExpenseLineItem')
@@ -2174,6 +2195,10 @@ export class MemoryDataService implements DataService {
           .rows('ExpenseLineItem')
           .filter((li) => spendingReports.has(li.ExpenseReportID) && inMonth(li.DateOfExpense))
           .map((li) => ({ Amount: li.Amount as number })),
+        charitableGifts: s
+          .rows('CharitableDisbursementLedger')
+          .filter((g) => g.CouncilID === councilId && inMonth(g.PayoutDate))
+          .map((g) => ({ Amount: g.Amount as number })),
       });
     },
 
@@ -2759,6 +2784,153 @@ export class MemoryDataService implements DataService {
       if (t.from !== t.to) s.insert('MemberRoles', { RoleID: roleId(t.roleName), MemberID: t.to });
       s.insert('CouncilLeadershipHistory', { CouncilID: councilId, MemberID: t.to, RoleID: roleId(t.roleName), FraternalYear: fraternalYear, StartDate: today });
     }
+  }
+
+  // ---- charitable giving (Sprint 5V) ----------------------------------------
+
+  charities: DataService['charities'] = {
+    searchGlobalRegistry: async (actorId, filters) => {
+      const search = cleanCharitySearchFilters(filters);
+      const s = await this.ready();
+      this.requireMember(s, actorId);
+      return searchCharityRegistry(this.charityRows(s), search).map((c) => ({ ...c }));
+    },
+
+    listSuggestedLocal: async (actorId, councilId, stateCode) => {
+      const state = normalizeStateCode(stateCode, 'State code');
+      const s = await this.ready();
+      assertMayProposeCharityGift(this.memberWriteActor(s, actorId), councilId, `see the charity suggestions of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      const linked = s
+        .rows('CouncilCharityLink')
+        .filter((l) => l.CouncilID === councilId)
+        .map((l) => l.CharityID as number);
+      return suggestLocalCharities(this.charityRows(s), state, linked).map((c) => ({ ...c }));
+    },
+
+    connectCouncilToCharity: async (actorId, councilId, charityId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayConnectCouncilCharity(this.memberWriteActor(s, actorId), councilId, `connect council ${councilId} to a charity`);
+        this.assertCouncilsExist(s, [councilId]);
+        this.requireCharity(s, charityId);
+        return { ...this.linkCharity(s, councilId, charityId) } as unknown as CouncilCharityLink;
+      });
+    },
+
+    proposeDonation: async (actorId, councilId, data) => {
+      const clean = cleanCharityProposal(data);
+      const s = await this.ready();
+      const row = s.transaction(() => {
+        assertMayProposeCharityGift(this.memberWriteActor(s, actorId), councilId, `propose gifts for council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const charity = clean.ExistingCharityID === null ? null : this.requireCharity(s, clean.ExistingCharityID);
+        return s.insert('CharityDonationProposal', {
+          CouncilID: councilId,
+          SubmitterMemberID: actorId,
+          ProposedCharityName: clean.ProposedCharityName ?? (charity!.Name as string),
+          ProposedAmount: clean.ProposedAmount,
+          ExistingCharityID: clean.ExistingCharityID,
+          Status: 'Pending',
+        });
+      });
+      return { ...row } as unknown as CharityDonationProposal;
+    },
+
+    addGlobalCharity: async (actorId, globalCharityData) => {
+      const clean = cleanGlobalCharity(globalCharityData);
+      const s = await this.ready();
+      const row = s.transaction(() => {
+        assertMayAddGlobalCharity(this.memberWriteActor(s, actorId));
+        const existing = findRegisteredCharity(this.charityRows(s), clean);
+        if (existing) throw charityAlreadyRegistered(existing);
+        return s.insert('GlobalCharityRegistry', { ...clean });
+      });
+      return { ...row } as unknown as GlobalCharityRegistry;
+    },
+
+    hydrateAndDisburse: async (actorId, councilId, proposalId, checkDetails, globalCharityData) => {
+      const check = cleanCharityCheck(checkDetails);
+      const incoming = globalCharityData === undefined ? null : cleanGlobalCharity(globalCharityData);
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayDisburseCharity(this.memberWriteActor(s, actorId), councilId, `record charity checks for council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        // Inside a transaction the store works on copied rows, so the proposal found here is the one to change.
+        const proposal = s.rows('CharityDonationProposal').find((p) => p.id === proposalId && p.CouncilID === councilId);
+        if (!proposal) throw charityProposalNotFound(proposalId);
+        assertProposalPending(proposal as unknown as CharityDonationProposal, 'be paid');
+        if (check.MeetingMinutesID !== null) {
+          const meeting = s.rows('Meeting').find((m) => m.id === check.MeetingMinutesID) as unknown as Meeting | undefined;
+          assertMinutesMeetingInCouncil(meeting, check.MeetingMinutesID, councilId);
+        }
+        assertCheckNumberUnused(check.CheckNumber, councilId, this.councilCheckNumbers(s, councilId));
+
+        let charity: Row;
+        let charityRegistered = false;
+        if (incoming) {
+          const existing = findRegisteredCharity(this.charityRows(s), incoming) as unknown as Row | undefined;
+          if (existing) {
+            charity = Object.assign(existing, charityBlankFills(existing as unknown as GlobalCharityRegistry, incoming));
+          } else {
+            charity = s.insert('GlobalCharityRegistry', { ...incoming });
+            charityRegistered = true;
+          }
+        } else if (proposal.ExistingCharityID != null) {
+          charity = this.requireCharity(s, proposal.ExistingCharityID as number);
+        } else {
+          throw noCharityToPay(proposalId);
+        }
+
+        const link = this.linkCharity(s, councilId, charity.id as number);
+        const disbursement = s.insert('CharitableDisbursementLedger', {
+          CouncilID: councilId,
+          CharityID: charity.id,
+          Amount: check.Amount ?? (proposal.ProposedAmount as number),
+          CheckNumber: check.CheckNumber,
+          DisbursedByID: actorId,
+          PayoutDate: check.PayoutDate,
+          Notes: check.Notes,
+        });
+        Object.assign(proposal, {
+          Status: 'Approved',
+          ExistingCharityID: charity.id,
+          MeetingMinutesID: check.MeetingMinutesID ?? proposal.MeetingMinutesID,
+        });
+        return {
+          charity: { ...charity } as unknown as GlobalCharityRegistry,
+          charityRegistered,
+          link: { ...link } as unknown as CouncilCharityLink,
+          proposal: { ...proposal } as unknown as CharityDonationProposal,
+          disbursement: { ...disbursement } as unknown as CharitableDisbursementLedger,
+        };
+      });
+    },
+  };
+
+  private charityRows(s: MemoryStore): readonly GlobalCharityRegistry[] {
+    return s.rows('GlobalCharityRegistry') as unknown as GlobalCharityRegistry[];
+  }
+
+  private requireCharity(s: MemoryStore, charityId: number): Row {
+    const row = s.rows('GlobalCharityRegistry').find((c) => c.id === charityId);
+    if (!row) throw charityNotFound(charityId);
+    return row;
+  }
+
+  /** The council's link to the charity, made now if it does not exist yet. */
+  private linkCharity(s: MemoryStore, councilId: number, charityId: number): Row {
+    return (
+      s.rows('CouncilCharityLink').find((l) => l.CouncilID === councilId && l.CharityID === charityId) ??
+      s.insert('CouncilCharityLink', { CouncilID: councilId, CharityID: charityId, ConnectedAt: toTimestamp(this.now()) })
+    );
+  }
+
+  /** Every check number the council has written: expense and charity checks come out of one checkbook. */
+  private councilCheckNumbers(s: MemoryStore, councilId: number): { CheckNumber: string }[] {
+    return [...s.rows('ExpenseDisbursement'), ...s.rows('CharitableDisbursementLedger')]
+      .filter((d) => d.CouncilID === councilId)
+      .map((d) => ({ CheckNumber: d.CheckNumber as string }));
   }
 
   feedback: DataService['feedback'] = {

@@ -145,6 +145,8 @@ export interface MonthRows {
   activityTime: readonly { MemberID: number; Hours: number }[];
   /** Line items dated in the month on the council's 'Approved' and 'Reimbursed' expense sheets. */
   expenseItems: readonly { Amount: number }[];
+  /** The council's CharitableDisbursementLedger checks with a PayoutDate in the month (Sprint 5V). */
+  charitableGifts: readonly { Amount: number }[];
 }
 
 /** reports.monthlySummary from rows already scoped to the council and month. */
@@ -156,7 +158,8 @@ export function summarizeMonth(councilId: number, year: number, month: number, r
 
   const eventSpend = sumHundredths(rows.events.map((e) => e.Spend));
   const expenses = sumHundredths(rows.expenseItems.map((li) => li.Amount));
-  const spend = sumHundredths([eventSpend, expenses]);
+  const charitableGiving = sumHundredths(rows.charitableGifts.map((g) => g.Amount));
+  const spend = sumHundredths([eventSpend, expenses, charitableGiving]);
   const cash = sumHundredths(rows.events.map((e) => e['FundsRaised-Cash']));
   const electronic = sumHundredths(rows.events.map((e) => e['FundsRaised-Electronic']));
   const raised = sumHundredths([cash, electronic]);
@@ -174,7 +177,7 @@ export function summarizeMonth(councilId: number, year: number, month: number, r
     toDate,
     laborHours: { events: eventHours, activities: activityHours, total: sumHundredths([eventHours, activityHours]) },
     uniqueMembers: members.size,
-    finances: { spend, eventSpend, expenses, cash, electronic, raised, net: Math.round((raised - spend) * 100) / 100 },
+    finances: { spend, eventSpend, expenses, charitableGiving, cash, electronic, raised, net: Math.round((raised - spend) * 100) / 100 },
     outreach: { attendees: rows.events.reduce((n, e) => n + (e.ActualNumberAttendees ?? 0), 0), events: rows.events.length },
     highlights,
   };

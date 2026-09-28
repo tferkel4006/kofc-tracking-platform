@@ -273,13 +273,14 @@ describe('activity and monthly summaries', () => {
         { MemberID: 1, Hours: 0.25 },
       ],
       expenseItems: [],
+      charitableGifts: [],
     });
     expect(summary).toMatchObject({
       fromDate: '2026-09-01',
       toDate: '2026-09-30',
       laborHours: { events: 3.25, activities: 0.75, total: 4 },
       uniqueMembers: 3,
-      finances: { spend: 100.1, eventSpend: 100.1, expenses: 0, cash: 20.2, electronic: 30, raised: 50.2, net: -49.9 },
+      finances: { spend: 100.1, eventSpend: 100.1, expenses: 0, charitableGiving: 0, cash: 20.2, electronic: 30, raised: 50.2, net: -49.9 },
       outreach: { attendees: 40, events: 3 },
     });
     expect(summary.highlights).toEqual([
@@ -559,7 +560,7 @@ describe.each(drivers)('$name driver: monthly executive summary', (d: DriverUnde
       toDate: '2026-09-30',
       laborHours: { events: 2.25, activities: 3.5, total: 5.75 },
       uniqueMembers: 2,
-      finances: { spend: 50, eventSpend: 50, expenses: 0, cash: 30, electronic: 10, raised: 40, net: -10 },
+      finances: { spend: 50, eventSpend: 50, expenses: 0, charitableGiving: 0, cash: 30, electronic: 10, raised: 40, net: -10 },
       outreach: { attendees: 15, events: 2 },
       highlights: [
         { eventId: cleanup.id, eventName: 'Fall Grounds Cleanup', startDate: '2026-09-10', text: 'Filled 80 bags' },

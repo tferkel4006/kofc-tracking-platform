@@ -463,3 +463,54 @@ export interface CouncilLeadershipHistory {
   ExitReason?: LeadershipExitReason | null;
   AppointedByID?: number | null; // the Grand Knight or Super Admin who appointed them
 }
+
+// 11. CHARITABLE GIVING AND DISBURSEMENTS (Sprint 5V)
+/** One charity in the registry every council shares. */
+export interface GlobalCharityRegistry {
+  id: number;
+  Name: string;
+  Description: string;
+  EIN?: string | null; // 'NN-NNNNNNN'; unique when present
+  State: string; // two-letter postal code, upper case
+  Phone?: string | null;
+  ContactName?: string | null;
+  ContactEmail?: string | null;
+  Address?: string | null;
+  ZipCode?: string | null;
+  IsCatholic: number; // BIT
+  CharityType: string;
+}
+
+/** A council's connection to a registry charity; one row per council and charity. */
+export interface CouncilCharityLink {
+  CouncilID: number;
+  CharityID: number;
+  ConnectedAt: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+/** Where a gift proposal stands: 'Approved' once a finance officer has paid it. */
+export type CharityProposalStatus = 'Pending' | 'Approved' | 'Rejected';
+
+/** A member's proposal that the council give to a charity. */
+export interface CharityDonationProposal {
+  id: number;
+  CouncilID: number;
+  SubmitterMemberID: number;
+  ProposedCharityName: string;
+  ProposedAmount: number; // DECIMAL(18,2), more than 0
+  ExistingCharityID?: number | null; // the registry entry, once known
+  Status: CharityProposalStatus;
+  MeetingMinutesID?: number | null; // the council meeting whose minutes record the vote
+}
+
+/** One check a council paid to a charity. */
+export interface CharitableDisbursementLedger {
+  id: number;
+  CouncilID: number;
+  CharityID: number;
+  Amount: number; // DECIMAL(18,2), more than 0
+  CheckNumber: string;
+  DisbursedByID: number;
+  PayoutDate: string; // YYYY-MM-DD
+  Notes?: string | null;
+}

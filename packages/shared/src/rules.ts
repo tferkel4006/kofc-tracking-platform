@@ -84,7 +84,9 @@ export type BusinessRuleCode =
   | 'ALREADY_NOMINATED'
   | 'NOT_ACTIVE_COUNCIL_MEMBER'
   | 'GRAND_KNIGHT_TERM_CONTINUES'
-  | 'GRAND_KNIGHT_REQUIRED';
+  | 'GRAND_KNIGHT_REQUIRED'
+  | 'CHARITY_ALREADY_REGISTERED'
+  | 'PROPOSAL_STATUS_CONFLICT';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -1042,6 +1044,19 @@ export function assertMayDisburseCouncilExpenses(actor: MemberWriteActor, counci
 export const mayDisburseCouncilExpenses = (actor: MemberWriteActor, councilId: number): boolean =>
   disbursementDenial(actor, councilId, 'record expense checks') === null;
 
+/**
+ * charities.hydrateAndDisburse (Sprint 5V): a charity check comes out of the same checkbook, so the same officers issue
+ * it as an expense check (assertMayDisburseCouncilExpenses). `action` completes "cannot ...".
+ */
+export function assertMayDisburseCharity(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = disbursementDenial(actor, councilId, action);
+  if (denial) throw denial;
+}
+
+/** assertMayDisburseCharity as a yes/no. */
+export const mayDisburseCharity = (actor: MemberWriteActor, councilId: number): boolean =>
+  disbursementDenial(actor, councilId, 'record charity checks') === null;
+
 function disbursementDenial(actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null {
   if (hasSuperAdminRights(actor)) return null;
   if (!(actor.active && holdsFinanceRole(actor.roles))) {
@@ -1117,6 +1132,49 @@ export function assertMaySyncSupremeReports(actor: MemberWriteActor, councilId: 
 /** assertMaySyncSupremeReports as a yes/no. */
 export const maySyncSupremeReports = (actor: MemberWriteActor, councilId: number): boolean =>
   councilLeadershipDenial(actor, councilId, 'file Supreme reports', '') === null;
+
+/**
+ * charities.connectCouncilToCharity (Sprint 5V), with the same leadership as assertMayDispatchCouncilAlerts. `action`
+ * completes "cannot ...".
+ */
+export function assertMayConnectCouncilCharity(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = councilLeadershipDenial(actor, councilId, action, "a council's charities are chosen only by its own leadership");
+  if (denial) throw denial;
+}
+
+/** assertMayConnectCouncilCharity as a yes/no. */
+export const mayConnectCouncilCharity = (actor: MemberWriteActor, councilId: number): boolean =>
+  councilLeadershipDenial(actor, councilId, 'connect charities', '') === null;
+
+/**
+ * charities.addGlobalCharity (Sprint 5V): the registry is shared by every council, and any Active Admin or Super Admin
+ * may add to it. Finance officers register a charity only while paying it (hydrateAndDisburse).
+ */
+export function assertMayAddGlobalCharity(actor: MemberWriteActor): void {
+  if (hasAdminRights(actor)) return;
+  throw new SecurityPrivilegeError(
+    'ADMIN_REQUIRED',
+    `Only an active Admin or Super Admin can add a charity to the global registry; member ${actor.memberId} is ${describeActor(actor)}.`,
+    { actorId: actor.memberId, actorType: actor.memberType ?? null },
+  );
+}
+
+/** assertMayAddGlobalCharity as a yes/no. */
+export const mayAddGlobalCharity = (actor: MemberWriteActor): boolean => hasAdminRights(actor);
+
+/**
+ * charities.proposeDonation and listSuggestedLocal (Sprint 5V): any Active member of the council, or an Active Super
+ * Admin for any council. `action` completes "cannot ...".
+ */
+export function assertMayProposeCharityGift(actor: MemberWriteActor, councilId: number, action: string): void {
+  if (hasSuperAdminRights(actor)) return;
+  if (actor.active && actor.councilId === councilId) return;
+  throw new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Only active members of council ${councilId} can ${action}; member ${actor.memberId} is ${describeActor(actor)} of council ${actor.councilId}.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
+  );
+}
 
 /**
  * Council leadership: an Active Super Admin anywhere, or an Active Admin, Financial Secretary or Treasurer in their own

@@ -170,7 +170,28 @@ import {
   seatHolderIdByName,
   type ElectionRows,
   type SeatTransition,
+  assertMayAddGlobalCharity,
+  assertMayConnectCouncilCharity,
+  assertMayDisburseCharity,
+  assertMayProposeCharityGift,
+  assertMinutesMeetingInCouncil,
+  assertProposalPending,
+  CHARITY_COLUMNS,
+  charityAlreadyRegistered,
+  charityBlankFills,
+  charityNotFound,
+  charityProposalNotFound,
+  cleanCharityCheck,
+  cleanCharityProposal,
+  cleanCharitySearchFilters,
+  cleanGlobalCharity,
+  findRegisteredCharity,
+  noCharityToPay,
+  normalizeStateCode,
+  searchCharityRegistry,
+  suggestLocalCharities,
   type CleanDonation,
+  type CleanGlobalCharity,
   type CouncilAdminDetails,
   type EventFunds,
   type MaintainedTable,
@@ -246,6 +267,10 @@ import type {
   ReadReceipt,
   Role,
   CouncilElectionBallot,
+  CharitableDisbursementLedger,
+  CharityDonationProposal,
+  CouncilCharityLink,
+  GlobalCharityRegistry,
   CouncilLeadershipHistory,
   OfficerNominations,
   SessionUser,
@@ -285,8 +310,9 @@ const DB_NAME = 'kofc.db';
  * 10: Member.ProfilePhotoURL and Member.Biography (Sprint 5S).
  * 11: Member.ExpoPushToken, NotificationLog and SupremeReportingSync (Sprint 5T).
  * 12: CouncilElectionBallot, OfficerNominations and CouncilLeadershipHistory; Priest and Lector renamed Chaplain and Lecturer (Sprint 5U).
+ * 13: GlobalCharityRegistry, CouncilCharityLink, CharityDonationProposal and CharitableDisbursementLedger (Sprint 5V).
  */
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -1843,11 +1869,7 @@ export class SqliteDataService implements DataService {
           assertExpenseStatus(row, 'Approved', 'be paid');
           assertNoSelfPayout(actor, row);
         }
-        assertCheckNumberUnused(
-          check.CheckNumber,
-          councilId,
-          await db.getAllAsync<ExpenseDisbursement>('SELECT [CheckNumber] FROM [ExpenseDisbursement] WHERE [CouncilID] = ?', [councilId]),
-        );
+        assertCheckNumberUnused(check.CheckNumber, councilId, await this.councilCheckNumbers(db, councilId));
         const amounts = await selectIn<{ Amount: number }>(
           db,
           (m) => `SELECT [Amount] FROM [ExpenseLineItem] WHERE [ExpenseReportID] IN (${m})`,
@@ -2520,6 +2542,10 @@ export class SqliteDataService implements DataService {
             WHERE r.[CouncilID] = ? AND r.[Status] IN (${marks(EXPENSE_SPEND_STATUSES.length)})
               AND li.[DateOfExpense] BETWEEN ? AND ?`,
           [councilId, ...EXPENSE_SPEND_STATUSES, fromDate, toDate],
+        ),
+        charitableGifts: await db.getAllAsync<{ Amount: number }>(
+          'SELECT [Amount] FROM [CharitableDisbursementLedger] WHERE [CouncilID] = ? AND [PayoutDate] BETWEEN ? AND ?',
+          [councilId, fromDate, toDate],
         ),
       });
     },
@@ -3223,6 +3249,208 @@ export class SqliteDataService implements DataService {
       if (t.from !== t.to) await db.runAsync('INSERT INTO [MemberRoles] ([RoleID], [MemberID]) VALUES (?, ?)', [roleId(t.roleName), t.to]);
       await this.insertTerm(db, councilId, t.to, roleId(t.roleName), fraternalYear, today, null);
     }
+  }
+
+  // ---- charitable giving (Sprint 5V) ----------------------------------------
+
+  charities: DataService['charities'] = {
+    searchGlobalRegistry: async (actorId, filters) => {
+      const search = cleanCharitySearchFilters(filters);
+      const db = await this.ready();
+      await this.requireMember(db, actorId);
+      // The indexed filters narrow the rows here; the shared search applies the rest, so both drivers answer alike.
+      const where: string[] = [];
+      const params: string[] = [];
+      if (search.state !== null) {
+        where.push('[State] = ?');
+        params.push(search.state);
+      }
+      if (search.ein !== null) {
+        where.push('[EIN] = ?');
+        params.push(search.ein);
+      }
+      const rows = await db.getAllAsync<GlobalCharityRegistry>(
+        `SELECT * FROM [GlobalCharityRegistry]${where.length ? ` WHERE ${where.join(' AND ')}` : ''}`,
+        params,
+      );
+      return searchCharityRegistry(rows, search);
+    },
+
+    listSuggestedLocal: async (actorId, councilId, stateCode) => {
+      const state = normalizeStateCode(stateCode, 'State code');
+      const db = await this.ready();
+      assertMayProposeCharityGift(await this.memberWriteActor(db, actorId), councilId, `see the charity suggestions of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const rows = await db.getAllAsync<GlobalCharityRegistry>(
+        `SELECT * FROM [GlobalCharityRegistry]
+          WHERE [State] = ? AND [id] NOT IN (SELECT [CharityID] FROM [CouncilCharityLink] WHERE [CouncilID] = ?)`,
+        [state, councilId],
+      );
+      return suggestLocalCharities(rows, state, []);
+    },
+
+    connectCouncilToCharity: async (actorId, councilId, charityId) => {
+      const db = await this.ready();
+      let link: CouncilCharityLink | null = null;
+      await db.withTransactionAsync(async () => {
+        assertMayConnectCouncilCharity(await this.memberWriteActor(db, actorId), councilId, `connect council ${councilId} to a charity`);
+        await this.assertCouncilsExist(db, [councilId]);
+        await this.requireCharity(db, charityId);
+        link = await this.linkCharity(db, councilId, charityId);
+      });
+      return link!;
+    },
+
+    proposeDonation: async (actorId, councilId, data) => {
+      const clean = cleanCharityProposal(data);
+      const db = await this.ready();
+      let proposalId = 0;
+      await db.withTransactionAsync(async () => {
+        assertMayProposeCharityGift(await this.memberWriteActor(db, actorId), councilId, `propose gifts for council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        const charity = clean.ExistingCharityID === null ? null : await this.requireCharity(db, clean.ExistingCharityID);
+        const res = await db.runAsync(
+          `INSERT INTO [CharityDonationProposal] ([CouncilID], [SubmitterMemberID], [ProposedCharityName], [ProposedAmount], [ExistingCharityID], [Status])
+           VALUES (?, ?, ?, ?, ?, 'Pending')`,
+          [councilId, actorId, clean.ProposedCharityName ?? charity!.Name, clean.ProposedAmount, clean.ExistingCharityID],
+        );
+        proposalId = res.lastInsertRowId;
+      });
+      return (await this.requireCharityProposal(db, proposalId))!;
+    },
+
+    addGlobalCharity: async (actorId, globalCharityData) => {
+      const clean = cleanGlobalCharity(globalCharityData);
+      const db = await this.ready();
+      let charityId = 0;
+      await db.withTransactionAsync(async () => {
+        assertMayAddGlobalCharity(await this.memberWriteActor(db, actorId));
+        const existing = findRegisteredCharity(await this.charityCandidates(db, clean), clean);
+        if (existing) throw charityAlreadyRegistered(existing);
+        charityId = await this.insertCharity(db, clean);
+      });
+      return this.requireCharity(db, charityId);
+    },
+
+    hydrateAndDisburse: async (actorId, councilId, proposalId, checkDetails, globalCharityData) => {
+      const check = cleanCharityCheck(checkDetails);
+      const incoming = globalCharityData === undefined ? null : cleanGlobalCharity(globalCharityData);
+      const db = await this.ready();
+      let charityId = 0;
+      let disbursementId = 0;
+      let charityRegistered = false;
+      await db.withTransactionAsync(async () => {
+        assertMayDisburseCharity(await this.memberWriteActor(db, actorId), councilId, `record charity checks for council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        const proposal = await db.getFirstAsync<CharityDonationProposal>(
+          'SELECT * FROM [CharityDonationProposal] WHERE [id] = ? AND [CouncilID] = ?',
+          [proposalId, councilId],
+        );
+        if (!proposal) throw charityProposalNotFound(proposalId);
+        assertProposalPending(proposal, 'be paid');
+        if (check.MeetingMinutesID !== null) {
+          const meeting = await db.getFirstAsync<Meeting>('SELECT [id], [CouncilID] FROM [Meeting] WHERE [id] = ?', [check.MeetingMinutesID]);
+          assertMinutesMeetingInCouncil(meeting, check.MeetingMinutesID, councilId);
+        }
+        assertCheckNumberUnused(check.CheckNumber, councilId, await this.councilCheckNumbers(db, councilId));
+
+        if (incoming) {
+          const existing = findRegisteredCharity(await this.charityCandidates(db, incoming), incoming);
+          if (existing) {
+            charityId = existing.id;
+            // Column names come from CHARITY_FILLABLE_COLUMNS only.
+            const fills = Object.entries(charityBlankFills(existing, incoming));
+            if (fills.length) {
+              await db.runAsync(`UPDATE [GlobalCharityRegistry] SET ${fills.map(([c]) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [
+                ...fills.map(([, v]) => v as string | number),
+                charityId,
+              ]);
+            }
+          } else {
+            charityId = await this.insertCharity(db, incoming);
+            charityRegistered = true;
+          }
+        } else if (proposal.ExistingCharityID != null) {
+          charityId = (await this.requireCharity(db, proposal.ExistingCharityID)).id;
+        } else {
+          throw noCharityToPay(proposalId);
+        }
+
+        await this.linkCharity(db, councilId, charityId);
+        const res = await db.runAsync(
+          `INSERT INTO [CharitableDisbursementLedger] ([CouncilID], [CharityID], [Amount], [CheckNumber], [DisbursedByID], [PayoutDate], [Notes])
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [councilId, charityId, check.Amount ?? proposal.ProposedAmount, check.CheckNumber, actorId, check.PayoutDate, check.Notes],
+        );
+        disbursementId = res.lastInsertRowId;
+        await db.runAsync("UPDATE [CharityDonationProposal] SET [Status] = 'Approved', [ExistingCharityID] = ?, [MeetingMinutesID] = ? WHERE [id] = ?", [
+          charityId,
+          check.MeetingMinutesID ?? proposal.MeetingMinutesID ?? null,
+          proposalId,
+        ]);
+      });
+      return {
+        charity: await this.requireCharity(db, charityId),
+        charityRegistered,
+        link: (await db.getFirstAsync<CouncilCharityLink>('SELECT * FROM [CouncilCharityLink] WHERE [CouncilID] = ? AND [CharityID] = ?', [
+          councilId,
+          charityId,
+        ]))!,
+        proposal: (await this.requireCharityProposal(db, proposalId))!,
+        disbursement: (await db.getFirstAsync<CharitableDisbursementLedger>('SELECT * FROM [CharitableDisbursementLedger] WHERE [id] = ?', [
+          disbursementId,
+        ]))!,
+      };
+    },
+  };
+
+  private async requireCharity(db: SQLite.SQLiteDatabase, charityId: number): Promise<GlobalCharityRegistry> {
+    const row = await db.getFirstAsync<GlobalCharityRegistry>('SELECT * FROM [GlobalCharityRegistry] WHERE [id] = ?', [charityId]);
+    if (!row) throw charityNotFound(charityId);
+    return row;
+  }
+
+  private async requireCharityProposal(db: SQLite.SQLiteDatabase, proposalId: number): Promise<CharityDonationProposal | null> {
+    return db.getFirstAsync<CharityDonationProposal>('SELECT * FROM [CharityDonationProposal] WHERE [id] = ?', [proposalId]);
+  }
+
+  /** The registry rows `charity` could duplicate (findRegisteredCharity): the same EIN, or anything in its State. */
+  private async charityCandidates(db: SQLite.SQLiteDatabase, charity: CleanGlobalCharity): Promise<GlobalCharityRegistry[]> {
+    return db.getAllAsync<GlobalCharityRegistry>('SELECT * FROM [GlobalCharityRegistry] WHERE [EIN] = ? OR [State] = ?', [
+      charity.EIN ?? null,
+      charity.State,
+    ]);
+  }
+
+  private async insertCharity(db: SQLite.SQLiteDatabase, clean: CleanGlobalCharity): Promise<number> {
+    const res = await db.runAsync(
+      `INSERT INTO [GlobalCharityRegistry] (${CHARITY_COLUMNS.map((c) => `[${c}]`).join(', ')}) VALUES (${marks(CHARITY_COLUMNS.length)})`,
+      CHARITY_COLUMNS.map((c) => clean[c] ?? null),
+    );
+    return res.lastInsertRowId;
+  }
+
+  /** The council's link to the charity, made now if it does not exist yet. */
+  private async linkCharity(db: SQLite.SQLiteDatabase, councilId: number, charityId: number): Promise<CouncilCharityLink> {
+    await db.runAsync('INSERT OR IGNORE INTO [CouncilCharityLink] ([CouncilID], [CharityID], [ConnectedAt]) VALUES (?, ?, ?)', [
+      councilId,
+      charityId,
+      toTimestamp(this.now()),
+    ]);
+    return (await db.getFirstAsync<CouncilCharityLink>('SELECT * FROM [CouncilCharityLink] WHERE [CouncilID] = ? AND [CharityID] = ?', [
+      councilId,
+      charityId,
+    ]))!;
+  }
+
+  /** Every check number the council has written: expense and charity checks come out of one checkbook. */
+  private async councilCheckNumbers(db: SQLite.SQLiteDatabase, councilId: number): Promise<{ CheckNumber: string }[]> {
+    return db.getAllAsync<{ CheckNumber: string }>(
+      `SELECT [CheckNumber] FROM [ExpenseDisbursement] WHERE [CouncilID] = ?
+       UNION ALL
+       SELECT [CheckNumber] FROM [CharitableDisbursementLedger] WHERE [CouncilID] = ?`,
+      [councilId, councilId],
+    );
   }
 
   feedback: DataService['feedback'] = {

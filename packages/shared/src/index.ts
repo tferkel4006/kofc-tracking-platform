@@ -17,3 +17,4 @@ export * from './expenses';
 export * from './push';
 export * from './supreme';
 export * from './elections';
+export * from './charities';

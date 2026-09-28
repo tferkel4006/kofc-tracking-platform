@@ -413,8 +413,9 @@ describe('financial controls (pure, Sprint 5R-1.5)', () => {
       eventTime: [],
       activityTime: [],
       expenseItems: [{ Amount: 19.99 }, { Amount: 0.01 }],
+      charitableGifts: [],
     });
-    expect(summary.finances).toEqual({ spend: 120.1, eventSpend: 100.1, expenses: 20, cash: 50, electronic: 0, raised: 50, net: -70.1 });
+    expect(summary.finances).toEqual({ spend: 120.1, eventSpend: 100.1, expenses: 20, charitableGiving: 0, cash: 50, electronic: 0, raised: 50, net: -70.1 });
   });
 });
 
