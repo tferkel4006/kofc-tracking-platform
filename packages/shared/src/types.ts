@@ -355,3 +355,39 @@ export interface SystemFeedback {
   SubmittedAt: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
   FeedbackText: string;
 }
+
+// 8. EXPENSE REPORTING (Sprint 5R)
+/** An expense sheet's life cycle: the member drafts and submits it, leadership approves it, then pays it by check. */
+export type ExpenseReportStatus = 'Draft' | 'Submitted' | 'Approved' | 'Reimbursed';
+
+/** One check that pays one or more approved expense sheets of a council. */
+export interface ExpenseDisbursement {
+  id: number;
+  CouncilID: number;
+  CheckNumber: string;
+  PayoutDate: string; // YYYY-MM-DD
+  TotalAmount: number; // DECIMAL(18,2): the paid sheets' line items in total
+  Notes?: string | null;
+}
+
+/** A member's expense sheet. CouncilID is always the submitter's own council. */
+export interface ExpenseReport {
+  id: number;
+  CouncilID: number;
+  SubmitterMemberID: number;
+  Status: ExpenseReportStatus;
+  LinkedEventID?: number | null;
+  LinkedMeetingID?: number | null;
+  DisbursementID?: number | null; // set once the sheet is paid (Status 'Reimbursed')
+}
+
+/** One receipt on an expense sheet. */
+export interface ExpenseLineItem {
+  id: number;
+  ExpenseReportID: number;
+  DateOfExpense: string; // YYYY-MM-DD
+  Amount: number; // DECIMAL(18,2), more than 0
+  VendorName: string;
+  ReceiptPhotoURL?: string | null;
+  ExpenseDescription: string;
+}

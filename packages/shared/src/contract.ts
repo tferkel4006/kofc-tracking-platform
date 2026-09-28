@@ -25,6 +25,9 @@ import type {
   Event,
   EventSignup,
   EventTime,
+  ExpenseDisbursement,
+  ExpenseLineItem,
+  ExpenseReport,
   LessonsLearned,
   LessonsLearnedCategory,
   Meeting,
@@ -557,7 +560,51 @@ export type CalendarEntry =
       meeting: Meeting;
     };
 
-// 14. THE SERVICE
+// 14. EXPENSE REPORTING (Sprint 5R)
+/**
+ * An expense sheet for expenses.submitReport. Without `id` it starts a new sheet; with one it replaces that draft's
+ * links and line items. `Status` 'Draft' keeps it private to the submitter, 'Submitted' sends it to the council
+ * queue. The council is always the submitter's own, so it is never supplied.
+ */
+export interface ExpenseReportInput {
+  id?: number | null;
+  Status: 'Draft' | 'Submitted';
+  /** An event linked to the submitter's council, or null. */
+  LinkedEventID?: number | null;
+  /** A meeting of the submitter's council, or null. */
+  LinkedMeetingID?: number | null;
+}
+
+/** One receipt for expenses.submitReport; its sheet comes from the call. */
+export type ExpenseLineItemInput = Omit<ExpenseLineItem, 'id' | 'ExpenseReportID'>;
+
+/** A check payout for expenses.recordDisbursement. TotalAmount is computed from the paid sheets, never supplied. */
+export interface DisbursementCheckDetails {
+  CheckNumber: string;
+  /** YYYY-MM-DD */
+  PayoutDate: string;
+  Notes?: string | null;
+}
+
+/** One expense sheet with its receipts, their total, its submitter and, once paid, the check that paid it. */
+export interface ExpenseReportDetail {
+  report: ExpenseReport;
+  /** Oldest DateOfExpense first, then id. */
+  lineItems: ExpenseLineItem[];
+  /** Sum of the line items' Amount, to the cent. */
+  total: number;
+  submitterFirstName: string;
+  submitterLastName: string;
+  disbursement: ExpenseDisbursement | null;
+}
+
+export interface ExpenseDisbursementResult {
+  disbursement: ExpenseDisbursement;
+  /** The sheets it paid, now 'Reimbursed', in the order their ids were given. */
+  reports: ExpenseReportDetail[];
+}
+
+// 15. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -654,7 +701,8 @@ export interface DataService {
     update(actorId: number, id: number, changes: RecordChanges<NewCouncil>): Promise<Council>;
     /**
      * Deletes a council nothing points at. Rejects RECORD_IN_USE, naming each table and row count, while any
-     * member, parish, event, meeting, activity, list, thread, donation record or affiliation refers to it.
+     * member, parish, event, meeting, activity, list, thread, donation record, expense sheet, expense check or
+     * affiliation refers to it.
      */
     remove(actorId: number, id: number): Promise<void>;
   };
@@ -823,6 +871,51 @@ export interface DataService {
     update(actorId: number, id: number, changes: DonationChanges): Promise<Donation>;
     /** Deletes one donation, with the same rights as `update`, and re-totals its event. */
     remove(actorId: number, id: number): Promise<void>;
+  };
+
+  /**
+   * Expense reporting (Sprint 5R). A member files, edits (while a draft) and reads only their own sheets. Council
+   * leadership, meaning an Active Admin, Financial Secretary or Treasurer of the council or any Active Super Admin,
+   * reads the council's queue, approves sheets and records the checks that pay them (SecurityPrivilegeError
+   * ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). An unknown actor rejects MEMBER_NOT_FOUND. Every write is all or
+   * nothing: a rejected call changes no row.
+   */
+  expenses: {
+    /** The actor's own sheets in every status, newest (highest id) first. */
+    listUserReports(actorId: number): Promise<ExpenseReportDetail[]>;
+    /**
+     * The council's sheets awaiting leadership: 'Submitted' and 'Approved', oldest (lowest id) first. Drafts stay
+     * private to their submitters and 'Reimbursed' sheets are history. Rejects INVALID_INPUT for an unknown council.
+     */
+    listCouncilQueue(actorId: number, councilId: number): Promise<ExpenseReportDetail[]>;
+    /**
+     * Saves a sheet and its complete list of line items in one transaction: without `report.id` it creates a sheet
+     * in the actor's council; with one it replaces the links and line items of the actor's own 'Draft' sheet.
+     * A 'Submitted' sheet needs at least one line item. Rejects RECORD_NOT_FOUND for an id that is not one of the
+     * actor's sheets, EXPENSE_STATUS_CONFLICT for a sheet no longer a draft, and INVALID_INPUT for a bad field (an
+     * amount of 0 or with fractions of a cent, a future date, a blank vendor or description, a text over its column's
+     * length) or a linked event or meeting that is unknown or outside the sheet's council; INVALID_DATE for a
+     * malformed date.
+     */
+    submitReport(actorId: number, report: ExpenseReportInput, lineItems: readonly ExpenseLineItemInput[]): Promise<ExpenseReportDetail>;
+    /**
+     * Moves a 'Submitted' sheet to 'Approved' (council leadership only). Rejects RECORD_NOT_FOUND for an unknown
+     * sheet and EXPENSE_STATUS_CONFLICT for one in another status.
+     */
+    approveReport(actorId: number, reportId: number): Promise<ExpenseReportDetail>;
+    /**
+     * Records one check paying the listed sheets of `councilId` (council leadership only): creates the
+     * ExpenseDisbursement with TotalAmount set to the sheets' total, then stamps every sheet 'Reimbursed' with its
+     * DisbursementID, all in one transaction. Rejects INVALID_INPUT for an empty or repeated id list, a sheet of
+     * another council, a blank or over-long check number, or a check number the council already used; INVALID_DATE for a
+     * malformed payout date; RECORD_NOT_FOUND for an unknown sheet; EXPENSE_STATUS_CONFLICT for a sheet not 'Approved'.
+     */
+    recordDisbursement(
+      actorId: number,
+      councilId: number,
+      reportIds: readonly number[],
+      checkDetails: DisbursementCheckDetails,
+    ): Promise<ExpenseDisbursementResult>;
   };
 
   events: {

@@ -90,6 +90,13 @@ export function createRemoteDataService(): DataService {
       update: notImplemented('donations.update'),
       remove: notImplemented('donations.remove'),
     },
+    expenses: {
+      listUserReports: notImplemented('expenses.listUserReports'),
+      listCouncilQueue: notImplemented('expenses.listCouncilQueue'),
+      submitReport: notImplemented('expenses.submitReport'),
+      approveReport: notImplemented('expenses.approveReport'),
+      recordDisbursement: notImplemented('expenses.recordDisbursement'),
+    },
     events: {
       get: notImplemented('events.get'),
       getShift: notImplemented('events.getShift'),

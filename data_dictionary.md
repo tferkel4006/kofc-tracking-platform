@@ -306,3 +306,32 @@ Tracks delivery confirmation status, read markers, and administrator action foll
 •	IsFlagged (BIT, DEFAULT 0) — Follow-up indicator (1 = Flagged for later review action, 0 = Standard history archive).
 ________________________________________
 
+# 7. Expense Reporting (Sprint 5R)
+[ExpenseDisbursement]
+One check that pays one or more approved expense reports of a council. Recorded only by the council's leadership (expenses.recordDisbursement).
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). The paying council.
+•	CheckNumber (VARCHAR(50), NOT NULL) — The check's number; unique within the council (ignoring case).
+•	PayoutDate (DATE, NOT NULL) — The date on the check.
+•	TotalAmount (DECIMAL(18,2), NOT NULL) — The paid reports' line items in total, computed by the service, never entered.
+•	Notes (TEXT, NULL) — Optional memo; at most 2,000 characters.
+[ExpenseReport]
+A member's expense sheet. Members see only their own; the council's Admins, Financial Secretary and Treasurer and any Super Admin review the council's queue.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). Always the submitter's own council.
+•	SubmitterMemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). The member to reimburse.
+•	Status (VARCHAR(50), NOT NULL) — Draft, Submitted, Approved or Reimbursed. Only drafts may be edited; leadership approves Submitted sheets and pays Approved ones.
+•	LinkedEventID (INTEGER, NULL) — Foreign Key references Event(id). An event linked to the report's council.
+•	LinkedMeetingID (INTEGER, NULL) — Foreign Key references Meeting(id). A meeting of the report's council.
+•	DisbursementID (INTEGER, NULL) — Foreign Key references ExpenseDisbursement(id). The check that paid it; set with Status Reimbursed.
+[ExpenseLineItem]
+One receipt on an expense report. A draft's line items are replaced as a whole each time it is saved.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	ExpenseReportID (INTEGER, NOT NULL) — Foreign Key references ExpenseReport(id).
+•	DateOfExpense (DATE, NOT NULL) — When the money was spent; never in the future.
+•	Amount (DECIMAL(18,2), NOT NULL) — More than 0, in whole cents.
+•	VendorName (VARCHAR(255), NOT NULL) — Who was paid.
+•	ReceiptPhotoURL (VARCHAR(2000), NULL) — Local or storage path of the receipt photo.
+•	ExpenseDescription (TEXT, NOT NULL) — What was bought and why; at most 2,000 characters.
+________________________________________
+

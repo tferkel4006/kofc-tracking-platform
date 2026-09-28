@@ -70,7 +70,8 @@ export type BusinessRuleCode =
   | 'RECORD_NOT_FOUND'
   | 'RECORD_IN_USE'
   | 'FUNDS_MANAGED_BY_DONATIONS'
-  | 'NO_SHOW_HAS_HOURS';
+  | 'NO_SHOW_HAS_HOURS'
+  | 'EXPENSE_STATUS_CONFLICT';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -979,6 +980,38 @@ export function assertMayChangeDonation(
     'COUNCIL_ACCESS_DENIED',
     `Admin ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${donation.CouncilID}; an Admin maintains only their own council's records.`,
     { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId: donation.CouncilID, donationId: donation.id },
+  );
+}
+
+/**
+ * Expense reporting leadership (Sprint 5R): expenses.listCouncilQueue, approveReport and recordDisbursement. An Active
+ * Super Admin for any council; an Active Admin, Financial Secretary or Treasurer for their own council only. Members
+ * reach their own sheets through listUserReports and submitReport, which need no leadership. `action` completes
+ * "cannot ...".
+ */
+export function assertMayAuditCouncilExpenses(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = expenseAuditDenial(actor, councilId, action);
+  if (denial) throw denial;
+}
+
+/** assertMayAuditCouncilExpenses as a yes/no. */
+export const mayAuditCouncilExpenses = (actor: MemberWriteActor, councilId: number): boolean =>
+  expenseAuditDenial(actor, councilId, 'review expense reports') === null;
+
+function expenseAuditDenial(actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null {
+  if (hasSuperAdminRights(actor)) return null;
+  if (!hasAdminRights(actor) && !(actor.active && holdsFinanceRole(actor.roles))) {
+    return new SecurityPrivilegeError(
+      'ADMIN_REQUIRED',
+      `Only an active Admin, Financial Secretary, Treasurer or Super Admin can ${action}; member ${actor.memberId} is ${describeActor(actor)}.`,
+      { actorId: actor.memberId, actorType: actor.memberType ?? null, councilId },
+    );
+  }
+  if (actor.councilId === councilId) return null;
+  return new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; expense reports are reviewed only by that council's own leadership.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
   );
 }
 

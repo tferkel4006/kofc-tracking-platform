@@ -19,6 +19,19 @@ import {
   assertMayChangeDonation,
   appendPhotoPaths,
   assertMayAttachEventMedia,
+  assertMayAuditCouncilExpenses,
+  assertCheckNumberUnused,
+  assertExpenseLinks,
+  assertExpenseStatus,
+  assertReportInCouncil,
+  buildExpenseReportDetails,
+  cleanDisbursementCheck,
+  cleanExpenseLineItems,
+  cleanExpenseReportIds,
+  cleanExpenseReportInput,
+  EXPENSE_QUEUE_STATUSES,
+  expenseReportNotFound,
+  sumAmounts,
   assertMayChangeLesson,
   assertMayLinkMeetingDrive,
   buildCalendarEntries,
@@ -141,6 +154,11 @@ import type {
   EventChanges,
   EventSignup,
   EventTime,
+  ExpenseDisbursement,
+  ExpenseLineItem,
+  ExpenseReport,
+  ExpenseReportDetail,
+  ExpenseReportStatus,
   LessonsLearned,
   LessonsLearnedCategory,
   Category,
@@ -1445,6 +1463,128 @@ export class MemoryDataService implements DataService {
       .filter((r): r is Row => r !== undefined)
       .map((r) => ({ ...r }) as unknown as Role)
       .sort((a, b) => a.id - b.id);
+  }
+
+  // ---- expense reporting (Sprint 5R) --------------------------------------
+
+  expenses: DataService['expenses'] = {
+    listUserReports: async (actorId) => {
+      const s = await this.ready();
+      this.requireMember(s, actorId);
+      const reports = s.rows('ExpenseReport').filter((r) => r.SubmitterMemberID === actorId);
+      return this.expenseDetails(s, [...reports].sort((a, b) => (b.id as number) - (a.id as number)));
+    },
+
+    listCouncilQueue: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayAuditCouncilExpenses(this.memberWriteActor(s, actorId), councilId, `review the expense queue of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      const reports = s
+        .rows('ExpenseReport')
+        .filter((r) => r.CouncilID === councilId && EXPENSE_QUEUE_STATUSES.includes(r.Status as ExpenseReportStatus));
+      return this.expenseDetails(s, [...reports].sort((a, b) => (a.id as number) - (b.id as number)));
+    },
+
+    submitReport: async (actorId, report, lineItems) => {
+      const clean = cleanExpenseReportInput(report);
+      const items = cleanExpenseLineItems(lineItems, clean.Status, this.now());
+      const s = await this.ready();
+      const id = s.transaction(() => {
+        const actor = this.requireMember(s, actorId);
+        // Inside a transaction the store works on copied rows, so the draft found here is the one to change.
+        const draft = clean.id === null ? null : this.requireOwnExpenseReport(s, clean.id, actorId);
+        if (draft) assertExpenseStatus(draft as unknown as ExpenseReport, 'Draft', 'be edited');
+        const councilId = (draft ?? actor).CouncilID as number;
+        const eventId = clean.LinkedEventID;
+        assertExpenseLinks(
+          clean,
+          councilId,
+          eventId !== null && s.rows('Event').some((e) => e.id === eventId) ? this.councilIdsOf(s, eventId) : null,
+          (s.rows('Meeting').find((m) => m.id === clean.LinkedMeetingID) as unknown as Meeting | undefined) ?? null,
+        );
+        const fields = { Status: clean.Status, LinkedEventID: clean.LinkedEventID, LinkedMeetingID: clean.LinkedMeetingID };
+        let reportId: number;
+        if (draft) {
+          Object.assign(draft, fields);
+          reportId = draft.id as number;
+          s.remove('ExpenseLineItem', (li) => li.ExpenseReportID === reportId);
+        } else {
+          reportId = s.insert('ExpenseReport', { ...fields, CouncilID: councilId, SubmitterMemberID: actorId }).id as number;
+        }
+        for (const item of items) s.insert('ExpenseLineItem', { ...item, ReceiptPhotoURL: item.ReceiptPhotoURL ?? null, ExpenseReportID: reportId });
+        return reportId;
+      });
+      return this.expenseDetails(s, [this.requireExpenseReport(s, id)])[0];
+    },
+
+    approveReport: async (actorId, reportId) => {
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const row = this.requireExpenseReport(s, reportId);
+        assertMayAuditCouncilExpenses(actor, row.CouncilID as number, `approve expense report ${reportId}`);
+        assertExpenseStatus(row as unknown as ExpenseReport, 'Submitted', 'be approved');
+        row.Status = 'Approved';
+      });
+      return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
+    },
+
+    recordDisbursement: async (actorId, councilId, reportIds, checkDetails) => {
+      const ids = cleanExpenseReportIds(reportIds);
+      const check = cleanDisbursementCheck(checkDetails);
+      const s = await this.ready();
+      const disbursementId = s.transaction(() => {
+        assertMayAuditCouncilExpenses(this.memberWriteActor(s, actorId), councilId, `record expense checks for council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const rows = ids.map((id) => this.requireExpenseReport(s, id));
+        for (const row of rows) {
+          assertReportInCouncil(row as unknown as ExpenseReport, councilId);
+          assertExpenseStatus(row as unknown as ExpenseReport, 'Approved', 'be paid');
+        }
+        assertCheckNumberUnused(
+          check.CheckNumber,
+          councilId,
+          s.rows('ExpenseDisbursement').filter((d) => d.CouncilID === councilId) as unknown as ExpenseDisbursement[],
+        );
+        const total = sumAmounts(
+          s
+            .rows('ExpenseLineItem')
+            .filter((li) => ids.includes(li.ExpenseReportID as number))
+            .map((li) => li.Amount as number),
+        );
+        const disbursement = s.insert('ExpenseDisbursement', { ...check, CouncilID: councilId, TotalAmount: total });
+        for (const row of rows) Object.assign(row, { Status: 'Reimbursed', DisbursementID: disbursement.id });
+        return disbursement.id as number;
+      });
+      const disbursement = s.rows('ExpenseDisbursement').find((d) => d.id === disbursementId)!;
+      return {
+        disbursement: { ...disbursement } as unknown as ExpenseDisbursement,
+        reports: this.expenseDetails(s, ids.map((id) => this.requireExpenseReport(s, id))),
+      };
+    },
+  };
+
+  private requireExpenseReport(s: MemoryStore, reportId: number): Row {
+    const row = s.rows('ExpenseReport').find((r) => r.id === reportId);
+    if (!row) throw expenseReportNotFound(reportId);
+    return row as Row;
+  }
+
+  /** A member reaches only their own sheets; anyone else's reads as missing, so ids reveal nothing. */
+  private requireOwnExpenseReport(s: MemoryStore, reportId: number, memberId: number): Row {
+    const row = s.rows('ExpenseReport').find((r) => r.id === reportId && r.SubmitterMemberID === memberId);
+    if (!row) throw expenseReportNotFound(reportId);
+    return row as Row;
+  }
+
+  private expenseDetails(s: MemoryStore, reports: readonly Row[]): ExpenseReportDetail[] {
+    const ids = new Set(reports.map((r) => r.id));
+    return buildExpenseReportDetails(
+      reports as unknown as ExpenseReport[],
+      s.rows('ExpenseLineItem').filter((li) => ids.has(li.ExpenseReportID)) as unknown as ExpenseLineItem[],
+      s.rows('Member') as unknown as Member[],
+      s.rows('ExpenseDisbursement') as unknown as ExpenseDisbursement[],
+    );
   }
 
   // ---- events, shifts and time logs -------------------------------------

@@ -849,3 +849,88 @@ INNER JOIN [Skill] ON [MemberSkill].[SkillID] = [Skill].[id]
 INNER JOIN [SkillLevel] ON [MemberSkill].[SkillLevelID] = [SkillLevel].[id]
 INNER JOIN [Council] ON [Member].[CouncilID] = [Council].[id];
 GO
+
+-- =========================================================================
+-- 10. EXPENSE REPORTING (Sprint 5R)
+-- Members file expense sheets (ExpenseReport) itemised by receipt (ExpenseLineItem);
+-- council leadership approves them and pays approved sheets by check (ExpenseDisbursement).
+-- ExpenseReport.Status runs Draft -> Submitted -> Approved -> Reimbursed; the shared rules layer
+-- enforces the values and transitions, so there is no CHECK constraint here.
+-- =========================================================================
+CREATE TABLE [ExpenseDisbursement] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[CheckNumber] VARCHAR(50) NOT NULL,
+	[PayoutDate] DATE NOT NULL,
+	[TotalAmount] DECIMAL(18,2) NOT NULL, -- sum of the paid sheets' line items
+	[Notes] TEXT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [ExpenseReport] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL, -- always the submitter's own council
+	[SubmitterMemberID] INTEGER NOT NULL,
+	[Status] VARCHAR(50) NOT NULL, -- Draft, Submitted, Approved, Reimbursed
+	[LinkedEventID] INTEGER NULL,
+	[LinkedMeetingID] INTEGER NULL,
+	[DisbursementID] INTEGER NULL, -- set when the sheet is paid (Status = Reimbursed)
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [ExpenseLineItem] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[ExpenseReportID] INTEGER NOT NULL,
+	[DateOfExpense] DATE NOT NULL,
+	[Amount] DECIMAL(18,2) NOT NULL,
+	[VendorName] VARCHAR(255) NOT NULL,
+	[ReceiptPhotoURL] VARCHAR(2000) NULL,
+	[ExpenseDescription] TEXT NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [ExpenseDisbursement]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([SubmitterMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([LinkedEventID])
+REFERENCES [Event]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([LinkedMeetingID])
+REFERENCES [Meeting]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([DisbursementID])
+REFERENCES [ExpenseDisbursement]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ExpenseLineItem]
+ADD FOREIGN KEY([ExpenseReportID])
+REFERENCES [ExpenseReport]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE INDEX [ExpenseReport_Submitter_Idx] ON [ExpenseReport] ([SubmitterMemberID]);
+GO
+CREATE INDEX [ExpenseReport_Council_Status_Idx] ON [ExpenseReport] ([CouncilID], [Status]);
+GO
+CREATE INDEX [ExpenseLineItem_Report_Idx] ON [ExpenseLineItem] ([ExpenseReportID]);
+GO

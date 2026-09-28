@@ -17,6 +17,19 @@ import {
   assertMayChangeDonation,
   appendPhotoPaths,
   assertMayAttachEventMedia,
+  assertMayAuditCouncilExpenses,
+  assertCheckNumberUnused,
+  assertExpenseLinks,
+  assertExpenseStatus,
+  assertReportInCouncil,
+  buildExpenseReportDetails,
+  cleanDisbursementCheck,
+  cleanExpenseLineItems,
+  cleanExpenseReportIds,
+  cleanExpenseReportInput,
+  EXPENSE_QUEUE_STATUSES,
+  expenseReportNotFound,
+  sumAmounts,
   assertMayChangeLesson,
   assertMayLinkMeetingDrive,
   buildCalendarEntries,
@@ -143,6 +156,10 @@ import type {
   EventChanges,
   EventSignup,
   EventTime,
+  ExpenseDisbursement,
+  ExpenseLineItem,
+  ExpenseReport,
+  ExpenseReportDetail,
   LessonsLearned,
   LessonsLearnedCategory,
   Category,
@@ -195,8 +212,9 @@ const DB_NAME = 'kofc.db';
  * 5: SystemFeedback (Sprint 5P).
  * 6: Event.PhotoGalleryURL, Meeting.GoogleDriveMinutesURL and GoogleDriveFlyerURL (Sprint 5Q).
  * 7: Meeting.OwnerID (Sprint 5Q).
+ * 8: ExpenseDisbursement, ExpenseReport and ExpenseLineItem (Sprint 5R).
  */
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -1630,6 +1648,157 @@ export class SqliteDataService implements DataService {
         WHERE mr.[MemberID] = ? ORDER BY r.[id]`,
       [memberId],
     );
+  }
+
+  // ---- expense reporting (Sprint 5R) --------------------------------------
+
+  expenses: DataService['expenses'] = {
+    listUserReports: async (actorId) => {
+      const db = await this.ready();
+      await this.requireMember(db, actorId);
+      const reports = await db.getAllAsync<ExpenseReport>(
+        'SELECT * FROM [ExpenseReport] WHERE [SubmitterMemberID] = ? ORDER BY [id] DESC',
+        [actorId],
+      );
+      return this.expenseDetails(db, reports);
+    },
+
+    listCouncilQueue: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayAuditCouncilExpenses(await this.memberWriteActor(db, actorId), councilId, `review the expense queue of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const reports = await db.getAllAsync<ExpenseReport>(
+        `SELECT * FROM [ExpenseReport] WHERE [CouncilID] = ? AND [Status] IN (${marks(EXPENSE_QUEUE_STATUSES.length)}) ORDER BY [id]`,
+        [councilId, ...EXPENSE_QUEUE_STATUSES],
+      );
+      return this.expenseDetails(db, reports);
+    },
+
+    submitReport: async (actorId, report, lineItems) => {
+      const clean = cleanExpenseReportInput(report);
+      const items = cleanExpenseLineItems(lineItems, clean.Status, this.now());
+      const db = await this.ready();
+      let reportId = clean.id ?? 0;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const draft = clean.id === null ? null : await this.requireOwnExpenseReport(db, clean.id, actorId);
+        if (draft) assertExpenseStatus(draft, 'Draft', 'be edited');
+        const councilId = draft ? draft.CouncilID : actor.councilId;
+        const eventId = clean.LinkedEventID;
+        const eventExists = eventId !== null && (await db.getFirstAsync('SELECT [id] FROM [Event] WHERE [id] = ?', [eventId])) !== null;
+        assertExpenseLinks(
+          clean,
+          councilId,
+          eventExists ? await this.councilIdsOf(db, eventId!) : null,
+          clean.LinkedMeetingID === null
+            ? null
+            : await db.getFirstAsync<Meeting>('SELECT [CouncilID] FROM [Meeting] WHERE [id] = ?', [clean.LinkedMeetingID]),
+        );
+        const fields: Bind[] = [clean.Status, clean.LinkedEventID, clean.LinkedMeetingID];
+        if (draft) {
+          await db.runAsync('UPDATE [ExpenseReport] SET [Status] = ?, [LinkedEventID] = ?, [LinkedMeetingID] = ? WHERE [id] = ?', [
+            ...fields,
+            draft.id,
+          ]);
+          await db.runAsync('DELETE FROM [ExpenseLineItem] WHERE [ExpenseReportID] = ?', [draft.id]);
+        } else {
+          const res = await db.runAsync(
+            `INSERT INTO [ExpenseReport] ([Status], [LinkedEventID], [LinkedMeetingID], [CouncilID], [SubmitterMemberID])
+             VALUES (?, ?, ?, ?, ?)`,
+            [...fields, councilId, actorId],
+          );
+          reportId = res.lastInsertRowId;
+        }
+        for (const item of items) {
+          await db.runAsync(
+            `INSERT INTO [ExpenseLineItem] ([ExpenseReportID], [DateOfExpense], [Amount], [VendorName], [ReceiptPhotoURL], [ExpenseDescription])
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [reportId, item.DateOfExpense, item.Amount, item.VendorName, item.ReceiptPhotoURL ?? null, item.ExpenseDescription],
+          );
+        }
+      });
+      return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
+    },
+
+    approveReport: async (actorId, reportId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireExpenseReport(db, reportId);
+        assertMayAuditCouncilExpenses(actor, row.CouncilID, `approve expense report ${reportId}`);
+        assertExpenseStatus(row, 'Submitted', 'be approved');
+        await db.runAsync("UPDATE [ExpenseReport] SET [Status] = 'Approved' WHERE [id] = ?", [reportId]);
+      });
+      return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
+    },
+
+    recordDisbursement: async (actorId, councilId, reportIds, checkDetails) => {
+      const ids = cleanExpenseReportIds(reportIds);
+      const check = cleanDisbursementCheck(checkDetails);
+      const db = await this.ready();
+      let disbursementId = 0;
+      await db.withTransactionAsync(async () => {
+        assertMayAuditCouncilExpenses(await this.memberWriteActor(db, actorId), councilId, `record expense checks for council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        for (const id of ids) {
+          const row = await this.requireExpenseReport(db, id);
+          assertReportInCouncil(row, councilId);
+          assertExpenseStatus(row, 'Approved', 'be paid');
+        }
+        assertCheckNumberUnused(
+          check.CheckNumber,
+          councilId,
+          await db.getAllAsync<ExpenseDisbursement>('SELECT [CheckNumber] FROM [ExpenseDisbursement] WHERE [CouncilID] = ?', [councilId]),
+        );
+        const amounts = await selectIn<{ Amount: number }>(
+          db,
+          (m) => `SELECT [Amount] FROM [ExpenseLineItem] WHERE [ExpenseReportID] IN (${m})`,
+          ids,
+        );
+        const res = await db.runAsync(
+          'INSERT INTO [ExpenseDisbursement] ([CouncilID], [CheckNumber], [PayoutDate], [TotalAmount], [Notes]) VALUES (?, ?, ?, ?, ?)',
+          [councilId, check.CheckNumber, check.PayoutDate, sumAmounts(amounts.map((a) => a.Amount)), check.Notes],
+        );
+        disbursementId = res.lastInsertRowId;
+        for (const id of ids) {
+          await db.runAsync("UPDATE [ExpenseReport] SET [Status] = 'Reimbursed', [DisbursementID] = ? WHERE [id] = ?", [disbursementId, id]);
+        }
+      });
+      const disbursement = (await db.getFirstAsync<ExpenseDisbursement>('SELECT * FROM [ExpenseDisbursement] WHERE [id] = ?', [
+        disbursementId,
+      ]))!;
+      const reports: ExpenseReport[] = [];
+      for (const id of ids) reports.push(await this.requireExpenseReport(db, id));
+      return { disbursement, reports: await this.expenseDetails(db, reports) };
+    },
+  };
+
+  private async requireExpenseReport(db: SQLite.SQLiteDatabase, reportId: number): Promise<ExpenseReport> {
+    const row = await db.getFirstAsync<ExpenseReport>('SELECT * FROM [ExpenseReport] WHERE [id] = ?', [reportId]);
+    if (!row) throw expenseReportNotFound(reportId);
+    return row;
+  }
+
+  /** A member reaches only their own sheets; anyone else's reads as missing, so ids reveal nothing. */
+  private async requireOwnExpenseReport(db: SQLite.SQLiteDatabase, reportId: number, memberId: number): Promise<ExpenseReport> {
+    const row = await db.getFirstAsync<ExpenseReport>('SELECT * FROM [ExpenseReport] WHERE [id] = ? AND [SubmitterMemberID] = ?', [
+      reportId,
+      memberId,
+    ]);
+    if (!row) throw expenseReportNotFound(reportId);
+    return row;
+  }
+
+  private async expenseDetails(db: SQLite.SQLiteDatabase, reports: readonly ExpenseReport[]): Promise<ExpenseReportDetail[]> {
+    const reportIds = reports.map((r) => r.id);
+    const memberIds = [...new Set(reports.map((r) => r.SubmitterMemberID))];
+    const disbursementIds = [...new Set(reports.map((r) => r.DisbursementID).filter((id): id is number => id != null))];
+    const [lineItems, members, disbursements] = await Promise.all([
+      selectIn<ExpenseLineItem>(db, (m) => `SELECT * FROM [ExpenseLineItem] WHERE [ExpenseReportID] IN (${m})`, reportIds),
+      selectIn<Member>(db, (m) => `SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member] WHERE [id] IN (${m})`, memberIds),
+      selectIn<ExpenseDisbursement>(db, (m) => `SELECT * FROM [ExpenseDisbursement] WHERE [id] IN (${m})`, disbursementIds),
+    ]);
+    return buildExpenseReportDetails(reports, lineItems, members, disbursements);
   }
 
   // ---- events, shifts and time logs -------------------------------------

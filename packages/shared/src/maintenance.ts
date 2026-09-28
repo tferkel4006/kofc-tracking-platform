@@ -63,6 +63,8 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
     { table: 'Donation', column: 'CouncilID', noun: ['donation', 'donations'] },
     { table: 'DonationType', column: 'CouncilID', noun: ['donation type', 'donation types'] },
     { table: 'CouncilDonationMethod', column: 'CouncilID', noun: ['donation method', 'donation methods'] },
+    { table: 'ExpenseReport', column: 'CouncilID', noun: ['expense report', 'expense reports'] },
+    { table: 'ExpenseDisbursement', column: 'CouncilID', noun: ['expense check', 'expense checks'] },
     { table: 'AffiliatedCouncils', column: 'PrimaryCouncilID', noun: ['affiliation', 'affiliations'] },
     { table: 'AffiliatedCouncils', column: 'AffiliatedCouncilID', noun: ['affiliation', 'affiliations'] },
   ],

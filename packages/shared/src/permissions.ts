@@ -131,6 +131,13 @@ export const canChangeDonation = (u: Actor, donation: Pick<Donation, 'CouncilID'
   donation.RecordedBy === u.memberId || eventOwnerId === u.memberId || canManageFinances(u, donation.CouncilID);
 
 /**
+ * The council's expense queue, approvals and check disbursements, mirroring the drivers' assertMayAuditCouncilExpenses
+ * (activity status is checked there): its Admins, its Financial Secretary and Treasurer, and any Super Admin. Every
+ * member files and reads their own expense reports.
+ */
+export const canAuditCouncilExpenses = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
+
+/**
  * Photo upload controls on an event, mirroring the drivers' assertMayAttachEventMedia (activity status is checked
  * there): its owner, an Admin or finance officer of a council it is linked to, any Super Admin.
  */
