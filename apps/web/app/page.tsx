@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 
-// The planner is the working home for admins; other roles are steered by the navigation.
+// Every Knight, Admins included, starts at the member hub: their shifts, open sign-ups and hours.
 export default function Home() {
-  redirect('/events');
+  redirect('/member-actions');
 }

@@ -3,11 +3,24 @@
 // hours, unique Knights, net balance, outreach), the ledger figures behind the balance as a table, and the
 // month's event highlights as a scrollable feed. Open to the council's Admins, Financial Secretary and Treasurer,
 // and any Super Admin (who may pick the council).
+//
+// Under the month, the council's Admins and Super Admins (canViewExecutiveAudits) also get two personnel audits:
+// every no-show of the trailing NO_SHOW_AUDIT_MONTHS (reports.listNoShowsAudit, with or without a reason), and every
+// past signup still waiting for hours (reports.listShiftsAwaitingHours), flagged once the day-5 reminder is due.
 import { useState, type ReactNode } from 'react';
-import { type MonthlySummary } from '@kofc/shared';
+import {
+  canViewExecutiveAudits,
+  formatShiftWhen,
+  HOURS_REMINDER_FIRST_DAY,
+  hoursRemindersDue,
+  NO_SHOW_AUDIT_MONTHS,
+  SHIFT_HISTORY_MONTHS,
+  type MonthlySummary,
+} from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { cx, Empty, Field, Notice, PageTitle, Panel, Select, Table, Td } from '@/components/ui';
-import { formatDecimalHours, formatFullDate, formatMoney } from '@/lib/format';
+import { cx, Empty, Field, Notice, PageTitle, Panel, Pill, Select, Table, Td } from '@/components/ui';
+import { formatDecimalHours, formatFullDate, formatMoney, formatPersonName, formatPhone } from '@/lib/format';
+import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
@@ -53,7 +66,102 @@ function Scorecards({ s }: { s: MonthlySummary }) {
   );
 }
 
+function NoShowAudit({ councilId }: { councilId: number }) {
+  const audit = useLoad(() => db.reports.listNoShowsAudit(councilId), [councilId]);
+  const rows = audit.data ?? [];
+  const unexplained = rows.filter((r) => r.reason === null).length;
+  return (
+    <Panel
+      title={`No-show audit: last ${NO_SHOW_AUDIT_MONTHS} months (${rows.length})`}
+      actions={unexplained > 0 ? <Pill tone="red">{unexplained} without a reason</Pill> : null}
+    >
+      {audit.error ? <Notice tone="error">{audit.error}</Notice> : null}
+      {audit.data && rows.length === 0 ? <Empty>No no-shows recorded in the last {NO_SHOW_AUDIT_MONTHS} months.</Empty> : null}
+      {rows.length > 0 ? (
+        <div className="max-h-[28rem] overflow-y-auto">
+          <Table caption="No-shows in the trailing six months" head={['Member', 'Member #', 'Shift date', 'Event', 'Shift', 'Reason']}>
+            {rows.map((r) => (
+              <tr key={r.signup.id}>
+                <Td className="font-bold">{formatPersonName(r.firstName, r.lastName)}</Td>
+                <Td>{r.memberNumber}</Td>
+                <Td className="whitespace-nowrap">{formatFullDate(r.shift.ShiftDate)}</Td>
+                <Td>{r.event.EventName}</Td>
+                <Td>
+                  {r.shift.ShiftName}
+                  <span className="block text-xs text-muted">Shift #{r.shift.id}</span>
+                </Td>
+                <Td>
+                  {r.reason ? (
+                    <>
+                      <Pill tone="outline">{r.reason.NoShowReasonCode}</Pill> {r.reason.NoShowReasonDescription}
+                    </>
+                  ) : (
+                    <Pill tone="red">No reason provided</Pill>
+                  )}
+                </Td>
+              </tr>
+            ))}
+          </Table>
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
+function AwaitingHours({ councilId }: { councilId: number }) {
+  const awaiting = useLoad(() => db.reports.listShiftsAwaitingHours(councilId), [councilId]);
+  const rows = awaiting.data ?? [];
+  const overdue = rows.filter((r) => !r.closed && r.daysSinceShift >= HOURS_REMINDER_FIRST_DAY).length;
+  return (
+    <Panel title={`Shifts awaiting hours (${rows.length})`} actions={overdue > 0 ? <Pill tone="red">{overdue} past {HOURS_REMINDER_FIRST_DAY} days</Pill> : null}>
+      {awaiting.error ? <Notice tone="error">{awaiting.error}</Notice> : null}
+      {awaiting.data && rows.length === 0 ? <Empty>Every volunteer on a past shift has logged their hours.</Empty> : null}
+      {rows.length > 0 ? (
+        <div className="max-h-[28rem] overflow-y-auto">
+          <Table caption="Past shifts whose volunteers have not logged hours" head={['Member', 'Phone', 'Shift', 'Event', 'Days since', 'Reminders']}>
+            {rows.map((r) => {
+              const late = !r.closed && r.daysSinceShift >= HOURS_REMINDER_FIRST_DAY;
+              const due = hoursRemindersDue(r);
+              return (
+                <tr key={r.signup.id} className={cx(late && 'border-l-8 border-brand-red')}>
+                  <Td className="font-bold">{formatPersonName(r.firstName, r.lastName)}</Td>
+                  <Td className="whitespace-nowrap">{formatPhone(r.phone)}</Td>
+                  <Td className="whitespace-nowrap">
+                    {formatShiftWhen(r.shift)}
+                    <span className="block text-xs text-muted">{r.shift.ShiftName}</span>
+                  </Td>
+                  <Td>{r.event.EventName}</Td>
+                  <Td className={cx('font-bold', late && 'text-brand-red')}>{r.daysSinceShift}</Td>
+                  <Td>
+                    {r.closed ? (
+                      <Pill tone="outline">Closed: past {SHIFT_HISTORY_MONTHS} months</Pill>
+                    ) : late ? (
+                      <>
+                        <Pill tone="red">⚠ Overdue</Pill>
+                        <span className="block text-xs text-brand-red">
+                          {due} text reminder{due === 1 ? '' : 's'} due so far · log by {formatFullDate(r.loggableThrough)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted">First reminder on day {HOURS_REMINDER_FIRST_DAY}</span>
+                    )}
+                  </Td>
+                </tr>
+              );
+            })}
+          </Table>
+        </div>
+      ) : null}
+      <p className="mt-2 text-xs text-muted">
+        Members who checked in but have not reported time. A text reminder goes out on day {HOURS_REMINDER_FIRST_DAY} and weekly after that, until the{' '}
+        {SHIFT_HISTORY_MONTHS}-month logging window closes.
+      </p>
+    </Panel>
+  );
+}
+
 function Dashboard() {
+  const user = useUser();
   const scope = useCouncilScope();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -148,6 +256,15 @@ function Dashboard() {
           </div>
         </div>
       )}
+      {canViewExecutiveAudits(user, scope.councilId) ? (
+        <div className="mt-6 flex flex-col gap-4">
+          <h2 className="font-serif text-xl font-bold">Executive audits</h2>
+          <div className="grid grid-cols-1 items-start gap-4 2xl:grid-cols-2">
+            <NoShowAudit councilId={scope.councilId} />
+            <AwaitingHours councilId={scope.councilId} />
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

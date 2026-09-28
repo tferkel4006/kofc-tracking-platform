@@ -8,6 +8,9 @@ import {
   canMaintainCouncils,
   canMaintainLookups,
   canManageMeetings,
+  canOpenCouncilLookups,
+  canViewExecutiveAudits,
+  councilLookupTablesFor,
   canPlanEvents,
   canRecordLedger,
   portalAreas,
@@ -71,8 +74,10 @@ describe('portal permissions', () => {
 
   it('shows each role only the areas it can use', () => {
     expect(portalAreas(superAdmin)).toEqual([
+      'member-actions',
       'lookups',
       'councils',
+      'council-lookups',
       'parishes',
       'members',
       'activities',
@@ -81,11 +86,14 @@ describe('portal permissions', () => {
       'distribution-lists',
       'donations',
       'ledger',
+      'lessons-registry',
       'dashboard',
       'messages',
       'profile',
     ]);
     expect(portalAreas(admin)).toEqual([
+      'member-actions',
+      'council-lookups',
       'parishes',
       'members',
       'activities',
@@ -94,19 +102,52 @@ describe('portal permissions', () => {
       'distribution-lists',
       'donations',
       'ledger',
+      'lessons-registry',
       'dashboard',
       'messages',
       'profile',
     ]);
-    expect(portalAreas(officer)).toEqual(['meetings', 'ledger', 'messages', 'profile']);
-    expect(portalAreas(member)).toEqual(['ledger', 'messages', 'profile']);
+    expect(portalAreas(officer)).toEqual(['member-actions', 'meetings', 'ledger', 'messages', 'profile']);
+    expect(portalAreas(member)).toEqual(['member-actions', 'ledger', 'messages', 'profile']);
+  });
+
+  it('leads every role, Admins included, with the Member Actions hub', () => {
+    for (const u of [superAdmin, admin, officer, member, actor({ roles: ['Treasurer'] })]) expect(portalAreas(u)[0]).toBe('member-actions');
+  });
+
+  it('opens council lookups to Admins, Super Admins and finance officers, with finance officers on the donation tables only', () => {
+    const treasurer = actor({ isOfficer: true, roles: ['Treasurer'] });
+    expect([superAdmin, admin, treasurer, officer, member].map(canOpenCouncilLookups)).toEqual([true, true, true, false, false]);
+    expect(councilLookupTablesFor(admin, 1)).toEqual(['Activities', 'DonationType', 'CouncilDonationMethod']);
+    expect(councilLookupTablesFor(admin, 2)).toEqual([]);
+    expect(councilLookupTablesFor(superAdmin, 2)).toEqual(['Activities', 'DonationType', 'CouncilDonationMethod']);
+    expect(councilLookupTablesFor(treasurer, 1)).toEqual(['DonationType', 'CouncilDonationMethod']);
+    expect(councilLookupTablesFor(treasurer, 2)).toEqual([]);
+    expect(councilLookupTablesFor(officer, 1)).toEqual([]);
+  });
+
+  it('keeps the personnel audits to the council Admins and Super Admins', () => {
+    expect(canViewExecutiveAudits(admin, 1)).toBe(true);
+    expect(canViewExecutiveAudits(admin, 2)).toBe(false);
+    expect(canViewExecutiveAudits(superAdmin, 2)).toBe(true);
+    expect(canViewExecutiveAudits(actor({ isOfficer: true, roles: ['Financial Secretary'] }), 1)).toBe(false);
+    expect(canViewExecutiveAudits(member, 1)).toBe(false);
   });
 
   it('opens donations and the executive summaries to the Treasurer and Financial Secretary', () => {
     for (const role of ['Treasurer', 'Financial Secretary']) {
-      expect(portalAreas(actor({ isOfficer: true, roles: [role] }))).toEqual(['meetings', 'donations', 'ledger', 'dashboard', 'messages', 'profile']);
+      expect(portalAreas(actor({ isOfficer: true, roles: [role] }))).toEqual([
+        'member-actions',
+        'council-lookups',
+        'meetings',
+        'donations',
+        'ledger',
+        'dashboard',
+        'messages',
+        'profile',
+      ]);
     }
-    expect(portalAreas(actor({ isOfficer: true, roles: ['Grand Knight', 'Recorder'] }))).toEqual(['meetings', 'ledger', 'messages', 'profile']);
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Grand Knight', 'Recorder'] }))).toEqual(['member-actions', 'meetings', 'ledger', 'messages', 'profile']);
   });
 
   it('lets finance officers manage only their own council’s finances', () => {

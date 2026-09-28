@@ -2,7 +2,8 @@
 // System Lookups: one tab per global table, one generic grid driven by LOOKUP_META. Super Admins only.
 // Rows the application looks up by name (e.g. member status "Active") are marked built-in and cannot be
 // renamed or deleted; a row still referenced elsewhere cannot be deleted and the message says where.
-// The drivers enforce the same tier on every write (SUPER_ADMIN_REQUIRED), so hiding the page is not the only gate.
+// Rows come from lookups.listForMaintenance, and the drivers enforce the same tier on that read and every write
+// (SUPER_ADMIN_REQUIRED), so hiding the page is not the only gate. Drop-downs elsewhere keep the open lookups.list.
 import { useState } from 'react';
 import { describeError, LOOKUP_META, LOOKUP_TABLE_ORDER, type LookupTableName, type LookupValues } from '@kofc/shared';
 import { RequireArea } from '@/components/CouncilScope';
@@ -19,7 +20,7 @@ const blankFor = (table: LookupTableName): LookupValues =>
 function LookupGrid({ table }: { table: LookupTableName }) {
   const user = useUser();
   const meta = LOOKUP_META[table];
-  const rows = useLoad(async () => (await db.lookups.list(table)) as unknown as Row[], [table]);
+  const rows = useLoad(async () => (await db.lookups.listForMaintenance(user.memberId, table)) as unknown as Row[], [user.memberId, table]);
   const [adding, setAdding] = useState<LookupValues>(() => blankFor(table));
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState<LookupValues>({});

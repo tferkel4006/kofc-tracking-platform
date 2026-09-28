@@ -82,6 +82,7 @@ export function createRemoteDataService(): DataService {
     },
     donations: {
       listMethods: notImplemented('donations.listMethods'),
+      listAllMethods: notImplemented('donations.listAllMethods'),
       listTypes: notImplemented('donations.listTypes'),
       list: notImplemented('donations.list'),
       listHistory: notImplemented('donations.listHistory'),

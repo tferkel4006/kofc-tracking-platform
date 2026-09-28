@@ -357,6 +357,15 @@ export function hoursReminderStage(status: Pick<ShiftAwaitingHours, 'daysSinceSh
   return since % HOURS_REMINDER_REPEAT_DAYS === 0 ? since / HOURS_REMINDER_REPEAT_DAYS : null;
 }
 
+/**
+ * How many reminders the cadence (day 5, then weekly) has called for by `daysSinceShift`, for the dashboard's
+ * awaiting-hours panel: 0 before day 5. Closed rows get no more reminders, so the panel shows them as closed instead.
+ */
+export function hoursRemindersDue(status: Pick<ShiftAwaitingHours, 'daysSinceShift'>): number {
+  if (status.daysSinceShift < HOURS_REMINDER_FIRST_DAY) return 0;
+  return 1 + Math.floor((status.daysSinceShift - HOURS_REMINDER_FIRST_DAY) / HOURS_REMINDER_REPEAT_DAYS);
+}
+
 export interface TextMessagePayload {
   /** The member's Phone as stored. */
   to: string;

@@ -18,8 +18,10 @@ type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOffi
 
 /** Each area is also its route: RequireArea links to `/${area}`. */
 export type PortalArea =
+  | 'member-actions'
   | 'lookups'
   | 'councils'
+  | 'council-lookups'
   | 'parishes'
   | 'members'
   | 'activities'
@@ -27,6 +29,7 @@ export type PortalArea =
   | 'meetings'
   | 'distribution-lists'
   | 'ledger'
+  | 'lessons-registry'
   | 'donations'
   | 'dashboard'
   | 'messages'
@@ -44,6 +47,21 @@ export const canMaintainLookups = (u: Actor): boolean => isSuperAdmin(u);
  */
 export const canManageCouncilLookups = (u: Actor, councilId: number, table: CouncilLookupTableName): boolean =>
   canAdministerCouncil(u, councilId) || (FINANCE_LOOKUP_TABLES.includes(table) && isFinanceOfficer(u) && u.councilId === councilId);
+
+/** The council lookups screen: Admins and Super Admins, and finance officers for the donation lookups. */
+export const canOpenCouncilLookups = (u: Actor): boolean => isAdmin(u) || isFinanceOfficer(u);
+
+/** The council lookup tables `u` may open for `councilId`, in tab order; a finance officer gets only the donation lookups. */
+export function councilLookupTablesFor(u: Actor, councilId: number): CouncilLookupTableName[] {
+  const all: CouncilLookupTableName[] = ['Activities', 'DonationType', 'CouncilDonationMethod'];
+  return all.filter((table) => canManageCouncilLookups(u, councilId, table));
+}
+
+/**
+ * The dashboard's personnel audits (no-shows, shifts awaiting hours) name members and their reasons, so they are
+ * for the council's Admins and any Super Admin; finance officers see only the monthly summary.
+ */
+export const canViewExecutiveAudits = (u: Actor, councilId: number): boolean => canAdministerCouncil(u, councilId);
 
 /** Every council's lessons learned are open to Admins and Super Admins; changing one follows canRecordLedger. */
 export const canBrowseLessonsRegistry = (u: Actor): boolean => isAdmin(u);
@@ -89,7 +107,6 @@ export function grantableMemberTypes(u: Actor, currentType?: MemberType['Type'])
   return ['Admin', 'Member'];
 }
 
-/** Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it. */
 /** Holds the Financial Secretary or Treasurer role (FINANCE_ROLE_NAMES). */
 export const isFinanceOfficer = (u: Actor): boolean => holdsFinanceRole(u.roles);
 
@@ -107,16 +124,20 @@ export const canManageFinances = (u: Actor, councilId: number): boolean =>
 export const canChangeDonation = (u: Actor, donation: Pick<Donation, 'CouncilID' | 'RecordedBy'>, eventOwnerId: number | null): boolean =>
   donation.RecordedBy === u.memberId || eventOwnerId === u.memberId || canManageFinances(u, donation.CouncilID);
 
+/** Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it. */
 export function portalAreas(u: Actor): PortalArea[] {
-  const areas: PortalArea[] = [];
+  // Admins and Super Admins volunteer too, so the member hub leads everyone's navigation.
+  const areas: PortalArea[] = ['member-actions'];
   if (canMaintainLookups(u)) areas.push('lookups');
   if (canMaintainCouncils(u)) areas.push('councils');
+  if (canOpenCouncilLookups(u)) areas.push('council-lookups');
   if (isAdmin(u)) areas.push('parishes', 'members', 'activities');
   if (canPlanEvents(u)) areas.push('events');
   if (isAdmin(u) || u.isOfficer) areas.push('meetings');
   if (isAdmin(u)) areas.push('distribution-lists');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('donations');
   areas.push('ledger');
+  if (canBrowseLessonsRegistry(u)) areas.push('lessons-registry');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('dashboard');
   areas.push('messages', 'profile');
   return areas;

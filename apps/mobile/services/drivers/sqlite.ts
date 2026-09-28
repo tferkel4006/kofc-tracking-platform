@@ -1396,6 +1396,11 @@ export class SqliteDataService implements DataService {
       }));
     },
 
+    listAllMethods: async () => {
+      const db = await this.ready();
+      return db.getAllAsync<DonationMethod>('SELECT [id], [DonationMethod] FROM [DonationMethod] ORDER BY [id]');
+    },
+
     listTypes: async (councilId) => {
       const db = await this.ready();
       return db.getAllAsync<DonationType>('SELECT * FROM [DonationType] WHERE [CouncilID] = ? ORDER BY [DonationType], [id]', [

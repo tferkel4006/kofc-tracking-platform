@@ -747,6 +747,8 @@ export interface DataService {
   donations: {
     /** The council's enabled methods in DonationMethod id order, with QR images, for a one-tap picker. */
     listMethods(councilId: number): Promise<CouncilDonationOption[]>;
+    /** Every DonationMethod row in id order, enabled or not, for the council lookups' "enable a method" picker. */
+    listAllMethods(): Promise<DonationMethod[]>;
     /** The council's own donation types, ordered by name. */
     listTypes(councilId: number): Promise<DonationType[]>;
     /** The council's donations, newest first; with `eventId`, only that event's. */

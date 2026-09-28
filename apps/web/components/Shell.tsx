@@ -13,8 +13,10 @@ import { db } from '@/services/db';
 import emblem from './kofc-logo.png';
 
 const AREAS: Record<PortalArea, { href: string; label: string; hint: string }> = {
+  'member-actions': { href: '/member-actions', label: 'Member Actions', hint: 'My shifts, sign-ups, roster, hours' },
   lookups: { href: '/lookups', label: 'System lookups', hint: 'Maintain the global tables' },
   councils: { href: '/councils', label: 'Councils', hint: 'Add, edit and delete councils' },
+  'council-lookups': { href: '/council-lookups', label: 'Council lookups', hint: 'Activities, donation types, methods' },
   parishes: { href: '/parishes', label: 'Parishes & pastors', hint: 'Parishes and their pastors' },
   members: { href: '/members', label: 'Member roster', hint: 'Members, types and skills' },
   activities: { href: '/activities', label: 'Activities catalog', hint: 'Standing council activities' },
@@ -22,6 +24,7 @@ const AREAS: Record<PortalArea, { href: string; label: string; hint: string }> =
   meetings: { href: '/meetings', label: 'Meeting center', hint: 'Meetings, invitations, minutes' },
   'distribution-lists': { href: '/distribution-lists', label: 'Distribution lists', hint: 'Member lists for council blasts' },
   ledger: { href: '/ledger', label: 'Post-event ledger', hint: 'Spend, funds raised, lessons' },
+  'lessons-registry': { href: '/lessons-registry', label: 'Lessons registry', hint: 'Lessons learned across councils' },
   donations: { href: '/donations', label: 'Donations', hint: 'Record and review council donations' },
   dashboard: { href: '/dashboard', label: 'Executive Summaries', hint: 'Monthly hours, members and funds' },
   messages: { href: '/messages', label: 'Communications Hub', hint: 'Message threads and replies' },

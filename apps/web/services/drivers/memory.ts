@@ -1256,6 +1256,11 @@ export class MemoryDataService implements DataService {
       return out.sort((a, b) => a.method.id - b.method.id || a.link.id - b.link.id);
     },
 
+    listAllMethods: async () => {
+      const s = await this.ready();
+      return (s.rows('DonationMethod').map((m) => ({ ...m })) as unknown as DonationMethod[]).sort((a, b) => a.id - b.id);
+    },
+
     listTypes: async (councilId) => {
       const s = await this.ready();
       return (s.rows('DonationType').filter((t) => t.CouncilID === councilId).map((t) => ({ ...t })) as unknown as DonationType[]).sort(

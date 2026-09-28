@@ -5,6 +5,7 @@ import {
   canBrowseLessonsRegistry,
   canManageCouncilLookups,
   hoursReminderStage,
+  hoursRemindersDue,
   planCouncilLookupSave,
   runHoursReminderSweep,
   SecurityPrivilegeError,
@@ -220,6 +221,10 @@ describe('unlogged-hours reminder cadence', () => {
     expect(stage(5, true)).toBeNull();
   });
 
+  it('counts the reminders called for so far, for the dashboard', () => {
+    expect([0, 4, 5, 11, 12, 18, 19, 89].map((n) => hoursRemindersDue({ daysSinceShift: n }))).toEqual([0, 0, 1, 1, 2, 2, 3, 13]);
+  });
+
   it('closes a shift exactly where eventTime.logHours starts refusing it', () => {
     expect(awaitingHoursStatus('2026-06-20', NOW)).toEqual({ daysSinceShift: 92, closed: false, loggableThrough: '2026-09-20' });
     expect(awaitingHoursStatus('2026-06-19', NOW)).toMatchObject({ closed: true, loggableThrough: '2026-09-19' });
@@ -303,6 +308,17 @@ describe.each(drivers)('$name driver: council-specific lookups', (d) => {
       { DonationMethodID: enabled[0].DonationMethodID, DonationMethodURL: 'https://example.org/qr.png' },
     ]);
     expect(other).toEqual([expect.objectContaining({ CouncilID: OTHER, DonationMethodURL: 'https://example.org/qr.png' })]);
+  });
+
+  it('lists every donation method, enabled or not, for the enable-a-method picker', async () => {
+    const db = await d.make();
+    const all = await db.donations.listAllMethods();
+    expect(all.length).toBeGreaterThan(0);
+    expect(all.map((m) => m.id)).toEqual([...all.map((m) => m.id)].sort((a, b) => a - b));
+    expect(Object.keys(all[0]).sort()).toEqual(['DonationMethod', 'id']);
+    const enabled = (await db.donations.listMethods(OWN)).map((m) => m.method);
+    for (const m of enabled) expect(all).toContainEqual(m);
+    expect(await db.donations.listMethods(OTHER)).toEqual([]);
   });
 
   it('deletes only unused rows of the council', async () => {
