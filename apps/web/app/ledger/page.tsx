@@ -5,6 +5,8 @@
 // results sit in the active queue; once anything is recorded (hasLedgerResults) they move to the archive.
 // While an event has cash or electronic donations its funds raised are synced from them (donations.record/update/
 // remove), so those two fields are shown read-only here and are corrected on the Donations page instead.
+// The volunteer turnout grid also marks and clears no-shows (events.setNoShow): Admins for their councils'
+// events, Super Admins for any; the controls follow mayMarkNoShow and the driver enforces the same rule.
 import { useEffect, useState } from 'react';
 import {
   canRecordLedger,
@@ -12,10 +14,13 @@ import {
   formatDate,
   formatHours,
   hasLedgerResults,
+  mayMarkNoShow,
   toIsoDate,
   type Event,
   type EventChanges,
   type LessonsLearnedCategory,
+  type MemberWriteActor,
+  type VolunteerTurnout,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td, Textarea } from '@/components/ui';
@@ -233,32 +238,116 @@ function LessonsPanel({ eventId, categories, onChanged }: { eventId: number; cat
 
 // ---- volunteer turnout ---------------------------------------------------------
 
+/** The no-show cell of one turnout row: the reason and a Clear control, or Mark no-show with its reason picker. */
+function NoShowCell({
+  row,
+  actor,
+  eventId,
+  councilIds,
+  reasons,
+  onChange,
+}: {
+  row: VolunteerTurnout;
+  actor: MemberWriteActor;
+  eventId: number;
+  councilIds: readonly number[];
+  reasons: readonly { id: number; NoShowReasonCode: string; NoShowReasonDescription: string }[];
+  onChange: (action: () => Promise<void>, done: string) => Promise<boolean>;
+}) {
+  const [picking, setPicking] = useState(false);
+  const [reasonId, setReasonId] = useState('');
+  const { signup } = row;
+  const name = `${row.MemberFirstName} ${row.MemberLastName}`;
+  const target = { signupId: signup.id, memberId: signup.MemberID, eventId, eventCouncilIds: councilIds };
+
+  if (signup.NoShow === 1) {
+    const reason = reasons.find((r) => r.id === signup.NoShowReasonID);
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Pill tone="red">No-show</Pill>
+        <span className="text-xs">{reason ? `${reason.NoShowReasonCode} · ${reason.NoShowReasonDescription}` : 'No reason provided'}</span>
+        {mayMarkNoShow(actor, target, false) ? (
+          <Button size="sm" variant="secondary" onClick={() => void onChange(() => db.events.setNoShow(actor.memberId, signup.id, false).then(() => undefined), `Cleared the no-show for ${name}.`)}>
+            Clear
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+  if (!mayMarkNoShow(actor, target, true)) return null;
+  if (row.hoursLogged !== null) return <span className="text-xs text-muted">Hours logged</span>;
+  if (!picking) {
+    return (
+      <Button size="sm" variant="secondary" onClick={() => setPicking(true)}>
+        Mark no-show
+      </Button>
+    );
+  }
+  const confirm = async () => {
+    const ok = await onChange(
+      () => db.events.setNoShow(actor.memberId, signup.id, true, Number(reasonId)).then(() => undefined),
+      `Marked ${name} as a no-show.`,
+    );
+    if (ok) setPicking(false);
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Select aria-label={`No-show reason for ${name}`} value={reasonId} onChange={(e) => setReasonId(e.target.value)} className="w-auto">
+        <option value="">Choose a reason…</option>
+        {reasons.map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.NoShowReasonCode} · {r.NoShowReasonDescription}
+          </option>
+        ))}
+      </Select>
+      <Button size="sm" variant="danger" disabled={reasonId === ''} onClick={() => void confirm()}>
+        Confirm
+      </Button>
+      <Button size="sm" variant="secondary" onClick={() => setPicking(false)}>
+        Cancel
+      </Button>
+    </div>
+  );
+}
+
 function TurnoutPanel({ eventId }: { eventId: number }) {
+  const user = useUser();
   const turnout = useLoad(() => db.events.listTurnout(eventId), [eventId]);
+  const context = useLoad(
+    async () => ({ councilIds: await db.events.listCouncilIds(eventId), reasons: await db.lookups.list('NoShowReason') }),
+    [eventId],
+  );
+  const { message, setMessage, run } = useAction();
   const rows = turnout.data ?? [];
   const total = rows.reduce((hours, r) => hours + (r.hoursLogged ?? 0), 0);
+  // The session belongs to a signed-in member; the driver re-reads the caller's type and status before any write.
+  const actor: MemberWriteActor = { memberId: user.memberId, councilId: user.councilId, memberType: user.memberType, active: true, roles: user.roles };
+  const change = async (action: () => Promise<void>, done: string) => {
+    const ok = await run(action, done);
+    if (ok) await turnout.reload();
+    return ok;
+  };
   return (
     <Panel title="Fraternal Volunteer Turnout Summary">
-      {turnout.error ? <Notice tone="error">{turnout.error}</Notice> : null}
+      <Banner message={message} onDismiss={() => setMessage(null)} />
+      {turnout.error || context.error ? <Notice tone="error">{turnout.error ?? context.error}</Notice> : null}
       {turnout.data?.length === 0 ? (
         <Empty>Nobody signed up for this event&apos;s shifts.</Empty>
       ) : (
-        <Table caption="Volunteers who signed up for this event's shifts, with hours logged" head={['Brother', 'Shift', 'Date', 'Hours']}>
+        <Table caption="Volunteers who signed up for this event's shifts, with hours logged and no-shows" head={['Brother', 'Shift', 'Date', 'Hours', 'No-show']}>
           {rows.map((r) => (
-            <tr key={r.signup.id}>
-              <Td>
-                <span className="font-bold">
-                  {r.MemberFirstName} {r.MemberLastName}
-                </span>
-                {r.signup.NoShow === 1 ? (
-                  <span className="ml-2">
-                    <Pill tone="red">No-show</Pill>
-                  </span>
-                ) : null}
+            <tr key={r.signup.id} className={cx(r.signup.NoShow === 1 && 'border-l-8 border-brand-red')}>
+              <Td className="font-bold">
+                {r.MemberFirstName} {r.MemberLastName}
               </Td>
               <Td>{r.shift.ShiftName}</Td>
               <Td>{formatDate(r.shift.ShiftDate)}</Td>
               <Td>{r.hoursLogged === null ? '—' : formatHours(r.hoursLogged)}</Td>
+              <Td>
+                {context.data ? (
+                  <NoShowCell row={r} actor={actor} eventId={eventId} councilIds={context.data.councilIds} reasons={context.data.reasons} onChange={change} />
+                ) : null}
+              </Td>
             </tr>
           ))}
           {rows.length > 0 ? (
@@ -267,6 +356,7 @@ function TurnoutPanel({ eventId }: { eventId: number }) {
                 Total ({rows.length} {rows.length === 1 ? 'signup' : 'signups'})
               </Td>
               <Td className="font-bold">{formatHours(total)}</Td>
+              <Td />
             </tr>
           ) : null}
         </Table>

@@ -46,6 +46,7 @@ import type {
   Shift,
   Skill,
   SkillLevel,
+  SystemFeedback,
   WorkingStatus,
 } from './types';
 
@@ -516,7 +517,18 @@ export interface LessonsRegistryEntry {
   canModify: boolean;
 }
 
-// 12. THE SERVICE
+// 12. SYSTEM FEEDBACK (Sprint 5P)
+/** One feedback or bug report with its sender, for the Super Admin inbox. */
+export interface FeedbackInboxEntry {
+  feedback: SystemFeedback;
+  firstName: string;
+  lastName: string;
+  councilNumber: number;
+  phone: string;
+  email: string;
+}
+
+// 13. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -812,6 +824,15 @@ export interface DataService {
     }): Promise<ShiftFeedItem[]>;
     /** Signups flagged NoShow for the member on shifts dated on or after `sinceDate` (rolling one-year badge). */
     countNoShows(memberId: number, sinceDate: string): Promise<number>;
+    /**
+     * Marks a signup as a no-show (`noShow` true: NoShow = 1 with `reasonId`, which must name a NoShowReason) or
+     * clears it (NoShow = 0, reason removed; `reasonId` ignored). `actorId` is the signed-in member: a member may
+     * mark only their own signup and may not clear one; an Active Admin of a council the shift's event is linked to
+     * may mark or clear anyone's; an Active Super Admin anyone's anywhere (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED).
+     * Rejects RECORD_NOT_FOUND for an unknown signup, INVALID_INPUT for a missing or unknown reason, and
+     * NO_SHOW_HAS_HOURS while the member has hours logged on the shift. Nothing is written when it rejects.
+     */
+    setNoShow(actorId: number, signupId: number, noShow: boolean, reasonId?: number | null): Promise<EventSignup>;
 
     /** Events linked to the council, newest StartDate first. */
     listByCouncil(councilId: number): Promise<Event[]>;
@@ -935,6 +956,16 @@ export interface DataService {
      * Time End - Time Start, oldest first with a running total. Optional inclusive date range.
      */
     memberHours(memberId: number, range?: { fromDate?: string; toDate?: string }): Promise<MemberMeetingHours>;
+  };
+
+  feedback: {
+    /**
+     * Saves a feedback or bug report from `memberId`, stamped SubmittedAt now. Rejects MEMBER_NOT_FOUND for an
+     * unknown member and INVALID_INPUT for empty text or text over FEEDBACK_MAX_LENGTH characters.
+     */
+    submit(memberId: number, text: string): Promise<SystemFeedback>;
+    /** Every report, newest first, with its sender. Only an Active Super Admin may read it (SUPER_ADMIN_REQUIRED). */
+    listInbox(actorId: number): Promise<FeedbackInboxEntry[]>;
   };
 
   messages: {

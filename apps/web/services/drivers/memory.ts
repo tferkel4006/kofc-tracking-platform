@@ -15,9 +15,12 @@ import {
   assertLookupKeyUnique,
   assertLookupNotProtected,
   assertLookupUnused,
+  assertNoShowWithoutHours,
   assertMayChangeDonation,
   assertMayChangeLesson,
   assertMayManageCouncilLookups,
+  assertMayMarkNoShow,
+  assertMayReadFeedback,
   assertMayReadLessonsRegistry,
   assertMayCreateMember,
   assertMayEditMemberExtensions,
@@ -36,6 +39,7 @@ import {
   assertThreadParticipant,
   buildActivityTimeLog,
   buildDonationHistory,
+  buildFeedbackInbox,
   buildLessonsRegistry,
   buildNoShowAudit,
   buildShiftsAwaitingHours,
@@ -46,6 +50,7 @@ import {
   cleanActivity,
   cleanCouncil,
   cleanCouncilIds,
+  cleanFeedbackText,
   cleanDistributionListChanges,
   cleanEventFields,
   cleanLessonsRegistryFilters,
@@ -68,6 +73,7 @@ import {
   mergeMemberChanges,
   mergeRecordChanges,
   monthBounds,
+  noShowReasonFor,
   noShowAuditThreshold,
   planCouncilLookupSave,
   nextEventFunds,
@@ -79,6 +85,7 @@ import {
   RECORD_REFERENCES,
   recordNotFound,
   rollupEventFunds,
+  signupNotFound,
   sortCouncilLookupRows,
   summarizeActivities,
   summarizeMonth,
@@ -122,6 +129,7 @@ import type {
   ProfileOptions,
   Skill,
   SkillLevel,
+  SystemFeedback,
   WorkingStatus,
   Event as CouncilEvent,
   EventChanges,
@@ -1535,6 +1543,31 @@ export class MemoryDataService implements DataService {
       }).length;
     },
 
+    setNoShow: async (actorId, signupId, noShow, reasonId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const signup = s.rows('EventSignup').find((e) => e.id === signupId);
+        if (!signup) throw signupNotFound(signupId);
+        const shift = this.requireShift(s, signup.ShiftID as number);
+        const target = {
+          signupId,
+          memberId: signup.MemberID as number,
+          eventId: shift.EventID as number,
+          eventCouncilIds: this.councilIdsOf(s, shift.EventID as number),
+        };
+        assertMayMarkNoShow(actor, target, noShow);
+        const reason = noShowReasonFor(noShow, reasonId, s.rows('NoShowReason').map((r) => r.id as number));
+        if (noShow) {
+          const time = s.rows('EventTime').find((t) => t.ShiftID === shift.id && t.MemberID === signup.MemberID);
+          assertNoShowWithoutHours(target, time ? (time.Hours as number) : null);
+        }
+        (signup as Row).NoShow = noShow ? 1 : 0;
+        (signup as Row).NoShowReasonID = reason;
+        return { ...signup } as unknown as EventSignup;
+      });
+    },
+
     listByCouncil: async (councilId) => {
       const s = await this.ready();
       const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
@@ -2037,6 +2070,28 @@ export class MemoryDataService implements DataService {
   }
 
   // ---- messages ----------------------------------------------------------
+
+  // ---- system feedback ---------------------------------------------------
+
+  feedback: DataService['feedback'] = {
+    submit: async (memberId, text) => {
+      const clean = cleanFeedbackText(text);
+      const s = await this.ready();
+      this.requireMember(s, memberId);
+      const row = s.insert('SystemFeedback', { MemberID: memberId, SubmittedAt: toTimestamp(this.now()), FeedbackText: clean });
+      return { ...row } as unknown as SystemFeedback;
+    },
+
+    listInbox: async (actorId) => {
+      const s = await this.ready();
+      assertMayReadFeedback(this.memberWriteActor(s, actorId));
+      return buildFeedbackInbox(
+        s.rows('SystemFeedback') as unknown as SystemFeedback[],
+        s.rows('Member') as unknown as Member[],
+        s.rows('Council') as unknown as Council[],
+      );
+    },
+  };
 
   messages: DataService['messages'] = {
     getPage: async (threadId, options) => {

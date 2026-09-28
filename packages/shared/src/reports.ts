@@ -10,6 +10,7 @@ import type {
   DonationHistory,
   DonationHistoryEntry,
   EventDonationSummary,
+  FeedbackInboxEntry,
   LessonsRegistryEntry,
   LessonsRegistryFilters,
   MonthlySummary,
@@ -20,7 +21,9 @@ import { daysBetween } from './planning';
 import {
   assertInteger,
   assertIsoDate,
+  assertText,
   BusinessRuleError,
+  FEEDBACK_MAX_LENGTH,
   donationMethodKind,
   mayChangeLesson,
   rollupEventFunds,
@@ -45,6 +48,7 @@ import type {
   Member,
   NoShowReason,
   Shift,
+  SystemFeedback,
 } from './types';
 
 /** Adds hour or money values in hundredths, so 0.1 + 0.2 style drift never reaches a report. */
@@ -310,4 +314,32 @@ export function buildLessonsRegistry(actor: MemberWriteActor, filters: LessonsRe
     });
   }
   return out.sort((a, b) => b.eventStartDate.localeCompare(a.eventStartDate) || a.lesson.id - b.lesson.id);
+}
+
+// ---- system feedback (Sprint 5P) -------------------------------------------------
+
+/** feedback.submit's text: trimmed, required, at most FEEDBACK_MAX_LENGTH characters. */
+export const cleanFeedbackText = (text: unknown): string => assertText(text, 'Feedback', FEEDBACK_MAX_LENGTH);
+
+/** feedback.listInbox from every report and the members and councils around them: newest SubmittedAt first, then newest id. */
+export function buildFeedbackInbox(
+  feedback: readonly SystemFeedback[],
+  members: readonly Pick<Member, 'id' | 'CouncilID' | 'MemberFirstName' | 'MemberLastName' | 'Phone' | 'Email'>[],
+  councils: readonly Pick<Council, 'id' | 'CouncilNumber'>[],
+): FeedbackInboxEntry[] {
+  const memberById = new Map(members.map((m) => [m.id, m]));
+  const councilNumber = new Map(councils.map((c) => [c.id, c.CouncilNumber]));
+  return [...feedback]
+    .sort((a, b) => b.SubmittedAt.localeCompare(a.SubmittedAt) || b.id - a.id)
+    .map((f) => {
+      const m = memberById.get(f.MemberID);
+      return {
+        feedback: { ...f },
+        firstName: m?.MemberFirstName ?? '',
+        lastName: m?.MemberLastName ?? '',
+        councilNumber: (m && councilNumber.get(m.CouncilID)) ?? 0,
+        phone: m?.Phone ?? '',
+        email: m?.Email ?? '',
+      };
+    });
 }

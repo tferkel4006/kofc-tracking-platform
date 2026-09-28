@@ -2056,6 +2056,50 @@ export const TABLES: Record<string, TableMeta> = {
         "refColumn": "id"
       }
     ]
+  },
+  "SystemFeedback": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "MemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "SubmittedAt",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      },
+      {
+        "name": "FeedbackText",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "MemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ]
   }
 };
 

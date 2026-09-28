@@ -69,7 +69,8 @@ export type BusinessRuleCode =
   | 'COUNCIL_ACCESS_DENIED'
   | 'RECORD_NOT_FOUND'
   | 'RECORD_IN_USE'
-  | 'FUNDS_MANAGED_BY_DONATIONS';
+  | 'FUNDS_MANAGED_BY_DONATIONS'
+  | 'NO_SHOW_HAS_HOURS';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -651,6 +652,91 @@ export function assertMayChangeLesson(
 /** assertMayChangeLesson as a yes/no, for the registry's `canModify`. */
 export const mayChangeLesson = (actor: MemberWriteActor, event: { id: number; OwnerID: number }, eventCouncilIds: readonly number[]): boolean =>
   lessonChangeDenial(actor, event, eventCouncilIds, 'change lessons') === null;
+
+/** The signup being marked or cleared, with the council links of its shift's event. */
+export interface NoShowTarget {
+  signupId: number;
+  /** The member who signed up. */
+  memberId: number;
+  eventId: number;
+  eventCouncilIds: readonly number[];
+}
+
+/** Why `actor` may not mark (`noShow` true) or clear a no-show on `target`, or null when they may. */
+function noShowChangeDenial(actor: MemberWriteActor, target: NoShowTarget, noShow: boolean): SecurityPrivilegeError | null {
+  const verb = noShow ? 'mark' : 'clear';
+  if (hasSuperAdminRights(actor)) return null;
+  // Anyone active reports their own absence, but cannot erase a no-show, which could be one an Admin recorded.
+  if (actor.active && noShow && target.memberId === actor.memberId) return null;
+  if (hasAdminRights(actor)) {
+    if (target.eventCouncilIds.includes(actor.councilId)) return null;
+    return new SecurityPrivilegeError(
+      'COUNCIL_ACCESS_DENIED',
+      `Admin ${actor.memberId} of council ${actor.councilId} cannot ${verb} a no-show on signup ${target.signupId}; its event ${target.eventId} belongs to council${target.eventCouncilIds.length === 1 ? '' : 's'} ${target.eventCouncilIds.join(', ')}.`,
+      { actorId: actor.memberId, actorCouncilId: actor.councilId, signupId: target.signupId, eventCouncilIds: [...target.eventCouncilIds] },
+    );
+  }
+  return new SecurityPrivilegeError(
+    'ADMIN_REQUIRED',
+    noShow
+      ? `Member ${actor.memberId} cannot mark a no-show on signup ${target.signupId}: members report only their own absence, and an active Admin marks others; member ${actor.memberId} is ${describeActor(actor)}.`
+      : `Member ${actor.memberId} cannot clear the no-show on signup ${target.signupId}: only an active Admin of the event's council or a Super Admin can; member ${actor.memberId} is ${describeActor(actor)}.`,
+    { actorId: actor.memberId, actorType: actor.memberType ?? null, signupId: target.signupId, noShow },
+  );
+}
+
+/**
+ * events.setNoShow: an Active member marks only their own signup and never clears one; an Active Admin marks or
+ * clears any signup on events linked to their own council; an Active Super Admin any signup.
+ */
+export function assertMayMarkNoShow(actor: MemberWriteActor, target: NoShowTarget, noShow: boolean): void {
+  const denial = noShowChangeDenial(actor, target, noShow);
+  if (denial) throw denial;
+}
+
+/** assertMayMarkNoShow as a yes/no, for the screens' Mark and Clear controls. */
+export const mayMarkNoShow = (actor: MemberWriteActor, target: NoShowTarget, noShow: boolean): boolean =>
+  noShowChangeDenial(actor, target, noShow) === null;
+
+/** A no-show and logged hours on the same shift contradict each other, so a signup with hours is never marked. */
+export function assertNoShowWithoutHours(target: NoShowTarget, hoursLogged: number | null): void {
+  if (hoursLogged === null) return;
+  throw new BusinessRuleError(
+    'NO_SHOW_HAS_HOURS',
+    `Signup ${target.signupId} cannot be marked a no-show: member ${target.memberId} has ${hoursLogged} hours logged on that shift.`,
+    { signupId: target.signupId, memberId: target.memberId, hoursLogged },
+  );
+}
+
+export const signupNotFound = (signupId: number): BusinessRuleError =>
+  new BusinessRuleError('RECORD_NOT_FOUND', `No shift signup with id ${signupId}.`, { signupId });
+
+/**
+ * events.setNoShow's NoShowReasonID: marking needs one of `knownReasonIds` (INVALID_INPUT otherwise), and clearing
+ * removes the reason, so the result is null.
+ */
+export function noShowReasonFor(noShow: boolean, reasonId: unknown, knownReasonIds: readonly number[]): number | null {
+  if (!noShow) return null;
+  if (typeof reasonId === 'number' && knownReasonIds.includes(reasonId)) return reasonId;
+  throw new BusinessRuleError(
+    'INVALID_INPUT',
+    reasonId === undefined || reasonId === null ? 'Choose a reason for the no-show.' : `No no-show reason with id ${String(reasonId)}.`,
+    { reasonId: reasonId ?? null },
+  );
+}
+
+/** Longest SystemFeedback.FeedbackText (VARCHAR(2000)). */
+export const FEEDBACK_MAX_LENGTH = 2000;
+
+/** feedback.listInbox: the feedback inbox is read only by Active Super Admins. */
+export function assertMayReadFeedback(actor: MemberWriteActor): void {
+  if (hasSuperAdminRights(actor)) return;
+  throw new SecurityPrivilegeError(
+    'SUPER_ADMIN_REQUIRED',
+    `Only an active Super Admin can read the feedback inbox; member ${actor.memberId} is ${describeActor(actor)}.`,
+    { actorId: actor.memberId, actorType: actor.memberType ?? null },
+  );
+}
 
 const hasSuperAdminRights = (a: MemberWriteActor): boolean => a.active && a.memberType === SUPER_ADMIN_TYPE;
 const hasAdminRights = (a: MemberWriteActor): boolean => a.active && (a.memberType === 'Admin' || a.memberType === SUPER_ADMIN_TYPE);

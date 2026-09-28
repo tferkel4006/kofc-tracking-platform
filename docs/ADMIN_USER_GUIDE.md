@@ -207,6 +207,8 @@ This panel lists every sign-up flagged as a no-show by members of the council **
 - The header's red pill counts **no-shows without a reason**. Follow up on these first.
 - Members see their own rolling **12-month** badge on the phone. The 6-month audit is the council's working view.
 - No-show reasons come from the **No-Show Reason** system lookup (§12).
+- No-shows are recorded on the **Post-event ledger** turnout grid (§8), or by members reporting their own absence on the phone.
+- Meeting absence is recorded by leaving **Attended** unticked in the Meeting center. Meetings have no separate no-show flag.
 
 ### 7.2 Shifts awaiting hours
 
@@ -239,7 +241,11 @@ This panel lists members who signed up for a past shift, were **not** marked as 
    - **Cash raised ($)** and **Electronic raised ($)**. Once cash or electronic donations have been recorded for the event, these fields show **Synced from donations** and are read-only, because the donations are the source of truth. Physical items never count toward these totals.
    - **Highlights:** short notes that appear on the monthly executive summary.
 3. Select **Save results**. You will see *"Results saved."*
-4. **Fraternal Volunteer Turnout Summary** lists every volunteer, their shift, their logged hours (**—** if none) and any **No-show** flag, with a total.
+4. **Fraternal Volunteer Turnout Summary** lists every volunteer, their shift, their logged hours (**—** if none) and their no-show status, with a total.
+   - **Mark no-show:** select it on the volunteer's row, choose the reason from the **No-Show Reason** list, and select **Confirm** (or **Cancel**). The row gets a red edge and a **No-show** pill with the reason.
+   - **Clear:** removes a no-show recorded in error.
+   - Admins mark and clear no-shows on events linked to **their own council**; Super Admins on any event. Rows where the volunteer has **Hours logged** cannot be marked.
+   - Members may report their own absence from their phone, but only an Admin or Super Admin can clear a no-show.
 5. **Lessons learned:** choose a **Category**, write **What did we learn?**, and select **Add lesson**.
 
 ### 8.1 Lessons registry
@@ -341,7 +347,11 @@ Values marked **Built in** (*"The application depends on this value"*) cannot be
 
 > **Caution:** finance access is granted by the role **names** *Treasurer* and *Financial Secretary*. These roles are not locked, so renaming either one (for example to "Treasurer (2026)") silently removes finance access from the officers who hold it. Keep those two names exactly as they are.
 
-### 12.2 Councils
+### 12.2 Feedback inbox
+
+Members send feedback and bug reports from **Online Help Center → Submit System Feedback or Bug Report**. Super Admins see the **Feedback inbox** below that form on the same page. It lists each report newest first, with the sender's name, council, phone, email and the time it was submitted (UTC). No one else can read the inbox.
+
+### 12.3 Councils
 
 **Path:** sidebar → **Councils**. Only a Super Admin may add, edit or delete a council. Admins manage their council's parishes, pastors, activities and distribution lists instead.
 
@@ -369,6 +379,7 @@ Values marked **Built in** (*"The application depends on this value"*) cannot be
 | Member cannot find their QR code | No **QR code image URL** is on file. | Add it under **Council lookups → Enabled donation methods**. |
 | *"Your role cannot maintain this council's lookups."* | Finance officer on another council, or no finance role. | A council Admin or Super Admin must make the change. |
 | Audits missing from Executive Summaries | Finance officers see the monthly summary only. | Ask an Admin for the audit figures. |
+| **Mark no-show** missing on a turnout row | The volunteer has hours logged, or the event is not linked to your council. | Correct the hours first, or ask an Admin of the event's council. |
 | New member cannot sign in | They have not onboarded, or their roster email is wrong. | Check the **Email (also the login)** field. They must create a password on the phone first. |
 
 Quick answers are also in the portal's **Online Help Center**.

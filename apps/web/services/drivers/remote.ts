@@ -99,6 +99,7 @@ export function createRemoteDataService(): DataService {
       listMemberShifts: notImplemented('events.listMemberShifts'),
       listShiftFeed: notImplemented('events.listShiftFeed'),
       countNoShows: notImplemented('events.countNoShows'),
+      setNoShow: notImplemented('events.setNoShow'),
       listByCouncil: notImplemented('events.listByCouncil'),
       listShifts: notImplemented('events.listShifts'),
       listTurnout: notImplemented('events.listTurnout'),
@@ -133,6 +134,10 @@ export function createRemoteDataService(): DataService {
       setAttended: notImplemented('meetings.setAttended'),
       setMinutes: notImplemented('meetings.setMinutes'),
       memberHours: notImplemented('meetings.memberHours'),
+    },
+    feedback: {
+      submit: notImplemented('feedback.submit'),
+      listInbox: notImplemented('feedback.listInbox'),
     },
     messages: {
       getPage: notImplemented('messages.getPage'),

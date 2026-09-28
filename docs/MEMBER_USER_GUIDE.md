@@ -115,11 +115,24 @@ Other upcoming shifts show as **Scheduled**.
 
 ### 4.2 The no-show badge
 
-The red **No-shows** badge on your phone's Home tab counts the shifts you were marked absent for **in the past 12 months**. The badge is outlined when the count is zero and filled red when it is higher. Each no-show drops off once it is more than a year old.
+The red **No-shows** badge on your phone's Home tab counts the shifts you were marked absent for **in the past 12 months**, including absences you reported yourself. The badge is outlined when the count is zero and filled red when it is higher. Each no-show drops off once it is more than a year old.
 
-> If you can't make a shift, tell the event's owner or your council's Admin **before the day**, so they can find a replacement.
+### 4.3 Reporting that you can't make a shift
 
-### 4.3 Upcoming meetings
+1. On the phone's **Home** tab, find the shift under **My shifts** and tap **Report absence / no-show**.
+2. Under **WHY CAN'T YOU MAKE IT?**, choose a reason.
+3. Tap **Confirm absence**, or **Cancel** to leave the shift as it is.
+
+The card then shows **ABSENCE REPORTED** with your reason, and your no-show badge updates.
+
+- You can report absences only for **your own** shifts.
+- **Only a council Admin can remove a no-show**, so contact your Admin if you reported one by mistake.
+- A shift you have already logged hours for cannot be marked absent.
+- Please also tell the event's owner, so they can find a replacement.
+
+![Image: Report Absence]
+
+### 4.4 Upcoming meetings
 
 Meetings you have been invited to are listed under **Upcoming meetings** on Home, with the date, time and location. Officers also see a **Take attendance** button on each meeting.
 
@@ -342,5 +355,10 @@ Open **Member Actions → Fraternal roster** and use **Search by name or number*
 | *"Your council has not enabled any donation methods yet."* | No methods are enabled for your council. | Ask an Admin, Treasurer or Financial Secretary to enable them. |
 | QR code missing | No QR image is on file. | See [§8.3](#83-if-the-qr-code-does-not-appear). |
 | Portal sign-in fails | Wrong email or password, or no password set yet. | Do the phone onboarding first (§2.1). |
+| Reported an absence by mistake | Members cannot remove a no-show. | Ask your council Admin to clear it. |
 
 Still stuck? Open **Online Help Center** in the portal sidebar, or message your council's Admin through the Communications Hub.
+
+### Sending feedback or reporting a bug
+
+In the portal, open **Online Help Center** and scroll to **Submit System Feedback or Bug Report**. Your name, council, phone and email are filled in for you and cannot be edited there (change them in **My Profile**). Describe what happened in the box, up to 2,000 characters, and select **Send feedback**. Reports go to the platform's Super Admins.

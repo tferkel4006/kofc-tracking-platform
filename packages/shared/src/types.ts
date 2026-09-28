@@ -341,3 +341,10 @@ export interface MemberTraining {
   TrainingClassID: number;
   YearTaken: string; // DATE column; the year is what matters, stored as YYYY-01-01
 }
+
+export interface SystemFeedback {
+  id: number;
+  MemberID: number;
+  SubmittedAt: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+  FeedbackText: string;
+}

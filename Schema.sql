@@ -718,6 +718,26 @@ CREATE TABLE [CouncilDonationMethod] (
 );
 GO
 
+-- Feedback and bug reports members send from the portal's Online Help Center. Only Super Admins read them.
+CREATE TABLE [SystemFeedback] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[MemberID] INTEGER NOT NULL,
+	[SubmittedAt] DATETIME NOT NULL DEFAULT getdate(),
+	[FeedbackText] VARCHAR(2000) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE INDEX [SystemFeedback_SubmittedAt_Idx]
+ON [SystemFeedback] ([SubmittedAt]);
+GO
+
+ALTER TABLE [SystemFeedback]
+ADD FOREIGN KEY([MemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
 ALTER TABLE [Member]
 ADD FOREIGN KEY([WorkingStatusID])
 REFERENCES [WorkingStatus]([id])

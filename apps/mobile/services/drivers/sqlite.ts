@@ -13,9 +13,12 @@ import {
   assertLookupKeyUnique,
   assertLookupNotProtected,
   assertLookupUnused,
+  assertNoShowWithoutHours,
   assertMayChangeDonation,
   assertMayChangeLesson,
   assertMayManageCouncilLookups,
+  assertMayMarkNoShow,
+  assertMayReadFeedback,
   assertMayReadLessonsRegistry,
   assertMayCreateMember,
   assertMayEditMemberExtensions,
@@ -34,6 +37,7 @@ import {
   assertValidHours,
   buildActivityTimeLog,
   buildDonationHistory,
+  buildFeedbackInbox,
   buildLessonsRegistry,
   buildNoShowAudit,
   buildShiftsAwaitingHours,
@@ -44,6 +48,7 @@ import {
   cleanActivity,
   cleanCouncil,
   cleanCouncilIds,
+  cleanFeedbackText,
   cleanDistributionListChanges,
   cleanEventFields,
   cleanLessonsRegistryFilters,
@@ -68,6 +73,7 @@ import {
   mergeMemberChanges,
   mergeRecordChanges,
   monthBounds,
+  noShowReasonFor,
   noShowAuditThreshold,
   planCouncilLookupSave,
   nextEventFunds,
@@ -79,6 +85,7 @@ import {
   RECORD_REFERENCES,
   recordNotFound,
   rollupEventFunds,
+  signupNotFound,
   sortCouncilLookupRows,
   SHIFT_COLUMNS,
   summarizeActivities,
@@ -124,6 +131,7 @@ import type {
   ProfileOptions,
   Skill,
   SkillLevel,
+  SystemFeedback,
   WorkingStatus,
   Event as CouncilEvent,
   EventChanges,
@@ -178,8 +186,9 @@ const DB_NAME = 'kofc.db';
  * 2: Phase 2 donations, skills, training and working status.
  * 3: Donation.RecordedBy (Sprint 5K).
  * 4: view_NoShows LEFT JOINs NoShowReason (Sprint 5L).
+ * 5: SystemFeedback (Sprint 5P).
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -1769,6 +1778,34 @@ export class SqliteDataService implements DataService {
       return row?.n ?? 0;
     },
 
+    setNoShow: async (actorId, signupId, noShow, reasonId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const signup = await db.getFirstAsync<EventSignup>('SELECT * FROM [EventSignup] WHERE [id] = ?', [signupId]);
+        if (!signup) throw signupNotFound(signupId);
+        const shift = await this.requireShift(db, signup.ShiftID);
+        const target = {
+          signupId,
+          memberId: signup.MemberID,
+          eventId: shift.EventID,
+          eventCouncilIds: await this.councilIdsOf(db, shift.EventID),
+        };
+        assertMayMarkNoShow(actor, target, noShow);
+        const reasons = await db.getAllAsync<{ id: number }>('SELECT [id] FROM [NoShowReason]');
+        const reason = noShowReasonFor(noShow, reasonId, reasons.map((r) => r.id));
+        if (noShow) {
+          const time = await db.getFirstAsync<{ Hours: number }>('SELECT [Hours] FROM [EventTime] WHERE [ShiftID] = ? AND [MemberID] = ?', [
+            shift.id,
+            signup.MemberID,
+          ]);
+          assertNoShowWithoutHours(target, time ? time.Hours : null);
+        }
+        await db.runAsync('UPDATE [EventSignup] SET [NoShow] = ?, [NoShowReasonID] = ? WHERE [id] = ?', [noShow ? 1 : 0, reason, signupId]);
+      });
+      return (await db.getFirstAsync<EventSignup>('SELECT * FROM [EventSignup] WHERE [id] = ?', [signupId]))!;
+    },
+
     listByCouncil: async (councilId) => {
       const db = await this.ready();
       return db.getAllAsync<CouncilEvent>(
@@ -2403,6 +2440,36 @@ export class SqliteDataService implements DataService {
   }
 
   // ---- messages ----------------------------------------------------------
+
+  // ---- system feedback ---------------------------------------------------
+
+  feedback: DataService['feedback'] = {
+    submit: async (memberId, text) => {
+      const clean = cleanFeedbackText(text);
+      const db = await this.ready();
+      await this.requireMember(db, memberId);
+      const res = await db.runAsync('INSERT INTO [SystemFeedback] ([MemberID], [SubmittedAt], [FeedbackText]) VALUES (?, ?, ?)', [
+        memberId,
+        toTimestamp(this.now()),
+        clean,
+      ]);
+      return (await db.getFirstAsync<SystemFeedback>('SELECT * FROM [SystemFeedback] WHERE [id] = ?', [res.lastInsertRowId]))!;
+    },
+
+    listInbox: async (actorId) => {
+      const db = await this.ready();
+      assertMayReadFeedback(await this.memberWriteActor(db, actorId));
+      const [feedback, members, councils] = await Promise.all([
+        db.getAllAsync<SystemFeedback>('SELECT * FROM [SystemFeedback]'),
+        db.getAllAsync<Member>(
+          `SELECT m.[id], m.[CouncilID], m.[MemberFirstName], m.[MemberLastName], m.[Phone], m.[Email]
+             FROM [Member] m WHERE m.[id] IN (SELECT [MemberID] FROM [SystemFeedback])`,
+        ),
+        db.getAllAsync<Council>('SELECT [id], [CouncilNumber] FROM [Council]'),
+      ]);
+      return buildFeedbackInbox(feedback, members, councils);
+    },
+  };
 
   messages: DataService['messages'] = {
     getPage: async (threadId, options?: MessagePageOptions) => {

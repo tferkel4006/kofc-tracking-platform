@@ -1,10 +1,14 @@
 'use client';
 // Online Help Center: the troubleshooting workflows of docs/MEMBER_USER_GUIDE.md and docs/ADMIN_USER_GUIDE.md as a
-// searchable question-and-answer accordion. Open to every signed-in member. The time windows and limits quoted come
-// from the shared rule constants, so an answer cannot drift from what the drivers enforce.
-import { useState } from 'react';
+// searchable question-and-answer accordion, plus a feedback and bug-report form (feedback.submit) and, for Super Admins
+// only, the feedback inbox (feedback.listInbox). Open to every signed-in member. The time windows and limits quoted
+// come from the shared rule constants, so an answer cannot drift from what the drivers enforce.
+import { useState, type FormEvent } from 'react';
 import {
   ACTIVITY_HISTORY_MONTHS,
+  councilLabel,
+  describeError,
+  FEEDBACK_MAX_LENGTH,
   FEED_HORIZON_MONTHS,
   HOURS_REMINDER_FIRST_DAY,
   HOURS_REMINDER_REPEAT_DAYS,
@@ -14,8 +18,13 @@ import {
   NO_SHOW_WINDOW_MONTHS,
   PRIORITY_WITHIN_DAYS,
   SHIFT_HISTORY_MONTHS,
+  isSuperAdmin,
 } from '@kofc/shared';
-import { Empty, Field, Input, PageTitle, Pill } from '@/components/ui';
+import { Button, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Table, Td, Textarea } from '@/components/ui';
+import { formatPhone } from '@/lib/format';
+import { useUser } from '@/lib/session';
+import { useLoad } from '@/lib/use-load';
+import { db } from '@/services/db';
 
 type Audience = 'Everyone' | 'Admins & officers';
 interface Topic {
@@ -90,7 +99,14 @@ const SECTIONS: Section[] = [
       {
         q: 'What is the red no-show badge on my phone?',
         a: [
-          `It counts shifts you were marked absent for in the past ${NO_SHOW_WINDOW_MONTHS} months. Each one drops off after a year. If you cannot make a shift, tell the event owner or your Admin before the day.`,
+          `It counts shifts you were marked absent for in the past ${NO_SHOW_WINDOW_MONTHS} months, including absences you reported yourself. Each one drops off after a year.`,
+        ],
+      },
+      {
+        q: 'I cannot make a shift I signed up for. What do I do?',
+        a: [
+          'On the phone, open Home → My shifts and tap Report absence / no-show on the shift. Choose a reason and tap Confirm absence.',
+          'Please also tell the event owner so they can find a replacement. Only an Admin can remove a no-show once it is recorded, so contact your Admin if you reported one by mistake.',
         ],
       },
     ],
@@ -247,6 +263,13 @@ const SECTIONS: Section[] = [
         ],
       },
       {
+        q: 'How do I mark a volunteer as a no-show?',
+        a: [
+          'Post-event ledger → choose the event → Fraternal Volunteer Turnout Summary. Select Mark no-show on the volunteer’s row, choose the reason and select Confirm. Clear removes a no-show recorded in error.',
+          'Admins mark and clear no-shows on events linked to their own council; Super Admins on any event. A volunteer who has logged hours on the shift cannot be marked absent.',
+        ],
+      },
+      {
         q: 'Who can record an event’s results?',
         a: ['Admins of any council linked to the event, any Super Admin, and the event’s owner. Choose the event in the Active queue, save the results, and add lessons learned.'],
       },
@@ -291,7 +314,112 @@ const matches = (topic: Topic, words: string[]) => {
   return words.every((w) => text.includes(w));
 };
 
+function ReadOnly({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs font-bold uppercase tracking-wide text-navy">{label}</span>
+      <span className="rounded border border-line bg-white px-2 py-1.5 text-sm text-navy">{value || '–'}</span>
+    </div>
+  );
+}
+
+function FeedbackForm({ onSent }: { onSent: () => void }) {
+  const user = useUser();
+  const member = useLoad(() => db.members.get(user.memberId), [user.memberId]);
+  const council = useLoad(() => db.councils.get(user.councilId), [user.councilId]);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      await db.feedback.submit(user.memberId, text);
+      setText('');
+      setMessage({ tone: 'info', text: 'Thank you. Your feedback was sent to the platform administrators.' });
+      onSent();
+    } catch (err) {
+      setMessage({ tone: 'error', text: describeError(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel title="Submit System Feedback or Bug Report" className="border-2 border-navy">
+      <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4">
+        {member.error || council.error ? <Notice tone="error">{member.error ?? council.error}</Notice> : null}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <ReadOnly label="Full name" value={`${user.firstName} ${user.lastName}`} />
+          <ReadOnly label="Council" value={council.data ? councilLabel(council.data) : ''} />
+          <ReadOnly label="Phone" value={member.data ? formatPhone(member.data.Phone) : ''} />
+          <ReadOnly label="Email" value={member.data?.Email ?? user.username} />
+        </div>
+        <p className="text-xs text-muted">These details are sent with your report so we can follow up. Change them in My Profile.</p>
+        <Field label="What happened, or what would help?" hint={`${text.length} of ${FEEDBACK_MAX_LENGTH} characters`}>
+          {(id) => (
+            <Textarea
+              id={id}
+              rows={7}
+              value={text}
+              maxLength={FEEDBACK_MAX_LENGTH}
+              placeholder="Describe the problem or suggestion: the screen you were on, what you did, and what you expected to happen."
+              onChange={(e) => setText(e.target.value)}
+              required
+            />
+          )}
+        </Field>
+        {message ? (
+          <Notice tone={message.tone} onDismiss={() => setMessage(null)}>
+            {message.text}
+          </Notice>
+        ) : null}
+        <div>
+          <Button type="submit" disabled={busy || text.trim() === ''}>
+            {busy ? 'Sending…' : 'Send feedback'}
+          </Button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
+/** Super Admins only; the driver refuses anyone else (SUPER_ADMIN_REQUIRED), so it is never rendered for them. */
+function FeedbackInbox({ version }: { version: number }) {
+  const user = useUser();
+  const inbox = useLoad(() => db.feedback.listInbox(user.memberId), [user.memberId, version]);
+  const rows = inbox.data ?? [];
+  return (
+    <Panel title={`Feedback inbox (${rows.length})`} actions={<Pill tone="navy">Super Admin</Pill>}>
+      {inbox.error ? <Notice tone="error">{inbox.error}</Notice> : null}
+      {inbox.data && rows.length === 0 ? <Empty>No feedback has been submitted yet.</Empty> : null}
+      {rows.length > 0 ? (
+        <div className="max-h-[32rem] overflow-y-auto">
+          <Table caption="Feedback and bug reports, newest first" head={['Submitted (UTC)', 'Member', 'Council', 'Phone', 'Email', 'Feedback']}>
+            {rows.map((r) => (
+              <tr key={r.feedback.id} className="align-top">
+                <Td className="whitespace-nowrap">{r.feedback.SubmittedAt}</Td>
+                <Td className="whitespace-nowrap font-bold">
+                  {r.firstName} {r.lastName}
+                </Td>
+                <Td>{r.councilNumber}</Td>
+                <Td className="whitespace-nowrap">{formatPhone(r.phone)}</Td>
+                <Td>{r.email}</Td>
+                <Td className="whitespace-pre-wrap">{r.feedback.FeedbackText}</Td>
+              </tr>
+            ))}
+          </Table>
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
 export default function HelpPage() {
+  const user = useUser();
+  const [sent, setSent] = useState(0);
   const [query, setQuery] = useState('');
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   const searching = words.length > 0;
@@ -338,6 +466,8 @@ export default function HelpPage() {
             </div>
           </section>
         ))}
+        <FeedbackForm onSent={() => setSent((n) => n + 1)} />
+        {isSuperAdmin(user) ? <FeedbackInbox version={sent} /> : null}
       </div>
     </>
   );

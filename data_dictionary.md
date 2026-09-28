@@ -72,6 +72,12 @@ Multi-tenant lookup table detailing which electronic, physical, or cash donation
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). Maps the config line directly to the local branch entity.
 •	DonationMethodID (INTEGER, NOT NULL) — Foreign Key references DonationMethod(id). Locks in the allowed channel link.
 •	DonationMethodURL (VARCHAR(255), NULL) — Storage bucket endpoint link holding the static QR code asset for that council's platform profile (Venmo, Zelle, Zeffy, etc.).
+[SystemFeedback]
+Feedback and bug reports members submit from the web portal's Online Help Center. Readable only by active Super Admins (feedback.listInbox).
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	MemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). The member who sent the report.
+•	SubmittedAt (DATETIME, NOT NULL, DEFAULT GETDATE()) — When the report was sent (UTC).
+•	FeedbackText (VARCHAR(2000), NOT NULL) — The report text, trimmed; at most 2,000 characters.
 ________________________________________
 
 
