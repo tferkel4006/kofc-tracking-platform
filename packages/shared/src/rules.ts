@@ -67,6 +67,7 @@ export type BusinessRuleCode =
   | 'ADMIN_REQUIRED'
   | 'SUPER_ADMIN_REQUIRED'
   | 'COUNCIL_ACCESS_DENIED'
+  | 'FINANCE_OFFICER_REQUIRED'
   | 'RECORD_NOT_FOUND'
   | 'RECORD_IN_USE'
   | 'FUNDS_MANAGED_BY_DONATIONS'
@@ -92,7 +93,11 @@ export class BusinessRuleError extends Error {
  * failures report this one too; nothing has been written when it throws. The code names the tier needed.
  */
 export class SecurityPrivilegeError extends BusinessRuleError {
-  constructor(code: 'ADMIN_REQUIRED' | 'SUPER_ADMIN_REQUIRED' | 'COUNCIL_ACCESS_DENIED', message: string, details: Record<string, unknown> = {}) {
+  constructor(
+    code: 'ADMIN_REQUIRED' | 'SUPER_ADMIN_REQUIRED' | 'COUNCIL_ACCESS_DENIED' | 'FINANCE_OFFICER_REQUIRED',
+    message: string,
+    details: Record<string, unknown> = {},
+  ) {
     super(code, message, details);
     this.name = 'SecurityPrivilegeError';
   }
@@ -528,7 +533,14 @@ export const MEMBER_COLUMNS = [
   'DegreeID',
   'MemberTypeID',
   'WorkingStatusID',
+  'ProfilePhotoURL',
+  'Biography',
 ] as const satisfies readonly (keyof NewMember)[];
+
+/** Longest Member.ProfilePhotoURL (VARCHAR(2000)). */
+export const MEMBER_PHOTO_URL_MAX_LENGTH = 2000;
+/** Longest Member.Biography; the column is TEXT, the cap keeps a biography short. */
+export const MEMBER_BIOGRAPHY_MAX_LENGTH = 2000;
 
 /** The member type only a Super Admin may grant. A protected MemberType value, so it cannot be renamed. */
 export const SUPER_ADMIN_TYPE = 'Super Admin';
@@ -813,7 +825,7 @@ const hasSuperAdminRights = (a: MemberWriteActor): boolean => a.active && a.memb
 const hasAdminRights = (a: MemberWriteActor): boolean => a.active && (a.memberType === 'Admin' || a.memberType === SUPER_ADMIN_TYPE);
 const describeActor = (a: MemberWriteActor): string => `${a.active ? '' : 'an inactive '}${a.memberType ?? 'of unknown type'}`;
 
-/** The member fields a Member without admin rights may change on their own record (contact details). */
+/** The member fields a Member without admin rights may change on their own record (contact details, photo and biography). */
 export const MEMBER_SELF_SERVICE_COLUMNS = [
   'Phone',
   'StreetAddress1',
@@ -823,6 +835,8 @@ export const MEMBER_SELF_SERVICE_COLUMNS = [
   'ZipCode',
   'Email',
   'WorkingStatusID',
+  'ProfilePhotoURL',
+  'Biography',
 ] as const satisfies readonly (typeof MEMBER_COLUMNS)[number][];
 
 /**
@@ -986,7 +1000,8 @@ export function assertMayChangeDonation(
 }
 
 /**
- * Expense reporting leadership (Sprint 5R): expenses.listCouncilQueue, approveReport and recordDisbursement. An Active
+ * Expense reporting leadership (Sprint 5R): expenses.listCouncilQueue, approveReport and rejectReport (checks follow
+ * the narrower assertMayDisburseCouncilExpenses since Sprint 5S). An Active
  * Super Admin for any council; an Active Admin, Financial Secretary or Treasurer for their own council only. Members
  * reach their own sheets through listUserReports and submitReport, which need no leadership. `action` completes
  * "cannot ...".
@@ -1001,11 +1016,42 @@ export const mayAuditCouncilExpenses = (actor: MemberWriteActor, councilId: numb
   expenseAuditDenial(actor, councilId, 'review expense reports') === null;
 
 /**
- * expenses.approveReport: an officer may not approve their own expense sheet (accounting controls). An Active Super
- * Admin may, as the override. Call after assertMayAuditCouncilExpenses.
+ * expenses.recordDisbursement (Sprint 5S): checks are issued only by an Active Financial Secretary or Treasurer
+ * (FINANCE_ROLE_NAMES) of the council, or an Active Super Admin for any council. A council Admin without a finance
+ * role audits the queue but may not pay it (FINANCE_OFFICER_REQUIRED). `action` completes "cannot ...".
+ */
+export function assertMayDisburseCouncilExpenses(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = disbursementDenial(actor, councilId, action);
+  if (denial) throw denial;
+}
+
+/** assertMayDisburseCouncilExpenses as a yes/no. */
+export const mayDisburseCouncilExpenses = (actor: MemberWriteActor, councilId: number): boolean =>
+  disbursementDenial(actor, councilId, 'record expense checks') === null;
+
+function disbursementDenial(actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null {
+  if (hasSuperAdminRights(actor)) return null;
+  if (!(actor.active && holdsFinanceRole(actor.roles))) {
+    return new SecurityPrivilegeError(
+      'FINANCE_OFFICER_REQUIRED',
+      `Only an active Financial Secretary, Treasurer or Super Admin can ${action}; member ${actor.memberId} is ${describeActor(actor)} without a finance role.`,
+      { actorId: actor.memberId, actorType: actor.memberType ?? null, councilId },
+    );
+  }
+  if (actor.councilId === councilId) return null;
+  return new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; a council's checks are issued only by its own finance officers.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
+  );
+}
+
+/**
+ * expenses.approveReport: nobody may approve an expense sheet they submitted (accounting controls). Since Sprint 5S
+ * this holds for every role, Super Admins included. Call after assertMayAuditCouncilExpenses.
  */
 export function assertNotSelfApproval(actor: MemberWriteActor, report: { id: number; SubmitterMemberID: number }): void {
-  if (!mayApproveOwnExpense(actor, report)) {
+  if (isOwnExpense(actor, report)) {
     throw new BusinessRuleError('SELF_APPROVAL_BLOCKED', 'For accounting controls, an officer cannot approve their own expense report.', {
       actorId: actor.memberId,
       reportId: report.id,
@@ -1014,11 +1060,11 @@ export function assertNotSelfApproval(actor: MemberWriteActor, report: { id: num
 }
 
 /**
- * expenses.recordDisbursement: an officer may not issue a check that pays their own expense sheet (accounting
- * controls, Sprint 5R-2). An Active Super Admin may, as the override. Call after assertMayAuditCouncilExpenses.
+ * expenses.recordDisbursement: nobody may issue a check that pays an expense sheet they submitted (accounting
+ * controls, Sprint 5R-2; no Super Admin override since Sprint 5S). Call after assertMayDisburseCouncilExpenses.
  */
 export function assertNoSelfPayout(actor: MemberWriteActor, report: { id: number; SubmitterMemberID: number }): void {
-  if (!mayApproveOwnExpense(actor, report)) {
+  if (isOwnExpense(actor, report)) {
     throw new BusinessRuleError('SELF_PAYOUT_BLOCKED', 'For accounting controls, an officer cannot issue a check that pays their own expense report.', {
       actorId: actor.memberId,
       reportId: report.id,
@@ -1026,9 +1072,8 @@ export function assertNoSelfPayout(actor: MemberWriteActor, report: { id: number
   }
 }
 
-/** Approving or paying one's own sheet: only an Active Super Admin may. */
-const mayApproveOwnExpense = (actor: MemberWriteActor, report: { SubmitterMemberID: number }): boolean =>
-  report.SubmitterMemberID !== actor.memberId || hasSuperAdminRights(actor);
+/** The sheet is the actor's own, which they may neither approve nor pay, whatever their role. */
+const isOwnExpense = (actor: MemberWriteActor, report: { SubmitterMemberID: number }): boolean => report.SubmitterMemberID === actor.memberId;
 
 function expenseAuditDenial(actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null {
   if (hasSuperAdminRights(actor)) return null;
@@ -1080,5 +1125,7 @@ export function cleanNewMember(input: NewMember, now: Date): NewMember {
     DegreeID: assertInteger(input.DegreeID, 'Degree', 1),
     MemberTypeID: assertInteger(input.MemberTypeID, 'Member type', 1),
     WorkingStatusID: input.WorkingStatusID == null ? null : assertInteger(input.WorkingStatusID, 'Working status', 1),
+    ProfilePhotoURL: optionalText(input.ProfilePhotoURL, 'Profile photo', MEMBER_PHOTO_URL_MAX_LENGTH),
+    Biography: optionalText(input.Biography, 'Biography', MEMBER_BIOGRAPHY_MAX_LENGTH),
   };
 }

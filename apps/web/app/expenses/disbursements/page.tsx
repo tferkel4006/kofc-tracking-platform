@@ -1,12 +1,13 @@
 'use client';
-// Check Disbursements: the Financial Secretary's and Treasurer's checkbook (with the council's Admins and any Super
-// Admin: canAuditCouncilExpenses). Every 'Approved' expense sheet is listed with a checkbox; the officer ticks the
-// sheets one check pays, enters the check number and payout date, and "Issue Disbursement Check" records it with
-// expenses.recordDisbursement, which stamps every ticked sheet 'Reimbursed' in one transaction. An officer's own
-// sheets cannot be ticked unless they are a Super Admin (canPayExpenseReport; the drivers: SELF_PAYOUT_BLOCKED).
+// Bulk Check Disbursements: the checkbook of the council's Financial Secretary and Treasurer, or a Super Admin
+// (canDisburseCouncilExpenses; council Admins without a finance role audit the queue but do not pay it). Every
+// 'Approved' expense sheet is listed with a checkbox; the officer ticks the sheets one check pays, enters the check
+// number and payout date, and "Issue Disbursement Check" records it with expenses.recordDisbursement, which stamps
+// every ticked sheet 'Reimbursed' in one transaction. Nobody may tick their own sheet, whatever their role
+// (canPayExpenseReport; the drivers: FINANCE_OFFICER_REQUIRED and SELF_PAYOUT_BLOCKED).
 import { Fragment, useEffect, useState } from 'react';
 import {
-  canAuditCouncilExpenses,
+  canDisburseCouncilExpenses,
   canPayExpenseReport,
   CHECK_NUMBER_MAX_LENGTH,
   describeError,
@@ -66,8 +67,8 @@ function DisbursementLedger() {
   const scope = useCouncilScope();
   const councilId = scope.councilId;
   const today = toIsoDate(new Date());
-  const canAudit = canAuditCouncilExpenses(user, councilId);
-  const queue = useLoad(() => (canAudit ? db.expenses.listCouncilQueue(user.memberId, councilId) : Promise.resolve([])), [user.memberId, councilId, canAudit]);
+  const canDisburse = canDisburseCouncilExpenses(user, councilId);
+  const queue = useLoad(() => (canDisburse ? db.expenses.listCouncilQueue(user.memberId, councilId) : Promise.resolve([])), [user.memberId, councilId, canDisburse]);
   const refsLoad = useLoad(() => listExpenseReferences(db, councilId), [councilId]);
   const refs = refsLoad.data ?? NO_REFS;
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -132,9 +133,9 @@ function DisbursementLedger() {
 
   return (
     <>
-      <PageTitle actions={<CouncilSelect scope={scope} />}>Check Disbursements</PageTitle>
-      {!canAudit ? (
-        <Notice tone="error">Only this council&apos;s Financial Secretary, Treasurer and Admins, or a Super Admin, issue expense checks.</Notice>
+      <PageTitle actions={<CouncilSelect scope={scope} />}>Bulk Check Disbursements</PageTitle>
+      {!canDisburse ? (
+        <Notice tone="error">Only this council&apos;s Financial Secretary or Treasurer, or a Super Admin, issues expense checks.</Notice>
       ) : (
         <div className="flex flex-col gap-4">
           {queue.error ?? refsLoad.error ? <Notice tone="error">{queue.error ?? refsLoad.error}</Notice> : null}
@@ -168,7 +169,7 @@ function DisbursementLedger() {
                           <Td>
                             {submitterName(d)}
                             {!mayPay ? (
-                              <span className="ml-2" title="For accounting controls, another officer must issue the check for your own report.">
+                              <span className="ml-2" title="For accounting controls, another finance officer must issue the check for your own report.">
                                 <Pill tone="redOutline">Your own report</Pill>
                               </span>
                             ) : null}

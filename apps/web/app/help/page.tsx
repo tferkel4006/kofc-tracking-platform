@@ -165,7 +165,7 @@ const SECTIONS: Section[] = [
       {
         q: 'The QR code does not appear.',
         a: [
-          '“Your council has not uploaded this QR code yet” means no image link is on file: an Admin, Treasurer or Financial Secretary adds it under Council lookups → Enabled donation methods.',
+          '“Your council has not uploaded this QR code yet” means no image link is on file: an Admin, Treasurer or Financial Secretary adds it under Council Lookup Tables → Enabled donation methods.',
           '“The QR code could not be loaded” usually means the phone is offline or the link is broken. Take the donation another way and tell your Admin.',
         ],
       },
@@ -186,7 +186,7 @@ const SECTIONS: Section[] = [
       {
         q: 'How do I update my phone, email or skills?',
         a: [
-          'Open My Profile. Save contact details to update phone, email and address; changing the email changes your sign-in too.',
+          'Open My Profile from the member menu (your name and photo, top right). Save contact details to update phone, email and address; changing the email changes your sign-in too.',
           'Record your trade skills and training so Admins can find you for projects. Name, member number, degree and type are kept by your council’s Admins.',
         ],
       },
@@ -225,14 +225,14 @@ const SECTIONS: Section[] = [
       {
         q: 'How do I find members with a particular trade?',
         a: [
-          'Member roster → Skills opens the Council skills drawer with every skill and how many members hold it. Choose one to see the holders.',
+          'Affiliated Roster → Skills opens the Council skills drawer with every skill and how many members hold it. Choose one to see the holders.',
           'Write a note and select Send to message all of them at once. Only active members receive it, never you, and replies arrive in the Communications Hub.',
         ],
       },
       {
         q: 'How do I add a new member?',
         a: [
-          'Member roster → Add member. The email you enter is the member’s login; they then create their password on the phone.',
+          'Affiliated Roster → Add member. The email you enter is the member’s login; they then create their password on the phone.',
           'Admins may grant Admin or Member; only a Super Admin may grant Super Admin.',
         ],
       },
@@ -245,7 +245,7 @@ const SECTIONS: Section[] = [
       {
         q: 'How do I review no-shows?',
         a: [
-          `Executive Summaries → Executive audits → No-show audit lists every no-show in the last ${NO_SHOW_AUDIT_MONTHS} months with its reason code, newest first.`,
+          `Executive Dashboard Summaries → Executive audits → No-show audit lists every no-show in the last ${NO_SHOW_AUDIT_MONTHS} months with its reason code, newest first.`,
           'Rows with a red “No reason provided” pill need follow-up; the header counts them. The audits are for Admins and Super Admins only.',
         ],
       },
@@ -276,13 +276,13 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    title: 'Council lookups, donations and summaries',
+    title: 'Council lookup tables, donations and summaries',
     audience: 'Admins & officers',
     topics: [
       {
         q: 'How do I set up donation types and methods?',
         a: [
-          'Council lookups → Donation types and Enabled donation methods. Paste the council’s QR image link for Venmo, Zelle, Zeffy or ParishSoft.',
+          'Council Lookup Tables → Donation types and Enabled donation methods. Paste the council’s QR image link for Venmo, Zelle, Zeffy or ParishSoft.',
           'Changes are saved together: if one row is refused, none are written. Fix the named row and save again.',
           'Admins, Super Admins, Treasurers and Financial Secretaries maintain the donation lookups; only Admins and Super Admins maintain Activities.',
         ],
@@ -301,7 +301,7 @@ const SECTIONS: Section[] = [
       },
       {
         q: 'A Treasurer lost access to Donations after a role was renamed.',
-        a: ['Finance access follows the role names “Treasurer” and “Financial Secretary”. A Super Admin should restore the exact name under System lookups → Role.'],
+        a: ['Finance access follows the role names “Treasurer” and “Financial Secretary”. A Super Admin should restore the exact name under Global Governance Matrices → Role.'],
       },
     ],
   },
@@ -357,7 +357,7 @@ function FeedbackForm({ onSent }: { onSent: () => void }) {
           <ReadOnly label="Phone" value={member.data ? formatPhone(member.data.Phone) : ''} />
           <ReadOnly label="Email" value={member.data?.Email ?? user.username} />
         </div>
-        <p className="text-xs text-muted">These details are sent with your report so we can follow up. Change them in My Profile.</p>
+        <p className="text-xs text-muted">These details are sent with your report so we can follow up. Change them in My Profile (your name, top right).</p>
         <Field label="What happened, or what would help?" hint={`${text.length} of ${FEEDBACK_MAX_LENGTH} characters`}>
           {(id) => (
             <Textarea

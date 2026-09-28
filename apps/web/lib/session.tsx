@@ -14,6 +14,10 @@ interface SessionValue {
   /** Resolves true when the credentials were accepted. */
   signIn(username: string, password: string): Promise<boolean>;
   signOut(): void;
+  /** Bumped by profileChanged(), so views of the member's own record (the header avatar) reload. */
+  profileVersion: number;
+  /** Call after saving the signed-in member's own profile photo or details. */
+  profileChanged(): void;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -40,8 +44,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return found !== null;
   }, []);
   const signOut = useCallback(() => setUser(null), []);
+  const [profileVersion, setProfileVersion] = useState(0);
+  const profileChanged = useCallback(() => setProfileVersion((v) => v + 1), []);
 
-  const value = useMemo(() => ({ user, ready, startupError, signIn, signOut }), [user, ready, startupError, signIn, signOut]);
+  const value = useMemo(
+    () => ({ user, ready, startupError, signIn, signOut, profileVersion, profileChanged }),
+    [user, ready, startupError, signIn, signOut, profileVersion, profileChanged],
+  );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

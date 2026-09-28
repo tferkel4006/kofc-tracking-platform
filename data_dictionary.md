@@ -157,6 +157,8 @@ The master roster directory storing personal and membership data.
 •	DegreeID (INTEGER, NOT NULL) — Foreign Key references Degree(id).
 •	MemberTypeID (INTEGER, NOT NULL) — Foreign Key references MemberType(id).
 •	CredentialID (INTEGER, NOT NULL) — Foreign Key references Credentials(id).
+•	ProfilePhotoURL (VARCHAR(2000), NULL) — The member's avatar photo, set on My Profile (Sprint 5S). A local file path (browser blob or phone file://) until a file store exists.
+•	Biography (TEXT, NULL) — A short personal fraternal biography the member writes on My Profile, at most 2,000 characters (Sprint 5S).
 [MemberRoles]
 Bridge table enabling members to hold multiple concurrent roles or chairmanships.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.

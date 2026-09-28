@@ -1,40 +1,67 @@
 'use client';
-// The portal frame: navy header (logo, then the calling council's number and name), a navy side navigation
-// with a gold marker on the current section, and a white content area. Nothing renders behind the sign-in gate.
+// The portal frame: navy header (logo, the calling council's number and name, and the member menu with the avatar
+// that opens My Profile), a navy side navigation folded into accordion groups (portalNavGroups) with a gold marker
+// on the current section, and a white content area. Nothing renders behind the sign-in gate.
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState, type FormEvent, type ReactNode } from 'react';
-import { councilLabel, portalAreas, type PortalArea } from '@kofc/shared';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { councilLabel, portalNavGroups, type PortalNavGroup, type PortalNavItem } from '@kofc/shared';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import { Button, cx, Field, Input, Notice } from '@/components/ui';
 import { useSession } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 import emblem from './kofc-logo.png';
 
-const AREAS: Record<PortalArea, { href: string; label: string; hint: string }> = {
-  'member-actions': { href: '/member-actions', label: 'Member Actions', hint: 'My shifts, sign-ups, roster, hours' },
-  calendar: { href: '/calendar', label: 'Visual Master Calendar', hint: 'Events, shifts and meetings by date' },
-  gallery: { href: '/gallery', label: 'Fraternal Photo Gallery', hint: 'Event photos and slideshows' },
-  lookups: { href: '/lookups', label: 'System lookups', hint: 'Maintain the global tables' },
-  councils: { href: '/councils', label: 'Councils', hint: 'Add, edit and delete councils' },
-  'council-lookups': { href: '/council-lookups', label: 'Council lookups', hint: 'Activities, donation types, methods' },
-  parishes: { href: '/parishes', label: 'Parishes & pastors', hint: 'Parishes and their pastors' },
-  members: { href: '/members', label: 'Member roster', hint: 'Members, types and skills' },
-  activities: { href: '/activities', label: 'Activities catalog', hint: 'Standing council activities' },
-  events: { href: '/events', label: 'Event planner', hint: 'Events, shifts and councils' },
-  meetings: { href: '/meetings', label: 'Meeting center', hint: 'Meetings, invitations, minutes' },
-  'distribution-lists': { href: '/distribution-lists', label: 'Distribution lists', hint: 'Member lists for council blasts' },
-  ledger: { href: '/ledger', label: 'Post-event ledger', hint: 'Spend, funds raised, lessons' },
-  expenses: { href: '/expenses', label: 'My Expense Reports', hint: 'Receipts and reimbursement status' },
-  'expenses/queue': { href: '/expenses/queue', label: 'Expense Audit Queue', hint: 'Approve or return submitted reports' },
-  'expenses/disbursements': { href: '/expenses/disbursements', label: 'Check Disbursements', hint: 'Pay approved reports by check' },
-  'lessons-registry': { href: '/lessons-registry', label: 'Lessons registry', hint: 'Lessons learned across councils' },
-  donations: { href: '/donations', label: 'Donations', hint: 'Record and review council donations' },
-  dashboard: { href: '/dashboard', label: 'Executive Summaries', hint: 'Monthly hours, members and funds' },
+/** Every link's route, label and tooltip. 'profile' is reached from the header's member menu, not the sidebar. */
+const NAV: Record<PortalNavItem | 'profile', { href: string; label: string; hint: string }> = {
+  'member-actions': { href: '/member-actions', label: 'Member Actions Hub', hint: 'My shifts, sign-ups, roster, hours' },
   messages: { href: '/messages', label: 'Communications Hub', hint: 'Message threads and replies' },
-  profile: { href: '/profile', label: 'My Profile', hint: 'Contact details, skills, training' },
+  help: { href: '/help', label: 'Online Help Center', hint: 'Answers from the user manuals' },
+  calendar: { href: '/calendar', label: 'Visual Master Calendar', hint: 'Events, shifts and meetings by date' },
+  activities: { href: '/activities', label: 'Standalone Activities', hint: 'Standing council activities' },
+  members: { href: '/members', label: 'Affiliated Roster', hint: 'Members, types and skills' },
+  events: { href: '/events', label: 'Event Planner', hint: 'Events, shifts and councils' },
+  meetings: { href: '/meetings', label: 'Meeting Center', hint: 'Meetings, invitations, minutes' },
+  gallery: { href: '/gallery', label: 'Fraternal Photo Gallery', hint: 'Event photos and slideshows' },
+  ledger: { href: '/ledger', label: 'Post-event Ledger', hint: 'Spend, funds raised, lessons' },
+  'lessons-registry': { href: '/lessons-registry', label: 'Lessons Registry', hint: 'Lessons learned across councils' },
+  'distribution-lists': { href: '/distribution-lists', label: 'Distribution Lists', hint: 'Member lists for council blasts' },
+  dashboard: { href: '/dashboard', label: 'Executive Dashboard Summaries', hint: 'Monthly hours, members and funds' },
+  donations: { href: '/donations', label: 'Recorded Donations History', hint: 'Record and review council donations' },
+  expenses: { href: '/expenses', label: 'My Expense Reports', hint: 'Receipts and reimbursement status' },
+  'expenses/queue': { href: '/expenses/queue', label: 'Leadership Auditing Queue', hint: 'Approve or return submitted reports' },
+  'expenses/disbursements': { href: '/expenses/disbursements', label: 'Bulk Check Disbursements', hint: 'Pay approved reports by check' },
+  'council-lookups': { href: '/council-lookups', label: 'Council Lookup Tables', hint: 'Activities, donation types, methods' },
+  lookups: { href: '/lookups', label: 'Global Governance Matrices', hint: 'Maintain the global lookup tables' },
+  parishes: { href: '/parishes', label: 'Parish & Pastors Linkage', hint: 'Parishes and their pastors' },
+  councils: { href: '/councils', label: 'Councils', hint: 'Add, edit and delete councils' },
+  profile: { href: '/profile', label: 'My Profile', hint: 'Photo, biography, contact details, skills' },
 };
+
+/** Which collapsible groups the viewer has open, remembered per browser. Storage may be blocked; the sidebar works without it. */
+const NAV_STATE_KEY = 'kofc.nav.open';
+type OpenGroups = Partial<Record<PortalNavGroup['id'], boolean>>;
+
+function readOpenGroups(): OpenGroups {
+  try {
+    const raw = typeof window === 'undefined' ? null : window.localStorage.getItem(NAV_STATE_KEY);
+    return raw ? (JSON.parse(raw) as OpenGroups) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeOpenGroups(open: OpenGroups): void {
+  try {
+    window.localStorage.setItem(NAV_STATE_KEY, JSON.stringify(open));
+  } catch {
+    // a private window or blocked storage: the choice lasts only for this page view
+  }
+}
+
+const isCurrent = (pathname: string, item: PortalNavItem): boolean => pathname === NAV[item].href;
 
 /**
  * The council-supplied Knights of Columbus emblem; decorative, since the title beside it names the order.
@@ -48,7 +75,7 @@ export function BrandMark({ size = 44 }: { size?: number }) {
 /** Question mark in a circle, drawn in currentColor so it follows the link's navy or white text. */
 function HelpIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
       <circle cx="12" cy="12" r="10" />
       <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
       <line x1="12" y1="17" x2="12.01" y2="17" />
@@ -56,8 +83,143 @@ function HelpIcon() {
   );
 }
 
-/** Help is for every signed-in member, so it sits below the permission-driven areas rather than in portalAreas. */
-const HELP = { href: '/help', label: 'Online Help Center', hint: 'Answers from the user manuals' };
+/** One dense sidebar link: the label only, with its description as the tooltip; gold marker when current. */
+function NavLink({ item, current }: { item: PortalNavItem; current: boolean }) {
+  const { href, label, hint } = NAV[item];
+  return (
+    <li>
+      <Link
+        href={href}
+        title={hint}
+        aria-current={current ? 'page' : undefined}
+        className={cx('flex items-center gap-2 border-l-8 py-1.5 pl-6 pr-3 text-sm', current ? 'border-gold bg-white font-bold text-navy' : 'border-transparent hover:underline')}
+      >
+        {item === 'help' ? <HelpIcon /> : null}
+        {label}
+      </Link>
+    </li>
+  );
+}
+
+/**
+ * The sidebar: one block per portalNavGroups group. The Self-Service Hub is always open; the others fold under a
+ * header button (▸ closed, ▾ open). The group holding the current page opens itself, and the viewer's choices are
+ * remembered in this browser.
+ */
+function SideNav({ groups, pathname }: { groups: PortalNavGroup[]; pathname: string }) {
+  const [open, setOpen] = useState<OpenGroups>(readOpenGroups);
+  const currentGroup = groups.find((g) => g.items.some((item) => isCurrent(pathname, item)))?.id;
+  useEffect(() => {
+    if (currentGroup) setOpen((now) => (now[currentGroup] ? now : { ...now, [currentGroup]: true }));
+  }, [currentGroup]);
+  const toggle = (id: PortalNavGroup['id']) =>
+    setOpen((now) => {
+      const next = { ...now, [id]: !now[id] };
+      writeOpenGroups(next);
+      return next;
+    });
+
+  return (
+    <nav data-surface="navy" aria-label="Portal sections" className="w-60 shrink-0 bg-navy py-3 text-white">
+      {groups.map((group) => {
+        const expanded = !group.collapsible || !!open[group.id];
+        const listId = `nav-group-${group.id}`;
+        return (
+          <div key={group.id} className="border-t border-t-gold pb-2 pt-1 first:border-t-0 first:pt-0">
+            {group.collapsible ? (
+              <h2>
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls={listId}
+                  onClick={() => toggle(group.id)}
+                  className="flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-xs font-bold uppercase tracking-wide hover:underline"
+                >
+                  <span>{group.label}</span>
+                  <span aria-hidden="true" className="text-gold">
+                    {expanded ? '▾' : '▸'}
+                  </span>
+                </button>
+              </h2>
+            ) : (
+              <h2 className="px-4 py-2 text-xs font-bold uppercase tracking-wide">{group.label}</h2>
+            )}
+            {expanded ? (
+              <ul id={listId} className="flex flex-col">
+                {group.items.map((item) => (
+                  <NavLink key={item} item={item} current={isCurrent(pathname, item)} />
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
+/**
+ * The member token in the header: avatar, name and title. It opens a small menu with My Profile and Sign out;
+ * Escape, a click elsewhere or following a link closes it.
+ */
+function MemberMenu() {
+  const { user, signOut, profileVersion } = useSession();
+  const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const member = useLoad(() => (user ? db.members.get(user.memberId) : Promise.resolve(null)), [user?.memberId, profileVersion]);
+  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+  if (!user) return null;
+  const title = `${user.memberType}${user.isOfficer ? ' · Officer' : ''}`;
+
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls="member-menu"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-3 rounded px-2 py-1 text-right hover:underline"
+      >
+        <span className="text-sm">
+          <span className="block font-bold">
+            {user.firstName} {user.lastName}
+          </span>
+          <span className="block text-xs">{title}</span>
+        </span>
+        <MemberAvatar photoUrl={member.data?.ProfilePhotoURL} firstName={user.firstName} lastName={user.lastName} size={40} />
+        <span aria-hidden="true" className="text-gold">
+          {open ? '▴' : '▾'}
+        </span>
+      </button>
+      {open ? (
+        <div id="member-menu" role="menu" aria-label="Member menu" className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded border-2 border-navy border-t-4 border-t-gold bg-white text-navy shadow-xl">
+          <Link role="menuitem" href={NAV.profile.href} className="block px-4 py-2 hover:underline">
+            <span className="block text-sm font-bold">{NAV.profile.label}</span>
+            <span className="block text-xs text-muted">{NAV.profile.hint}</span>
+          </Link>
+          <button role="menuitem" type="button" onClick={signOut} className="block w-full border-t border-line px-4 py-2 text-left text-sm font-bold hover:underline">
+            Sign out
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function SignIn() {
   const { signIn } = useSession();
@@ -105,12 +267,10 @@ function SignIn() {
 }
 
 function Frame({ children }: { children: ReactNode }) {
-  const { user, signOut } = useSession();
+  const { user } = useSession();
   const pathname = usePathname();
   const council = useLoad(() => (user ? db.councils.get(user.councilId) : Promise.resolve(null)), [user?.councilId]);
   if (!user) return null;
-  const areas = portalAreas(user);
-  const helpCurrent = pathname === HELP.href;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -120,51 +280,10 @@ function Frame({ children }: { children: ReactNode }) {
           <p className="font-serif text-xl font-bold leading-tight">Knights of Columbus</p>
           <p className="text-sm">{council.data ? councilLabel(council.data) : ' '}</p>
         </div>
-        <div className="text-right text-sm">
-          <p>
-            {user.firstName} {user.lastName} · {user.memberType}
-            {user.isOfficer ? ' · Officer' : ''}
-          </p>
-          <button type="button" onClick={signOut} className="font-bold underline">
-            Sign out
-          </button>
-        </div>
+        <MemberMenu />
       </header>
       <div className="flex flex-1">
-        <nav data-surface="navy" aria-label="Portal sections" className="w-56 shrink-0 bg-navy py-4 text-white">
-          <ul className="flex flex-col">
-            {areas.map((area) => {
-              const item = AREAS[area];
-              const current = pathname === item.href;
-              return (
-                <li key={area}>
-                  <Link
-                    href={item.href}
-                    aria-current={current ? 'page' : undefined}
-                    className={cx('block border-l-8 px-4 py-2', current ? 'border-gold bg-white text-navy' : 'border-transparent hover:underline')}
-                  >
-                    <span className="block text-sm font-bold">{item.label}</span>
-                    <span className={cx('block text-xs', current ? 'text-muted' : 'text-white')}>{item.hint}</span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-          <Link
-            href={HELP.href}
-            aria-current={helpCurrent ? 'page' : undefined}
-            className={cx(
-              'mt-4 flex items-start gap-2 border-l-8 border-t border-t-gold px-4 pb-2 pt-3',
-              helpCurrent ? 'border-l-gold bg-white text-navy' : 'border-l-transparent hover:underline',
-            )}
-          >
-            <HelpIcon />
-            <span>
-              <span className="block text-sm font-bold">{HELP.label}</span>
-              <span className={cx('block text-xs', helpCurrent ? 'text-muted' : 'text-white')}>{HELP.hint}</span>
-            </span>
-          </Link>
-        </nav>
+        <SideNav groups={portalNavGroups(user)} pathname={pathname} />
         <main className="min-w-0 flex-1 bg-white p-6">{children}</main>
       </div>
     </div>

@@ -28,7 +28,9 @@
 
 ## 1. Roles and what each one sees
 
-The sidebar shows only the sections your role can use. **Member Actions**, **Post-event ledger**, **Communications Hub**, **My Profile** and **Online Help Center** appear for everyone.
+The sidebar shows only the sections your role can use, folded into four groups: **Self-Service Hub** (always open: Member Actions Hub, Communications Hub, Online Help Center), **Volunteer Operations**, **Financial Ledgers** and **Administrative Lookups**. Select a group's heading to open or close it; the group holding the page you are on opens by itself, and the portal remembers your choices in this browser. A group with nothing for your role is not shown. **My Profile** is in the member menu: select your name and photo at the top right. Everyone sees Member Actions Hub, Post-event Ledger, My Expense Reports, Communications Hub, My Profile and Online Help Center.
+
+Expense checks are issued only by the council's **Financial Secretary** or **Treasurer**, or a Super Admin; an Admin without one of those roles approves and returns reports in the **Leadership Auditing Queue** but does not see **Bulk Check Disbursements**. Nobody, a Super Admin included, may approve or pay an expense report they submitted.
 
 | Section | Member | Officer | Treasurer / Fin. Secretary | Admin | Super Admin |
 |---|:-:|:-:|:-:|:-:|:-:|
@@ -68,7 +70,7 @@ The navy header always shows the council you belong to, next to your name, membe
 
 ## 3. Building multi-day events
 
-**Path:** sidebar → **Event planner**
+**Path:** sidebar → **Event Planner**
 
 The planner is a split screen: the event list is on the left, and the selected event is on the right.
 
@@ -122,7 +124,7 @@ To change or remove a shift, use **Edit** (then **Save** or **Cancel**) or **Del
 
 Use this for recurring projects such as a monthly pancake breakfast or an annual Tootsie Roll drive.
 
-1. Open the past event in the **Event planner**.
+1. Open the past event in the **Event Planner**.
 2. In the **Copy as a twin** panel:
    - **New event name:** defaults to the same name. Change it if needed, for example to add the month.
    - **New first day:** the twin's start date.
@@ -142,7 +144,7 @@ After copying, review the twin's shifts and adjust anything that changed.
 
 ## 5. The member roster and the trade skills drawer
 
-**Path:** sidebar → **Member roster**
+**Path:** sidebar → **Affiliated Roster**
 
 ### 5.1 Finding members
 
@@ -176,7 +178,7 @@ If the drawer says *"No member of this council has recorded a skill yet,"* ask m
 
 ## 6. Meetings
 
-**Path:** sidebar → **Meeting center** (Admins, Super Admins and council officers)
+**Path:** sidebar → **Meeting Center** (Admins, Super Admins and council officers)
 
 1. Select **New meeting** and fill in **Meeting name**, **Type**, **Date**, **Location**, **Starts**, **Ends**, **Description** and **Agenda**.
 2. **Invite:** choose **All active members**, **Officers only** or **Choose members…**. Invited members get a message in the app.
@@ -192,7 +194,7 @@ Officers see **Take attendance** on each meeting on their phone's Home tab.
 
 ## 7. Executive audits: no-shows and shifts awaiting hours
 
-**Path:** sidebar → **Executive Summaries** → **Executive audits**. These audits are for the council's Admins and Super Admins only.
+**Path:** sidebar → **Executive Dashboard Summaries** → **Executive audits**. These audits are for the council's Admins and Super Admins only.
 
 ### 7.1 No-show audit (last 6 months)
 
@@ -207,7 +209,7 @@ This panel lists every sign-up flagged as a no-show by members of the council **
 - The header's red pill counts **no-shows without a reason**. Follow up on these first.
 - Members see their own rolling **12-month** badge on the phone. The 6-month audit is the council's working view.
 - No-show reasons come from the **No-Show Reason** system lookup (§12).
-- No-shows are recorded on the **Post-event ledger** turnout grid (§8), or by members reporting their own absence on the phone.
+- No-shows are recorded on the **Post-event Ledger** turnout grid (§8), or by members reporting their own absence on the phone.
 - Meeting absence is recorded by leaving **Attended** unticked in the Meeting center. Meetings have no separate no-show flag.
 
 ### 7.2 Shifts awaiting hours
@@ -231,7 +233,7 @@ This panel lists members who signed up for a past shift, were **not** marked as 
 
 ## 8. The post-event ledger and lessons learned
 
-**Path:** sidebar → **Post-event ledger**. This is open to Admins for their councils' events, and to each event's owner.
+**Path:** sidebar → **Post-event Ledger**. This is open to Admins for their councils' events, and to each event's owner.
 
 1. The left list has two tabs:
    - **Active queue:** events waiting for results, marked **Results needed**.
@@ -250,7 +252,7 @@ This panel lists members who signed up for a past shift, were **not** marked as 
 
 ### 8.1 Lessons registry
 
-**Path:** sidebar → **Lessons registry** (Admins and Super Admins)
+**Path:** sidebar → **Lessons Registry** (Admins and Super Admins)
 
 Search lessons across **every council**:
 - Filter by text, event dates, councils, event categories and lessons categories.
@@ -263,7 +265,7 @@ Search lessons across **every council**:
 
 ## 9. Configuring council lookups
 
-**Path:** sidebar → **Council lookups**
+**Path:** sidebar → **Council Lookup Tables**
 
 | Tab | Who | Columns |
 |---|---|---|
@@ -283,7 +285,7 @@ Search lessons across **every council**:
 
 ## 10. The donations workspace
 
-**Path:** sidebar → **Donations** (Admins, Super Admins, Treasurer, Financial Secretary)
+**Path:** sidebar → **Recorded Donations History** (Admins, Super Admins, Treasurer, Financial Secretary)
 
 - **Event donations** summarises each event's donations as **Cash**, **Electronic** and **Items (est.)**. Events whose ledger is driven by donations show **Ledger synced from donations**.
 - **Standalone donations** lists donations not tied to any event.
@@ -297,7 +299,7 @@ Search lessons across **every council**:
 
 ## 11. Interpreting the executive scorecard (monthly summaries)
 
-**Path:** sidebar → **Executive Summaries**. Choose the **Month** and **Year**.
+**Path:** sidebar → **Executive Dashboard Summaries**. Choose the **Month** and **Year**.
 
 ### 11.1 Scorecard tiles
 
@@ -330,7 +332,7 @@ The **Highlights** text of each of the month's events, in date order. If none ap
 
 ### 12.1 System lookups
 
-**Path:** sidebar → **System lookups** (Super Admins only)
+**Path:** sidebar → **Global Governance Matrices** (Super Admins only)
 
 | Table | Holds |
 |---|---|
@@ -376,7 +378,7 @@ Members send feedback and bug reports from **Online Help Center → Submit Syste
 | Delete refused (record in use) | Other records depend on it (§13). | Clear the dependants first, or keep the record. |
 | Cash or electronic fields locked on the ledger | Donations now drive those totals. | Correct the donations in **Donations** instead. |
 | Council lookups save refused | One row failed, so nothing was saved. | Fix the row named in the message and save again. |
-| Member cannot find their QR code | No **QR code image URL** is on file. | Add it under **Council lookups → Enabled donation methods**. |
+| Member cannot find their QR code | No **QR code image URL** is on file. | Add it under **Council Lookup Tables → Enabled donation methods**. |
 | *"Your role cannot maintain this council's lookups."* | Finance officer on another council, or no finance role. | A council Admin or Super Admin must make the change. |
 | Audits missing from Executive Summaries | Finance officers see the monthly summary only. | Ask an Admin for the audit figures. |
 | **Mark no-show** missing on a turnout row | The volunteer has hours logged, or the event is not linked to your council. | Correct the hours first, or ask an Admin of the event's council. |

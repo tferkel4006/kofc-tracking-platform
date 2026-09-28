@@ -878,9 +878,11 @@ export interface DataService {
   /**
    * Expense reporting (Sprint 5R). A member files, edits (while a draft) and reads only their own sheets. Council
    * leadership, meaning an Active Admin, Financial Secretary or Treasurer of the council or any Active Super Admin,
-   * reads the council's queue, approves sheets and records the checks that pay them (SecurityPrivilegeError
-   * ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). An unknown actor rejects MEMBER_NOT_FOUND. Every write is all or
-   * nothing: a rejected call changes no row.
+   * reads the council's queue and approves or returns sheets (SecurityPrivilegeError ADMIN_REQUIRED,
+   * COUNCIL_ACCESS_DENIED). Only the council's Financial Secretary or Treasurer, or an Active Super Admin, records
+   * the checks that pay them (FINANCE_OFFICER_REQUIRED, Sprint 5S). Nobody approves or pays a sheet they submitted,
+   * whatever their role. An unknown actor rejects MEMBER_NOT_FOUND. Every write is all or nothing: a rejected call
+   * changes no row.
    */
   expenses: {
     /** The actor's own sheets in every status, newest (highest id) first. */
@@ -902,8 +904,8 @@ export interface DataService {
      */
     submitReport(actorId: number, report: ExpenseReportInput, lineItems: readonly ExpenseLineItemInput[]): Promise<ExpenseReportDetail>;
     /**
-     * Moves a 'Submitted' sheet to 'Approved' (council leadership only). An officer may not approve their own sheet
-     * (SELF_APPROVAL_BLOCKED) unless they are an Active Super Admin. Rejects RECORD_NOT_FOUND for an unknown sheet
+     * Moves a 'Submitted' sheet to 'Approved' (council leadership only). Nobody may approve their own sheet, a
+     * Super Admin included (SELF_APPROVAL_BLOCKED, no override since Sprint 5S). Rejects RECORD_NOT_FOUND for an unknown sheet
      * and EXPENSE_STATUS_CONFLICT for one in another status.
      */
     approveReport(actorId: number, reportId: number): Promise<ExpenseReportDetail>;
@@ -915,12 +917,13 @@ export interface DataService {
      */
     rejectReport(actorId: number, reportId: number, rejectionReason: string): Promise<ExpenseReportDetail>;
     /**
-     * Records one check paying the listed sheets of `councilId` (council leadership only): creates the
+     * Records one check paying the listed sheets of `councilId` (the council's Active Financial Secretary or Treasurer,
+     * or an Active Super Admin; anyone else rejects FINANCE_OFFICER_REQUIRED or COUNCIL_ACCESS_DENIED): creates the
      * ExpenseDisbursement with TotalAmount set to the sheets' total, then stamps every sheet 'Reimbursed' with its
      * DisbursementID, all in one transaction. Rejects INVALID_INPUT for an empty or repeated id list, a sheet of
      * another council, a blank or over-long check number, or a check number the council already used; INVALID_DATE for a
      * malformed payout date; RECORD_NOT_FOUND for an unknown sheet; EXPENSE_STATUS_CONFLICT for a sheet not 'Approved';
-     * SELF_PAYOUT_BLOCKED for a sheet the actor submitted, unless they are an Active Super Admin (Sprint 5R-2).
+     * SELF_PAYOUT_BLOCKED for a sheet the actor submitted, whatever their role (Sprint 5R-2; no override since 5S).
      */
     recordDisbursement(
       actorId: number,

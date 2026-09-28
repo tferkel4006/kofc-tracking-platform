@@ -164,6 +164,8 @@ CREATE TABLE [Member] (
 	[MemberTypeID] INTEGER NOT NULL,
 	[CredentialID] INTEGER NOT NULL,
 	[WorkingStatusID] INTEGER, -- Phase 2: optional until the member fills in their profile
+	[ProfilePhotoURL] VARCHAR(2000) NULL, -- Sprint 5S: the member's avatar (a local file path while there is no file store)
+	[Biography] TEXT NULL, -- Sprint 5S: a short personal fraternal biography, written by the member
 	PRIMARY KEY([id])
 );
 GO

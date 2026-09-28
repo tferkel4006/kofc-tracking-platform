@@ -1,14 +1,17 @@
 // Sprint 5R: expense reporting (expenses.listUserReports, listCouncilQueue, submitReport, approveReport and
 // recordDisbursement), its role gates and its tenant isolation. Sprint 5R-1.5: no self-approval, rejectReport, and
 // approved expenses in reports.monthlySummary. Sprint 5R-2: no self-payout and the shared expense form helpers.
+// Sprint 5S: no Super Admin override on either control, and only finance officers (or a Super Admin) issue checks.
 import { describe, expect, it } from 'vitest';
 import {
+  assertMayDisburseCouncilExpenses,
   assertNoSelfPayout,
   assertNotSelfApproval,
   blankExpenseLine,
   BusinessRuleError,
   canApproveExpenseReport,
   canAuditCouncilExpenses,
+  canDisburseCouncilExpenses,
   canPayExpenseReport,
   cleanExpenseLineItems,
   expenseDraftTotal,
@@ -20,6 +23,7 @@ import {
   expenseStatusBadge,
   listExpenseReferences,
   mayAuditCouncilExpenses,
+  mayDisburseCouncilExpenses,
   parseExpenseReferenceKey,
   REJECTION_REASON_MAX_LENGTH,
   summarizeMonth,
@@ -47,7 +51,7 @@ const receipt = (over: Partial<ExpenseLineItemInput> = {}): ExpenseLineItemInput
   ...over,
 });
 
-async function expectPrivilege(promise: Promise<unknown>, code: 'ADMIN_REQUIRED' | 'COUNCIL_ACCESS_DENIED') {
+async function expectPrivilege(promise: Promise<unknown>, code: 'ADMIN_REQUIRED' | 'COUNCIL_ACCESS_DENIED' | 'FINANCE_OFFICER_REQUIRED') {
   expect(await expectRule(promise, code)).toBeInstanceOf(SecurityPrivilegeError);
 }
 
@@ -304,7 +308,7 @@ describe.each(drivers)('expense reporting ($name driver)', (d) => {
     it('pays approved sheets with one check, totals them and stamps each Reimbursed', async () => {
       const db = await d.make();
       const a = await approvedReport(db, MEMBER.member, [receipt({ Amount: 19.99 }), receipt({ Amount: 0.01 })]);
-      const b = await approvedReport(db, MEMBER.superAdmin, [receipt({ Amount: 100.1 })]);
+      const b = await approvedReport(db, MEMBER.newMember, [receipt({ Amount: 100.1 })]);
       const result = await db.expenses.recordDisbursement(MEMBER.admin, OWN, [b, a], CHECK);
       expect(result.disbursement).toMatchObject({ CouncilID: OWN, CheckNumber: '1042', PayoutDate: '2026-09-20', TotalAmount: 120.1, Notes: 'September reimbursements' });
       expect(result.reports.map((r) => [r.report.id, r.report.Status, r.report.DisbursementID])).toEqual([
@@ -350,7 +354,7 @@ describe.each(drivers)('expense reporting ($name driver)', (d) => {
       const own = await approvedReport(db, MEMBER.member);
       await expectPrivilege(db.expenses.recordDisbursement(MEMBER.admin, OTHER, [foreign], CHECK), 'COUNCIL_ACCESS_DENIED');
       await expectRule(db.expenses.recordDisbursement(MEMBER.admin, OWN, [own, foreign], CHECK), 'INVALID_INPUT');
-      await expectPrivilege(db.expenses.recordDisbursement(MEMBER.member, OWN, [own], CHECK), 'ADMIN_REQUIRED');
+      await expectPrivilege(db.expenses.recordDisbursement(MEMBER.member, OWN, [own], CHECK), 'FINANCE_OFFICER_REQUIRED');
       // The same check number is fine in another council, but not twice in one.
       await db.expenses.recordDisbursement(MEMBER.superAdmin, OTHER, [foreign], CHECK);
       await db.expenses.recordDisbursement(MEMBER.admin, OWN, [own], { ...CHECK, CheckNumber: ' 1042 ' });
@@ -384,13 +388,13 @@ describe.each(drivers)('expense reporting ($name driver)', (d) => {
 describe('financial controls (pure, Sprint 5R-1.5)', () => {
   const actor = (over: Partial<MemberWriteActor> = {}): MemberWriteActor => ({ memberId: 10, councilId: OWN, memberType: 'Admin', active: true, ...over });
 
-  it('blocks approving your own sheet unless you are an active Super Admin', () => {
+  it('blocks approving your own sheet for every role, Super Admins included (Sprint 5S)', () => {
     expect(() => assertNotSelfApproval(actor(), { id: 7, SubmitterMemberID: 10 })).toThrow(
       'For accounting controls, an officer cannot approve their own expense report.',
     );
     expect(() => assertNotSelfApproval(actor({ roles: ['Treasurer'], memberType: 'Member' }), { id: 7, SubmitterMemberID: 10 })).toThrow();
     expect(() => assertNotSelfApproval(actor({ memberType: 'Super Admin', active: false }), { id: 7, SubmitterMemberID: 10 })).toThrow();
-    expect(() => assertNotSelfApproval(actor({ memberType: 'Super Admin' }), { id: 7, SubmitterMemberID: 10 })).not.toThrow();
+    expect(() => assertNotSelfApproval(actor({ memberType: 'Super Admin' }), { id: 7, SubmitterMemberID: 10 })).toThrow('cannot approve their own');
     expect(() => assertNotSelfApproval(actor(), { id: 7, SubmitterMemberID: 11 })).not.toThrow();
   });
 
@@ -398,7 +402,8 @@ describe('financial controls (pure, Sprint 5R-1.5)', () => {
     const user = (over = {}) => ({ memberId: 10, councilId: OWN, memberType: 'Admin' as const, isOfficer: false, ...over });
     expect(canApproveExpenseReport(user(), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(true);
     expect(canApproveExpenseReport(user(), { CouncilID: OWN, SubmitterMemberID: 10 })).toBe(false);
-    expect(canApproveExpenseReport(user({ memberType: 'Super Admin' }), { CouncilID: OTHER, SubmitterMemberID: 10 })).toBe(true);
+    expect(canApproveExpenseReport(user({ memberType: 'Super Admin' }), { CouncilID: OTHER, SubmitterMemberID: 11 })).toBe(true);
+    expect(canApproveExpenseReport(user({ memberType: 'Super Admin' }), { CouncilID: OTHER, SubmitterMemberID: 10 })).toBe(false);
     expect(canApproveExpenseReport(user({ memberType: 'Member' }), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(false);
   });
 
@@ -433,10 +438,14 @@ describe.each(drivers)('financial controls ($name driver, Sprint 5R-1.5)', (d) =
       expect((await db.expenses.approveReport(MEMBER.member, colleague.report.id)).report.Status).toBe('Approved');
     });
 
-    it('lets a Super Admin approve their own sheet as the override', async () => {
+    it('stops a Super Admin approving their own sheet too: there is no override (Sprint 5S)', async () => {
       const db = await d.make();
       const { report } = await db.expenses.submitReport(MEMBER.superAdmin, { Status: 'Submitted' }, [receipt()]);
-      expect((await db.expenses.approveReport(MEMBER.superAdmin, report.id)).report.Status).toBe('Approved');
+      await expectRule(db.expenses.approveReport(MEMBER.superAdmin, report.id), 'SELF_APPROVAL_BLOCKED');
+      const [mine] = await db.expenses.listUserReports(MEMBER.superAdmin);
+      expect(mine.report.Status).toBe('Submitted');
+      // Another officer of the council approves it.
+      expect((await db.expenses.approveReport(MEMBER.admin, report.id)).report.Status).toBe('Approved');
     });
 
     it('still refuses a plain member before looking at who submitted', async () => {
@@ -523,7 +532,7 @@ describe('self-payout and the expense forms (pure, Sprint 5R-2)', () => {
   const actor = (over: Partial<MemberWriteActor> = {}): MemberWriteActor => ({ memberId: 10, councilId: OWN, memberType: 'Admin', active: true, ...over });
   const user = (over = {}) => ({ memberId: 10, councilId: OWN, memberType: 'Admin' as const, isOfficer: false, ...over });
 
-  it('blocks paying your own sheet unless you are an active Super Admin', () => {
+  it('blocks paying your own sheet for every role, Super Admins included (Sprint 5S)', () => {
     let err: unknown;
     try {
       assertNoSelfPayout(actor(), { id: 7, SubmitterMemberID: 10 });
@@ -534,18 +543,46 @@ describe('self-payout and the expense forms (pure, Sprint 5R-2)', () => {
     expect(err).toMatchObject({ code: 'SELF_PAYOUT_BLOCKED', message: 'For accounting controls, an officer cannot issue a check that pays their own expense report.' });
     expect(() => assertNoSelfPayout(actor({ roles: ['Financial Secretary'], memberType: 'Member' }), { id: 7, SubmitterMemberID: 10 })).toThrow();
     expect(() => assertNoSelfPayout(actor({ memberType: 'Super Admin', active: false }), { id: 7, SubmitterMemberID: 10 })).toThrow();
-    expect(() => assertNoSelfPayout(actor({ memberType: 'Super Admin' }), { id: 7, SubmitterMemberID: 10 })).not.toThrow();
+    expect(() => assertNoSelfPayout(actor({ memberType: 'Super Admin' }), { id: 7, SubmitterMemberID: 10 })).toThrow('pays their own expense report');
     expect(() => assertNoSelfPayout(actor(), { id: 7, SubmitterMemberID: 11 })).not.toThrow();
   });
 
-  it('mirrors the rule in the pay checkbox', () => {
-    expect(canPayExpenseReport(user(), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(true);
-    expect(canPayExpenseReport(user(), { CouncilID: OWN, SubmitterMemberID: 10 })).toBe(false);
-    expect(canPayExpenseReport(user(), { CouncilID: OTHER, SubmitterMemberID: 11 })).toBe(false);
-    expect(canPayExpenseReport(user({ memberType: 'Member', roles: ['Treasurer'] }), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(true);
-    expect(canPayExpenseReport(user({ memberType: 'Member', roles: ['Treasurer'] }), { CouncilID: OWN, SubmitterMemberID: 10 })).toBe(false);
-    expect(canPayExpenseReport(user({ memberType: 'Super Admin' }), { CouncilID: OTHER, SubmitterMemberID: 10 })).toBe(true);
+  it('mirrors the rules in the pay checkbox: finance officers or a Super Admin, never on their own sheet', () => {
+    const treasurer = (over = {}) => user({ memberType: 'Member', roles: ['Treasurer'], ...over });
+    expect(canPayExpenseReport(treasurer(), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(true);
+    expect(canPayExpenseReport(treasurer(), { CouncilID: OWN, SubmitterMemberID: 10 })).toBe(false);
+    expect(canPayExpenseReport(treasurer(), { CouncilID: OTHER, SubmitterMemberID: 11 })).toBe(false);
+    expect(canPayExpenseReport(user({ roles: ['Financial Secretary'] }), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(true);
+    // A council Admin without a finance role audits the queue but does not pay it.
+    expect(canPayExpenseReport(user(), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(false);
+    expect(canPayExpenseReport(user({ memberType: 'Super Admin' }), { CouncilID: OTHER, SubmitterMemberID: 11 })).toBe(true);
+    expect(canPayExpenseReport(user({ memberType: 'Super Admin' }), { CouncilID: OTHER, SubmitterMemberID: 10 })).toBe(false);
     expect(canPayExpenseReport(user({ memberType: 'Member' }), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(false);
+  });
+
+  it('opens the check ledger only to a council’s finance officers and Super Admins (Sprint 5S)', () => {
+    expect(canDisburseCouncilExpenses(user({ memberType: 'Member', roles: ['Treasurer'] }), OWN)).toBe(true);
+    expect(canDisburseCouncilExpenses(user({ memberType: 'Member', roles: ['Financial Secretary'] }), OWN)).toBe(true);
+    expect(canDisburseCouncilExpenses(user({ memberType: 'Member', roles: ['Treasurer'] }), OTHER)).toBe(false);
+    expect(canDisburseCouncilExpenses(user(), OWN)).toBe(false);
+    expect(canDisburseCouncilExpenses(user({ roles: ['Grand Knight'] }), OWN)).toBe(false);
+    expect(canDisburseCouncilExpenses(user({ memberType: 'Super Admin' }), OTHER)).toBe(true);
+
+    const deny = (a: MemberWriteActor, councilId = OWN) => {
+      try {
+        assertMayDisburseCouncilExpenses(a, councilId, 'record expense checks');
+        return null;
+      } catch (e) {
+        return (e as SecurityPrivilegeError).code;
+      }
+    };
+    expect(deny(actor())).toBe('FINANCE_OFFICER_REQUIRED');
+    expect(deny(actor({ roles: ['Treasurer'], memberType: 'Member', active: false }))).toBe('FINANCE_OFFICER_REQUIRED');
+    expect(deny(actor({ roles: ['Treasurer'], memberType: 'Member' }))).toBeNull();
+    expect(deny(actor({ roles: ['Financial Secretary'] }), OTHER)).toBe('COUNCIL_ACCESS_DENIED');
+    expect(deny(actor({ memberType: 'Super Admin' }), OTHER)).toBeNull();
+    expect(deny(actor({ memberType: 'Super Admin', active: false }))).toBe('FINANCE_OFFICER_REQUIRED');
+    expect(mayDisburseCouncilExpenses(actor({ roles: ['Treasurer'] }), OWN)).toBe(true);
   });
 
   it('round-trips the single Event-or-Meeting picker key', () => {
@@ -634,17 +671,54 @@ describe.each(drivers)('self-payout ($name driver, Sprint 5R-2)', (d) => {
     expect(d.count(db, 'ExpenseDisbursement')).toBe(2);
   });
 
-  it('lets a Super Admin pay their own sheet as the override', async () => {
+  it('stops a Super Admin paying their own sheet too: there is no override (Sprint 5S)', async () => {
     const db = await d.make();
-    const own = await approvedReport(db, MEMBER.superAdmin);
-    const result = await db.expenses.recordDisbursement(MEMBER.superAdmin, OWN, [own], CHECK);
+    const { report } = await db.expenses.submitReport(MEMBER.superAdmin, { Status: 'Submitted' }, [receipt()]);
+    await db.expenses.approveReport(MEMBER.admin, report.id);
+    await expectRule(db.expenses.recordDisbursement(MEMBER.superAdmin, OWN, [report.id], CHECK), 'SELF_PAYOUT_BLOCKED');
+    expect(d.count(db, 'ExpenseDisbursement')).toBe(0);
+    // The council's Financial Secretary (the seeded Admin) pays it instead.
+    const result = await db.expenses.recordDisbursement(MEMBER.admin, OWN, [report.id], CHECK);
     expect(result.reports[0].report).toMatchObject({ Status: 'Reimbursed', DisbursementID: result.disbursement.id });
   });
 
-  it('checks leadership before looking at who submitted', async () => {
+  it('checks the finance role before looking at who submitted', async () => {
     const db = await d.make();
     const own = await approvedReport(db, MEMBER.member);
-    await expectPrivilege(db.expenses.recordDisbursement(MEMBER.member, OWN, [own], CHECK), 'ADMIN_REQUIRED');
+    await expectPrivilege(db.expenses.recordDisbursement(MEMBER.member, OWN, [own], CHECK), 'FINANCE_OFFICER_REQUIRED');
+  });
+});
+
+describe.each(drivers)('finance-officer disbursements ($name driver, Sprint 5S)', (d) => {
+  it('lets a council Admin without a finance role audit the queue but not issue checks', async () => {
+    const db = await d.make();
+    const plainAdmin = await addMember(db, OWN, 'Admin', 'plain.expense.admin@example.org');
+    const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
+    expect((await db.expenses.listCouncilQueue(plainAdmin, OWN)).map((q) => q.report.id)).toEqual([report.id]);
+    expect((await db.expenses.approveReport(plainAdmin, report.id)).report.Status).toBe('Approved');
+    const err = await expectRule(db.expenses.recordDisbursement(plainAdmin, OWN, [report.id], CHECK), 'FINANCE_OFFICER_REQUIRED');
+    expect(err).toBeInstanceOf(SecurityPrivilegeError);
+    expect(d.count(db, 'ExpenseDisbursement')).toBe(0);
+    // Given the Treasurer role, the same Admin may pay it.
+    grantRole(d, db, plainAdmin, 'Treasurer');
+    expect((await db.expenses.recordDisbursement(plainAdmin, OWN, [report.id], CHECK)).reports[0].report.Status).toBe('Reimbursed');
+  });
+
+  it('keeps a finance officer to their own council, while a Super Admin pays any council', async () => {
+    const db = await d.make();
+    const otherMember = await addMember(db, OTHER, 'Member', 'other.payee@example.org');
+    const foreign = await approvedReport(db, otherMember);
+    grantRole(d, db, MEMBER.member, 'Treasurer');
+    await expectPrivilege(db.expenses.recordDisbursement(MEMBER.member, OTHER, [foreign], CHECK), 'COUNCIL_ACCESS_DENIED');
+    expect((await db.expenses.recordDisbursement(MEMBER.superAdmin, OTHER, [foreign], CHECK)).reports[0].report.Status).toBe('Reimbursed');
+  });
+
+  it('refuses an inactive Treasurer', async () => {
+    const db = await d.make();
+    const inactive = await addMember(db, OWN, 'Member', 'inactive.treasurer@example.org', 'Inactive');
+    grantRole(d, db, inactive, 'Treasurer');
+    const report = await approvedReport(db, MEMBER.member);
+    await expectPrivilege(db.expenses.recordDisbursement(inactive, OWN, [report], CHECK), 'FINANCE_OFFICER_REQUIRED');
   });
 
   it('lists the council’s events and meetings, newest first, for the Event-or-Meeting picker', async () => {

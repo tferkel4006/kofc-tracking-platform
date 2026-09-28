@@ -18,6 +18,7 @@ import {
   appendPhotoPaths,
   assertMayAttachEventMedia,
   assertMayAuditCouncilExpenses,
+  assertMayDisburseCouncilExpenses,
   assertNoSelfPayout,
   assertNotSelfApproval,
   cleanRejectionReason,
@@ -218,8 +219,9 @@ const DB_NAME = 'kofc.db';
  * 7: Meeting.OwnerID (Sprint 5Q).
  * 8: ExpenseDisbursement, ExpenseReport and ExpenseLineItem (Sprint 5R).
  * 9: ExpenseReport.RejectionReason (Sprint 5R-1.5).
+ * 10: Member.ProfilePhotoURL and Member.Biography (Sprint 5S).
  */
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -1761,7 +1763,7 @@ export class SqliteDataService implements DataService {
       let disbursementId = 0;
       await db.withTransactionAsync(async () => {
         const actor = await this.memberWriteActor(db, actorId);
-        assertMayAuditCouncilExpenses(actor, councilId, `record expense checks for council ${councilId}`);
+        assertMayDisburseCouncilExpenses(actor, councilId, `record expense checks for council ${councilId}`);
         await this.assertCouncilsExist(db, [councilId]);
         for (const id of ids) {
           const row = await this.requireExpenseReport(db, id);

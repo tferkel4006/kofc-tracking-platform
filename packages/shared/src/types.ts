@@ -105,6 +105,8 @@ export interface Member {
   MemberTypeID: number;
   CredentialID: number;
   WorkingStatusID?: number | null; // Phase 2: null until the member sets it
+  ProfilePhotoURL?: string | null; // Sprint 5S: avatar path (VARCHAR(2000)); a blob or file:// path until there is a file store
+  Biography?: string | null; // Sprint 5S: short personal fraternal biography (TEXT, capped at MEMBER_BIOGRAPHY_MAX_LENGTH)
 }
 
 export interface MemberRoles {

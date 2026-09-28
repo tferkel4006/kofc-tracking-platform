@@ -1,14 +1,15 @@
 'use client';
-// Expense Audit Queue: the council leadership's desk for submitted expense reports (an Admin, Financial Secretary
-// or Treasurer of the council, or any Super Admin: canAuditCouncilExpenses). The grid lists every 'Submitted'
-// sheet, oldest first; choosing one expands its receipts with two commands: Approve (a confirm step; never on the
-// officer's own sheet unless they are a Super Admin) and Reject & Return, which requires a reason the member sees.
-// The drivers enforce the same rules (assertMayAuditCouncilExpenses, SELF_APPROVAL_BLOCKED).
+// Leadership Auditing Queue: the council leadership's desk for submitted expense reports (an Admin, Financial
+// Secretary or Treasurer of the council, or any Super Admin: canAuditCouncilExpenses). The grid lists every
+// 'Submitted' sheet, oldest first; choosing one expands its receipts with two commands: Approve (a confirm step;
+// never on the officer's own sheet, whatever their role) and Reject & Return, which requires a reason the member
+// sees. The drivers enforce the same rules (assertMayAuditCouncilExpenses, SELF_APPROVAL_BLOCKED).
 import Link from 'next/link';
 import { Fragment, useState } from 'react';
 import {
   canApproveExpenseReport,
   canAuditCouncilExpenses,
+  canDisburseCouncilExpenses,
   describeError,
   expenseReferenceLabel,
   listExpenseReferences,
@@ -135,7 +136,7 @@ function AuditQueue() {
 
   return (
     <>
-      <PageTitle actions={<CouncilSelect scope={scope} />}>Expense Audit Queue</PageTitle>
+      <PageTitle actions={<CouncilSelect scope={scope} />}>Leadership Auditing Queue</PageTitle>
       {!canAudit ? (
         <Notice tone="error">Only this council&apos;s Admins, Financial Secretary and Treasurer, or a Super Admin, review its expense reports.</Notice>
       ) : (
@@ -148,10 +149,17 @@ function AuditQueue() {
           ) : null}
           {awaitingPayment.length > 0 ? (
             <Notice tone="info">
-              {awaitingPayment.length} approved report{awaitingPayment.length === 1 ? ' is' : 's are'} waiting for a check.{' '}
-              <Link href="/expenses/disbursements" className="font-bold underline">
-                Open check disbursements
-              </Link>
+              {awaitingPayment.length} approved report{awaitingPayment.length === 1 ? ' is' : 's are'} waiting for a check
+              {canDisburseCouncilExpenses(user, councilId) ? (
+                <>
+                  .{' '}
+                  <Link href="/expenses/disbursements" className="font-bold underline">
+                    Open Bulk Check Disbursements
+                  </Link>
+                </>
+              ) : (
+                ' from the Financial Secretary or Treasurer.'
+              )}
             </Notice>
           ) : null}
           <Panel title={`Submitted for review (${pending.length})`} actions={<span className="text-sm font-bold">{formatMoney(pendingTotal)} pending</span>}>

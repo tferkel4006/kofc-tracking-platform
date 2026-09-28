@@ -60,8 +60,11 @@ interface Lookups {
 
 // ---- add / edit form ---------------------------------------------------------
 
-/** Every form field is text; numbers and ids are converted on save and validated again by the driver. */
-type Draft = Record<Exclude<keyof NewMember, 'WorkingStatusID'>, string>;
+/**
+ * Every form field is text; numbers and ids are converted on save and validated again by the driver. The photo and
+ * biography are the member's own (My Profile), so the roster form leaves them as stored.
+ */
+type Draft = Record<Exclude<keyof NewMember, 'WorkingStatusID' | 'ProfilePhotoURL' | 'Biography'>, string>;
 
 const TEXT_FIELDS: { key: keyof Draft; label: string; type?: string; maxLength: number; optional?: boolean; wide?: boolean }[] = [
   { key: 'MemberFirstName', label: 'First name', maxLength: 100 },

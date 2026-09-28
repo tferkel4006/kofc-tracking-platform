@@ -88,7 +88,7 @@ The tab you are on is marked with a **gold bar**.
 
 ### 3.2 Desktop portal: Member Actions hub
 
-The first entry in the navy sidebar is **Member Actions**. It has four tabs:
+The first entry in the navy sidebar, under **Self-Service Hub**, is **Member Actions Hub**. It has four tabs:
 
 | Tab | Use it to |
 |---|---|
@@ -97,7 +97,7 @@ The first entry in the navy sidebar is **Member Actions**. It has four tabs:
 | **Fraternal roster** | Look up a Brother Knight's phone and email. |
 | **Hour ledger** | Report time and review your shift and activity history. |
 
-The sidebar also lists **Post-event ledger** (for event owners), **Communications Hub**, **My Profile** and, at the bottom, **Online Help Center**.
+The **Self-Service Hub** group also holds **Communications Hub** and **Online Help Center**. The other groups fold open when you select their heading: **Volunteer Operations** has the calendar, meetings, photo gallery and **Post-event Ledger** (for event owners), and **Financial Ledgers** has **My Expense Reports**. **My Profile** is not in the sidebar: select your name and photo at the top right, then **My Profile**.
 
 ![Image: Member Actions Hub]
 
@@ -295,7 +295,7 @@ If you don't pin an event, donations are recorded as **standalone** (not linked 
 
 ### 8.3 If the QR code does not appear
 
-- *"Your council has not uploaded this QR code yet."* An Admin or finance officer needs to add the code's image link under **Council lookups → Enabled donation methods**.
+- *"Your council has not uploaded this QR code yet."* An Admin or finance officer needs to add the code's image link under **Council Lookup Tables → Enabled donation methods**.
 - *"The QR code could not be loaded."* The phone may be offline, or the link may be broken.
 - In either case, **take the donation another way** (cash or card) and tell your Admin.
 
@@ -331,6 +331,10 @@ Open **Member Actions → Fraternal roster** and use **Search by name or number*
 
 ### 9.3 My Profile (portal)
 
+Open it from the member menu: select your name and photo at the top right of the portal.
+
+- **Photo:** select **Choose photo…** and pick an image; it is saved at once and shown in the header. A square photo of at least 320 × 320 pixels stays sharp on high-resolution screens. **Remove photo** goes back to your initials.
+- **My fraternal biography:** write a short biography (up to 2,000 characters), then select **Save biography**.
 - **Contact details:** update your phone, email and address, then select **Save contact details**. **Changing your email also changes your sign-in email.**
 - **Working status, skills and training:** record trade skills (for example electrician or carpenter) so Admins can find you when a project needs them.
 - Your name, member number, degree and member type are kept by your council's Admins. Ask them to correct these.

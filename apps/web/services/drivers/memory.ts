@@ -20,6 +20,7 @@ import {
   appendPhotoPaths,
   assertMayAttachEventMedia,
   assertMayAuditCouncilExpenses,
+  assertMayDisburseCouncilExpenses,
   assertNoSelfPayout,
   assertNotSelfApproval,
   cleanRejectionReason,
@@ -1554,7 +1555,7 @@ export class MemoryDataService implements DataService {
       const s = await this.ready();
       const disbursementId = s.transaction(() => {
         const actor = this.memberWriteActor(s, actorId);
-        assertMayAuditCouncilExpenses(actor, councilId, `record expense checks for council ${councilId}`);
+        assertMayDisburseCouncilExpenses(actor, councilId, `record expense checks for council ${councilId}`);
         this.assertCouncilsExist(s, [councilId]);
         const rows = ids.map((id) => this.requireExpenseReport(s, id));
         for (const row of rows) {

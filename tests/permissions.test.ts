@@ -14,6 +14,8 @@ import {
   canPlanEvents,
   canRecordLedger,
   portalAreas,
+  portalNavGroups,
+  PORTAL_NAV_GROUPS,
 } from '@kofc/shared';
 
 const actor = (over: Partial<Parameters<typeof portalAreas>[0]> = {}) => ({
@@ -111,7 +113,6 @@ describe('portal permissions', () => {
       'ledger',
       'expenses',
       'expenses/queue',
-      'expenses/disbursements',
       'lessons-registry',
       'dashboard',
       'messages',
@@ -121,13 +122,79 @@ describe('portal permissions', () => {
     expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'expenses', 'messages', 'profile']);
   });
 
-  it('gives every member their own expense reports and only council leadership the audit queue and check disbursements', () => {
-    const leadership = [superAdmin, admin, actor({ isOfficer: true, roles: ['Treasurer'] }), actor({ isOfficer: true, roles: ['Financial Secretary'] })];
+  it('gives every member their own expense reports, leadership the audit queue, and only finance officers and Super Admins the check ledger', () => {
+    const financeOfficers = [actor({ isOfficer: true, roles: ['Treasurer'] }), actor({ isOfficer: true, roles: ['Financial Secretary'] })];
+    const leadership = [superAdmin, admin, ...financeOfficers];
     for (const u of [...leadership, officer, member]) expect(portalAreas(u)).toContain('expenses');
-    for (const u of leadership) expect(portalAreas(u)).toEqual(expect.arrayContaining(['expenses/queue', 'expenses/disbursements']));
+    for (const u of leadership) expect(portalAreas(u)).toContain('expenses/queue');
+    for (const u of [superAdmin, ...financeOfficers, actor({ memberType: 'Admin', roles: ['Treasurer'] })]) expect(portalAreas(u)).toContain('expenses/disbursements');
+    // Sprint 5S: a council Admin without a finance role audits but does not pay.
+    expect(portalAreas(admin)).not.toContain('expenses/disbursements');
     for (const u of [officer, member, actor({ isOfficer: true, roles: ['Grand Knight'] })]) {
       expect(portalAreas(u).filter((a) => a.startsWith('expenses/'))).toEqual([]);
     }
+  });
+
+  describe('sidebar accordion groups (Sprint 5S)', () => {
+    const shape = (u: Parameters<typeof portalNavGroups>[0]) => portalNavGroups(u).map((g) => [g.label, g.items]);
+
+    it('files every area but the profile into exactly one group, and adds the help center', () => {
+      const filed = PORTAL_NAV_GROUPS.flatMap((g) => g.items);
+      expect(new Set(filed).size).toBe(filed.length);
+      expect(filed).toContain('help');
+      const everyArea = portalAreas(superAdmin).filter((a) => a !== 'profile');
+      expect([...everyArea].sort()).toEqual(filed.filter((i) => i !== 'help').sort());
+      expect(PORTAL_NAV_GROUPS.map((g) => [g.label, g.collapsible])).toEqual([
+        ['Self-Service Hub', false],
+        ['Volunteer Operations', true],
+        ['Financial Ledgers', true],
+        ['Administrative Lookups', true],
+      ]);
+    });
+
+    it('leaves the profile out of the sidebar for every role; the header menu opens it', () => {
+      for (const u of [superAdmin, admin, officer, member]) {
+        expect(portalAreas(u)).toContain('profile');
+        expect(portalNavGroups(u).flatMap((g) => g.items as string[])).not.toContain('profile');
+      }
+    });
+
+    it('shows a Super Admin every group in full', () => {
+      expect(shape(superAdmin)).toEqual([
+        ['Self-Service Hub', ['member-actions', 'messages', 'help']],
+        ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
+        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements']],
+        ['Administrative Lookups', ['council-lookups', 'lookups', 'parishes', 'councils']],
+      ]);
+    });
+
+    it('shows a council Admin everything but the global tables, councils and the check ledger', () => {
+      expect(shape(admin)).toEqual([
+        ['Self-Service Hub', ['member-actions', 'messages', 'help']],
+        ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
+        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue']],
+        ['Administrative Lookups', ['council-lookups', 'parishes']],
+      ]);
+    });
+
+    it('shows a Treasurer the full financial ledgers and the donation lookups', () => {
+      expect(shape(actor({ isOfficer: true, roles: ['Treasurer'] }))).toEqual([
+        ['Self-Service Hub', ['member-actions', 'messages', 'help']],
+        ['Volunteer Operations', ['calendar', 'meetings', 'gallery', 'ledger']],
+        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements']],
+        ['Administrative Lookups', ['council-lookups']],
+      ]);
+    });
+
+    it('drops the Administrative Lookups group for plain members and other officers', () => {
+      for (const u of [member, officer]) {
+        expect(shape(u)).toEqual([
+          ['Self-Service Hub', ['member-actions', 'messages', 'help']],
+          ['Volunteer Operations', ['calendar', 'meetings', 'gallery', 'ledger']],
+          ['Financial Ledgers', ['expenses']],
+        ]);
+      }
+    });
   });
 
   it('leads every role, Admins included, with the Member Actions hub', () => {

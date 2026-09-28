@@ -134,25 +134,32 @@ export const canChangeDonation = (u: Actor, donation: Pick<Donation, 'CouncilID'
   donation.RecordedBy === u.memberId || eventOwnerId === u.memberId || canManageFinances(u, donation.CouncilID);
 
 /**
- * The council's expense queue, approvals and check disbursements, mirroring the drivers' assertMayAuditCouncilExpenses
- * (activity status is checked there): its Admins, its Financial Secretary and Treasurer, and any Super Admin. Every
- * member files and reads their own expense reports.
+ * The council's expense queue, approvals and returns, mirroring the drivers' assertMayAuditCouncilExpenses (activity
+ * status is checked there): its Admins, its Financial Secretary and Treasurer, and any Super Admin. Every member
+ * files and reads their own expense reports.
  */
 export const canAuditCouncilExpenses = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
 
 /**
- * The approve control on one expense sheet (drivers: assertMayAuditCouncilExpenses, then assertNotSelfApproval):
- * council leadership, but never on their own sheet unless they are a Super Admin.
+ * The check disbursement ledger of a council, mirroring assertMayDisburseCouncilExpenses (Sprint 5S): its Financial
+ * Secretary and Treasurer, and any Super Admin. A council Admin without a finance role audits but does not pay.
  */
-export const canApproveExpenseReport = (u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID'>): boolean =>
-  canAuditCouncilExpenses(u, report.CouncilID) && (report.SubmitterMemberID !== u.memberId || isSuperAdmin(u));
+export const canDisburseCouncilExpenses = (u: Actor, councilId: number): boolean =>
+  isSuperAdmin(u) || (isFinanceOfficer(u) && u.councilId === councilId);
 
 /**
- * The pay checkbox on one approved expense sheet (drivers: assertMayAuditCouncilExpenses, then assertNoSelfPayout):
- * council leadership, but never on their own sheet unless they are a Super Admin.
+ * The approve control on one expense sheet (drivers: assertMayAuditCouncilExpenses, then assertNotSelfApproval):
+ * council leadership, and never on their own sheet, whatever their role.
+ */
+export const canApproveExpenseReport = (u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID'>): boolean =>
+  canAuditCouncilExpenses(u, report.CouncilID) && report.SubmitterMemberID !== u.memberId;
+
+/**
+ * The pay checkbox on one approved expense sheet (drivers: assertMayDisburseCouncilExpenses, then
+ * assertNoSelfPayout): the council's finance officers or a Super Admin, and never on their own sheet.
  */
 export const canPayExpenseReport = (u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID'>): boolean =>
-  canApproveExpenseReport(u, report);
+  canDisburseCouncilExpenses(u, report.CouncilID) && report.SubmitterMemberID !== u.memberId;
 
 /**
  * Photo upload controls on an event, mirroring the drivers' assertMayAttachEventMedia (activity status is checked
@@ -180,11 +187,43 @@ export function portalAreas(u: Actor): PortalArea[] {
   areas.push('meetings');
   if (isAdmin(u)) areas.push('distribution-lists');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('donations');
-  // Every member files their own expense reports; the council's leadership audits and pays them.
+  // Every member files their own expense reports; the council's leadership audits them; only its finance officers
+  // (or a Super Admin) pay them.
   areas.push('ledger', 'expenses');
-  if (isAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/queue', 'expenses/disbursements');
+  if (isAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/queue');
+  if (isSuperAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/disbursements');
   if (canBrowseLessonsRegistry(u)) areas.push('lessons-registry');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('dashboard');
   areas.push('messages', 'profile');
   return areas;
+}
+
+/** A sidebar link: a portal area (except the profile, which the header's member menu opens) or the help center. */
+export type PortalNavItem = Exclude<PortalArea, 'profile'> | 'help';
+
+export interface PortalNavGroup {
+  id: 'self-service' | 'volunteer' | 'finance' | 'admin';
+  label: string;
+  /** The Self-Service Hub is always open; the other groups fold. */
+  collapsible: boolean;
+  items: PortalNavItem[];
+}
+
+/** Every sidebar link in its group, in display order (Sprint 5S). Each PortalArea but 'profile' appears exactly once. */
+export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
+  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, items: ['member-actions', 'messages', 'help'] },
+  {
+    id: 'volunteer',
+    label: 'Volunteer Operations',
+    collapsible: true,
+    items: ['calendar', 'activities', 'members', 'events', 'meetings', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
+  },
+  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements'] },
+  { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'lookups', 'parishes', 'councils'] },
+];
+
+/** The sidebar for `u`: each group holding only the links portalAreas allows (help is for everyone); empty groups are dropped. */
+export function portalNavGroups(u: Actor): PortalNavGroup[] {
+  const allowed = new Set<string>([...portalAreas(u), 'help']);
+  return PORTAL_NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((item) => allowed.has(item)) })).filter((g) => g.items.length > 0);
 }
