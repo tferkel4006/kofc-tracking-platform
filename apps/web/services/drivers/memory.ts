@@ -20,6 +20,9 @@ import {
   appendPhotoPaths,
   assertMayAttachEventMedia,
   assertMayAuditCouncilExpenses,
+  assertNotSelfApproval,
+  cleanRejectionReason,
+  EXPENSE_SPEND_STATUSES,
   assertCheckNumberUnused,
   assertExpenseLinks,
   assertExpenseStatus,
@@ -1506,6 +1509,7 @@ export class MemoryDataService implements DataService {
         let reportId: number;
         if (draft) {
           Object.assign(draft, fields);
+          if (clean.Status === 'Submitted') draft.RejectionReason = null;
           reportId = draft.id as number;
           s.remove('ExpenseLineItem', (li) => li.ExpenseReportID === reportId);
         } else {
@@ -1523,8 +1527,22 @@ export class MemoryDataService implements DataService {
         const actor = this.memberWriteActor(s, actorId);
         const row = this.requireExpenseReport(s, reportId);
         assertMayAuditCouncilExpenses(actor, row.CouncilID as number, `approve expense report ${reportId}`);
+        assertNotSelfApproval(actor, row as unknown as ExpenseReport);
         assertExpenseStatus(row as unknown as ExpenseReport, 'Submitted', 'be approved');
         row.Status = 'Approved';
+      });
+      return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
+    },
+
+    rejectReport: async (actorId, reportId, rejectionReason) => {
+      const reason = cleanRejectionReason(rejectionReason);
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const row = this.requireExpenseReport(s, reportId);
+        assertMayAuditCouncilExpenses(actor, row.CouncilID as number, `return expense report ${reportId}`);
+        assertExpenseStatus(row as unknown as ExpenseReport, 'Submitted', 'be returned to its submitter');
+        Object.assign(row, { Status: 'Draft', RejectionReason: reason });
       });
       return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
     },
@@ -2062,10 +2080,20 @@ export class MemoryDataService implements DataService {
       const shifts = new Set(s.rows('Shift').filter((sh) => linked.has(sh.EventID) && inMonth(sh.ShiftDate)).map((sh) => sh.id));
       const activities = new Set(s.rows('Activities').filter((a) => a.CouncilID === councilId).map((a) => a.id));
       const hours = (t: Row) => ({ MemberID: t.MemberID as number, Hours: t.Hours as number });
+      const spendingReports = new Set(
+        s
+          .rows('ExpenseReport')
+          .filter((r) => r.CouncilID === councilId && EXPENSE_SPEND_STATUSES.includes(r.Status as ExpenseReportStatus))
+          .map((r) => r.id),
+      );
       return summarizeMonth(councilId, year, month, {
         events,
         eventTime: s.rows('EventTime').filter((t) => shifts.has(t.ShiftID)).map(hours),
         activityTime: s.rows('ActivityTime').filter((t) => activities.has(t.ActivityID) && inMonth(t.ActivityDate)).map(hours),
+        expenseItems: s
+          .rows('ExpenseLineItem')
+          .filter((li) => spendingReports.has(li.ExpenseReportID) && inMonth(li.DateOfExpense))
+          .map((li) => ({ Amount: li.Amount as number })),
       });
     },
 

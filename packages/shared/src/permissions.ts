@@ -11,7 +11,7 @@
 // =========================================================================
 import type { CouncilLookupTableName, SessionUser } from './contract';
 import { FINANCE_LOOKUP_TABLES, holdsFinanceRole } from './rules';
-import type { Donation, Event, Meeting, Member, MemberType } from './types';
+import type { Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
 
 /** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. */
 type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'> & { roles?: readonly string[] };
@@ -136,6 +136,13 @@ export const canChangeDonation = (u: Actor, donation: Pick<Donation, 'CouncilID'
  * member files and reads their own expense reports.
  */
 export const canAuditCouncilExpenses = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
+
+/**
+ * The approve control on one expense sheet (drivers: assertMayAuditCouncilExpenses, then assertNotSelfApproval):
+ * council leadership, but never on their own sheet unless they are a Super Admin.
+ */
+export const canApproveExpenseReport = (u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID'>): boolean =>
+  canAuditCouncilExpenses(u, report.CouncilID) && (report.SubmitterMemberID !== u.memberId || isSuperAdmin(u));
 
 /**
  * Photo upload controls on an event, mirroring the drivers' assertMayAttachEventMedia (activity status is checked

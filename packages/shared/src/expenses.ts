@@ -13,6 +13,8 @@ import type { ExpenseDisbursement, ExpenseLineItem, ExpenseReport, ExpenseReport
 export const EXPENSE_REPORT_STATUSES: readonly ExpenseReportStatus[] = ['Draft', 'Submitted', 'Approved', 'Reimbursed'];
 /** Statuses shown in the council queue (expenses.listCouncilQueue). */
 export const EXPENSE_QUEUE_STATUSES: readonly ExpenseReportStatus[] = ['Submitted', 'Approved'];
+/** Statuses whose line items count as council spend in reports.monthlySummary (Sprint 5R-1.5). */
+export const EXPENSE_SPEND_STATUSES: readonly ExpenseReportStatus[] = ['Approved', 'Reimbursed'];
 
 /** Longest ExpenseLineItem.VendorName (VARCHAR(255)). */
 export const EXPENSE_VENDOR_MAX_LENGTH = 255;
@@ -22,6 +24,8 @@ export const EXPENSE_RECEIPT_URL_MAX_LENGTH = 2000;
 export const EXPENSE_DESCRIPTION_MAX_LENGTH = 2000;
 /** Longest ExpenseDisbursement.CheckNumber (VARCHAR(50)). */
 export const CHECK_NUMBER_MAX_LENGTH = 50;
+/** Longest ExpenseReport.RejectionReason (VARCHAR(2000)). */
+export const REJECTION_REASON_MAX_LENGTH = 2000;
 /** Longest ExpenseDisbursement.Notes; the column is TEXT. */
 export const DISBURSEMENT_NOTES_MAX_LENGTH = 2000;
 
@@ -115,6 +119,9 @@ export function assertExpenseLinks(
     }
   }
 }
+
+/** expenses.rejectReport: why the sheet goes back to its submitter; required. */
+export const cleanRejectionReason = (value: unknown): string => assertText(value, 'Rejection reason', REJECTION_REASON_MAX_LENGTH);
 
 /** expenses.recordDisbursement: a sheet being paid must belong to the paying council. */
 export function assertReportInCouncil(report: Pick<ExpenseReport, 'id' | 'CouncilID'>, councilId: number): void {

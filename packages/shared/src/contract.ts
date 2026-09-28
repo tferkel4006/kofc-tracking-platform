@@ -448,10 +448,12 @@ export interface MonthlySummary {
   /** Distinct MemberIDs across those EventTime and ActivityTime rows. */
   uniqueMembers: number;
   /**
-   * The month's events' ledger. Cash and electronic read the events' FundsRaised columns, which are the
-   * synced donation rollups wherever donations exist. Blank columns count as 0. net = raised - spend.
+   * The month's ledger. Cash and electronic read the month's events' FundsRaised columns, which are the synced
+   * donation rollups wherever donations exist; blank columns count as 0. `eventSpend` sums those events' Spend;
+   * `expenses` sums the line items dated in the month on the council's 'Approved' and 'Reimbursed' expense sheets
+   * (Sprint 5R-1.5). spend = eventSpend + expenses, and net = raised - spend.
    */
-  finances: { spend: number; cash: number; electronic: number; raised: number; net: number };
+  finances: { spend: number; eventSpend: number; expenses: number; cash: number; electronic: number; raised: number; net: number };
   /** ActualNumberAttendees summed over the month's events (blank counts as 0), and how many events there were. */
   outreach: { attendees: number; events: number };
   /** Oldest StartDate first. */
@@ -890,7 +892,8 @@ export interface DataService {
     listCouncilQueue(actorId: number, councilId: number): Promise<ExpenseReportDetail[]>;
     /**
      * Saves a sheet and its complete list of line items in one transaction: without `report.id` it creates a sheet
-     * in the actor's council; with one it replaces the links and line items of the actor's own 'Draft' sheet.
+     * in the actor's council; with one it replaces the links and line items of the actor's own 'Draft' sheet. Saving
+     * as 'Submitted' clears any RejectionReason; saving as 'Draft' keeps it.
      * A 'Submitted' sheet needs at least one line item. Rejects RECORD_NOT_FOUND for an id that is not one of the
      * actor's sheets, EXPENSE_STATUS_CONFLICT for a sheet no longer a draft, and INVALID_INPUT for a bad field (an
      * amount of 0 or with fractions of a cent, a future date, a blank vendor or description, a text over its column's
@@ -899,10 +902,18 @@ export interface DataService {
      */
     submitReport(actorId: number, report: ExpenseReportInput, lineItems: readonly ExpenseLineItemInput[]): Promise<ExpenseReportDetail>;
     /**
-     * Moves a 'Submitted' sheet to 'Approved' (council leadership only). Rejects RECORD_NOT_FOUND for an unknown
-     * sheet and EXPENSE_STATUS_CONFLICT for one in another status.
+     * Moves a 'Submitted' sheet to 'Approved' (council leadership only). An officer may not approve their own sheet
+     * (SELF_APPROVAL_BLOCKED) unless they are an Active Super Admin. Rejects RECORD_NOT_FOUND for an unknown sheet
+     * and EXPENSE_STATUS_CONFLICT for one in another status.
      */
     approveReport(actorId: number, reportId: number): Promise<ExpenseReportDetail>;
+    /**
+     * Returns a 'Submitted' sheet to its submitter (council leadership only): Status goes back to 'Draft' and
+     * RejectionReason keeps the trimmed `rejectionReason`, so the member can edit and submit again (which clears it).
+     * Rejects INVALID_INPUT for a blank reason or one over REJECTION_REASON_MAX_LENGTH characters, RECORD_NOT_FOUND
+     * for an unknown sheet and EXPENSE_STATUS_CONFLICT for one in another status.
+     */
+    rejectReport(actorId: number, reportId: number, rejectionReason: string): Promise<ExpenseReportDetail>;
     /**
      * Records one check paying the listed sheets of `councilId` (council leadership only): creates the
      * ExpenseDisbursement with TotalAmount set to the sheets' total, then stamps every sheet 'Reimbursed' with its

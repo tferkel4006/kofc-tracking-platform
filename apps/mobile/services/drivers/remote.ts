@@ -95,6 +95,7 @@ export function createRemoteDataService(): DataService {
       listCouncilQueue: notImplemented('expenses.listCouncilQueue'),
       submitReport: notImplemented('expenses.submitReport'),
       approveReport: notImplemented('expenses.approveReport'),
+      rejectReport: notImplemented('expenses.rejectReport'),
       recordDisbursement: notImplemented('expenses.recordDisbursement'),
     },
     events: {

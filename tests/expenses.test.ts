@@ -1,10 +1,15 @@
 // Sprint 5R: expense reporting (expenses.listUserReports, listCouncilQueue, submitReport, approveReport and
-// recordDisbursement), its role gates and its tenant isolation.
+// recordDisbursement), its role gates and its tenant isolation. Sprint 5R-1.5: no self-approval, rejectReport, and
+// approved expenses in reports.monthlySummary.
 import { describe, expect, it } from 'vitest';
 import {
+  assertNotSelfApproval,
+  canApproveExpenseReport,
   canAuditCouncilExpenses,
   cleanExpenseLineItems,
   mayAuditCouncilExpenses,
+  REJECTION_REASON_MAX_LENGTH,
+  summarizeMonth,
   SecurityPrivilegeError,
   sumAmounts,
   type DataService,
@@ -360,5 +365,143 @@ describe.each(drivers)('expense reporting ($name driver)', (d) => {
     await db.expenses.submitReport(member, { Status: 'Draft' }, [receipt()]);
     const err = await expectRule(db.councils.remove(MEMBER.superAdmin, council.id), 'RECORD_IN_USE');
     expect(err.message).toMatch(/1 expense report/);
+  });
+});
+
+describe('financial controls (pure, Sprint 5R-1.5)', () => {
+  const actor = (over: Partial<MemberWriteActor> = {}): MemberWriteActor => ({ memberId: 10, councilId: OWN, memberType: 'Admin', active: true, ...over });
+
+  it('blocks approving your own sheet unless you are an active Super Admin', () => {
+    expect(() => assertNotSelfApproval(actor(), { id: 7, SubmitterMemberID: 10 })).toThrow(
+      'For accounting controls, an officer cannot approve their own expense report.',
+    );
+    expect(() => assertNotSelfApproval(actor({ roles: ['Treasurer'], memberType: 'Member' }), { id: 7, SubmitterMemberID: 10 })).toThrow();
+    expect(() => assertNotSelfApproval(actor({ memberType: 'Super Admin', active: false }), { id: 7, SubmitterMemberID: 10 })).toThrow();
+    expect(() => assertNotSelfApproval(actor({ memberType: 'Super Admin' }), { id: 7, SubmitterMemberID: 10 })).not.toThrow();
+    expect(() => assertNotSelfApproval(actor(), { id: 7, SubmitterMemberID: 11 })).not.toThrow();
+  });
+
+  it('mirrors the rule in the approve control', () => {
+    const user = (over = {}) => ({ memberId: 10, councilId: OWN, memberType: 'Admin' as const, isOfficer: false, ...over });
+    expect(canApproveExpenseReport(user(), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(true);
+    expect(canApproveExpenseReport(user(), { CouncilID: OWN, SubmitterMemberID: 10 })).toBe(false);
+    expect(canApproveExpenseReport(user({ memberType: 'Super Admin' }), { CouncilID: OTHER, SubmitterMemberID: 10 })).toBe(true);
+    expect(canApproveExpenseReport(user({ memberType: 'Member' }), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(false);
+  });
+
+  it('adds approved expenses to the month’s spend and nets them against funds raised', () => {
+    const summary = summarizeMonth(OWN, 2026, 9, {
+      events: [{ id: 1, StartDate: '2026-09-03', Spend: 100.1, 'FundsRaised-Cash': 50 } as never],
+      eventTime: [],
+      activityTime: [],
+      expenseItems: [{ Amount: 19.99 }, { Amount: 0.01 }],
+    });
+    expect(summary.finances).toEqual({ spend: 120.1, eventSpend: 100.1, expenses: 20, cash: 50, electronic: 0, raised: 50, net: -70.1 });
+  });
+});
+
+describe.each(drivers)('financial controls ($name driver, Sprint 5R-1.5)', (d) => {
+  describe('self-approval', () => {
+    it('stops an Admin approving their own sheet and leaves it Submitted', async () => {
+      const db = await d.make();
+      const { report } = await db.expenses.submitReport(MEMBER.admin, { Status: 'Submitted' }, [receipt()]);
+      const err = await expectRule(db.expenses.approveReport(MEMBER.admin, report.id), 'SELF_APPROVAL_BLOCKED');
+      expect(err.message).toBe('For accounting controls, an officer cannot approve their own expense report.');
+      const [mine] = await db.expenses.listUserReports(MEMBER.admin);
+      expect(mine.report.Status).toBe('Submitted');
+    });
+
+    it('stops a Treasurer approving their own sheet, but not a colleague’s', async () => {
+      const db = await d.make();
+      grantRole(d, db, MEMBER.member, 'Treasurer');
+      const own = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
+      const colleague = await db.expenses.submitReport(MEMBER.admin, { Status: 'Submitted' }, [receipt()]);
+      await expectRule(db.expenses.approveReport(MEMBER.member, own.report.id), 'SELF_APPROVAL_BLOCKED');
+      expect((await db.expenses.approveReport(MEMBER.member, colleague.report.id)).report.Status).toBe('Approved');
+    });
+
+    it('lets a Super Admin approve their own sheet as the override', async () => {
+      const db = await d.make();
+      const { report } = await db.expenses.submitReport(MEMBER.superAdmin, { Status: 'Submitted' }, [receipt()]);
+      expect((await db.expenses.approveReport(MEMBER.superAdmin, report.id)).report.Status).toBe('Approved');
+    });
+
+    it('still refuses a plain member before looking at who submitted', async () => {
+      const db = await d.make();
+      const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
+      await expectPrivilege(db.expenses.approveReport(MEMBER.member, report.id), 'ADMIN_REQUIRED');
+    });
+  });
+
+  describe('rejectReport', () => {
+    it('returns a submitted sheet to Draft with the reason, out of the queue, for the member to fix and resubmit', async () => {
+      const db = await d.make();
+      const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
+      const rejected = await db.expenses.rejectReport(MEMBER.admin, report.id, '  Please attach the Costco receipt.  ');
+      expect(rejected.report).toMatchObject({ Status: 'Draft', RejectionReason: 'Please attach the Costco receipt.' });
+      expect(await db.expenses.listCouncilQueue(MEMBER.admin, OWN)).toEqual([]);
+
+      const [mine] = await db.expenses.listUserReports(MEMBER.member);
+      expect(mine.report.RejectionReason).toBe('Please attach the Costco receipt.');
+      // Saving the draft keeps the reason in view; resubmitting clears it.
+      const fixed = [receipt({ ReceiptPhotoURL: 'receipts/fixed.jpg' })];
+      const edited = await db.expenses.submitReport(MEMBER.member, { id: report.id, Status: 'Draft' }, fixed);
+      expect(edited.report.RejectionReason).toBe('Please attach the Costco receipt.');
+      const resubmitted = await db.expenses.submitReport(MEMBER.member, { id: report.id, Status: 'Submitted' }, fixed);
+      expect(resubmitted.report).toMatchObject({ Status: 'Submitted', RejectionReason: null });
+      expect((await db.expenses.approveReport(MEMBER.admin, report.id)).report.Status).toBe('Approved');
+    });
+
+    it('is for the council’s leadership only', async () => {
+      const db = await d.make();
+      const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
+      await expectPrivilege(db.expenses.rejectReport(MEMBER.member, report.id, 'No'), 'ADMIN_REQUIRED');
+      const otherAdmin = await addMember(db, OTHER, 'Admin', 'other.expense.admin@example.org');
+      await expectPrivilege(db.expenses.rejectReport(otherAdmin, report.id, 'No'), 'COUNCIL_ACCESS_DENIED');
+      grantRole(d, db, MEMBER.newMember, 'Financial Secretary');
+      expect((await db.expenses.rejectReport(MEMBER.newMember, report.id, 'Wrong month')).report.Status).toBe('Draft');
+    });
+
+    it('needs a reason and a Submitted sheet, and writes nothing otherwise', async () => {
+      const db = await d.make();
+      const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
+      await expectRule(db.expenses.rejectReport(MEMBER.admin, report.id, '   '), 'INVALID_INPUT');
+      await expectRule(db.expenses.rejectReport(MEMBER.admin, report.id, 'x'.repeat(REJECTION_REASON_MAX_LENGTH + 1)), 'INVALID_INPUT');
+      await expectRule(db.expenses.rejectReport(MEMBER.admin, 9999, 'Missing receipt'), 'RECORD_NOT_FOUND');
+      const [mine] = await db.expenses.listUserReports(MEMBER.member);
+      expect(mine.report).toMatchObject({ Status: 'Submitted', RejectionReason: null });
+
+      const draft = await db.expenses.submitReport(MEMBER.member, { Status: 'Draft' }, [receipt()]);
+      await expectRule(db.expenses.rejectReport(MEMBER.admin, draft.report.id, 'Missing receipt'), 'EXPENSE_STATUS_CONFLICT');
+      const approved = await approvedReport(db, MEMBER.member);
+      await expectRule(db.expenses.rejectReport(MEMBER.admin, approved, 'Missing receipt'), 'EXPENSE_STATUS_CONFLICT');
+    });
+  });
+
+  it('counts the council’s approved and reimbursed expenses in the monthly spend, by expense date', async () => {
+    const db = await d.make();
+    const before = await db.reports.monthlySummary(OWN, 2026, 9);
+    const august = await db.reports.monthlySummary(OWN, 2026, 8);
+
+    await approvedReport(db, MEMBER.member, [receipt({ Amount: 20, DateOfExpense: '2026-09-05' }), receipt({ Amount: 7, DateOfExpense: '2026-08-30' })]);
+    const paid = await approvedReport(db, MEMBER.admin, [receipt({ Amount: 5.55, DateOfExpense: '2026-09-19' })]);
+    await db.expenses.recordDisbursement(MEMBER.admin, OWN, [paid], CHECK);
+    // Not counted: pending, draft and returned sheets, and another council's approved sheet.
+    await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt({ Amount: 100 })]);
+    await db.expenses.submitReport(MEMBER.member, { Status: 'Draft' }, [receipt({ Amount: 100 })]);
+    const returned = await db.expenses.submitReport(MEMBER.admin, { Status: 'Submitted' }, [receipt({ Amount: 100 })]);
+    await db.expenses.rejectReport(MEMBER.superAdmin, returned.report.id, 'Duplicate');
+    const otherMember = await addMember(db, OTHER, 'Member', 'other.expense.member@example.org');
+    await approvedReport(db, otherMember, [receipt({ Amount: 50 })]);
+
+    const september = await db.reports.monthlySummary(OWN, 2026, 9);
+    expect(september.finances).toEqual({
+      ...before.finances,
+      expenses: 25.55,
+      spend: Math.round((before.finances.eventSpend + 25.55) * 100) / 100,
+      net: Math.round((before.finances.raised - before.finances.eventSpend - 25.55) * 100) / 100,
+    });
+    expect((await db.reports.monthlySummary(OWN, 2026, 8)).finances.expenses).toBe(august.finances.expenses + 7);
+    expect((await db.reports.monthlySummary(OTHER, 2026, 9)).finances.expenses).toBe(50);
   });
 });

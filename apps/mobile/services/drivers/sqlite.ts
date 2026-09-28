@@ -18,6 +18,9 @@ import {
   appendPhotoPaths,
   assertMayAttachEventMedia,
   assertMayAuditCouncilExpenses,
+  assertNotSelfApproval,
+  cleanRejectionReason,
+  EXPENSE_SPEND_STATUSES,
   assertCheckNumberUnused,
   assertExpenseLinks,
   assertExpenseStatus,
@@ -213,8 +216,9 @@ const DB_NAME = 'kofc.db';
  * 6: Event.PhotoGalleryURL, Meeting.GoogleDriveMinutesURL and GoogleDriveFlyerURL (Sprint 5Q).
  * 7: Meeting.OwnerID (Sprint 5Q).
  * 8: ExpenseDisbursement, ExpenseReport and ExpenseLineItem (Sprint 5R).
+ * 9: ExpenseReport.RejectionReason (Sprint 5R-1.5).
  */
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -1696,10 +1700,13 @@ export class SqliteDataService implements DataService {
         );
         const fields: Bind[] = [clean.Status, clean.LinkedEventID, clean.LinkedMeetingID];
         if (draft) {
-          await db.runAsync('UPDATE [ExpenseReport] SET [Status] = ?, [LinkedEventID] = ?, [LinkedMeetingID] = ? WHERE [id] = ?', [
-            ...fields,
-            draft.id,
-          ]);
+          // Resubmitting answers the rejection, so its reason goes; a draft keeps it for the member to read.
+          await db.runAsync(
+            `UPDATE [ExpenseReport] SET [Status] = ?, [LinkedEventID] = ?, [LinkedMeetingID] = ?,
+                    [RejectionReason] = CASE WHEN ? = 'Submitted' THEN NULL ELSE [RejectionReason] END
+              WHERE [id] = ?`,
+            [...fields, clean.Status, draft.id],
+          );
           await db.runAsync('DELETE FROM [ExpenseLineItem] WHERE [ExpenseReportID] = ?', [draft.id]);
         } else {
           const res = await db.runAsync(
@@ -1726,8 +1733,22 @@ export class SqliteDataService implements DataService {
         const actor = await this.memberWriteActor(db, actorId);
         const row = await this.requireExpenseReport(db, reportId);
         assertMayAuditCouncilExpenses(actor, row.CouncilID, `approve expense report ${reportId}`);
+        assertNotSelfApproval(actor, row);
         assertExpenseStatus(row, 'Submitted', 'be approved');
         await db.runAsync("UPDATE [ExpenseReport] SET [Status] = 'Approved' WHERE [id] = ?", [reportId]);
+      });
+      return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
+    },
+
+    rejectReport: async (actorId, reportId, rejectionReason) => {
+      const reason = cleanRejectionReason(rejectionReason);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireExpenseReport(db, reportId);
+        assertMayAuditCouncilExpenses(actor, row.CouncilID, `return expense report ${reportId}`);
+        assertExpenseStatus(row, 'Submitted', 'be returned to its submitter');
+        await db.runAsync("UPDATE [ExpenseReport] SET [Status] = 'Draft', [RejectionReason] = ? WHERE [id] = ?", [reason, reportId]);
       });
       return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
     },
@@ -2415,6 +2436,13 @@ export class SqliteDataService implements DataService {
              JOIN [Activities] a ON a.[id] = t.[ActivityID]
             WHERE a.[CouncilID] = ? AND t.[ActivityDate] BETWEEN ? AND ?`,
           [councilId, fromDate, toDate],
+        ),
+        expenseItems: await db.getAllAsync<{ Amount: number }>(
+          `SELECT li.[Amount] FROM [ExpenseLineItem] li
+             JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID]
+            WHERE r.[CouncilID] = ? AND r.[Status] IN (${marks(EXPENSE_SPEND_STATUSES.length)})
+              AND li.[DateOfExpense] BETWEEN ? AND ?`,
+          [councilId, ...EXPENSE_SPEND_STATUSES, fromDate, toDate],
         ),
       });
     },

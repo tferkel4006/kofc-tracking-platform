@@ -71,7 +71,8 @@ export type BusinessRuleCode =
   | 'RECORD_IN_USE'
   | 'FUNDS_MANAGED_BY_DONATIONS'
   | 'NO_SHOW_HAS_HOURS'
-  | 'EXPENSE_STATUS_CONFLICT';
+  | 'EXPENSE_STATUS_CONFLICT'
+  | 'SELF_APPROVAL_BLOCKED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -997,6 +998,22 @@ export function assertMayAuditCouncilExpenses(actor: MemberWriteActor, councilId
 /** assertMayAuditCouncilExpenses as a yes/no. */
 export const mayAuditCouncilExpenses = (actor: MemberWriteActor, councilId: number): boolean =>
   expenseAuditDenial(actor, councilId, 'review expense reports') === null;
+
+/**
+ * expenses.approveReport: an officer may not approve their own expense sheet (accounting controls). An Active Super
+ * Admin may, as the override. Call after assertMayAuditCouncilExpenses.
+ */
+export function assertNotSelfApproval(actor: MemberWriteActor, report: { id: number; SubmitterMemberID: number }): void {
+  if (!mayApproveOwnExpense(actor, report)) {
+    throw new BusinessRuleError('SELF_APPROVAL_BLOCKED', 'For accounting controls, an officer cannot approve their own expense report.', {
+      actorId: actor.memberId,
+      reportId: report.id,
+    });
+  }
+}
+
+const mayApproveOwnExpense = (actor: MemberWriteActor, report: { SubmitterMemberID: number }): boolean =>
+  report.SubmitterMemberID !== actor.memberId || hasSuperAdminRights(actor);
 
 function expenseAuditDenial(actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null {
   if (hasSuperAdminRights(actor)) return null;

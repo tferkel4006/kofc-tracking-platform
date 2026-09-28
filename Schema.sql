@@ -876,6 +876,7 @@ CREATE TABLE [ExpenseReport] (
 	[LinkedEventID] INTEGER NULL,
 	[LinkedMeetingID] INTEGER NULL,
 	[DisbursementID] INTEGER NULL, -- set when the sheet is paid (Status = Reimbursed)
+	[RejectionReason] VARCHAR(2000) NULL, -- Sprint 5R-1.5: why leadership returned it to Draft; cleared on resubmission
 	PRIMARY KEY([id])
 );
 GO

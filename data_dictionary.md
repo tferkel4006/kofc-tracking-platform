@@ -320,10 +320,11 @@ A member's expense sheet. Members see only their own; the council's Admins, Fina
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). Always the submitter's own council.
 •	SubmitterMemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). The member to reimburse.
-•	Status (VARCHAR(50), NOT NULL) — Draft, Submitted, Approved or Reimbursed. Only drafts may be edited; leadership approves Submitted sheets and pays Approved ones.
+•	Status (VARCHAR(50), NOT NULL) — Draft, Submitted, Approved or Reimbursed. Only drafts may be edited; leadership approves Submitted sheets (never their own, unless a Super Admin), returns them to Draft with a reason, and pays Approved ones. Approved and Reimbursed line items count toward the monthly summary's spend.
 •	LinkedEventID (INTEGER, NULL) — Foreign Key references Event(id). An event linked to the report's council.
 •	LinkedMeetingID (INTEGER, NULL) — Foreign Key references Meeting(id). A meeting of the report's council.
 •	DisbursementID (INTEGER, NULL) — Foreign Key references ExpenseDisbursement(id). The check that paid it; set with Status Reimbursed.
+•	RejectionReason (VARCHAR(2000), NULL) — Why leadership returned the sheet to Draft (expenses.rejectReport); kept while it is a draft, cleared when it is submitted again.
 [ExpenseLineItem]
 One receipt on an expense report. A draft's line items are replaced as a whole each time it is saved.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.

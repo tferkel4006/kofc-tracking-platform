@@ -379,6 +379,7 @@ export interface ExpenseReport {
   LinkedEventID?: number | null;
   LinkedMeetingID?: number | null;
   DisbursementID?: number | null; // set once the sheet is paid (Status 'Reimbursed')
+  RejectionReason?: string | null; // why leadership returned it to 'Draft' (expenses.rejectReport); cleared on resubmission
 }
 
 /** One receipt on an expense sheet. */
