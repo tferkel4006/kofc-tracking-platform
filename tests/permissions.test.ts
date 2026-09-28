@@ -75,6 +75,8 @@ describe('portal permissions', () => {
   it('shows each role only the areas it can use', () => {
     expect(portalAreas(superAdmin)).toEqual([
       'member-actions',
+      'calendar',
+      'gallery',
       'lookups',
       'councils',
       'council-lookups',
@@ -93,6 +95,8 @@ describe('portal permissions', () => {
     ]);
     expect(portalAreas(admin)).toEqual([
       'member-actions',
+      'calendar',
+      'gallery',
       'council-lookups',
       'parishes',
       'members',
@@ -107,8 +111,8 @@ describe('portal permissions', () => {
       'messages',
       'profile',
     ]);
-    expect(portalAreas(officer)).toEqual(['member-actions', 'meetings', 'ledger', 'messages', 'profile']);
-    expect(portalAreas(member)).toEqual(['member-actions', 'ledger', 'messages', 'profile']);
+    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'messages', 'profile']);
+    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'messages', 'profile']);
   });
 
   it('leads every role, Admins included, with the Member Actions hub', () => {
@@ -138,6 +142,8 @@ describe('portal permissions', () => {
     for (const role of ['Treasurer', 'Financial Secretary']) {
       expect(portalAreas(actor({ isOfficer: true, roles: [role] }))).toEqual([
         'member-actions',
+        'calendar',
+        'gallery',
         'council-lookups',
         'meetings',
         'donations',
@@ -147,7 +153,7 @@ describe('portal permissions', () => {
         'profile',
       ]);
     }
-    expect(portalAreas(actor({ isOfficer: true, roles: ['Grand Knight', 'Recorder'] }))).toEqual(['member-actions', 'meetings', 'ledger', 'messages', 'profile']);
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Grand Knight', 'Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'messages', 'profile']);
   });
 
   it('lets finance officers manage only their own council’s finances', () => {

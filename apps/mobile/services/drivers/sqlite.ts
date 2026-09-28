@@ -194,8 +194,9 @@ const DB_NAME = 'kofc.db';
  * 4: view_NoShows LEFT JOINs NoShowReason (Sprint 5L).
  * 5: SystemFeedback (Sprint 5P).
  * 6: Event.PhotoGalleryURL, Meeting.GoogleDriveMinutesURL and GoogleDriveFlyerURL (Sprint 5Q).
+ * 7: Meeting.OwnerID (Sprint 5Q).
  */
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -2438,10 +2439,14 @@ export class SqliteDataService implements DataService {
     m: NewMeeting,
     invite: MeetingInviteMode,
   ): Promise<number> {
+    const ownerId = m.OwnerID ?? null;
+    if (ownerId !== null && !(await db.getFirstAsync('SELECT [id] FROM [Member] WHERE [id] = ?', [ownerId]))) {
+      throw new BusinessRuleError('INVALID_INPUT', `No member with id ${ownerId} to own the meeting.`, { ownerId });
+    }
     const res = await db.runAsync(
       `INSERT INTO [Meeting] ([CouncilID], [Meeting Name], [Meeting Description], [Date],
-                              [Time Start], [Time End], [Location], [Agenda], [MinutesURL], [MeetingType])
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                              [Time Start], [Time End], [Location], [Agenda], [MinutesURL], [MeetingType], [OwnerID])
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         m.CouncilID,
         m['Meeting Name'],
@@ -2453,6 +2458,7 @@ export class SqliteDataService implements DataService {
         m.Agenda ?? '', // Agenda and MinutesURL are NOT NULL in Schema.sql: '' means "none yet"
         m.MinutesURL ?? '',
         m.MeetingType,
+        ownerId,
       ],
     );
     const meetingId = res.lastInsertRowId;

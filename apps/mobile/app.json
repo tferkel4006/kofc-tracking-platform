@@ -11,6 +11,18 @@
     "splash": { "backgroundColor": "#002855", "resizeMode": "contain" },
     "ios": { "supportsTablet": true, "bundleIdentifier": "org.kofc.tracker" },
     "android": { "package": "org.kofc.tracker", "backgroundColor": "#FFFFFF" },
-    "plugins": ["expo-router", "expo-sqlite", "expo-secure-store"]
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "KofC Tracker uses the camera to take verification photos of council events and donated items.",
+          "photosPermission": false,
+          "microphonePermission": false
+        }
+      ]
+    ]
   }
 }

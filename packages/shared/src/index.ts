@@ -12,3 +12,4 @@ export * from './donations';
 export * from './maintenance';
 export * from './reports';
 export * from './media';
+export * from './calendar';

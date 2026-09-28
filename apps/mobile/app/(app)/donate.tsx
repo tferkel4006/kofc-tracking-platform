@@ -4,12 +4,13 @@
 //     for the life of the app, so switching tabs never loses the pinned event). Without a session a
 //     donation is standalone.
 //  2. The method is one tap on a large tile. Venmo/Zelle/Zeffy/Parishsoft show the council's QR code for
-//     the donor to scan; physical items ask for a description and estimated value.
+//     the donor to scan; physical items ask for a description and estimated value, and may carry a
+//     verification photo taken with the phone camera (stored in DonationPhotoURL).
 //  3. The form is pre-filled from the session defaults; the member corrects the amount if the donor gave
 //     something different, then records it or cancels.
 // While a session is running, the event's donations from every phone are listed, newest first.
 import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { Image, View } from 'react-native';
 import {
   formatDate,
   toIsoDate,
@@ -18,6 +19,7 @@ import {
   type DonationType,
   type Event,
 } from '@kofc/shared';
+import { CapturePhotoButton } from '@/components/CapturePhotoButton';
 import { DonationMethodGrid } from '@/components/DonationMethodGrid';
 import { DonationQr } from '@/components/DonationQr';
 import { Dropdown } from '@/components/Dropdown';
@@ -29,6 +31,15 @@ import { useDonationSession } from '@/lib/use-donation-session';
 import { db } from '@/services/db';
 
 const money = (n: number) => `$${n.toFixed(2)}`;
+
+/** What the donation form hands back; `photoPath` is the verification photo of a physical item, if one was taken. */
+interface DonationValues {
+  amount: number;
+  typeId: number;
+  donor: string;
+  description: string;
+  photoPath: string | null;
+}
 
 /** Amount text to dollars; blank is null. Anything else non-numeric is an error naming the field. */
 function parseAmount(text: string, label: string): { value: number | null } | { error: string } {
@@ -126,7 +137,7 @@ function DonationForm({
   option: CouncilDonationOption;
   types: DonationType[];
   defaults: DonationDefaults;
-  onRecord: (values: { amount: number; typeId: number; donor: string; description: string }) => Promise<void>;
+  onRecord: (values: DonationValues) => Promise<void>;
   onCancel: () => void;
 }) {
   const isItem = option.kind === 'item';
@@ -134,6 +145,7 @@ function DonationForm({
   const [typeId, setTypeId] = useState<number | null>(defaults.donationTypeId ?? types[0]?.id ?? null);
   const [donor, setDonor] = useState('');
   const [description, setDescription] = useState(isItem ? '' : (defaults.description ?? ''));
+  const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -147,7 +159,7 @@ function DonationForm({
     setBusy(true);
     setError(null);
     try {
-      await onRecord({ amount: parsed.value, typeId, donor: donor.trim(), description: description.trim() });
+      await onRecord({ amount: parsed.value, typeId, donor: donor.trim(), description: description.trim(), photoPath: isItem ? photoPath : null });
     } catch (err) {
       setError(describeError(err));
       setBusy(false);
@@ -163,6 +175,20 @@ function DonationForm({
         {isItem ? (
           <Field label="WHAT WAS DONATED">
             <AppInput value={description} onChangeText={setDescription} multiline style={multiline} maxLength={255} placeholder="e.g. 3 boxes of canned food" />
+          </Field>
+        ) : null}
+        {isItem ? (
+          <Field label="VERIFICATION PHOTO (OPTIONAL)">
+            {photoPath ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                <Image source={{ uri: photoPath }} style={{ width: 88, height: 88, borderRadius: 6 }} accessibilityLabel="Photo of the donated items" />
+                <View style={{ flex: 1, gap: space.xs }}>
+                  <Pill label="PHOTO ATTACHED" tone="navy" />
+                  <Button title="Remove photo" variant="secondary" onPress={() => setPhotoPath(null)} />
+                </View>
+              </View>
+            ) : null}
+            <CapturePhotoButton prefix="donation" onCaptured={setPhotoPath} title={photoPath ? 'Retake verification photo' : undefined} />
           </Field>
         ) : null}
         <Field label={amountLabel.toUpperCase()}>
@@ -225,13 +251,14 @@ export default function DonateScreen() {
   const methodName = new Map((data?.methods ?? []).map((o) => [o.method.id, o.method.DonationMethod]));
   const typeName = new Map((data?.types ?? []).map((t) => [t.id, t.DonationType]));
 
-  const record = async (option: CouncilDonationOption, v: { amount: number; typeId: number; donor: string; description: string }) => {
+  const record = async (option: CouncilDonationOption, v: DonationValues) => {
     const saved = await controller.record({
       DonationMethodID: option.method.id,
       DonationAmount: v.amount,
       DonationTypeID: v.typeId,
       Donor: v.donor || null,
       DonationDesciption: v.description || null,
+      DonationPhotoURL: v.photoPath,
     });
     const where = session.active ? ` for ${session.eventName}` : ' as a standalone donation';
     setMessage({ tone: 'info', text: `Recorded ${money(saved.DonationAmount)} by ${option.method.DonationMethod}${where}. Thank the donor!` });

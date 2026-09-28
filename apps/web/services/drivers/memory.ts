@@ -2074,7 +2074,12 @@ export class MemoryDataService implements DataService {
   };
 
   private insertMeeting(m: NewMeeting, invite: MeetingInviteMode): number {
+    const ownerId = m.OwnerID ?? null;
+    if (ownerId !== null && !this.store.rows('Member').some((x) => x.id === ownerId)) {
+      throw new BusinessRuleError('INVALID_INPUT', `No member with id ${ownerId} to own the meeting.`, { ownerId });
+    }
     const row = this.store.insert('Meeting', {
+      OwnerID: ownerId,
       CouncilID: m.CouncilID,
       'Meeting Name': m['Meeting Name'],
       'Meeting Description': m['Meeting Description'] ?? null,

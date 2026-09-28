@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { canManageMeetings, formatDate, formatTimeRange } from '@kofc/shared';
+import { canManageMeeting, formatDate, formatTimeRange } from '@kofc/shared';
 import { AppText, Button, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
 import { color, radius, space, touchTarget } from '@/lib/theme';
@@ -32,7 +32,7 @@ export default function MeetingAttendanceScreen() {
   }, [meetingId]);
 
   const { data } = state;
-  const editable = data ? canManageMeetings(user, data.meeting.CouncilID) : false;
+  const editable = data ? canManageMeeting(user, data.meeting) : false;
   const present = (row: { memberId: number; attended: boolean }) => pending.get(row.memberId) ?? row.attended;
   const here = data?.rows.filter(present).length ?? 0;
 

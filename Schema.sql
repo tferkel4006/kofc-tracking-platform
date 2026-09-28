@@ -129,6 +129,7 @@ CREATE TABLE [Meeting] (
 	[MeetingType] INTEGER NOT NULL,
 	[GoogleDriveMinutesURL] VARCHAR(2000) NULL, -- Sprint 5Q: shared Google Drive link to the minutes
 	[GoogleDriveFlyerURL] VARCHAR(2000) NULL, -- Sprint 5Q: shared Google Drive link to the flyer
+	[OwnerID] INTEGER NULL, -- Sprint 5Q: the member who runs the meeting; manages it alongside Admins and Super Admins
 	PRIMARY KEY([id])
 );
 GO
@@ -472,6 +473,8 @@ GO
 ALTER TABLE [Meeting] ADD FOREIGN KEY([MeetingType]) REFERENCES [MeetingType]([id]); -- Fixed: was [Meetings]
 GO
 ALTER TABLE [Meeting] ADD FOREIGN KEY([CouncilID]) REFERENCES [Council]([id]); -- Added: tenant link was missing
+GO
+ALTER TABLE [Meeting] ADD FOREIGN KEY([OwnerID]) REFERENCES [Member]([id]); -- Sprint 5Q: meeting owner
 GO
 
 -- 9. RE-ENGINEERED VIEWS FOR EXPO ROUTER/ADMIN PORTALS

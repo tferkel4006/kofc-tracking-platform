@@ -786,18 +786,25 @@ export function assertMayAttachEventMedia(
 export const mayAttachEventMedia = (actor: MemberWriteActor, event: { id: number; OwnerID: number }, eventCouncilIds: readonly number[]): boolean =>
   mediaDenial(actor, eventCouncilIds, event.OwnerID, 'add photos', { eventId: event.id }) === null;
 
+/** The meeting fields the Drive-link rule reads. */
+export interface MediaMeeting {
+  id: number;
+  CouncilID: number;
+  OwnerID?: number | null;
+}
+
 /**
- * meetings.linkGoogleDrive: an Active Admin, Financial Secretary or Treasurer of the meeting's council, and any
- * Active Super Admin. Meeting has no owner column, so there is no owner right here.
+ * meetings.linkGoogleDrive: the meeting's Active owner, an Active Admin, Financial Secretary or Treasurer of the
+ * meeting's council, and any Active Super Admin.
  */
-export function assertMayLinkMeetingDrive(actor: MemberWriteActor, meeting: { id: number; CouncilID: number }, action: string): void {
-  const denial = mediaDenial(actor, [meeting.CouncilID], null, action, { meetingId: meeting.id });
+export function assertMayLinkMeetingDrive(actor: MemberWriteActor, meeting: MediaMeeting, action: string): void {
+  const denial = mediaDenial(actor, [meeting.CouncilID], meeting.OwnerID ?? null, action, { meetingId: meeting.id });
   if (denial) throw denial;
 }
 
 /** assertMayLinkMeetingDrive as a yes/no, for Google Drive link controls. */
-export const mayLinkMeetingDrive = (actor: MemberWriteActor, meeting: { id: number; CouncilID: number }): boolean =>
-  mediaDenial(actor, [meeting.CouncilID], null, 'link Google Drive files', { meetingId: meeting.id }) === null;
+export const mayLinkMeetingDrive = (actor: MemberWriteActor, meeting: MediaMeeting): boolean =>
+  mediaDenial(actor, [meeting.CouncilID], meeting.OwnerID ?? null, 'link Google Drive files', { meetingId: meeting.id }) === null;
 
 const hasSuperAdminRights = (a: MemberWriteActor): boolean => a.active && a.memberType === SUPER_ADMIN_TYPE;
 const hasAdminRights = (a: MemberWriteActor): boolean => a.active && (a.memberType === 'Admin' || a.memberType === SUPER_ADMIN_TYPE);

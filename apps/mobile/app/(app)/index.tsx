@@ -1,20 +1,29 @@
 // Member Dashboard: the shifts I am signed up for (anything within two days in red), the rolling
 // one-year no-show badge, and the meetings I am invited to (officers and admins can take attendance from them).
 // Each of my shifts can report my own absence with a reason (events.setNoShow); only an Admin can clear one.
+// Events I worked that have ended are listed too, where the event's owner and council officers can capture
+// verification photos with the phone camera (events.uploadPhotos). A meeting's owner can open it like an officer.
 import { useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-  canManageMeetings,
+  addDays,
+  canAttachEventMedia,
+  canManageMeeting,
   formatDate,
   formatTimeRange,
   isUrgent,
   noShowWindowStart,
+  parsePhotoGallery,
+  SHIFT_HISTORY_MONTHS,
+  subtractMonths,
   toIsoDate,
+  type Event,
   type EventSignup,
   type Meeting,
   type NoShowReason,
 } from '@kofc/shared';
+import { CapturePhotoButton } from '@/components/CapturePhotoButton';
 import { Dropdown } from '@/components/Dropdown';
 import { NoShowBadge } from '@/components/NoShowBadge';
 import { ShiftCard, UrgentTag } from '@/components/ShiftCard';
@@ -91,6 +100,37 @@ function AbsenceFooter({
   );
 }
 
+/**
+ * An event I worked that has finished, with its photo count. Its owner, the council's Admins, Financial Secretary
+ * and Treasurer, and Super Admins may add verification photos straight from the phone camera.
+ */
+function CompletedEventCard({ event, canAddPhotos, onPhoto }: { event: Event; canAddPhotos: boolean; onPhoto: (path: string) => Promise<void> }) {
+  const photos = parsePhotoGallery(event.PhotoGalleryURL).length;
+  return (
+    <Card accent={color.navy}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space.sm }}>
+        <AppText variant="title" style={{ flex: 1 }}>
+          {event.EventName}
+        </AppText>
+        <Pill label="COMPLETED" tone="outline" />
+      </View>
+      <AppText>
+        {event.StartDate === event.EndDate ? formatDate(event.StartDate) : `${formatDate(event.StartDate)} – ${formatDate(event.EndDate)}`}
+      </AppText>
+      <AppText variant="small" tone="muted">
+        {event.Location} · {photos === 0 ? 'No photos yet' : `${photos} photo${photos === 1 ? '' : 's'}`}
+      </AppText>
+      {canAddPhotos ? (
+        <CapturePhotoButton prefix={`event-${event.id}`} onCaptured={onPhoto} />
+      ) : (
+        <AppText variant="small" tone="muted">
+          The event owner and council officers add photos.
+        </AppText>
+      )}
+    </Card>
+  );
+}
+
 const MeetingCard = ({ meeting, onAttendance }: { meeting: Meeting; onAttendance?: () => void }) => (
   <Card accent={color.navy}>
     <AppText variant="title">{meeting['Meeting Name']}</AppText>
@@ -114,13 +154,21 @@ export default function DashboardScreen() {
   const router = useRouter();
   const state = useLoad(async () => {
     const today = new Date();
-    const [shifts, noShows, meetings, reasons] = await Promise.all([
-      db.events.listMemberShifts(user.memberId, { fromDate: toIsoDate(today) }),
+    const todayIso = toIsoDate(today);
+    const [shifts, noShows, meetings, reasons, worked] = await Promise.all([
+      db.events.listMemberShifts(user.memberId, { fromDate: todayIso }),
       db.events.countNoShows(user.memberId, noShowWindowStart(today)),
       db.meetings.listUpcoming(user.councilId, { memberId: user.memberId }),
       db.lookups.list('NoShowReason'),
+      db.events.listMemberShifts(user.memberId, { fromDate: subtractMonths(today, SHIFT_HISTORY_MONTHS), toDate: addDays(todayIso, -1) }),
     ]);
-    return { today, shifts, noShows, meetings, reasons };
+    // Events I worked in the last 3 months that have ended, newest first, once each.
+    const ended = new Map<number, Event>();
+    for (const { event } of [...worked].reverse()) if (event.EndDate < todayIso && !ended.has(event.id)) ended.set(event.id, event);
+    const completed = await Promise.all(
+      [...ended.values()].map(async (event) => ({ event, canAddPhotos: canAttachEventMedia(user, event, await db.events.listCouncilIds(event.id)) })),
+    );
+    return { today, shifts, noShows, meetings, reasons, completed };
   }, [user.memberId, user.councilId]);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -171,6 +219,23 @@ export default function DashboardScreen() {
             )}
           </Section>
 
+          {data.completed.length > 0 ? (
+            <Section title="Completed events">
+              {data.completed.map(({ event, canAddPhotos }) => (
+                <CompletedEventCard
+                  key={event.id}
+                  event={event}
+                  canAddPhotos={canAddPhotos}
+                  onPhoto={async (path) => {
+                    await db.events.uploadPhotos(user.memberId, event.id, [path]);
+                    setNotice(`Photo added to ${event.EventName}.`);
+                    await state.reload();
+                  }}
+                />
+              ))}
+            </Section>
+          ) : null}
+
           <Section title="Upcoming meetings">
             {data.meetings.length === 0 ? (
               <EmptyState message="You have no meeting invitations." />
@@ -179,7 +244,7 @@ export default function DashboardScreen() {
                 <MeetingCard
                   key={m.id}
                   meeting={m}
-                  onAttendance={canManageMeetings(user, m.CouncilID) ? () => router.push(`/meeting/${m.id}`) : undefined}
+                  onAttendance={canManageMeeting(user, m) ? () => router.push(`/meeting/${m.id}`) : undefined}
                 />
               ))
             )}

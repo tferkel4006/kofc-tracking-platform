@@ -988,6 +988,7 @@ export interface DataService {
       councilId: number,
       options?: { memberId?: number; fromDate?: string },
     ): Promise<Meeting[]>;
+    /** OwnerID, when given, must name a member (INVALID_INPUT). */
     create(meeting: NewMeeting, invite?: MeetingInviteMode): Promise<Meeting>;
     listInvites(meetingId: number): Promise<MeetingInvites[]>;
     /** Adds invitations, skipping members already invited. Resolves to the number newly invited. */
@@ -1000,8 +1001,8 @@ export interface DataService {
      * Saves the meeting's shared Google Drive links: `minutesUrl` to GoogleDriveMinutesURL and `flyerUrl` to
      * GoogleDriveFlyerURL; `null` clears one. Each must be an https link on drive.google.com or docs.google.com of
      * at most GOOGLE_DRIVE_URL_MAX_LENGTH characters (INVALID_INPUT). `actorId` is the signed-in member: an Active
-     * Admin, Financial Secretary or Treasurer of the meeting's council, or any Active Super Admin (ADMIN_REQUIRED,
-     * COUNCIL_ACCESS_DENIED). Rejects MEMBER_NOT_FOUND for an unknown actor and MEETING_NOT_FOUND for an unknown
+     * Admin, Financial Secretary or Treasurer of the meeting's council, the meeting's Active owner (OwnerID), or any
+     * Active Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects MEMBER_NOT_FOUND for an unknown actor and MEETING_NOT_FOUND for an unknown
      * meeting. Nothing is written when it rejects.
      */
     linkGoogleDrive(actorId: number, meetingId: number, minutesUrl: string | null, flyerUrl: string | null): Promise<Meeting>;

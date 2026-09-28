@@ -267,6 +267,8 @@ export interface Meeting {
   /** Shared Google Drive links (VARCHAR(2000)); written only by meetings.linkGoogleDrive. */
   GoogleDriveMinutesURL?: string | null;
   GoogleDriveFlyerURL?: string | null;
+  /** The member who runs the meeting (Sprint 5Q); null when none is designated. Manages it alongside Admins. */
+  OwnerID?: number | null;
 }
 
 export interface MeetingInvites {

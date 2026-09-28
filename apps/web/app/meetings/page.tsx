@@ -1,9 +1,13 @@
 'use client';
 // Meeting center: schedule a council meeting and invite members, record who attended, and attach the
-// minutes. Admins, Super Admins and any officer of the council may do all of this; the invitation message
-// and the day-before reminder are the data layer's job, so this page only chooses who is invited.
+// minutes. Admins, Super Admins and any officer of the council schedule meetings; a meeting's owner (OwnerID)
+// manages that meeting alongside them. Every member may open the center read-only. The Google Drive minutes and
+// flyer links are saved by the owner, the council's Admins and finance officers, and Super Admins. The invitation
+// message and the day-before reminder are the data layer's job, so this page only chooses who is invited.
 import { useState } from 'react';
 import {
+  canLinkMeetingDrive,
+  canManageMeeting,
   canManageMeetings,
   describeError,
   formatDate,
@@ -15,6 +19,7 @@ import {
   type NewMeeting,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
+import { DriveButtons, DriveLinkEditor } from '@/components/DriveLinks';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Td, Textarea } from '@/components/ui';
 import { minutesFileName } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -57,6 +62,7 @@ const Banner = ({ message, onDismiss }: { message: Message | null; onDismiss: ()
 // ---- schedule a meeting ------------------------------------------------------
 
 function NewMeetingForm({ councilId, types, onCreated }: { councilId: number; types: MeetingType[]; onCreated: (id: number) => void }) {
+  const user = useUser();
   const { message, setMessage, run } = useAction();
   const members = useLoad(() => db.members.listByCouncil(councilId, { activeOnly: true }), [councilId]);
   const [name, setName] = useState('');
@@ -67,6 +73,7 @@ function NewMeetingForm({ councilId, types, onCreated }: { councilId: number; ty
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
   const [agenda, setAgenda] = useState('');
+  const [ownerId, setOwnerId] = useState<number | null>(user.memberId);
   const [choice, setChoice] = useState<InviteChoice>('allActive');
   const [picked, setPicked] = useState<number[]>([]);
 
@@ -85,6 +92,7 @@ function NewMeetingForm({ councilId, types, onCreated }: { councilId: number; ty
         'Time End': `${end}:00`,
         Location: location.trim(),
         MeetingType: typeId,
+        OwnerID: ownerId,
       };
       if (description.trim() !== '') meeting['Meeting Description'] = description.trim();
       if (agenda.trim() !== '') meeting.Agenda = agenda.trim();
@@ -122,6 +130,18 @@ function NewMeetingForm({ councilId, types, onCreated }: { councilId: number; ty
         <Field label="Location">{(id) => <Input id={id} value={location} maxLength={255} onChange={(e) => setLocation(e.target.value)} required />}</Field>
         <Field label="Starts">{(id) => <Input id={id} type="time" value={start} onChange={(e) => setStart(e.target.value)} required />}</Field>
         <Field label="Ends">{(id) => <Input id={id} type="time" value={end} onChange={(e) => setEnd(e.target.value)} required />}</Field>
+        <Field label="Meeting owner" hint="The owner manages this meeting, its attendance, minutes and Drive links, alongside the council's admins." className="col-span-2">
+          {(id) => (
+            <Select id={id} value={ownerId ?? ''} onChange={(e) => setOwnerId(e.target.value === '' ? null : Number(e.target.value))}>
+              <option value="">No owner</option>
+              {(members.data ?? []).map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.MemberLastName}, {m.MemberFirstName}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
         <Field label="Description" className="col-span-2">
           {(id) => <Input id={id} value={description} maxLength={255} onChange={(e) => setDescription(e.target.value)} />}
         </Field>
@@ -162,7 +182,8 @@ function NewMeetingForm({ councilId, types, onCreated }: { councilId: number; ty
 
 // ---- one meeting: attendance and minutes -------------------------------------
 
-function MeetingDetail({ meetingId, councilId, editable, onChanged }: { meetingId: number; councilId: number; editable: boolean; onChanged: () => void }) {
+function MeetingDetail({ meetingId, councilId, onChanged }: { meetingId: number; councilId: number; onChanged: () => void }) {
+  const user = useUser();
   const meeting = useLoad(() => db.meetings.get(meetingId), [meetingId]);
   const invites = useLoad(() => db.meetings.listInvites(meetingId), [meetingId]);
   const members = useLoad(() => db.members.listByCouncil(councilId), [councilId]);
@@ -173,6 +194,8 @@ function MeetingDetail({ meetingId, councilId, editable, onChanged }: { meetingI
   if (!meeting.data || !invites.data || !members.data) return <p className="text-sm text-muted">Loading the meeting…</p>;
 
   const m: Meeting = meeting.data;
+  const editable = canManageMeeting(user, m);
+  const canLink = canLinkMeetingDrive(user, m);
   const name = new Map(members.data.map((x) => [x.id, `${x.MemberLastName}, ${x.MemberFirstName}`]));
   const invited = new Set(invites.data.map((i) => i.MemberID));
   const notInvited = members.data.filter((x) => !invited.has(x.id));
@@ -203,6 +226,8 @@ function MeetingDetail({ meetingId, councilId, editable, onChanged }: { meetingI
           </dd>
           <dt className="font-bold">Where</dt>
           <dd>{m.Location}</dd>
+          <dt className="font-bold">Owner</dt>
+          <dd>{m.OwnerID != null ? (name.get(m.OwnerID) ?? `Member ${m.OwnerID}`) : 'None designated'}</dd>
           {m['Meeting Description'] ? (
             <>
               <dt className="font-bold">About</dt>
@@ -216,7 +241,16 @@ function MeetingDetail({ meetingId, councilId, editable, onChanged }: { meetingI
             </>
           ) : null}
         </dl>
+        <div className="mt-4 border-t border-line pt-3">
+          <DriveButtons meeting={m} />
+        </div>
       </Panel>
+
+      {canLink ? (
+        <Panel title="Google Drive files">
+          <DriveLinkEditor key={`${m.GoogleDriveMinutesURL ?? ''}|${m.GoogleDriveFlyerURL ?? ''}`} meeting={m} onSaved={refresh} />
+        </Panel>
+      ) : null}
 
       <Panel title="Minutes">
         <div className="flex flex-col gap-3">
@@ -310,7 +344,9 @@ function MeetingCenter() {
   return (
     <>
       <PageTitle actions={<CouncilSelect scope={scope} />}>Meeting center</PageTitle>
-      {!editable ? <Notice tone="info">You can view this council&apos;s meetings, but only its officers and admins can change them.</Notice> : null}
+      {!editable ? (
+        <Notice tone="info">You can view this council&apos;s meetings. Its officers and admins schedule them, and a meeting&apos;s owner manages that meeting.</Notice>
+      ) : null}
       <div className="mt-4 grid grid-cols-[20rem_minmax(0,1fr)] items-start gap-4">
         <Panel title="Meetings" actions={editable ? <Button size="sm" onClick={() => setSelected('new')}>New meeting</Button> : undefined}>
           {meetings.error ? <Notice tone="error">{meetings.error}</Notice> : null}
@@ -330,7 +366,9 @@ function MeetingCenter() {
                   </span>
                   <span className="mt-1 flex gap-1">
                     {m.Date < today ? <Pill tone="outline">Past</Pill> : <Pill tone="navy">Upcoming</Pill>}
-                    {m.Date < today && !m.MinutesURL ? <Pill tone="redOutline">No minutes</Pill> : null}
+                    {m.Date < today && !m.MinutesURL && !m.GoogleDriveMinutesURL ? <Pill tone="redOutline">No minutes</Pill> : null}
+                    {m.GoogleDriveMinutesURL || m.GoogleDriveFlyerURL ? <Pill tone="gold">Drive</Pill> : null}
+                    {m.OwnerID === user.memberId ? <Pill tone="outline">Mine</Pill> : null}
                   </span>
                 </button>
               </li>
@@ -350,7 +388,7 @@ function MeetingCenter() {
               }}
             />
           ) : (
-            <MeetingDetail key={selected} meetingId={selected} councilId={scope.councilId} editable={editable} onChanged={() => void meetings.reload()} />
+            <MeetingDetail key={selected} meetingId={selected} councilId={scope.councilId} onChanged={() => void meetings.reload()} />
           )}
         </div>
       </div>

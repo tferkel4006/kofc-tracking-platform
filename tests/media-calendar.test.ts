@@ -68,9 +68,10 @@ async function makeEvent(db: DataService, name: string, start: string, end: stri
   );
 }
 
-async function makeMeeting(db: DataService, name: string, date: string, councilId = OWN, start = '19:00:00') {
+async function makeMeeting(db: DataService, name: string, date: string, councilId = OWN, start = '19:00:00', ownerId: number | null = null) {
   const type = (await db.lookups.list('MeetingType'))[0];
   return db.meetings.create({
+    OwnerID: ownerId,
     CouncilID: councilId,
     'Meeting Name': name,
     Date: date,
@@ -128,6 +129,10 @@ describe('media helpers (pure)', () => {
     expect(mayLinkMeetingDrive(actor({ memberType: 'Admin', councilId: OTHER }), meeting)).toBe(false);
     expect(mayLinkMeetingDrive(actor({ roles: ['Treasurer'] }), meeting)).toBe(true);
     expect(mayLinkMeetingDrive(actor({ memberType: 'Super Admin', councilId: OTHER }), meeting)).toBe(true);
+    // Sprint 5Q step 2: the meeting's owner, even a plain member of another council, while active.
+    expect(mayLinkMeetingDrive(actor({ councilId: OTHER }), { ...meeting, OwnerID: 10 })).toBe(true);
+    expect(mayLinkMeetingDrive(actor({ active: false }), { ...meeting, OwnerID: 10 })).toBe(false);
+    expect(mayLinkMeetingDrive(actor(), { ...meeting, OwnerID: 11 })).toBe(false);
   });
 
   it('mirrors the rules in the UI permission gates', () => {
@@ -136,9 +141,10 @@ describe('media helpers (pure)', () => {
     expect(canAttachEventMedia(user(), { OwnerID: 99 }, [OWN])).toBe(false);
     expect(canAttachEventMedia(user({ roles: ['Treasurer'] }), { OwnerID: 99 }, [OWN])).toBe(true);
     expect(canAttachEventMedia(user({ memberType: 'Admin' }), { OwnerID: 99 }, [OTHER])).toBe(false);
-    expect(canLinkMeetingDrive(user({ roles: ['Financial Secretary'] }), OWN)).toBe(true);
-    expect(canLinkMeetingDrive(user(), OWN)).toBe(false);
-    expect(canLinkMeetingDrive(user({ memberType: 'Super Admin', councilId: OTHER }), OWN)).toBe(true);
+    expect(canLinkMeetingDrive(user({ roles: ['Financial Secretary'] }), { CouncilID: OWN })).toBe(true);
+    expect(canLinkMeetingDrive(user(), { CouncilID: OWN })).toBe(false);
+    expect(canLinkMeetingDrive(user(), { CouncilID: OTHER, OwnerID: 10 })).toBe(true);
+    expect(canLinkMeetingDrive(user({ memberType: 'Super Admin', councilId: OTHER }), { CouncilID: OWN })).toBe(true);
   });
 });
 
@@ -212,6 +218,15 @@ describe.each(drivers)('$name driver: media and calendar', (d) => {
       grantRole(d, db, MEMBER.member, 'Financial Secretary');
       expect((await db.meetings.linkGoogleDrive(MEMBER.member, meeting.id, DRIVE_MINUTES, null)).GoogleDriveMinutesURL).toBe(DRIVE_MINUTES);
       expect((await db.meetings.linkGoogleDrive(MEMBER.superAdmin, meeting.id, null, DRIVE_FLYER)).GoogleDriveFlyerURL).toBe(DRIVE_FLYER);
+    });
+
+    it('stores the meeting owner, who may then link Drive files as a plain member', async () => {
+      const db = await d.make();
+      const meeting = await makeMeeting(db, 'Owned Meeting', '2027-06-15', OWN, '19:00:00', MEMBER.member);
+      expect(meeting.OwnerID).toBe(MEMBER.member);
+      expect((await makeMeeting(db, 'Unowned', '2027-06-16')).OwnerID ?? null).toBeNull();
+      expect((await db.meetings.linkGoogleDrive(MEMBER.member, meeting.id, DRIVE_MINUTES, null)).GoogleDriveMinutesURL).toBe(DRIVE_MINUTES);
+      await expectRule(makeMeeting(db, 'Ghost Owner', '2027-06-17', OWN, '19:00:00', 999_999), 'INVALID_INPUT');
     });
 
     it('rejects non-Drive links and unknown records without writing', async () => {

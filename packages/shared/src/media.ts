@@ -138,3 +138,49 @@ export function buildCalendarEntries(
       a.id - b.id,
   );
 }
+
+/** One photo of the fraternal gallery, with the event it belongs to. */
+export interface GalleryPhoto {
+  /** Unique within a gallery: the event id and the photo's position in its PhotoGalleryURL. */
+  key: string;
+  path: string;
+  eventId: number;
+  eventName: string;
+  /** The event's StartDate (YYYY-MM-DD). */
+  eventDate: string;
+}
+
+export type GalleryGrouping = 'event' | 'month';
+
+export interface GalleryGroup {
+  key: string;
+  label: string;
+  photos: GalleryPhoto[];
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** Every photo of `events`, newest event first (then name and id), each event's photos in upload order. */
+export function galleryPhotos(events: readonly Pick<Event, 'id' | 'EventName' | 'StartDate' | 'PhotoGalleryURL'>[]): GalleryPhoto[] {
+  return [...events]
+    .sort((a, b) => b.StartDate.localeCompare(a.StartDate) || a.EventName.localeCompare(b.EventName) || a.id - b.id)
+    .flatMap((e) =>
+      parsePhotoGallery(e.PhotoGalleryURL).map((path, i) => ({ key: `${e.id}-${i}`, path, eventId: e.id, eventName: e.EventName, eventDate: e.StartDate })),
+    );
+}
+
+/**
+ * `photos` (in galleryPhotos order) grouped by event or by the event's month, e.g. "September 2026". Groups keep
+ * the order of their first photo, so the newest come first.
+ */
+export function groupGalleryPhotos(photos: readonly GalleryPhoto[], by: GalleryGrouping): GalleryGroup[] {
+  const groups = new Map<string, GalleryGroup>();
+  for (const photo of photos) {
+    const key = by === 'event' ? `event-${photo.eventId}` : `month-${photo.eventDate.slice(0, 7)}`;
+    const label = by === 'event' ? photo.eventName : `${MONTHS[Number(photo.eventDate.slice(5, 7)) - 1]} ${photo.eventDate.slice(0, 4)}`;
+    const group = groups.get(key) ?? { key, label, photos: [] };
+    group.photos.push(photo);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}

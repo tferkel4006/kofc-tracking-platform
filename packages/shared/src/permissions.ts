@@ -11,7 +11,7 @@
 // =========================================================================
 import type { CouncilLookupTableName, SessionUser } from './contract';
 import { FINANCE_LOOKUP_TABLES, holdsFinanceRole } from './rules';
-import type { Donation, Event, Member, MemberType } from './types';
+import type { Donation, Event, Meeting, Member, MemberType } from './types';
 
 /** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. */
 type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'> & { roles?: readonly string[] };
@@ -19,6 +19,8 @@ type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOffi
 /** Each area is also its route: RequireArea links to `/${area}`. */
 export type PortalArea =
   | 'member-actions'
+  | 'calendar'
+  | 'gallery'
   | 'lookups'
   | 'councils'
   | 'council-lookups'
@@ -86,6 +88,10 @@ export const canPlanEvents = (u: Actor): boolean => isAdmin(u);
 export const canManageMeetings = (u: Actor, councilId: number): boolean =>
   canAdministerCouncil(u, councilId) || (u.isOfficer && u.councilId === councilId);
 
+/** One existing meeting's attendance, minutes and details: its owner (OwnerID) and anyone who manages the council's meetings. */
+export const canManageMeeting = (u: Actor, meeting: Pick<Meeting, 'CouncilID' | 'OwnerID'>): boolean =>
+  meeting.OwnerID === u.memberId || canManageMeetings(u, meeting.CouncilID);
+
 /** Admins record post-event results for their councils' events, and the event's owner may too. */
 export const canRecordLedger = (u: Actor, event: Pick<Event, 'OwnerID'>, eventCouncilIds: readonly number[]): boolean =>
   event.OwnerID === u.memberId || eventCouncilIds.some((id) => canAdministerCouncil(u, id));
@@ -131,19 +137,23 @@ export const canChangeDonation = (u: Actor, donation: Pick<Donation, 'CouncilID'
 export const canAttachEventMedia = (u: Actor, event: Pick<Event, 'OwnerID'>, eventCouncilIds: readonly number[]): boolean =>
   event.OwnerID === u.memberId || eventCouncilIds.some((id) => canManageFinances(u, id));
 
-/** Google Drive link controls on a meeting (assertMayLinkMeetingDrive): the council's Admins and finance officers, any Super Admin. */
-export const canLinkMeetingDrive = (u: Actor, meetingCouncilId: number): boolean => canManageFinances(u, meetingCouncilId);
+/** Google Drive link controls on a meeting (assertMayLinkMeetingDrive): its owner, the council's Admins and finance officers, any Super Admin. */
+export const canLinkMeetingDrive = (u: Actor, meeting: Pick<Meeting, 'CouncilID' | 'OwnerID'>): boolean =>
+  meeting.OwnerID === u.memberId || canManageFinances(u, meeting.CouncilID);
 
-/** Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it. */
+/**
+ * Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it, and the
+ * meeting center because a meeting's owner may be any member (it is read-only for everyone else without rights).
+ */
 export function portalAreas(u: Actor): PortalArea[] {
-  // Admins and Super Admins volunteer too, so the member hub leads everyone's navigation.
-  const areas: PortalArea[] = ['member-actions'];
+  // Admins and Super Admins volunteer too, so the member hub leads everyone's navigation, then the shared views.
+  const areas: PortalArea[] = ['member-actions', 'calendar', 'gallery'];
   if (canMaintainLookups(u)) areas.push('lookups');
   if (canMaintainCouncils(u)) areas.push('councils');
   if (canOpenCouncilLookups(u)) areas.push('council-lookups');
   if (isAdmin(u)) areas.push('parishes', 'members', 'activities');
   if (canPlanEvents(u)) areas.push('events');
-  if (isAdmin(u) || u.isOfficer) areas.push('meetings');
+  areas.push('meetings');
   if (isAdmin(u)) areas.push('distribution-lists');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('donations');
   areas.push('ledger');

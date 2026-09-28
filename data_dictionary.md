@@ -126,8 +126,9 @@ Scheduled fraternal gatherings managed by Council Officers or Administrators.
 •	Agenda (TEXT, NULL) — Unbounded text block detailing topics for review.
 •	MinutesURL (VARCHAR(255), NULL) — Storage link to uploaded administrative PDF files.
 •	MeetingType (INTEGER, NULL) — Foreign Key references MeetingType(id).
-•	GoogleDriveMinutesURL (VARCHAR(2000), NULL) — Shared Google Drive link to the meeting minutes (https on drive.google.com or docs.google.com). Set only through meetings.linkGoogleDrive by the council's Admins, Financial Secretary or Treasurer, or a Super Admin.
+•	GoogleDriveMinutesURL (VARCHAR(2000), NULL) — Shared Google Drive link to the meeting minutes (https on drive.google.com or docs.google.com). Set only through meetings.linkGoogleDrive by the meeting's owner, the council's Admins, Financial Secretary or Treasurer, or a Super Admin.
 •	GoogleDriveFlyerURL (VARCHAR(2000), NULL) — Shared Google Drive link to the meeting flyer, with the same rules as GoogleDriveMinutesURL.
+•	OwnerID (INTEGER, NULL) — Foreign Key references Member(id). The member who runs the meeting; they manage its attendance, minutes and Google Drive links alongside the council's Admins and Super Admins.
 [MeetingInvites]
 Tracks meeting rosters, invitations, and recorded user attendance.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
