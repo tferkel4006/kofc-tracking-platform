@@ -126,6 +126,8 @@ Scheduled fraternal gatherings managed by Council Officers or Administrators.
 •	Agenda (TEXT, NULL) — Unbounded text block detailing topics for review.
 •	MinutesURL (VARCHAR(255), NULL) — Storage link to uploaded administrative PDF files.
 •	MeetingType (INTEGER, NULL) — Foreign Key references MeetingType(id).
+•	GoogleDriveMinutesURL (VARCHAR(2000), NULL) — Shared Google Drive link to the meeting minutes (https on drive.google.com or docs.google.com). Set only through meetings.linkGoogleDrive by the council's Admins, Financial Secretary or Treasurer, or a Super Admin.
+•	GoogleDriveFlyerURL (VARCHAR(2000), NULL) — Shared Google Drive link to the meeting flyer, with the same rules as GoogleDriveMinutesURL.
 [MeetingInvites]
 Tracks meeting rosters, invitations, and recorded user attendance.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -190,6 +192,7 @@ Multi-day calendar activities managed by councils.
 •	Highlights (TEXT, NULL) — Unbounded notes block detailing achievements.
 •	PlannedNumberAttendees (INTEGER, NULL) — Initial attendance estimate.
 •	ActualNumberAttendees (INTEGER, NULL) — Verified post-event foot-traffic count.
+•	PhotoGalleryURL (VARCHAR(2000), NULL) — Comma-separated local photo reference paths, appended to (never overwritten) through events.uploadPhotos by the event's owner, an Admin, Financial Secretary or Treasurer of a linked council, or a Super Admin.
 [EventCouncils]
 Bridge table mapping event participation and cross-visibility among affiliated councils.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.

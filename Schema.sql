@@ -127,6 +127,8 @@ CREATE TABLE [Meeting] (
 	[Agenda] VARCHAR(MAX) NOT NULL, -- Fixed: T-SQL TEXT takes no length argument
 	[MinutesURL] VARCHAR(255) NOT NULL,
 	[MeetingType] INTEGER NOT NULL,
+	[GoogleDriveMinutesURL] VARCHAR(2000) NULL, -- Sprint 5Q: shared Google Drive link to the minutes
+	[GoogleDriveFlyerURL] VARCHAR(2000) NULL, -- Sprint 5Q: shared Google Drive link to the flyer
 	PRIMARY KEY([id])
 );
 GO
@@ -191,6 +193,7 @@ CREATE TABLE [Event] (
 	[Highlights] TEXT, -- Fixed length argument truncation
 	[PlannedNumberAttendees] INTEGER,
 	[ActualNumberAttendees] INTEGER,
+	[PhotoGalleryURL] VARCHAR(2000) NULL, -- Sprint 5Q: comma-separated local photo reference paths
 	PRIMARY KEY([id])
 );
 GO

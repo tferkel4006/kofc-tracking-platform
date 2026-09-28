@@ -738,6 +738,67 @@ export function assertMayReadFeedback(actor: MemberWriteActor): void {
   );
 }
 
+/**
+ * Why `actor` may not attach media to records of `councilIds`, or null when they may: an Active Super Admin
+ * anywhere; an Active Admin, Financial Secretary or Treasurer of one of those councils (finance officers because
+ * event and meeting media back the council's fundraising records). `ownerId` is the record's owner, who may too.
+ */
+function mediaDenial(
+  actor: MemberWriteActor,
+  councilIds: readonly number[],
+  ownerId: number | null,
+  action: string,
+  details: Record<string, unknown>,
+): SecurityPrivilegeError | null {
+  if (hasSuperAdminRights(actor)) return null;
+  if (actor.active && ownerId !== null && ownerId === actor.memberId) return null;
+  const officer = hasAdminRights(actor) || (actor.active && holdsFinanceRole(actor.roles));
+  if (!officer) {
+    return new SecurityPrivilegeError(
+      'ADMIN_REQUIRED',
+      `Member ${actor.memberId} cannot ${action}: only ${ownerId === null ? '' : 'the owner, '}an active Admin, Financial Secretary or Treasurer of the council, or a Super Admin can; member ${actor.memberId} is ${describeActor(actor)}.`,
+      { actorId: actor.memberId, actorType: actor.memberType ?? null, ...details },
+    );
+  }
+  if (councilIds.includes(actor.councilId)) return null;
+  return new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action}; it belongs to council${councilIds.length === 1 ? '' : 's'} ${councilIds.join(', ')}.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilIds: [...councilIds], ...details },
+  );
+}
+
+/**
+ * events.uploadPhotos: the event's Active owner, an Active Admin, Financial Secretary or Treasurer of a council the
+ * event is linked to, and any Active Super Admin.
+ */
+export function assertMayAttachEventMedia(
+  actor: MemberWriteActor,
+  event: { id: number; OwnerID: number },
+  eventCouncilIds: readonly number[],
+  action: string,
+): void {
+  const denial = mediaDenial(actor, eventCouncilIds, event.OwnerID, action, { eventId: event.id });
+  if (denial) throw denial;
+}
+
+/** assertMayAttachEventMedia as a yes/no, for photo upload controls. */
+export const mayAttachEventMedia = (actor: MemberWriteActor, event: { id: number; OwnerID: number }, eventCouncilIds: readonly number[]): boolean =>
+  mediaDenial(actor, eventCouncilIds, event.OwnerID, 'add photos', { eventId: event.id }) === null;
+
+/**
+ * meetings.linkGoogleDrive: an Active Admin, Financial Secretary or Treasurer of the meeting's council, and any
+ * Active Super Admin. Meeting has no owner column, so there is no owner right here.
+ */
+export function assertMayLinkMeetingDrive(actor: MemberWriteActor, meeting: { id: number; CouncilID: number }, action: string): void {
+  const denial = mediaDenial(actor, [meeting.CouncilID], null, action, { meetingId: meeting.id });
+  if (denial) throw denial;
+}
+
+/** assertMayLinkMeetingDrive as a yes/no, for Google Drive link controls. */
+export const mayLinkMeetingDrive = (actor: MemberWriteActor, meeting: { id: number; CouncilID: number }): boolean =>
+  mediaDenial(actor, [meeting.CouncilID], null, 'link Google Drive files', { meetingId: meeting.id }) === null;
+
 const hasSuperAdminRights = (a: MemberWriteActor): boolean => a.active && a.memberType === SUPER_ADMIN_TYPE;
 const hasAdminRights = (a: MemberWriteActor): boolean => a.active && (a.memberType === 'Admin' || a.memberType === SUPER_ADMIN_TYPE);
 const describeActor = (a: MemberWriteActor): string => `${a.active ? '' : 'an inactive '}${a.memberType ?? 'of unknown type'}`;

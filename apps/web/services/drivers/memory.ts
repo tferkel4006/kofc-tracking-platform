@@ -17,7 +17,13 @@ import {
   assertLookupUnused,
   assertNoShowWithoutHours,
   assertMayChangeDonation,
+  appendPhotoPaths,
+  assertMayAttachEventMedia,
   assertMayChangeLesson,
+  assertMayLinkMeetingDrive,
+  buildCalendarEntries,
+  cleanCalendarRange,
+  cleanGoogleDriveUrl,
   assertMayManageCouncilLookups,
   assertMayMarkNoShow,
   assertMayReadFeedback,
@@ -1568,6 +1574,30 @@ export class MemoryDataService implements DataService {
       });
     },
 
+    listCalendarRange: async (councilId, startDate, endDate) => {
+      const range = cleanCalendarRange(startDate, endDate);
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+      const events = s.rows('Event').filter((e) => linked.has(e.id)).map((e) => ({ ...e })) as unknown as CouncilEvent[];
+      const meetings = s
+        .rows('Meeting')
+        .filter((m) => m.CouncilID === councilId)
+        .map((m) => ({ ...m })) as unknown as Meeting[];
+      return buildCalendarEntries(range, events, meetings);
+    },
+
+    uploadPhotos: async (actorId, eventId, photoPaths) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const event = this.requireEvent(s, eventId);
+        assertMayAttachEventMedia(actor, event as unknown as CouncilEvent, this.councilIdsOf(s, eventId), `add photos to event ${eventId}`);
+        (event as Row).PhotoGalleryURL = appendPhotoPaths(event.PhotoGalleryURL as string | null, photoPaths);
+        return { ...event } as unknown as CouncilEvent;
+      });
+    },
+
     listByCouncil: async (councilId) => {
       const s = await this.ready();
       const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
@@ -2012,6 +2042,21 @@ export class MemoryDataService implements DataService {
       if (!row) throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
       (row as Row).MinutesURL = url;
       return { ...row } as unknown as Meeting;
+    },
+
+    linkGoogleDrive: async (actorId, meetingId, minutesUrl, flyerUrl) => {
+      const minutes = cleanGoogleDriveUrl(minutesUrl, 'Google Drive minutes link');
+      const flyer = cleanGoogleDriveUrl(flyerUrl, 'Google Drive flyer link');
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const row = s.rows('Meeting').find((m) => m.id === meetingId);
+        if (!row) throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
+        assertMayLinkMeetingDrive(actor, row as unknown as Meeting, `link Google Drive files to meeting ${meetingId}`);
+        (row as Row).GoogleDriveMinutesURL = minutes;
+        (row as Row).GoogleDriveFlyerURL = flyer;
+        return { ...row } as unknown as Meeting;
+      });
     },
 
     memberHours: async (memberId, range) => {

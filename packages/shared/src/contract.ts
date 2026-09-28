@@ -114,8 +114,8 @@ export interface SessionUser {
 }
 
 // 3. MEETINGS
-/** A meeting row without its generated id. */
-export type NewMeeting = Omit<Meeting, 'id'>;
+/** A meeting row without its generated id or its Google Drive links (set later by meetings.linkGoogleDrive). */
+export type NewMeeting = Omit<Meeting, 'id' | 'GoogleDriveMinutesURL' | 'GoogleDriveFlyerURL'>;
 
 /**
  * Who gets an invitation when a meeting is created:
@@ -134,8 +134,8 @@ export interface MessagePageOptions {
 }
 
 // 4. EVENTS, SHIFTS AND THE POST-EVENT LEDGER
-/** An event row without its generated id. */
-export type NewEvent = Omit<Event, 'id'>;
+/** An event row without its generated id or its photo gallery (appended to by events.uploadPhotos). */
+export type NewEvent = Omit<Event, 'id' | 'PhotoGalleryURL'>;
 /** Fields to change on an event; `null` clears an optional field. Omitted fields are left alone. */
 export type EventChanges = { [K in keyof NewEvent]?: NewEvent[K] | null };
 /** A shift without its generated id; NumberVolunteersSignedUp always starts at 0. */
@@ -528,7 +528,36 @@ export interface FeedbackInboxEntry {
   email: string;
 }
 
-// 13. THE SERVICE
+// 13. MEDIA AND THE COUNCIL CALENDAR (Sprint 5Q)
+/** One item on a calendar grid: an event (all-day, possibly spanning days) or a meeting (one day, timed). */
+export type CalendarEntry =
+  | {
+      kind: 'event';
+      id: number;
+      title: string;
+      /** YYYY-MM-DD, inclusive: the event's own dates, which may run past the requested range. */
+      startDate: string;
+      endDate: string;
+      startTime: null;
+      endTime: null;
+      location: string;
+      event: Event;
+    }
+  | {
+      kind: 'meeting';
+      id: number;
+      title: string;
+      /** The meeting's Date; a meeting starts and ends on the same day. */
+      startDate: string;
+      endDate: string;
+      /** HH:MM:SS */
+      startTime: string;
+      endTime: string;
+      location: string;
+      meeting: Meeting;
+    };
+
+// 14. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -836,6 +865,22 @@ export interface DataService {
 
     /** Events linked to the council, newest StartDate first. */
     listByCouncil(councilId: number): Promise<Event[]>;
+    /**
+     * The council's calendar between the dates inclusive (YYYY-MM-DD): every event linked to the council whose
+     * StartDate-EndDate overlaps the range, and every meeting of the council dated inside it. Ordered by start
+     * date, then all-day events before timed meetings, then start time, title and id (buildCalendarEntries).
+     * Rejects INVALID_DATE for a malformed date and INVALID_INPUT for an unknown council or an end before the start.
+     */
+    listCalendarRange(councilId: number, startDate: string, endDate: string): Promise<CalendarEntry[]>;
+    /**
+     * Appends local photo reference paths to the event's PhotoGalleryURL (comma-separated), skipping paths it
+     * already holds, and resolves to the updated event. `actorId` is the signed-in member: the event's Active owner,
+     * an Active Admin, Financial Secretary or Treasurer of a council the event is linked to, or any Active Super
+     * Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects MEMBER_NOT_FOUND for an unknown actor, EVENT_NOT_FOUND
+     * for an unknown event, and INVALID_INPUT for an empty list, a blank path, a path containing a comma, or a
+     * gallery that would exceed PHOTO_GALLERY_MAX_LENGTH characters. Nothing is written when it rejects.
+     */
+    uploadPhotos(actorId: number, eventId: number, photoPaths: readonly string[]): Promise<Event>;
     listShifts(eventId: number): Promise<Shift[]>;
     /**
      * Every signup on the event's shifts with the member's name and any hours logged in EventTime
@@ -951,6 +996,15 @@ export interface DataService {
     setAttended(meetingId: number, memberId: number, attended: boolean): Promise<void>;
     /** Points the meeting at its uploaded minutes; `null` removes them (stored as '', since the column is NOT NULL). */
     setMinutes(meetingId: number, minutesUrl: string | null): Promise<Meeting>;
+    /**
+     * Saves the meeting's shared Google Drive links: `minutesUrl` to GoogleDriveMinutesURL and `flyerUrl` to
+     * GoogleDriveFlyerURL; `null` clears one. Each must be an https link on drive.google.com or docs.google.com of
+     * at most GOOGLE_DRIVE_URL_MAX_LENGTH characters (INVALID_INPUT). `actorId` is the signed-in member: an Active
+     * Admin, Financial Secretary or Treasurer of the meeting's council, or any Active Super Admin (ADMIN_REQUIRED,
+     * COUNCIL_ACCESS_DENIED). Rejects MEMBER_NOT_FOUND for an unknown actor and MEETING_NOT_FOUND for an unknown
+     * meeting. Nothing is written when it rejects.
+     */
+    linkGoogleDrive(actorId: number, meetingId: number, minutesUrl: string | null, flyerUrl: string | null): Promise<Meeting>;
     /**
      * Meeting hours for a member: every invitation marked Attended = 1, each worth its meeting's
      * Time End - Time Start, oldest first with a running total. Optional inclusive date range.

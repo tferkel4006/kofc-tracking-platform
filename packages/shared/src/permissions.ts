@@ -124,6 +124,16 @@ export const canManageFinances = (u: Actor, councilId: number): boolean =>
 export const canChangeDonation = (u: Actor, donation: Pick<Donation, 'CouncilID' | 'RecordedBy'>, eventOwnerId: number | null): boolean =>
   donation.RecordedBy === u.memberId || eventOwnerId === u.memberId || canManageFinances(u, donation.CouncilID);
 
+/**
+ * Photo upload controls on an event, mirroring the drivers' assertMayAttachEventMedia (activity status is checked
+ * there): its owner, an Admin or finance officer of a council it is linked to, any Super Admin.
+ */
+export const canAttachEventMedia = (u: Actor, event: Pick<Event, 'OwnerID'>, eventCouncilIds: readonly number[]): boolean =>
+  event.OwnerID === u.memberId || eventCouncilIds.some((id) => canManageFinances(u, id));
+
+/** Google Drive link controls on a meeting (assertMayLinkMeetingDrive): the council's Admins and finance officers, any Super Admin. */
+export const canLinkMeetingDrive = (u: Actor, meetingCouncilId: number): boolean => canManageFinances(u, meetingCouncilId);
+
 /** Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it. */
 export function portalAreas(u: Actor): PortalArea[] {
   // Admins and Super Admins volunteer too, so the member hub leads everyone's navigation.

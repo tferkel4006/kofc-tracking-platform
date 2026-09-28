@@ -551,6 +551,20 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": true,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "GoogleDriveMinutesURL",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "GoogleDriveFlyerURL",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -927,6 +941,13 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "name": "ActualNumberAttendees",
         "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "PhotoGalleryURL",
+        "kind": "text",
         "notNull": false,
         "identity": false,
         "default": null

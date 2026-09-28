@@ -11,3 +11,4 @@ export * from './permissions';
 export * from './donations';
 export * from './maintenance';
 export * from './reports';
+export * from './media';

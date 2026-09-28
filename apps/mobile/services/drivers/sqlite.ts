@@ -15,7 +15,13 @@ import {
   assertLookupUnused,
   assertNoShowWithoutHours,
   assertMayChangeDonation,
+  appendPhotoPaths,
+  assertMayAttachEventMedia,
   assertMayChangeLesson,
+  assertMayLinkMeetingDrive,
+  buildCalendarEntries,
+  cleanCalendarRange,
+  cleanGoogleDriveUrl,
   assertMayManageCouncilLookups,
   assertMayMarkNoShow,
   assertMayReadFeedback,
@@ -187,8 +193,9 @@ const DB_NAME = 'kofc.db';
  * 3: Donation.RecordedBy (Sprint 5K).
  * 4: view_NoShows LEFT JOINs NoShowReason (Sprint 5L).
  * 5: SystemFeedback (Sprint 5P).
+ * 6: Event.PhotoGalleryURL, Meeting.GoogleDriveMinutesURL and GoogleDriveFlyerURL (Sprint 5Q).
  */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -1806,6 +1813,35 @@ export class SqliteDataService implements DataService {
       return (await db.getFirstAsync<EventSignup>('SELECT * FROM [EventSignup] WHERE [id] = ?', [signupId]))!;
     },
 
+    listCalendarRange: async (councilId, startDate, endDate) => {
+      const range = cleanCalendarRange(startDate, endDate);
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      const events = await db.getAllAsync<CouncilEvent>(
+        `SELECT * FROM [Event] WHERE [id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)
+            AND [StartDate] <= ? AND [EndDate] >= ?`,
+        [councilId, range.endDate, range.startDate],
+      );
+      const meetings = await db.getAllAsync<Meeting>('SELECT * FROM [Meeting] WHERE [CouncilID] = ? AND [Date] BETWEEN ? AND ?', [
+        councilId,
+        range.startDate,
+        range.endDate,
+      ]);
+      return buildCalendarEntries(range, events, meetings);
+    },
+
+    uploadPhotos: async (actorId, eventId, photoPaths) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const event = await this.requireEvent(db, eventId);
+        assertMayAttachEventMedia(actor, event, await this.councilIdsOf(db, eventId), `add photos to event ${eventId}`);
+        const gallery = appendPhotoPaths(event.PhotoGalleryURL, photoPaths);
+        await db.runAsync('UPDATE [Event] SET [PhotoGalleryURL] = ? WHERE [id] = ?', [gallery, eventId]);
+      });
+      return this.requireEvent(db, eventId);
+    },
+
     listByCouncil: async (councilId) => {
       const db = await this.ready();
       return db.getAllAsync<CouncilEvent>(
@@ -2364,6 +2400,24 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       const res = await db.runAsync('UPDATE [Meeting] SET [MinutesURL] = ? WHERE [id] = ?', [url, meetingId]);
       if (res.changes === 0) throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
+      return (await db.getFirstAsync<Meeting>('SELECT * FROM [Meeting] WHERE [id] = ?', [meetingId]))!;
+    },
+
+    linkGoogleDrive: async (actorId, meetingId, minutesUrl, flyerUrl) => {
+      const minutes = cleanGoogleDriveUrl(minutesUrl, 'Google Drive minutes link');
+      const flyer = cleanGoogleDriveUrl(flyerUrl, 'Google Drive flyer link');
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const meeting = await db.getFirstAsync<Meeting>('SELECT * FROM [Meeting] WHERE [id] = ?', [meetingId]);
+        if (!meeting) throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
+        assertMayLinkMeetingDrive(actor, meeting, `link Google Drive files to meeting ${meetingId}`);
+        await db.runAsync('UPDATE [Meeting] SET [GoogleDriveMinutesURL] = ?, [GoogleDriveFlyerURL] = ? WHERE [id] = ?', [
+          minutes,
+          flyer,
+          meetingId,
+        ]);
+      });
       return (await db.getFirstAsync<Meeting>('SELECT * FROM [Meeting] WHERE [id] = ?', [meetingId]))!;
     },
 

@@ -100,6 +100,8 @@ export function createRemoteDataService(): DataService {
       listShiftFeed: notImplemented('events.listShiftFeed'),
       countNoShows: notImplemented('events.countNoShows'),
       setNoShow: notImplemented('events.setNoShow'),
+      listCalendarRange: notImplemented('events.listCalendarRange'),
+      uploadPhotos: notImplemented('events.uploadPhotos'),
       listByCouncil: notImplemented('events.listByCouncil'),
       listShifts: notImplemented('events.listShifts'),
       listTurnout: notImplemented('events.listTurnout'),
@@ -133,6 +135,7 @@ export function createRemoteDataService(): DataService {
       invite: notImplemented('meetings.invite'),
       setAttended: notImplemented('meetings.setAttended'),
       setMinutes: notImplemented('meetings.setMinutes'),
+      linkGoogleDrive: notImplemented('meetings.linkGoogleDrive'),
       memberHours: notImplemented('meetings.memberHours'),
     },
     feedback: {

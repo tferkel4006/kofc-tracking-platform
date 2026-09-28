@@ -131,6 +131,8 @@ export interface Event {
   Highlights?: string;
   PlannedNumberAttendees?: number;
   ActualNumberAttendees?: number;
+  /** Comma-separated local photo reference paths (VARCHAR(2000)); written only by events.uploadPhotos. */
+  PhotoGalleryURL?: string | null;
 }
 
 
@@ -262,6 +264,9 @@ export interface Meeting {
   Agenda?: string;     // NOT NULL in Schema.sql: drivers store '' when there is none
   MinutesURL?: string; // Links directly to cloud PDF assets; '' until minutes are uploaded (NOT NULL in Schema.sql)
   MeetingType: number;
+  /** Shared Google Drive links (VARCHAR(2000)); written only by meetings.linkGoogleDrive. */
+  GoogleDriveMinutesURL?: string | null;
+  GoogleDriveFlyerURL?: string | null;
 }
 
 export interface MeetingInvites {
