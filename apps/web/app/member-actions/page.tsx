@@ -5,8 +5,8 @@
 //   - Registration desk: open shifts of my council and its sister councils that still need volunteers to reach
 //     MinNumberVolunteers. events.signupForShift adds the seat and increments NumberVolunteersSignedUp in one step,
 //     and refuses a full (locked) shift, so the desk only offers rows with room.
-//   - Fraternal roster: Active members of my council and its sister councils. Names, numbers and degrees only;
-//     members reach each other through the Communications Hub, so contact details stay on the Admin roster.
+//   - Fraternal roster: Active members of my council and its sister councils with their phone and email, the same
+//     contact details the council's shared roster sheet already gives every member.
 //   - Hour ledger: log time against a shift I worked (SHIFT_HISTORY_MONTHS back) or a council activity
 //     (ACTIVITY_HISTORY_MONTHS back), with my logged history underneath. The drivers enforce both walls again.
 import { useState, type ReactNode } from 'react';
@@ -32,7 +32,7 @@ import {
   type Council,
 } from '@kofc/shared';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td } from '@/components/ui';
-import { formatFullDate, formatPersonName } from '@/lib/format';
+import { formatFullDate, formatPersonName, formatPhone } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
@@ -233,7 +233,7 @@ function FraternalRoster() {
       <Panel title={`Brother Knights (${shown.length})`}>
         {roster.data && shown.length === 0 ? <Empty>{q ? 'Nobody matches the search.' : 'No active members in this council yet.'}</Empty> : null}
         {shown.length > 0 ? (
-          <Table caption="Fraternal roster" head={['Name', 'Member #', 'Council', 'Degree']}>
+          <Table caption="Fraternal roster" head={['Name', 'Member #', 'Council', 'Phone', 'Email', 'Degree']}>
             {shown.map((m) => {
               const council = byId.get(m.CouncilID);
               return (
@@ -241,13 +241,23 @@ function FraternalRoster() {
                   <Td className="font-bold">{formatPersonName(m.MemberFirstName, m.MemberLastName)}</Td>
                   <Td>{m.MemberNumber}</Td>
                   <Td>{council ? councilLabel(council) : m.CouncilID}</Td>
+                  <Td className="whitespace-nowrap">{formatPhone(m.Phone)}</Td>
+                  <Td>
+                    {m.Email ? (
+                      <a href={`mailto:${m.Email}`} className="break-all underline">
+                        {m.Email}
+                      </a>
+                    ) : (
+                      '–'
+                    )}
+                  </Td>
                   <Td>{roster.data?.degree.get(m.DegreeID) ?? '–'}</Td>
                 </tr>
               );
             })}
           </Table>
         ) : null}
-        <p className="mt-2 text-xs text-muted">Active members only. To reach a Brother Knight, start a thread in the Communications Hub.</p>
+        <p className="mt-2 text-xs text-muted">Active members only. You can also reach a Brother Knight through the Communications Hub.</p>
       </Panel>
     </div>
   );
