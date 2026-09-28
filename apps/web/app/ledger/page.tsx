@@ -161,6 +161,7 @@ function ResultsForm({ event, onSaved }: { event: Event; onSaved: () => void }) 
 // ---- lessons learned -----------------------------------------------------------
 
 function LessonsPanel({ eventId, categories, onChanged }: { eventId: number; categories: LessonsLearnedCategory[]; onChanged: () => void }) {
+  const user = useUser();
   const lessons = useLoad(() => db.lessonsLearned.list(eventId), [eventId]);
   const { message, setMessage, run } = useAction();
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? 0);
@@ -199,12 +200,12 @@ function LessonsPanel({ eventId, categories, onChanged }: { eventId: number; cat
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') void change(async () => { await db.lessonsLearned.add(eventId, categoryId, text); setText(''); }, 'Lesson added.');
+                  if (e.key === 'Enter') void change(async () => { await db.lessonsLearned.add(user.memberId, eventId, categoryId, text); setText(''); }, 'Lesson added.');
                 }}
               />
             )}
           </Field>
-          <Button onClick={() => void change(async () => { await db.lessonsLearned.add(eventId, categoryId, text); setText(''); }, 'Lesson added.')}>Add lesson</Button>
+          <Button onClick={() => void change(async () => { await db.lessonsLearned.add(user.memberId, eventId, categoryId, text); setText(''); }, 'Lesson added.')}>Add lesson</Button>
         </div>
         {lessons.data?.length === 0 ? (
           <Empty>No lessons recorded yet.</Empty>
@@ -217,7 +218,7 @@ function LessonsPanel({ eventId, categories, onChanged }: { eventId: number; cat
                 </Td>
                 <Td>{l.LessonsLearnedDescription}</Td>
                 <Td>
-                  <Button size="sm" variant="secondary" onClick={() => void change(() => db.lessonsLearned.remove(l.id), 'Lesson removed.')}>
+                  <Button size="sm" variant="secondary" onClick={() => void change(() => db.lessonsLearned.remove(user.memberId, l.id), 'Lesson removed.')}>
                     Remove
                   </Button>
                 </Td>

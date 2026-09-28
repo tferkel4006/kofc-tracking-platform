@@ -3,12 +3,14 @@
 // When a volunteer shift or an invited meeting is 24 hours away, compile an
 // email payload carrying an iCalendar (.ics) block and print it with
 // console.log. No mail server exists yet, so nothing is sent or written.
+// Also the unlogged-hours text reminders (Sprint 5L, at the end of the file).
 //
 // Shared by mobile and web: it talks only to the DataService contract.
 // Times in the schema carry no time zone, so the .ics uses "floating" local
 // times (no trailing Z), which calendar apps read as the attendee's local time.
 // =========================================================================
-import type { DataService } from './contract';
+import type { DataService, ShiftAwaitingHours } from './contract';
+import { awaitingHoursStatus } from './reports';
 import { MIN_PASSWORD_LENGTH, toIsoDate } from './rules';
 import type { Meeting, Member, Shift, Event as CouncilEvent } from './types';
 
@@ -327,5 +329,117 @@ export function startNotificationScheduler(
   };
   tick();
   const handle = setInterval(tick, options.intervalMs ?? options.windowMs ?? NOTICE_WINDOW_MS);
+  return () => clearInterval(handle);
+}
+
+// ---- unlogged-hours reminders (Sprint 5L) ------------------------------------
+// A gentle text-message nudge for volunteers who worked a shift but never logged their hours: the first one
+// exactly HOURS_REMINDER_FIRST_DAY days after the ShiftDate, then at most one every HOURS_REMINDER_REPEAT_DAYS
+// days while the hours stay unlogged, and none once the shift is past the 3-month logging wall
+// (ShiftAwaitingHours.closed), since eventTime.logHours would refuse the hours by then. No SMS gateway exists
+// yet, so the sweep prints each message with console.log.
+
+/** Days after the ShiftDate that the first reminder goes out. */
+export const HOURS_REMINDER_FIRST_DAY = 5;
+/** Days between follow-up reminders. */
+export const HOURS_REMINDER_REPEAT_DAYS = 7;
+/** How often startHoursReminderScheduler sweeps: once a day, matching the day-based cadence. */
+export const HOURS_REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Which reminder is due today for a shift `daysSinceShift` days ago: 0 for the first (day 5), 1, 2, ... for the
+ * weekly follow-ups (days 12, 19, ...), or null when none is due today or the row is closed. Due on exact days,
+ * so a once-a-day sweep sends each reminder once even without remembering what it sent.
+ */
+export function hoursReminderStage(status: Pick<ShiftAwaitingHours, 'daysSinceShift' | 'closed'>): number | null {
+  if (status.closed || status.daysSinceShift < HOURS_REMINDER_FIRST_DAY) return null;
+  const since = status.daysSinceShift - HOURS_REMINDER_FIRST_DAY;
+  return since % HOURS_REMINDER_REPEAT_DAYS === 0 ? since / HOURS_REMINDER_REPEAT_DAYS : null;
+}
+
+export interface TextMessagePayload {
+  /** The member's Phone as stored. */
+  to: string;
+  text: string;
+}
+
+export interface HoursReminderPacket {
+  kind: 'hours';
+  /** Stable dedupe key, e.g. "hours:signup:12:stage:0". */
+  key: string;
+  memberId: number;
+  signupId: number;
+  /** 0 for the first reminder, then 1, 2, ... for the weekly follow-ups. */
+  stage: number;
+  sms: TextMessagePayload;
+}
+
+export function buildHoursReminder(entry: ShiftAwaitingHours, stage: number): HoursReminderPacket {
+  const { shift, event } = entry;
+  const opener = stage === 0 ? 'Thank you for volunteering!' : 'A friendly follow-up:';
+  return {
+    kind: 'hours',
+    key: `hours:signup:${entry.signup.id}:stage:${stage}`,
+    memberId: entry.memberId,
+    signupId: entry.signup.id,
+    stage,
+    sms: {
+      to: entry.phone,
+      text:
+        `KofC: Hi ${entry.firstName}. ${opener} Please log your hours for "${shift.ShiftName}" (${event.EventName}) ` +
+        `on ${shift.ShiftDate} in the app. Hours for this shift can be logged through ${entry.loggableThrough}.`,
+    },
+  };
+}
+
+export interface HoursReminderSweepOptions {
+  /** Clock override for tests. Default: the real time. */
+  now?: Date;
+  /** Where packets go. Default: console.log (no SMS gateway exists yet). */
+  log?: (...args: unknown[]) => void;
+  /** Keys already sent. Pass one Set for the lifetime of the process so a reminder goes out at most once. */
+  sent?: Set<string>;
+}
+
+/**
+ * Scans every council's shifts awaiting hours (reports.listShiftsAwaitingHours), builds a text reminder for
+ * each row whose reminder is due today (hoursReminderStage, judged by `now`) and logs it. A signup on an event
+ * shared by several councils is reminded once. Resolves to the packets.
+ */
+export async function runHoursReminderSweep(db: DataService, options: HoursReminderSweepOptions = {}): Promise<HoursReminderPacket[]> {
+  const now = options.now ?? new Date();
+  const log = options.log ?? console.log;
+  const sent = options.sent ?? new Set<string>();
+  const packets: HoursReminderPacket[] = [];
+  for (const council of await db.councils.list()) {
+    for (const row of await db.reports.listShiftsAwaitingHours(council.id)) {
+      const entry = { ...row, ...awaitingHoursStatus(row.shift.ShiftDate, now) };
+      const stage = hoursReminderStage(entry);
+      if (stage === null || !entry.phone.trim()) continue;
+      const packet = buildHoursReminder(entry, stage);
+      if (sent.has(packet.key)) continue;
+      sent.add(packet.key);
+      packets.push(packet);
+      log('[hours-reminder]', JSON.stringify(packet, null, 2));
+    }
+  }
+  return packets;
+}
+
+/**
+ * Runs an hours-reminder sweep now and then every `intervalMs` (default: daily), keeping one `sent` set so
+ * nothing goes out twice. Returns a function that stops it. Like startNotificationScheduler this is a foreground
+ * timer; production needs a server-side daily job (the cadence is safe for a stateless once-a-day cron).
+ */
+export function startHoursReminderScheduler(
+  db: DataService,
+  options: Omit<HoursReminderSweepOptions, 'now'> & { intervalMs?: number } = {},
+): () => void {
+  const sweepOptions = { ...options, sent: options.sent ?? new Set<string>() };
+  const tick = () => {
+    runHoursReminderSweep(db, sweepOptions).catch((err) => console.error('[hours-reminder] sweep failed:', err));
+  };
+  tick();
+  const handle = setInterval(tick, options.intervalMs ?? HOURS_REMINDER_INTERVAL_MS);
   return () => clearInterval(handle);
 }

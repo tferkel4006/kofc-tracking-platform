@@ -10,10 +10,42 @@ import type {
   DonationHistory,
   DonationHistoryEntry,
   EventDonationSummary,
+  LessonsRegistryEntry,
+  LessonsRegistryFilters,
   MonthlySummary,
+  NoShowAuditEntry,
+  ShiftAwaitingHours,
 } from './contract';
-import { assertInteger, BusinessRuleError, donationMethodKind, rollupEventFunds, summarizeDonations, toIsoDate } from './rules';
-import type { Activities, ActivityTime, Donation, DonationMethod, DonationType, Event } from './types';
+import { daysBetween } from './planning';
+import {
+  assertInteger,
+  assertIsoDate,
+  BusinessRuleError,
+  donationMethodKind,
+  mayChangeLesson,
+  rollupEventFunds,
+  SHIFT_HISTORY_MONTHS,
+  subtractMonths,
+  summarizeDonations,
+  toIsoDate,
+  type MemberWriteActor,
+} from './rules';
+import type {
+  Activities,
+  ActivityTime,
+  Category,
+  Council,
+  Donation,
+  DonationMethod,
+  DonationType,
+  Event,
+  EventSignup,
+  LessonsLearned,
+  LessonsLearnedCategory,
+  Member,
+  NoShowReason,
+  Shift,
+} from './types';
 
 /** Adds hour or money values in hundredths, so 0.1 + 0.2 style drift never reaches a report. */
 const sumHundredths = (values: readonly (number | null | undefined)[]): number =>
@@ -138,4 +170,144 @@ export function summarizeMonth(councilId: number, year: number, month: number, r
     outreach: { attendees: rows.events.reduce((n, e) => n + (e.ActualNumberAttendees ?? 0), 0), events: rows.events.length },
     highlights,
   };
+}
+
+// ---- executive audits (Sprint 5L) ----------------------------------------------
+
+/** reports.listNoShowsAudit looks back this many months by default. */
+export const NO_SHOW_AUDIT_MONTHS = 6;
+
+/** A signup with the rows around it, as a driver loads it for the audits. */
+export interface SignupContextRow {
+  signup: EventSignup;
+  shift: Shift;
+  event: Event;
+  member: Pick<Member, 'id' | 'MemberNumber' | 'MemberFirstName' | 'MemberLastName' | 'Phone' | 'Email'>;
+}
+
+/** Newest ShiftDate first, then last name, first name and signup id. */
+const byShiftThenName = (a: SignupContextRow, b: SignupContextRow) =>
+  b.shift.ShiftDate.localeCompare(a.shift.ShiftDate) ||
+  a.member.MemberLastName.localeCompare(b.member.MemberLastName) ||
+  a.member.MemberFirstName.localeCompare(b.member.MemberFirstName) ||
+  a.signup.id - b.signup.id;
+
+/** reports.listNoShowsAudit's threshold: the one given (validated), or NO_SHOW_AUDIT_MONTHS before today. */
+export const noShowAuditThreshold = (dateThreshold: unknown, now: Date): string =>
+  dateThreshold === undefined ? subtractMonths(now, NO_SHOW_AUDIT_MONTHS) : assertIsoDate(dateThreshold, 'No-show audit date threshold');
+
+/** reports.listNoShowsAudit from the council's no-show signups; `reason` is null where none was recorded. */
+export function buildNoShowAudit(rows: readonly (SignupContextRow & { reason: NoShowReason | null })[]): NoShowAuditEntry[] {
+  return [...rows].sort(byShiftThenName).map(({ signup, shift, event, member, reason }) => ({
+    signup,
+    shift,
+    event,
+    memberId: member.id,
+    memberNumber: member.MemberNumber,
+    firstName: member.MemberFirstName,
+    lastName: member.MemberLastName,
+    reason,
+  }));
+}
+
+/**
+ * How a shift with unlogged hours stands today. `closed` mirrors assertShiftReportAllowed exactly: once the
+ * shift is older than SHIFT_HISTORY_MONTHS, eventTime.logHours refuses it. `loggableThrough` is the last day
+ * that still accepts it.
+ */
+export function awaitingHoursStatus(shiftDate: string, now: Date): { daysSinceShift: number; closed: boolean; loggableThrough: string } {
+  const [y, m, d] = shiftDate.slice(0, 10).split('-').map(Number);
+  return {
+    daysSinceShift: daysBetween(shiftDate, toIsoDate(now)),
+    closed: shiftDate < subtractMonths(now, SHIFT_HISTORY_MONTHS),
+    loggableThrough: subtractMonths(new Date(y, m - 1, d), -SHIFT_HISTORY_MONTHS),
+  };
+}
+
+/** reports.listShiftsAwaitingHours from the council's past, non-no-show signups that have no EventTime row. */
+export function buildShiftsAwaitingHours(rows: readonly SignupContextRow[], now: Date): ShiftAwaitingHours[] {
+  return [...rows].sort(byShiftThenName).map(({ signup, shift, event, member }) => ({
+    signup,
+    shift,
+    event,
+    memberId: member.id,
+    firstName: member.MemberFirstName,
+    lastName: member.MemberLastName,
+    phone: member.Phone,
+    email: member.Email,
+    ...awaitingHoursStatus(shift.ShiftDate, now),
+  }));
+}
+
+// ---- the lessons learned registry (Sprint 5L) --------------------------------
+
+/** Validates lessonsLearned.listGlobalRegistry's filters; blank search text is dropped. */
+export function cleanLessonsRegistryFilters(filters: LessonsRegistryFilters = {}): LessonsRegistryFilters {
+  const out: LessonsRegistryFilters = {};
+  if (filters.councilId !== undefined) out.councilId = assertInteger(filters.councilId, 'Council filter', 1);
+  if (filters.lessonsCategoryId !== undefined) out.lessonsCategoryId = assertInteger(filters.lessonsCategoryId, 'Lessons category filter', 1);
+  if (filters.eventCategoryId !== undefined) out.eventCategoryId = assertInteger(filters.eventCategoryId, 'Event category filter', 1);
+  if (filters.fromDate !== undefined) out.fromDate = assertIsoDate(filters.fromDate, 'From date');
+  if (filters.toDate !== undefined) out.toDate = assertIsoDate(filters.toDate, 'To date');
+  const search = typeof filters.search === 'string' ? filters.search.trim() : '';
+  if (search !== '') out.search = search;
+  return out;
+}
+
+export interface LessonsRegistryRows {
+  lessons: readonly LessonsLearned[];
+  /** At least every event a lesson points at. */
+  events: readonly Pick<Event, 'id' | 'EventName' | 'StartDate' | 'CategoryID' | 'OwnerID'>[];
+  eventCouncils: readonly { EventID: number; CouncilID: number }[];
+  councils: readonly Pick<Council, 'id' | 'CouncilNumber' | 'CouncilName'>[];
+  categories: readonly Category[];
+  lessonCategories: readonly LessonsLearnedCategory[];
+}
+
+/**
+ * lessonsLearned.listGlobalRegistry from every lesson and the rows around it: applies the (cleaned) filters,
+ * marks what `actor` may change (rules.mayChangeLesson) and orders newest event StartDate first, then lesson id.
+ */
+export function buildLessonsRegistry(actor: MemberWriteActor, filters: LessonsRegistryFilters, rows: LessonsRegistryRows): LessonsRegistryEntry[] {
+  const events = new Map(rows.events.map((e) => [e.id, e]));
+  const councils = new Map(rows.councils.map((c) => [c.id, c]));
+  const category = new Map(rows.categories.map((c) => [c.id, c.Category]));
+  const lessonCategory = new Map(rows.lessonCategories.map((c) => [c.id, c.LessonsLearnedCategory]));
+  const councilIds = new Map<number, number[]>();
+  for (const ec of rows.eventCouncils) councilIds.set(ec.EventID, [...(councilIds.get(ec.EventID) ?? []), ec.CouncilID]);
+  const search = filters.search?.toLowerCase();
+
+  const out: LessonsRegistryEntry[] = [];
+  for (const lesson of rows.lessons) {
+    const event = events.get(lesson.EventID);
+    if (!event) continue;
+    const linked = councilIds.get(event.id) ?? [];
+    if (filters.councilId !== undefined && !linked.includes(filters.councilId)) continue;
+    if (filters.lessonsCategoryId !== undefined && lesson.LeassonsLearnedCategoryID !== filters.lessonsCategoryId) continue;
+    if (filters.eventCategoryId !== undefined && event.CategoryID !== filters.eventCategoryId) continue;
+    if (filters.fromDate !== undefined && event.StartDate < filters.fromDate) continue;
+    if (filters.toDate !== undefined && event.StartDate > filters.toDate) continue;
+    if (
+      search !== undefined &&
+      !lesson.LessonsLearnedDescription.toLowerCase().includes(search) &&
+      !event.EventName.toLowerCase().includes(search)
+    ) {
+      continue;
+    }
+    out.push({
+      lesson,
+      eventId: event.id,
+      eventName: event.EventName,
+      eventStartDate: event.StartDate,
+      eventCategory: category.get(event.CategoryID) ?? '',
+      lessonsCategory: lessonCategory.get(lesson.LeassonsLearnedCategoryID) ?? '',
+      councils: linked
+        .map((id) => councils.get(id))
+        .filter((c): c is NonNullable<typeof c> => c !== undefined)
+        .map((c) => ({ id: c.id, CouncilNumber: c.CouncilNumber, CouncilName: c.CouncilName }))
+        .sort((a, b) => a.CouncilNumber - b.CouncilNumber || a.id - b.id),
+      canModify: mayChangeLesson(actor, event, linked),
+    });
+  }
+  return out.sort((a, b) => b.eventStartDate.localeCompare(a.eventStartDate) || a.lesson.id - b.lesson.id);
 }

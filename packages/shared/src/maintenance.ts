@@ -20,7 +20,14 @@ import type {
 } from './contract';
 import { assertInteger, assertText, BusinessRuleError, optionalText } from './rules';
 
-export type MaintainedTable = 'Council' | 'Parish' | 'Pastor' | 'Activities' | 'DistributionLists';
+export type MaintainedTable =
+  | 'Council'
+  | 'Parish'
+  | 'Pastor'
+  | 'Activities'
+  | 'DistributionLists'
+  | 'DonationType'
+  | 'CouncilDonationMethod';
 
 /** What a maintained row is called in messages. */
 export const RECORD_LABELS: Record<MaintainedTable, string> = {
@@ -29,6 +36,8 @@ export const RECORD_LABELS: Record<MaintainedTable, string> = {
   Pastor: 'Pastor',
   Activities: 'Activity',
   DistributionLists: 'Distribution list',
+  DonationType: 'Donation type',
+  CouncilDonationMethod: 'Donation method',
 };
 
 export interface RecordReference {
@@ -61,6 +70,8 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
   Pastor: [],
   Activities: [{ table: 'ActivityTime', column: 'ActivityID', noun: ['time entry', 'time entries'] }],
   DistributionLists: [], // DistributionListMembers rows are deleted with their list
+  DonationType: [{ table: 'Donation', column: 'DonationTypeID', noun: ['donation', 'donations'] }],
+  CouncilDonationMethod: [], // donations point at DonationMethod, so disabling a method keeps their history
 };
 
 /** Columns each maintained table's create/update writes, besides its id. */
@@ -138,6 +149,24 @@ export function cleanActivity(input: NewActivity): NewActivity {
     ActivityDescription: assertText(input.ActivityDescription ?? '', 'Activity description', 255),
     CategoryID: assertInteger(input.CategoryID, 'Category', 1),
     CouncilID: assertInteger(input.CouncilID, 'Council', 1),
+  };
+}
+
+/** A council donation type (Sprint 5L council lookups). */
+export function cleanDonationType(input: { DonationType?: unknown }): { DonationType: string } {
+  assertKnownFields(input, ['DonationType'], 'DonationType');
+  return { DonationType: assertText(input.DonationType ?? '', 'Donation type', 100) };
+}
+
+/** A donation method a council enables, with the optional QR image URL that routes payments to its account. */
+export function cleanCouncilDonationMethod(input: { DonationMethodID?: unknown; DonationMethodURL?: unknown }): {
+  DonationMethodID: number;
+  DonationMethodURL: string | null;
+} {
+  assertKnownFields(input, ['DonationMethodID', 'DonationMethodURL'], 'CouncilDonationMethod');
+  return {
+    DonationMethodID: assertInteger(input.DonationMethodID, 'Donation method', 1),
+    DonationMethodURL: optionalText(input.DonationMethodURL, 'Donation method URL', 255),
   };
 }
 

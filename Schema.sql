@@ -594,7 +594,7 @@ SELECT
 FROM [EventSignup]
 INNER JOIN [Shift] ON [EventSignup].[ShiftID] = [Shift].[id]
 INNER JOIN [Member] ON [EventSignup].[MemberID] = [Member].[id]
-INNER JOIN [NoShowReason] ON [EventSignup].[NoShowReasonID] = [NoShowReason].[id]
+LEFT OUTER JOIN [NoShowReason] ON [EventSignup].[NoShowReasonID] = [NoShowReason].[id] -- Sprint 5L: a no-show without a recorded reason must still be audited
 INNER JOIN [Council] ON [Member].[CouncilID] = [Council].[id]
 INNER JOIN [Event] ON [Shift].[EventID] = [Event].[id]
 WHERE [EventSignup].[NoShow] = 1;

@@ -14,6 +14,9 @@ import {
   assertLookupNotProtected,
   assertLookupUnused,
   assertMayChangeDonation,
+  assertMayChangeLesson,
+  assertMayManageCouncilLookups,
+  assertMayReadLessonsRegistry,
   assertMayCreateMember,
   assertMayEditMemberExtensions,
   assertMayMaintainCouncilRecords,
@@ -31,6 +34,9 @@ import {
   assertValidHours,
   buildActivityTimeLog,
   buildDonationHistory,
+  buildLessonsRegistry,
+  buildNoShowAudit,
+  buildShiftsAwaitingHours,
   buildThreadMessages,
   buildThreadSummaries,
   buildWelcomeEmail,
@@ -40,6 +46,7 @@ import {
   cleanCouncilIds,
   cleanDistributionListChanges,
   cleanEventFields,
+  cleanLessonsRegistryFilters,
   cleanLookupValues,
   cleanMemberExtensions,
   cleanNewDistributionList,
@@ -51,6 +58,7 @@ import {
   cleanPastor,
   cleanShiftFields,
   COUNCIL_COLUMNS,
+  COUNCIL_LOOKUP_META,
   DONATION_EDITABLE_COLUMNS,
   donationMethodKind,
   EVENT_COLUMNS,
@@ -60,6 +68,8 @@ import {
   mergeMemberChanges,
   mergeRecordChanges,
   monthBounds,
+  noShowAuditThreshold,
+  planCouncilLookupSave,
   nextEventFunds,
   MEMBER_COLUMNS,
   PARISH_COLUMNS,
@@ -69,6 +79,7 @@ import {
   RECORD_REFERENCES,
   recordNotFound,
   rollupEventFunds,
+  sortCouncilLookupRows,
   SHIFT_COLUMNS,
   summarizeActivities,
   summarizeMonth,
@@ -82,6 +93,7 @@ import {
   type MaintainedTable,
   type MemberWriteActor,
   type MessagingRows,
+  type SignupContextRow,
 } from '@kofc/shared';
 import type {
   Activities,
@@ -89,6 +101,8 @@ import type {
   ChatThread,
   Council,
   CouncilDonationMethod,
+  CouncilLookupRowMap,
+  CouncilLookupTableName,
   CouncilSkillEntry,
   DataService,
   DistributionLists,
@@ -116,6 +130,8 @@ import type {
   EventSignup,
   EventTime,
   LessonsLearned,
+  LessonsLearnedCategory,
+  Category,
   LookupRowMap,
   LookupTableName,
   LookupValues,
@@ -127,6 +143,7 @@ import type {
   VolunteerTurnout,
   Message,
   MessageAttachment,
+  NoShowReason,
   MessagePageOptions,
   NewEvent,
   NewMeeting,
@@ -160,8 +177,9 @@ const DB_NAME = 'kofc.db';
  * a dev database created at an older version must be wiped with reset() (or the app reinstalled).
  * 2: Phase 2 donations, skills, training and working status.
  * 3: Donation.RecordedBy (Sprint 5K).
+ * 4: view_NoShows LEFT JOINs NoShowReason (Sprint 5L).
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -543,7 +561,88 @@ export class SqliteDataService implements DataService {
         await db.runAsync(`DELETE FROM [${table}] WHERE [id] = ?`, [id]);
       });
     },
+
+    listForMaintenance: async <T extends LookupTableName>(actorId: number, table: T): Promise<LookupRowMap[T][]> => {
+      if (!LOOKUP_TABLES[table]) throw new Error(`Unknown lookup table: ${String(table)}`);
+      const db = await this.ready();
+      assertMayMaintainLookups(await this.memberWriteActor(db, actorId), table, 'view');
+      return db.getAllAsync<LookupRowMap[T]>(`SELECT * FROM [${table}] ORDER BY [id]`);
+    },
+
+    listCouncilSpecific: async <T extends CouncilLookupTableName>(actorId: number, councilId: number, table: T) => {
+      const db = await this.ready();
+      await this.assertMayManageCouncilLookups(db, actorId, councilId, table, `view the council's ${table} lookups`);
+      return this.councilLookupRows(db, councilId, table);
+    },
+
+    saveCouncilSpecific: async <T extends CouncilLookupTableName>(actorId: number, councilId: number, table: T, records: unknown) => {
+      const meta = COUNCIL_LOOKUP_META[table];
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        await this.assertMayManageCouncilLookups(db, actorId, councilId, table, `change the council's ${table} lookups`);
+        const current = await db.getAllAsync<Record<string, unknown>>(`SELECT * FROM [${table}] WHERE [CouncilID] = ?`, [councilId]);
+        const plan = planCouncilLookupSave(table, councilId, current, records);
+        for (const values of [...plan.inserts, ...plan.updates.map((u) => u.values)]) {
+          for (const fk of meta.foreignKeys) await this.assertRowExists(db, fk.table, values[fk.column] as number, fk.label);
+        }
+        for (const { id, values } of plan.updates) {
+          await db.runAsync(`UPDATE [${table}] SET ${meta.columns.map((c) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [
+            ...meta.columns.map((c) => values[c] ?? null),
+            id,
+          ]);
+        }
+        for (const values of plan.inserts) {
+          await db.runAsync(
+            `INSERT INTO [${table}] (${meta.columns.map((c) => `[${c}]`).join(', ')}, [CouncilID]) VALUES (${marks(meta.columns.length + 1)})`,
+            [...meta.columns.map((c) => values[c] ?? null), councilId],
+          );
+        }
+      });
+      return this.councilLookupRows(db, councilId, table);
+    },
+
+    removeCouncilSpecific: async (actorId, councilId, table, id) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        await this.assertMayManageCouncilLookups(db, actorId, councilId, table, `delete the council's ${table} lookups`);
+        const row = await db.getFirstAsync<Record<string, unknown>>(`SELECT * FROM [${table}] WHERE [id] = ? AND [CouncilID] = ?`, [
+          id,
+          councilId,
+        ]);
+        if (!row) {
+          throw new BusinessRuleError('RECORD_NOT_FOUND', `${table} ${id} does not exist in council ${councilId}.`, { table, id, councilId });
+        }
+        await this.assertRecordUnused(db, table, id, String(row[COUNCIL_LOOKUP_META[table].keyField]));
+        await db.runAsync(`DELETE FROM [${table}] WHERE [id] = ?`, [id]);
+      });
+    },
   };
+
+  /**
+   * Loads the actor, checks the council exists and applies assertMayManageCouncilLookups. Also the allow-list
+   * for the council lookup table names interpolated into SQL.
+   */
+  private async assertMayManageCouncilLookups(
+    db: SQLite.SQLiteDatabase,
+    actorId: number,
+    councilId: number,
+    table: CouncilLookupTableName,
+    action: string,
+  ): Promise<void> {
+    if (!COUNCIL_LOOKUP_META[table]) throw new Error(`Unknown council lookup table: ${String(table)}`);
+    const actor = await this.memberWriteActor(db, actorId);
+    await this.assertCouncilsExist(db, [councilId]);
+    assertMayManageCouncilLookups(actor, councilId, table, action);
+  }
+
+  private async councilLookupRows<T extends CouncilLookupTableName>(
+    db: SQLite.SQLiteDatabase,
+    councilId: number,
+    table: T,
+  ): Promise<CouncilLookupRowMap[T][]> {
+    const rows = await db.getAllAsync<CouncilLookupRowMap[T]>(`SELECT * FROM [${table}] WHERE [CouncilID] = ?`, [councilId]);
+    return sortCouncilLookupRows(table, rows);
+  }
 
   private async requireLookupRow(
     db: SQLite.SQLiteDatabase,
@@ -1914,12 +2013,14 @@ export class SqliteDataService implements DataService {
       return db.getAllAsync<LessonsLearned>('SELECT * FROM [LessonsLearned] WHERE [EventID] = ? ORDER BY [id]', [eventId]);
     },
 
-    add: async (eventId, categoryId, description) => {
+    add: async (actorId, eventId, categoryId, description) => {
       const text = assertText(description, 'Lesson learned', 255);
       const db = await this.ready();
       let id = 0;
       await db.withTransactionAsync(async () => {
-        await this.requireEvent(db, eventId);
+        const actor = await this.memberWriteActor(db, actorId);
+        const event = await this.requireEvent(db, eventId);
+        assertMayChangeLesson(actor, event, await this.councilIdsOf(db, eventId), `add lessons to event ${eventId}`);
         if (!(await db.getFirstAsync('SELECT [id] FROM [LessonsLearnedCategory] WHERE [id] = ?', [categoryId]))) {
           throw new BusinessRuleError('INVALID_INPUT', `No lessons-learned category with id ${categoryId}.`, { categoryId });
         }
@@ -1932,10 +2033,36 @@ export class SqliteDataService implements DataService {
       return (await db.getFirstAsync<LessonsLearned>('SELECT * FROM [LessonsLearned] WHERE [id] = ?', [id]))!;
     },
 
-    remove: async (id) => {
+    remove: async (actorId, id) => {
       const db = await this.ready();
-      const res = await db.runAsync('DELETE FROM [LessonsLearned] WHERE [id] = ?', [id]);
-      if (res.changes === 0) throw new BusinessRuleError('INVALID_INPUT', `No lesson learned with id ${id}.`, { id });
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const lesson = await db.getFirstAsync<LessonsLearned>('SELECT * FROM [LessonsLearned] WHERE [id] = ?', [id]);
+        if (!lesson) throw new BusinessRuleError('INVALID_INPUT', `No lesson learned with id ${id}.`, { id });
+        const event = await this.requireEvent(db, lesson.EventID);
+        assertMayChangeLesson(actor, event, await this.councilIdsOf(db, event.id), `remove lesson ${id}`);
+        await db.runAsync('DELETE FROM [LessonsLearned] WHERE [id] = ?', [id]);
+      });
+    },
+
+    listGlobalRegistry: async (actorId, filters) => {
+      const clean = cleanLessonsRegistryFilters(filters);
+      const db = await this.ready();
+      const actor = await this.memberWriteActor(db, actorId);
+      assertMayReadLessonsRegistry(actor);
+      const lessonEvents = 'SELECT [EventID] FROM [LessonsLearned]';
+      return buildLessonsRegistry(actor, clean, {
+        lessons: await db.getAllAsync<LessonsLearned>('SELECT * FROM [LessonsLearned]'),
+        events: await db.getAllAsync<CouncilEvent>(
+          `SELECT [id], [EventName], [StartDate], [CategoryID], [OwnerID] FROM [Event] WHERE [id] IN (${lessonEvents})`,
+        ),
+        eventCouncils: await db.getAllAsync<{ EventID: number; CouncilID: number }>(
+          `SELECT [EventID], [CouncilID] FROM [EventCouncils] WHERE [EventID] IN (${lessonEvents})`,
+        ),
+        councils: await db.getAllAsync<Council>('SELECT [id], [CouncilNumber], [CouncilName] FROM [Council]'),
+        categories: await db.getAllAsync<Category>('SELECT * FROM [Category]'),
+        lessonCategories: await db.getAllAsync<LessonsLearnedCategory>('SELECT * FROM [LessonsLearnedCategory]'),
+      });
     },
   };
 
@@ -2043,7 +2170,81 @@ export class SqliteDataService implements DataService {
         ),
       });
     },
+
+    listNoShowsAudit: async (councilId, dateThreshold) => {
+      const threshold = noShowAuditThreshold(dateThreshold, this.now());
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      // LEFT JOIN, like view_NoShows: a no-show without a recorded reason is still audited.
+      const found = await db.getAllAsync<{
+        signupId: number;
+        reasonId: number | null;
+        code: NoShowReason['NoShowReasonCode'] | null;
+        description: string | null;
+      }>(
+        `SELECT su.[id] AS signupId, r.[id] AS reasonId, r.[NoShowReasonCode] AS code, r.[NoShowReasonDescription] AS description
+           FROM [EventSignup] su
+           JOIN [Shift] sh ON sh.[id] = su.[ShiftID]
+           JOIN [Member] m ON m.[id] = su.[MemberID]
+           LEFT JOIN [NoShowReason] r ON r.[id] = su.[NoShowReasonID]
+          WHERE su.[NoShow] = 1 AND m.[CouncilID] = ? AND sh.[ShiftDate] >= ?`,
+        [councilId, threshold],
+      );
+      const context = await this.signupContexts(db, found.map((f) => f.signupId));
+      return buildNoShowAudit(
+        found.map((f) => ({
+          ...context.get(f.signupId)!,
+          reason: f.reasonId === null ? null : { id: f.reasonId, NoShowReasonCode: f.code!, NoShowReasonDescription: f.description! },
+        })),
+      );
+    },
+
+    listShiftsAwaitingHours: async (councilId) => {
+      const now = this.now();
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      const found = await db.getAllAsync<{ signupId: number }>(
+        `SELECT su.[id] AS signupId
+           FROM [EventSignup] su
+           JOIN [Shift] sh ON sh.[id] = su.[ShiftID]
+          WHERE su.[NoShow] = 0 AND sh.[ShiftDate] < ?
+            AND sh.[EventID] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)
+            AND NOT EXISTS (SELECT 1 FROM [EventTime] t WHERE t.[ShiftID] = su.[ShiftID] AND t.[MemberID] = su.[MemberID])`,
+        [toIsoDate(now), councilId],
+      );
+      const context = await this.signupContexts(db, found.map((f) => f.signupId));
+      return buildShiftsAwaitingHours(found.map((f) => context.get(f.signupId)!), now);
+    },
   };
+
+  /** Each signup with its shift, event and member, keyed by signup id, for the audits. */
+  private async signupContexts(db: SQLite.SQLiteDatabase, signupIds: readonly number[]): Promise<Map<number, SignupContextRow>> {
+    const distinct = (ids: number[]) => [...new Set(ids)];
+    const signups = await selectIn<EventSignup>(db, (m) => `SELECT * FROM [EventSignup] WHERE [id] IN (${m})`, signupIds);
+    const shifts = new Map(
+      (await selectIn<Shift>(db, (m) => `SELECT * FROM [Shift] WHERE [id] IN (${m})`, distinct(signups.map((s) => s.ShiftID)))).map((s) => [s.id, s]),
+    );
+    const events = new Map(
+      (
+        await selectIn<CouncilEvent>(db, (m) => `SELECT * FROM [Event] WHERE [id] IN (${m})`, distinct([...shifts.values()].map((s) => s.EventID)))
+      ).map((e) => [e.id, e]),
+    );
+    const members = new Map(
+      (
+        await selectIn<SignupContextRow['member']>(
+          db,
+          (m) => `SELECT [id], [MemberNumber], [MemberFirstName], [MemberLastName], [Phone], [Email] FROM [Member] WHERE [id] IN (${m})`,
+          distinct(signups.map((s) => s.MemberID)),
+        )
+      ).map((mb) => [mb.id, mb]),
+    );
+    return new Map(
+      signups.map((signup) => {
+        const shift = shifts.get(signup.ShiftID)!;
+        return [signup.id, { signup, shift, event: events.get(shift.EventID)!, member: members.get(signup.MemberID)! }];
+      }),
+    );
+  }
 
   private async requireShift(db: SQLite.SQLiteDatabase, shiftId: number): Promise<Shift> {
     const shift = await db.getFirstAsync<Shift>('SELECT * FROM [Shift] WHERE [id] = ?', [shiftId]);

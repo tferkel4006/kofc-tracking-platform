@@ -16,6 +16,9 @@ import {
   assertLookupNotProtected,
   assertLookupUnused,
   assertMayChangeDonation,
+  assertMayChangeLesson,
+  assertMayManageCouncilLookups,
+  assertMayReadLessonsRegistry,
   assertMayCreateMember,
   assertMayEditMemberExtensions,
   assertMayMaintainCouncilRecords,
@@ -33,6 +36,9 @@ import {
   assertThreadParticipant,
   buildActivityTimeLog,
   buildDonationHistory,
+  buildLessonsRegistry,
+  buildNoShowAudit,
+  buildShiftsAwaitingHours,
   buildThreadMessages,
   buildThreadSummaries,
   buildWelcomeEmail,
@@ -42,6 +48,7 @@ import {
   cleanCouncilIds,
   cleanDistributionListChanges,
   cleanEventFields,
+  cleanLessonsRegistryFilters,
   cleanLookupValues,
   cleanMemberExtensions,
   cleanNewDistributionList,
@@ -53,6 +60,7 @@ import {
   cleanPastor,
   cleanShiftFields,
   COUNCIL_COLUMNS,
+  COUNCIL_LOOKUP_META,
   donationMethodKind,
   isSha256Hex,
   LOOKUP_META,
@@ -60,6 +68,8 @@ import {
   mergeMemberChanges,
   mergeRecordChanges,
   monthBounds,
+  noShowAuditThreshold,
+  planCouncilLookupSave,
   nextEventFunds,
   MEMBER_COLUMNS,
   PARISH_COLUMNS,
@@ -69,6 +79,7 @@ import {
   RECORD_REFERENCES,
   recordNotFound,
   rollupEventFunds,
+  sortCouncilLookupRows,
   summarizeActivities,
   summarizeMonth,
   toTimestamp,
@@ -80,6 +91,7 @@ import {
   type MaintainedTable,
   type MemberWriteActor,
   type MessagingRows,
+  type SignupContextRow,
 } from '@kofc/shared';
 import type {
   Activities,
@@ -87,6 +99,8 @@ import type {
   ChatThread,
   Council,
   CouncilDonationMethod,
+  CouncilLookupRowMap,
+  CouncilLookupTableName,
   CouncilSkillEntry,
   DataService,
   DistributionLists,
@@ -114,6 +128,8 @@ import type {
   EventSignup,
   EventTime,
   LessonsLearned,
+  LessonsLearnedCategory,
+  Category,
   LookupRowMap,
   LookupTableName,
   Meeting,
@@ -124,6 +140,7 @@ import type {
   VolunteerTurnout,
   Message,
   MessageAttachment,
+  NoShowReason,
   LookupValues,
   NewEvent,
   NewMeeting,
@@ -564,7 +581,58 @@ export class MemoryDataService implements DataService {
       );
       s.remove(table, (r) => r.id === id);
     },
+
+    listForMaintenance: async <T extends LookupTableName>(actorId: number, table: T): Promise<LookupRowMap[T][]> => {
+      if (!LOOKUP_TABLES[table]) throw new Error(`Unknown lookup table: ${String(table)}`);
+      const s = await this.ready();
+      assertMayMaintainLookups(this.memberWriteActor(s, actorId), table, 'view');
+      return s.rows(table).map((r) => ({ ...r })) as unknown as LookupRowMap[T][];
+    },
+
+    listCouncilSpecific: async <T extends CouncilLookupTableName>(actorId: number, councilId: number, table: T) => {
+      const s = await this.ready();
+      this.assertMayManageCouncilLookups(s, actorId, councilId, table, `view the council's ${table} lookups`);
+      return this.councilLookupRows(s, councilId, table);
+    },
+
+    saveCouncilSpecific: async <T extends CouncilLookupTableName>(actorId: number, councilId: number, table: T, records: unknown) => {
+      const s = await this.ready();
+      this.assertMayManageCouncilLookups(s, actorId, councilId, table, `change the council's ${table} lookups`);
+      return s.transaction(() => {
+        const plan = planCouncilLookupSave(table, councilId, s.rows(table).filter((r) => r.CouncilID === councilId), records);
+        for (const values of [...plan.inserts, ...plan.updates.map((u) => u.values)]) {
+          for (const fk of COUNCIL_LOOKUP_META[table].foreignKeys) this.assertRowExists(s, fk.table, values[fk.column] as number, fk.label);
+        }
+        for (const { id, values } of plan.updates) Object.assign(s.rows(table).find((r) => r.id === id)!, values);
+        for (const values of plan.inserts) s.insert(table, { ...values, CouncilID: councilId });
+        return this.councilLookupRows(s, councilId, table);
+      });
+    },
+
+    removeCouncilSpecific: async (actorId, councilId, table, id) => {
+      const s = await this.ready();
+      this.assertMayManageCouncilLookups(s, actorId, councilId, table, `delete the council's ${table} lookups`);
+      const row = s.rows(table).find((r) => r.id === id && r.CouncilID === councilId);
+      if (!row) {
+        throw new BusinessRuleError('RECORD_NOT_FOUND', `${table} ${id} does not exist in council ${councilId}.`, { table, id, councilId });
+      }
+      this.assertRecordUnused(s, table, row, String(row[COUNCIL_LOOKUP_META[table].keyField]));
+      s.remove(table, (r) => r.id === id);
+    },
   };
+
+  /** Loads the actor, checks the council exists and applies assertMayManageCouncilLookups. */
+  private assertMayManageCouncilLookups(s: MemoryStore, actorId: number, councilId: number, table: CouncilLookupTableName, action: string): void {
+    if (!COUNCIL_LOOKUP_META[table]) throw new Error(`Unknown council lookup table: ${String(table)}`);
+    const actor = this.memberWriteActor(s, actorId);
+    this.assertCouncilsExist(s, [councilId]);
+    assertMayManageCouncilLookups(actor, councilId, table, action);
+  }
+
+  private councilLookupRows<T extends CouncilLookupTableName>(s: MemoryStore, councilId: number, table: T): CouncilLookupRowMap[T][] {
+    const rows = s.rows(table).filter((r) => r.CouncilID === councilId).map((r) => ({ ...r })) as unknown as CouncilLookupRowMap[T][];
+    return sortCouncilLookupRows(table, rows);
+  }
 
   private requireLookupRow(s: MemoryStore, table: LookupTableName, id: number): Row {
     const row = s.rows(table).find((r) => r.id === id);
@@ -1668,11 +1736,13 @@ export class MemoryDataService implements DataService {
         .map((l) => ({ ...l })) as unknown as LessonsLearned[];
     },
 
-    add: async (eventId, categoryId, description) => {
+    add: async (actorId, eventId, categoryId, description) => {
       const text = assertText(description, 'Lesson learned', 255);
       const s = await this.ready();
       return s.transaction(() => {
-        this.requireEvent(s, eventId);
+        const actor = this.memberWriteActor(s, actorId);
+        const event = this.requireEvent(s, eventId);
+        assertMayChangeLesson(actor, event as unknown as CouncilEvent, this.councilIdsOf(s, eventId), `add lessons to event ${eventId}`);
         if (!s.rows('LessonsLearnedCategory').some((c) => c.id === categoryId)) {
           throw new BusinessRuleError('INVALID_INPUT', `No lessons-learned category with id ${categoryId}.`, { categoryId });
         }
@@ -1685,11 +1755,31 @@ export class MemoryDataService implements DataService {
       });
     },
 
-    remove: async (id) => {
+    remove: async (actorId, id) => {
       const s = await this.ready();
-      if (s.remove('LessonsLearned', (l) => l.id === id) === 0) {
-        throw new BusinessRuleError('INVALID_INPUT', `No lesson learned with id ${id}.`, { id });
-      }
+      const actor = this.memberWriteActor(s, actorId);
+      const lesson = s.rows('LessonsLearned').find((l) => l.id === id);
+      if (!lesson) throw new BusinessRuleError('INVALID_INPUT', `No lesson learned with id ${id}.`, { id });
+      const eventId = lesson.EventID as number;
+      const event = this.requireEvent(s, eventId);
+      assertMayChangeLesson(actor, event as unknown as CouncilEvent, this.councilIdsOf(s, eventId), `remove lesson ${id}`);
+      s.remove('LessonsLearned', (l) => l.id === id);
+    },
+
+    listGlobalRegistry: async (actorId, filters) => {
+      const clean = cleanLessonsRegistryFilters(filters);
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      assertMayReadLessonsRegistry(actor);
+      const copy = <T>(table: string) => s.rows(table).map((r) => ({ ...r })) as unknown as T[];
+      return buildLessonsRegistry(actor, clean, {
+        lessons: copy<LessonsLearned>('LessonsLearned'),
+        events: copy<CouncilEvent>('Event'),
+        eventCouncils: copy<{ EventID: number; CouncilID: number }>('EventCouncils'),
+        councils: copy<Council>('Council'),
+        categories: copy<Category>('Category'),
+        lessonCategories: copy<LessonsLearnedCategory>('LessonsLearnedCategory'),
+      });
     },
   };
 
@@ -1770,7 +1860,48 @@ export class MemoryDataService implements DataService {
         activityTime: s.rows('ActivityTime').filter((t) => activities.has(t.ActivityID) && inMonth(t.ActivityDate)).map(hours),
       });
     },
+
+    listNoShowsAudit: async (councilId, dateThreshold) => {
+      const threshold = noShowAuditThreshold(dateThreshold, this.now());
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      const rows = [];
+      for (const signup of s.rows('EventSignup').filter((su) => su.NoShow === 1)) {
+        const row = this.signupContext(s, signup);
+        if (row.member.CouncilID !== councilId || row.shift.ShiftDate < threshold) continue;
+        const reason = s.rows('NoShowReason').find((r) => r.id === signup.NoShowReasonID); // a LEFT JOIN: may be missing
+        rows.push({ ...row, reason: reason ? ({ ...reason } as unknown as NoShowReason) : null });
+      }
+      return buildNoShowAudit(rows);
+    },
+
+    listShiftsAwaitingHours: async (councilId) => {
+      const now = this.now();
+      const today = toIsoDate(now);
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+      const rows = [];
+      for (const signup of s.rows('EventSignup').filter((su) => su.NoShow === 0)) {
+        const row = this.signupContext(s, signup);
+        if (!linked.has(row.event.id) || row.shift.ShiftDate >= today) continue;
+        if (s.rows('EventTime').some((t) => t.ShiftID === signup.ShiftID && t.MemberID === signup.MemberID)) continue;
+        rows.push(row);
+      }
+      return buildShiftsAwaitingHours(rows, now);
+    },
   };
+
+  /** A signup with its shift, event and member, copied for the audits. */
+  private signupContext(s: MemoryStore, signup: Row): SignupContextRow & { member: Pick<Member, 'CouncilID'> } {
+    const shift = this.requireShift(s, signup.ShiftID as number);
+    return {
+      signup: { ...signup } as unknown as EventSignup,
+      shift: { ...shift } as unknown as Shift,
+      event: { ...this.requireEvent(s, shift.EventID as number) } as unknown as CouncilEvent,
+      member: { ...this.requireMember(s, signup.MemberID as number) } as unknown as Member,
+    };
+  }
 
   private requireShift(s: MemoryStore, shiftId: number): Row {
     const shift = s.rows('Shift').find((sh) => sh.id === shiftId);

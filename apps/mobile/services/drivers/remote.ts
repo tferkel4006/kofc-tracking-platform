@@ -22,6 +22,10 @@ export function createRemoteDataService(): DataService {
       create: notImplemented('lookups.create'),
       update: notImplemented('lookups.update'),
       remove: notImplemented('lookups.remove'),
+      listForMaintenance: notImplemented('lookups.listForMaintenance'),
+      listCouncilSpecific: notImplemented('lookups.listCouncilSpecific'),
+      saveCouncilSpecific: notImplemented('lookups.saveCouncilSpecific'),
+      removeCouncilSpecific: notImplemented('lookups.removeCouncilSpecific'),
     },
     councils: {
       list: notImplemented('councils.list'),
@@ -110,10 +114,15 @@ export function createRemoteDataService(): DataService {
       list: notImplemented('lessonsLearned.list'),
       add: notImplemented('lessonsLearned.add'),
       remove: notImplemented('lessonsLearned.remove'),
+      listGlobalRegistry: notImplemented('lessonsLearned.listGlobalRegistry'),
     },
     eventTime: { logHours: notImplemented('eventTime.logHours') },
     activityTime: { logHours: notImplemented('activityTime.logHours'), listByActivity: notImplemented('activityTime.listByActivity') },
-    reports: { monthlySummary: notImplemented('reports.monthlySummary') },
+    reports: {
+      monthlySummary: notImplemented('reports.monthlySummary'),
+      listNoShowsAudit: notImplemented('reports.listNoShowsAudit'),
+      listShiftsAwaitingHours: notImplemented('reports.listShiftsAwaitingHours'),
+    },
     meetings: {
       get: notImplemented('meetings.get'),
       listUpcoming: notImplemented('meetings.listUpcoming'),

@@ -366,18 +366,18 @@ describe.each(drivers)('$name driver: lessons learned and minutes', (d) => {
     const db = await d.make();
     const food = (await db.events.listByCouncil(OWN)).find((e) => e.EventName === 'Parish Food Drive')!;
     const category = (await db.lookups.list('LessonsLearnedCategory')).find((c) => c.LessonsLearnedCategory === 'Planning')!;
-    const lesson = await db.lessonsLearned.add(food.id, category.id, '  Order boxes earlier  ');
+    const lesson = await db.lessonsLearned.add(MEMBER.admin, food.id, category.id, '  Order boxes earlier  ');
     expect(lesson).toMatchObject({ EventID: food.id, LessonsLearnedDescription: 'Order boxes earlier' });
     expect(await db.lessonsLearned.list(food.id)).toHaveLength(1);
 
-    await expectRule(db.lessonsLearned.add(food.id, category.id, ' '), 'INVALID_INPUT');
-    await expectRule(db.lessonsLearned.add(food.id, 999, 'x'), 'INVALID_INPUT');
-    await expectRule(db.lessonsLearned.add(9999, category.id, 'x'), 'EVENT_NOT_FOUND');
+    await expectRule(db.lessonsLearned.add(MEMBER.admin, food.id, category.id, ' '), 'INVALID_INPUT');
+    await expectRule(db.lessonsLearned.add(MEMBER.admin, food.id, 999, 'x'), 'INVALID_INPUT');
+    await expectRule(db.lessonsLearned.add(MEMBER.admin, 9999, category.id, 'x'), 'EVENT_NOT_FOUND');
     expect(d.count(db, 'LessonsLearned')).toBe(1);
 
-    await db.lessonsLearned.remove(lesson.id);
+    await db.lessonsLearned.remove(MEMBER.admin, lesson.id);
     expect(await db.lessonsLearned.list(food.id)).toEqual([]);
-    await expectRule(db.lessonsLearned.remove(lesson.id), 'INVALID_INPUT');
+    await expectRule(db.lessonsLearned.remove(MEMBER.admin, lesson.id), 'INVALID_INPUT');
   });
 
   it('attaches, replaces and removes meeting minutes', async () => {

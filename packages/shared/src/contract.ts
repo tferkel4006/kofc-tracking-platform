@@ -75,6 +75,27 @@ export interface LookupRowMap {
 /** Field values for a lookup row (everything except `id`). Validated per table by LOOKUP_META. */
 export type LookupValues = Record<string, string | number>;
 
+/**
+ * Lookup tables each council keeps for itself (Sprint 5L); every row carries its CouncilID. Validated per
+ * table by COUNCIL_LOOKUP_META.
+ */
+export type CouncilLookupTableName = 'Activities' | 'DonationType' | 'CouncilDonationMethod';
+
+export interface CouncilLookupRowMap {
+  Activities: Activities;
+  DonationType: DonationType;
+  CouncilDonationMethod: CouncilDonationMethod;
+}
+
+/**
+ * One row for lookups.saveCouncilSpecific: with `id` it replaces that row's fields, without one it adds a row.
+ * The council comes from the call; a record may repeat it as CouncilID but never name another council.
+ */
+export type CouncilLookupRecord<T extends CouncilLookupTableName> = Omit<CouncilLookupRowMap[T], 'id' | 'CouncilID'> & {
+  id?: number | null;
+  CouncilID?: number;
+};
+
 // 2. AUTH
 /** What the UI is allowed to know about a signed-in member. Never includes the password. */
 export interface SessionUser {
@@ -433,7 +454,69 @@ export interface MonthlySummary {
   highlights: MonthlyHighlight[];
 }
 
-// 11. THE SERVICE
+// 11. EXECUTIVE AUDITS AND THE LESSONS REGISTRY (Sprint 5L)
+/** One signup flagged NoShow, for the council's trailing no-show audit. */
+export interface NoShowAuditEntry {
+  signup: EventSignup;
+  shift: Shift;
+  event: Event;
+  memberId: number;
+  memberNumber: number;
+  firstName: string;
+  lastName: string;
+  /** The recorded reason, or null when none was recorded (LEFT JOIN, so such no-shows are never hidden). */
+  reason: NoShowReason | null;
+}
+
+/** A signup on a past shift with no EventTime row for that member and shift. No-shows are not included. */
+export interface ShiftAwaitingHours {
+  signup: EventSignup;
+  shift: Shift;
+  event: Event;
+  memberId: number;
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  /** Whole calendar days from ShiftDate to today. */
+  daysSinceShift: number;
+  /**
+   * True once the shift is past the SHIFT_HISTORY_MONTHS wall: eventTime.logHours refuses it
+   * (SHIFT_REPORT_TOO_OLD), so the row is kept for the record but no reminder goes out.
+   */
+  closed: boolean;
+  /** The last day hours for the shift can still be logged (YYYY-MM-DD). */
+  loggableThrough: string;
+}
+
+/** Narrows lessonsLearned.listGlobalRegistry; every filter is optional and they combine with AND. */
+export interface LessonsRegistryFilters {
+  /** Only lessons of events linked to this council. */
+  councilId?: number;
+  lessonsCategoryId?: number;
+  /** The event's Category. */
+  eventCategoryId?: number;
+  /** Case-insensitive text found in the lesson or its event's name. */
+  search?: string;
+  /** Inclusive bounds on the event's StartDate (YYYY-MM-DD). */
+  fromDate?: string;
+  toDate?: string;
+}
+
+export interface LessonsRegistryEntry {
+  lesson: LessonsLearned;
+  eventId: number;
+  eventName: string;
+  eventStartDate: string;
+  eventCategory: string;
+  lessonsCategory: string;
+  /** Every council the event is linked to, ordered by CouncilNumber. */
+  councils: Pick<Council, 'id' | 'CouncilNumber' | 'CouncilName'>[];
+  /** True when the caller may add or remove this event's lessons (lessonsLearned.add/remove). */
+  canModify: boolean;
+}
+
+// 12. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -475,6 +558,40 @@ export interface DataService {
     update<T extends LookupTableName>(actorId: number, table: T, id: number, values: LookupValues): Promise<LookupRowMap[T]>;
     /** Deletes a row nothing references (LOOKUP_IN_USE otherwise) and that is not protected (LOOKUP_PROTECTED). */
     remove(actorId: number, table: LookupTableName, id: number): Promise<void>;
+    /**
+     * `list` for the System Lookup Manager: the same rows, but only for an Active Super Admin
+     * (SUPER_ADMIN_REQUIRED). Drop-downs keep using the open `list`.
+     */
+    listForMaintenance<T extends LookupTableName>(actorId: number, table: T): Promise<LookupRowMap[T][]>;
+
+    /*
+     * Council-specific lookups (Activities, DonationType, CouncilDonationMethod). Reads and writes alike need an
+     * Active Admin of the council or any Active Super Admin; the council's Active Financial Secretary and Treasurer
+     * may also read and write its donation lookups (DonationType, CouncilDonationMethod). Otherwise
+     * SecurityPrivilegeError ADMIN_REQUIRED, or COUNCIL_ACCESS_DENIED for another council's lookups, and nothing
+     * is written. An unknown actor rejects MEMBER_NOT_FOUND, an unknown council INVALID_INPUT. The open
+     * activities.listByCouncil and donations.listTypes/listMethods stay the member screens' feeds.
+     */
+    /** The council's rows of `table`, ordered by the table's key field (name, or DonationMethodID), then id. */
+    listCouncilSpecific<T extends CouncilLookupTableName>(actorId: number, councilId: number, table: T): Promise<CouncilLookupRowMap[T][]>;
+    /**
+     * Adds the records without an id and replaces the fields of those with one, all or nothing, and resolves to
+     * the council's rows as `listCouncilSpecific` returns them. Rejects INVALID_INPUT for a bad field, an unknown
+     * Category or DonationMethod, an id listed twice, a record naming another council, or a key value (activity
+     * name, donation type, enabled method) the council would then hold twice; RECORD_NOT_FOUND for an id that
+     * is not one of the council's rows. Rows not listed are left alone.
+     */
+    saveCouncilSpecific<T extends CouncilLookupTableName>(
+      actorId: number,
+      councilId: number,
+      table: T,
+      records: CouncilLookupRecord<T>[],
+    ): Promise<CouncilLookupRowMap[T][]>;
+    /**
+     * Deletes one of the council's rows. RECORD_NOT_FOUND when it is not one; RECORD_IN_USE while logged time
+     * (Activities) or donations (DonationType) still point at it. Deletes never cascade.
+     */
+    removeCouncilSpecific(actorId: number, councilId: number, table: CouncilLookupTableName, id: number): Promise<void>;
   };
 
   councils: {
@@ -729,8 +846,22 @@ export interface DataService {
 
   lessonsLearned: {
     list(eventId: number): Promise<LessonsLearned[]>;
-    add(eventId: number, categoryId: number, description: string): Promise<LessonsLearned>;
-    remove(id: number): Promise<void>;
+    /**
+     * `actorId` is the signed-in member: the event's Active owner, an Active Admin of a council the event is
+     * linked to, or any Active Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED; nothing written).
+     * Rejects MEMBER_NOT_FOUND for an unknown actor, EVENT_NOT_FOUND for an unknown event and INVALID_INPUT for
+     * empty text or an unknown category.
+     */
+    add(actorId: number, eventId: number, categoryId: number, description: string): Promise<LessonsLearned>;
+    /** Deletes a lesson, with the same rights as `add` over its event. INVALID_INPUT for an unknown lesson. */
+    remove(actorId: number, id: number): Promise<void>;
+    /**
+     * Lessons from every council, so units learn from their peers: open to any Active Admin or Super Admin
+     * (ADMIN_REQUIRED otherwise). Each entry says whether the caller may change it: an Admin only lessons of
+     * events linked to their own council (or events they own). Newest event StartDate first, then lesson id.
+     * Rejects INVALID_DATE for a malformed date filter and INVALID_INPUT for a bad id filter.
+     */
+    listGlobalRegistry(actorId: number, filters?: LessonsRegistryFilters): Promise<LessonsRegistryEntry[]>;
   };
 
   eventTime: {
@@ -765,6 +896,18 @@ export interface DataService {
      * after 9999, or a month outside 1-12.
      */
     monthlySummary(councilId: number, year: number, month: number): Promise<MonthlySummary>;
+    /**
+     * Signups flagged NoShow by members of the council on shifts dated on or after `dateThreshold` (default:
+     * NO_SHOW_AUDIT_MONTHS before today), with or without a recorded reason. Newest ShiftDate first, then last
+     * and first name. Rejects INVALID_INPUT for an unknown council and INVALID_DATE for a malformed threshold.
+     */
+    listNoShowsAudit(councilId: number, dateThreshold?: string): Promise<NoShowAuditEntry[]>;
+    /**
+     * Signups (not no-shows) on shifts dated before today, of events linked to the council, with no EventTime row
+     * for that member and shift. Rows past the 3-month logging wall are included with `closed: true`. Newest
+     * ShiftDate first, then last and first name. Rejects INVALID_INPUT for an unknown council.
+     */
+    listShiftsAwaitingHours(councilId: number): Promise<ShiftAwaitingHours[]>;
   };
 
   meetings: {

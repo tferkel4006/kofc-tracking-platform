@@ -565,14 +565,92 @@ export function assertMayGrantMemberType(actor: MemberWriteActor, grantedType: s
  * lookups.create/update/remove: only an Active Super Admin maintains the eight global lookup tables
  * (Specifications: "Super Admin Functions"). `actor` is read from the database, like a member write's.
  */
-export function assertMayMaintainLookups(actor: MemberWriteActor, table: string): void {
+export function assertMayMaintainLookups(actor: MemberWriteActor, table: string, verb: 'change' | 'view' = 'change'): void {
   if (hasSuperAdminRights(actor)) return;
   throw new SecurityPrivilegeError(
     'SUPER_ADMIN_REQUIRED',
-    `Only an active Super Admin can change the ${table} lookup table; member ${actor.memberId} is ${describeActor(actor)}.`,
+    `Only an active Super Admin can ${verb} the ${table} lookup table; member ${actor.memberId} is ${describeActor(actor)}.`,
     { actorId: actor.memberId, actorType: actor.memberType ?? null, table },
   );
 }
+
+/** Council-specific lookups the council's finance officers (FINANCE_ROLE_NAMES) also maintain. */
+export const FINANCE_LOOKUP_TABLES: readonly string[] = ['DonationType', 'CouncilDonationMethod'];
+
+/**
+ * lookups.listCouncilSpecific/saveCouncilSpecific/removeCouncilSpecific: an Active Super Admin for any council;
+ * an Active Admin, or for FINANCE_LOOKUP_TABLES an Active Financial Secretary or Treasurer, for their own council
+ * only. Reads and writes share the rule. `action` completes "cannot ...".
+ */
+export function assertMayManageCouncilLookups(actor: MemberWriteActor, councilId: number, table: string, action: string): void {
+  if (hasSuperAdminRights(actor)) return;
+  const financeTable = FINANCE_LOOKUP_TABLES.includes(table);
+  const financeOfficer = financeTable && actor.active && holdsFinanceRole(actor.roles);
+  if (!hasAdminRights(actor) && !financeOfficer) {
+    throw new SecurityPrivilegeError(
+      'ADMIN_REQUIRED',
+      `Only an active Admin${financeTable ? ', Financial Secretary or Treasurer' : ''} or Super Admin can ${action}; member ${actor.memberId} is ${describeActor(actor)}.`,
+      { actorId: actor.memberId, actorType: actor.memberType ?? null, councilId, table },
+    );
+  }
+  if (actor.councilId === councilId) return;
+  throw new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; council lookups are managed only by that council's own officers.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId, table },
+  );
+}
+
+/** lessonsLearned.listGlobalRegistry: every council's lessons are open to Active Admins and Super Admins. */
+export function assertMayReadLessonsRegistry(actor: MemberWriteActor): void {
+  if (hasAdminRights(actor)) return;
+  throw new SecurityPrivilegeError(
+    'ADMIN_REQUIRED',
+    `Only an active Admin or Super Admin can browse the lessons learned registry; member ${actor.memberId} is ${describeActor(actor)}.`,
+    { actorId: actor.memberId, actorType: actor.memberType ?? null },
+  );
+}
+
+/** Why `actor` may not add or remove lessons of `event`, or null when they may. See assertMayChangeLesson. */
+function lessonChangeDenial(
+  actor: MemberWriteActor,
+  event: { id: number; OwnerID: number },
+  eventCouncilIds: readonly number[],
+  action: string,
+): SecurityPrivilegeError | null {
+  if (actor.active && event.OwnerID === actor.memberId) return null;
+  if (!hasAdminRights(actor)) {
+    return new SecurityPrivilegeError(
+      'ADMIN_REQUIRED',
+      `Member ${actor.memberId} cannot ${action}: only the event's owner or an active Admin can; member ${actor.memberId} is ${describeActor(actor)}.`,
+      { actorId: actor.memberId, actorType: actor.memberType ?? null, eventId: event.id },
+    );
+  }
+  if (hasSuperAdminRights(actor) || eventCouncilIds.includes(actor.councilId)) return null;
+  return new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Admin ${actor.memberId} of council ${actor.councilId} cannot ${action}; event ${event.id} belongs to council${eventCouncilIds.length === 1 ? '' : 's'} ${eventCouncilIds.join(', ')}. Admins may read every council's lessons but change only their own.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, eventId: event.id, eventCouncilIds: [...eventCouncilIds] },
+  );
+}
+
+/**
+ * lessonsLearned.add/remove: the event's Active owner, an Active Admin of a council the event is linked to, and
+ * any Active Super Admin (the same people who record the event's ledger, permissions.canRecordLedger).
+ */
+export function assertMayChangeLesson(
+  actor: MemberWriteActor,
+  event: { id: number; OwnerID: number },
+  eventCouncilIds: readonly number[],
+  action: string,
+): void {
+  const denial = lessonChangeDenial(actor, event, eventCouncilIds, action);
+  if (denial) throw denial;
+}
+
+/** assertMayChangeLesson as a yes/no, for the registry's `canModify`. */
+export const mayChangeLesson = (actor: MemberWriteActor, event: { id: number; OwnerID: number }, eventCouncilIds: readonly number[]): boolean =>
+  lessonChangeDenial(actor, event, eventCouncilIds, 'change lessons') === null;
 
 const hasSuperAdminRights = (a: MemberWriteActor): boolean => a.active && a.memberType === SUPER_ADMIN_TYPE;
 const hasAdminRights = (a: MemberWriteActor): boolean => a.active && (a.memberType === 'Admin' || a.memberType === SUPER_ADMIN_TYPE);

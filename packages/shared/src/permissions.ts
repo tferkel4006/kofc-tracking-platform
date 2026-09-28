@@ -9,8 +9,8 @@
 // writes take the caller's id and the drivers enforce the same rules (rules.ts); the other areas have no caller
 // identity yet, so until the remote driver's API enforces them server-side they are a usability gate.
 // =========================================================================
-import type { SessionUser } from './contract';
-import { holdsFinanceRole } from './rules';
+import type { CouncilLookupTableName, SessionUser } from './contract';
+import { FINANCE_LOOKUP_TABLES, holdsFinanceRole } from './rules';
 import type { Donation, Event, Member, MemberType } from './types';
 
 /** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. */
@@ -37,6 +37,16 @@ export const isAdmin = (u: Actor): boolean => u.memberType === 'Admin' || isSupe
 
 /** Super Admins maintain the global lookup tables. */
 export const canMaintainLookups = (u: Actor): boolean => isSuperAdmin(u);
+
+/**
+ * A council's own lookups (activities, donation types, enabled donation methods): its Admins and any Super Admin,
+ * and for the donation lookups its Financial Secretary and Treasurer (drivers: assertMayManageCouncilLookups).
+ */
+export const canManageCouncilLookups = (u: Actor, councilId: number, table: CouncilLookupTableName): boolean =>
+  canAdministerCouncil(u, councilId) || (FINANCE_LOOKUP_TABLES.includes(table) && isFinanceOfficer(u) && u.councilId === councilId);
+
+/** Every council's lessons learned are open to Admins and Super Admins; changing one follows canRecordLedger. */
+export const canBrowseLessonsRegistry = (u: Actor): boolean => isAdmin(u);
 
 /** Only Super Admins add, change or delete councils (drivers: SUPER_ADMIN_REQUIRED). */
 export const canMaintainCouncils = (u: Actor): boolean => isSuperAdmin(u);
