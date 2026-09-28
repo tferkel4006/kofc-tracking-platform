@@ -159,6 +159,7 @@ The master roster directory storing personal and membership data.
 •	CredentialID (INTEGER, NOT NULL) — Foreign Key references Credentials(id).
 •	ProfilePhotoURL (VARCHAR(2000), NULL) — The member's avatar photo, set on My Profile (Sprint 5S). A local file path (browser blob or phone file://) until a file store exists.
 •	Biography (TEXT, NULL) — A short personal fraternal biography the member writes on My Profile, at most 2,000 characters (Sprint 5S).
+•	ExpoPushToken (VARCHAR(512), NULL) — The member's phone push address (ExponentPushToken[...]), set by notifications.registerDeviceToken (Sprint 5T). A device credential: member reads never return it, and a token moves to whichever member registered the phone last.
 [MemberRoles]
 Bridge table enabling members to hold multiple concurrent roles or chairmanships.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -336,5 +337,27 @@ One receipt on an expense report. A draft's line items are replaced as a whole e
 •	VendorName (VARCHAR(255), NOT NULL) — Who was paid.
 •	ReceiptPhotoURL (VARCHAR(2000), NULL) — Local or storage path of the receipt photo.
 •	ExpenseDescription (TEXT, NOT NULL) — What was bought and why; at most 2,000 characters.
+________________________________________
+
+# 8. Push Notifications and Supreme Council Reporting (Sprint 5T)
+[NotificationLog]
+One alert as sent to one member. Written by notifications.dispatchHighPriorityAlert, which only the council's Admins, Financial Secretary and Treasurer and any Super Admin may call; every member reads their own alerts of the trailing six months.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). The council whose leadership sent the alert.
+•	TargetMemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). The recipient, an Active member of that council.
+•	Title (VARCHAR(100), NOT NULL) — The alert's headline.
+•	MessageBody (VARCHAR(2000), NOT NULL) — The alert's text.
+•	Priority (VARCHAR(10), NOT NULL) — Low, Medium or High (the default); maps to Expo's normal, default and high push priority.
+•	SentAt (DATETIME, NOT NULL, DEFAULT getdate()) — When the alert was sent (UTC). DATETIME rather than TIMESTAMP, which in T-SQL is a ROWVERSION counter.
+•	IsRead (BIT, NOT NULL, DEFAULT 0) — Whether the member has opened the alert.
+[SupremeReportingSync]
+One push of a council's compliance answers to an Alchemer survey (supreme.syncAlchemerReport), successful or not. Same leadership rule as NotificationLog.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	FormType (VARCHAR(20), NOT NULL) — AnnualSurvey (Form 1728, the previous calendar year) or CouncilAudit (Form 1295, the previous half-year).
+•	SyncDate (DATETIME, NOT NULL, DEFAULT getdate()) — When the sync ran (UTC).
+•	SyncedByID (INTEGER, NOT NULL) — Foreign Key references Member(id). The officer who ran it.
+•	AlchemerSurveyID (VARCHAR(100), NOT NULL) — The numeric Alchemer survey id the response was filed to.
+•	Status (VARCHAR(10), NOT NULL) — Success, or Failed when the Alchemer post threw or was refused.
 ________________________________________
 

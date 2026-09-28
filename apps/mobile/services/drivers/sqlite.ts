@@ -19,6 +19,24 @@ import {
   assertMayAttachEventMedia,
   assertMayAuditCouncilExpenses,
   assertMayDisburseCouncilExpenses,
+  assertMayDispatchCouncilAlerts,
+  assertMaySyncSupremeReports,
+  alertHistoryThreshold,
+  cleanAlertFilters,
+  cleanAlertPayload,
+  cleanAlchemerSurveyId,
+  cleanExpoPushToken,
+  cleanSupremeFormType,
+  compileSupremeSnapshot,
+  alchemerAnswers,
+  buildAlchemerRequest,
+  deliverAlertsByStub,
+  logAlchemerRequest,
+  noAlertRecipients,
+  postAlchemerReport,
+  supremeReportingPeriod,
+  withoutPushToken,
+  type SupremeSnapshotRows,
   assertNoSelfPayout,
   assertNotSelfApproval,
   cleanRejectionReason,
@@ -128,6 +146,11 @@ import {
 } from '@kofc/shared';
 import type {
   Activities,
+  AlchemerRequest,
+  AlchemerResponse,
+  NotificationLog,
+  SupremeReportingPeriod,
+  SupremeReportingSync,
   ActivityTime,
   ChatThread,
   Council,
@@ -220,8 +243,9 @@ const DB_NAME = 'kofc.db';
  * 8: ExpenseDisbursement, ExpenseReport and ExpenseLineItem (Sprint 5R).
  * 9: ExpenseReport.RejectionReason (Sprint 5R-1.5).
  * 10: Member.ProfilePhotoURL and Member.Biography (Sprint 5S).
+ * 11: Member.ExpoPushToken, NotificationLog and SupremeReportingSync (Sprint 5T).
  */
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -288,18 +312,22 @@ const noParish = (parishId: number) => new BusinessRuleError('INVALID_INPUT', `N
 export interface SqliteDataServiceOptions {
   /** Clock used for seeding and the history-window rules. Tests pin it. Default: real time. */
   now?: () => Date;
-  /** Where system emails (the new-member welcome) go. Default: console.log (no mail infrastructure exists yet). */
+  /** Where system emails, push requests and Alchemer posts go. Default: console.log (no such infrastructure exists yet). */
   log?: (...args: unknown[]) => void;
+  /** How supreme.syncAlchemerReport posts to Alchemer. Default: print the request with `log` (logAlchemerRequest). */
+  postAlchemer?: (request: AlchemerRequest) => Promise<AlchemerResponse>;
 }
 
 export class SqliteDataService implements DataService {
   private opening: Promise<SQLite.SQLiteDatabase> | null = null;
   private readonly now: () => Date;
   private readonly log: (...args: unknown[]) => void;
+  private readonly postAlchemer: (request: AlchemerRequest) => Promise<AlchemerResponse>;
 
   constructor(options: SqliteDataServiceOptions = {}) {
     this.now = options.now ?? (() => new Date());
     this.log = options.log ?? console.log;
+    this.postAlchemer = options.postAlchemer ?? logAlchemerRequest((...args) => this.log(...args));
   }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -1124,23 +1152,24 @@ export class SqliteDataService implements DataService {
   members: DataService['members'] = {
     get: async (id) => {
       const db = await this.ready();
-      return (await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id])) ?? null;
+      const row = await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]);
+      return row ? withoutPushToken(row) : null;
     },
     getByEmail: async (email) => {
       const db = await this.ready();
-      return (
-        (await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [Email] = ? COLLATE NOCASE', [email])) ?? null
-      );
+      const row = await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [Email] = ? COLLATE NOCASE', [email]);
+      return row ? withoutPushToken(row) : null;
     },
     listByCouncil: async (councilId, options) => {
       const db = await this.ready();
       const active = options?.activeOnly
         ? " AND [StatusID] = (SELECT [id] FROM [MemberStatus] WHERE [Status] = 'Active')"
         : '';
-      return db.getAllAsync<Member>(
+      const rows = await db.getAllAsync<Member>(
         `SELECT * FROM [Member] WHERE [CouncilID] = ?${active} ORDER BY [MemberLastName], [MemberFirstName]`,
         [councilId],
       );
+      return rows.map(withoutPushToken);
     },
     listRoles: async (memberId) => this.rolesFor(await this.ready(), memberId),
 
@@ -1172,7 +1201,7 @@ export class SqliteDataService implements DataService {
         );
         id = res.lastInsertRowId;
       });
-      const created = (await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]))!;
+      const created = withoutPushToken((await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]))!);
       await this.sendWelcomeEmail(db, created);
       return created;
     },
@@ -1205,7 +1234,7 @@ export class SqliteDataService implements DataService {
           id,
         ]);
       });
-      return (await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]))!;
+      return withoutPushToken((await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]))!);
     },
   };
 
@@ -2704,6 +2733,152 @@ export class SqliteDataService implements DataService {
   // ---- messages ----------------------------------------------------------
 
   // ---- system feedback ---------------------------------------------------
+
+  notifications: DataService['notifications'] = {
+    registerDeviceToken: async (actorId, pushToken) => {
+      const token = cleanExpoPushToken(pushToken);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        await this.requireMember(db, actorId);
+        // A phone belongs to whoever registered it last, so a member still holding the token lets it go.
+        if (token !== null) {
+          await db.runAsync('UPDATE [Member] SET [ExpoPushToken] = NULL WHERE [ExpoPushToken] = ? AND [id] <> ?', [token, actorId]);
+        }
+        await db.runAsync('UPDATE [Member] SET [ExpoPushToken] = ? WHERE [id] = ?', [token, actorId]);
+      });
+    },
+
+    listMemberAlerts: async (actorId) => {
+      const db = await this.ready();
+      await this.requireMember(db, actorId);
+      return db.getAllAsync<NotificationLog>(
+        'SELECT * FROM [NotificationLog] WHERE [TargetMemberID] = ? AND [SentAt] >= ? ORDER BY [SentAt] DESC, [id] DESC',
+        [actorId, alertHistoryThreshold(this.now())],
+      );
+    },
+
+    dispatchHighPriorityAlert: async (actorId, councilId, filters, payload) => {
+      const target = cleanAlertFilters(filters);
+      const alert = cleanAlertPayload(payload);
+      const db = await this.ready();
+      const logs: NotificationLog[] = [];
+      await db.withTransactionAsync(async () => {
+        assertMayDispatchCouncilAlerts(await this.memberWriteActor(db, actorId), councilId, `send alerts to council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        for (const skillId of target.skillIds) {
+          if (!(await db.getFirstAsync('SELECT [id] FROM [Skill] WHERE [id] = ?', [skillId]))) {
+            throw new BusinessRuleError('INVALID_INPUT', `No skill with id ${skillId}.`, { skillId });
+          }
+        }
+        for (const shiftId of target.shiftIds) {
+          const shift = await db.getFirstAsync<{ EventID: number }>('SELECT [EventID] FROM [Shift] WHERE [id] = ?', [shiftId]);
+          if (!shift || !(await this.councilIdsOf(db, shift.EventID)).includes(councilId)) {
+            throw new BusinessRuleError('INVALID_INPUT', `Shift ${shiftId} is not on an event of council ${councilId}.`, { shiftId, councilId });
+          }
+        }
+        const candidates = new Set([
+          ...(await selectIn<{ MemberID: number }>(db, (m) => `SELECT [MemberID] FROM [MemberSkill] WHERE [SkillID] IN (${m})`, target.skillIds)),
+          ...(await selectIn<{ MemberID: number }>(db, (m) => `SELECT [MemberID] FROM [EventSignup] WHERE [ShiftID] IN (${m})`, target.shiftIds)),
+        ].map((r) => r.MemberID));
+        const active = await db.getAllAsync<{ id: number }>(`SELECT m.[id] FROM [Member] m WHERE ${ACTIVE_MEMBER_FILTER} ORDER BY m.[id]`, [councilId]);
+        const recipientIds = active.map((r) => r.id).filter((id) => candidates.has(id));
+        if (recipientIds.length === 0) throw noAlertRecipients(councilId, target);
+        const sentAt = toTimestamp(this.now());
+        for (const memberId of recipientIds) {
+          const res = await db.runAsync(
+            `INSERT INTO [NotificationLog] ([CouncilID], [TargetMemberID], [Title], [MessageBody], [Priority], [SentAt], [IsRead])
+             VALUES (?, ?, ?, ?, ?, ?, 0)`,
+            [councilId, memberId, alert.title, alert.body, alert.priority, sentAt],
+          );
+          logs.push((await db.getFirstAsync<NotificationLog>('SELECT * FROM [NotificationLog] WHERE [id] = ?', [res.lastInsertRowId]))!);
+        }
+      });
+      const tokens = await selectIn<{ id: number; ExpoPushToken: string | null }>(
+        db,
+        (m) => `SELECT [id], [ExpoPushToken] FROM [Member] WHERE [id] IN (${m})`,
+        logs.map((l) => l.TargetMemberID),
+      );
+      return deliverAlertsByStub(logs, new Map(tokens.map((r) => [r.id, r.ExpoPushToken])), this.log);
+    },
+  };
+
+  supreme: DataService['supreme'] = {
+    syncAlchemerReport: async (actorId, councilId, formType, surveyId) => {
+      const form = cleanSupremeFormType(formType);
+      const survey = cleanAlchemerSurveyId(surveyId);
+      const db = await this.ready();
+      assertMaySyncSupremeReports(await this.memberWriteActor(db, actorId), councilId, `file Supreme reports for council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const period = supremeReportingPeriod(form, this.now());
+      let rows!: SupremeSnapshotRows;
+      // One transaction, so every figure comes from the same state of the ledgers.
+      await db.withTransactionAsync(async () => {
+        rows = await this.supremeSnapshotRows(db, councilId, period);
+      });
+      const snapshot = compileSupremeSnapshot(form, period, rows);
+      const request = buildAlchemerRequest(survey, alchemerAnswers(snapshot));
+      const { status, error } = await postAlchemerReport(this.postAlchemer, request);
+      const res = await db.runAsync(
+        `INSERT INTO [SupremeReportingSync] ([CouncilID], [FormType], [SyncDate], [SyncedByID], [AlchemerSurveyID], [Status])
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [councilId, form, toTimestamp(this.now()), actorId, survey, status],
+      );
+      const sync = (await db.getFirstAsync<SupremeReportingSync>('SELECT * FROM [SupremeReportingSync] WHERE [id] = ?', [res.lastInsertRowId]))!;
+      return { sync, snapshot, request, error };
+    },
+  };
+
+  /** The council's hours, events, donations and expense checks in the period, for compileSupremeSnapshot. */
+  private async supremeSnapshotRows(db: SQLite.SQLiteDatabase, councilId: number, period: SupremeReportingPeriod): Promise<SupremeSnapshotRows> {
+    const range = [councilId, period.fromDate, period.toDate];
+    const council = (await db.getFirstAsync<{ CouncilNumber: number; CouncilName: string }>(
+      'SELECT [CouncilNumber], [CouncilName] FROM [Council] WHERE [id] = ?',
+      [councilId],
+    ))!;
+    const [eventTime, activityTime, events, donations, disbursements] = await Promise.all([
+      db.getAllAsync<{ MemberID: number; Hours: number; category: string }>(
+        `SELECT t.[MemberID], t.[Hours], COALESCE(c.[Category], 'Uncategorized') AS category
+           FROM [EventTime] t
+           JOIN [Shift] sh ON sh.[id] = t.[ShiftID]
+           JOIN [Event] e ON e.[id] = sh.[EventID]
+           LEFT JOIN [Category] c ON c.[id] = e.[CategoryID]
+          WHERE e.[id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)
+            AND sh.[ShiftDate] BETWEEN ? AND ?`,
+        range,
+      ),
+      db.getAllAsync<{ MemberID: number; Hours: number; category: string }>(
+        `SELECT t.[MemberID], t.[Hours], COALESCE(c.[Category], 'Uncategorized') AS category
+           FROM [ActivityTime] t
+           JOIN [Activities] a ON a.[id] = t.[ActivityID]
+           LEFT JOIN [Category] c ON c.[id] = a.[CategoryID]
+          WHERE a.[CouncilID] = ? AND t.[ActivityDate] BETWEEN ? AND ?`,
+        range,
+      ),
+      db.getAllAsync<{ Spend: number | null }>(
+        `SELECT [Spend] FROM [Event]
+          WHERE [id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?) AND [StartDate] BETWEEN ? AND ?`,
+        range,
+      ),
+      db.getAllAsync<{ DonationAmount: number; method: string }>(
+        `SELECT d.[DonationAmount], dm.[DonationMethod] AS method
+           FROM [Donation] d JOIN [DonationMethod] dm ON dm.[id] = d.[DonationMethodID]
+          WHERE d.[CouncilID] = ? AND d.[DonationDate] BETWEEN ? AND ?`,
+        range,
+      ),
+      db.getAllAsync<{ TotalAmount: number }>(
+        'SELECT [TotalAmount] FROM [ExpenseDisbursement] WHERE [CouncilID] = ? AND [PayoutDate] BETWEEN ? AND ?',
+        range,
+      ),
+    ]);
+    return {
+      council: { id: councilId, ...council },
+      eventTime,
+      activityTime,
+      events,
+      donations: donations.map((d) => ({ DonationAmount: d.DonationAmount, kind: donationMethodKind(d.method) })),
+      disbursements,
+    };
+  }
 
   feedback: DataService['feedback'] = {
     submit: async (memberId, text) => {

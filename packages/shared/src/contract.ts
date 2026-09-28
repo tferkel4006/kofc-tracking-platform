@@ -42,6 +42,8 @@ import type {
   Message,
   MessageAttachment,
   NoShowReason,
+  NotificationLog,
+  NotificationPriority,
   Parish,
   Pastor,
   ReadReceipt,
@@ -49,6 +51,8 @@ import type {
   Shift,
   Skill,
   SkillLevel,
+  SupremeFormType,
+  SupremeReportingSync,
   SystemFeedback,
   WorkingStatus,
 } from './types';
@@ -606,7 +610,112 @@ export interface ExpenseDisbursementResult {
   reports: ExpenseReportDetail[];
 }
 
-// 15. THE SERVICE
+// 15. PUSH ALERTS AND SUPREME COUNCIL REPORTING (Sprint 5T)
+/**
+ * Who notifications.dispatchHighPriorityAlert reaches: Active members of the council who hold any of `skillIds` or are
+ * signed up for any of `shiftIds` (shifts of events linked to the council). At least one id is required.
+ */
+export interface AlertFilters {
+  skillIds?: readonly number[];
+  shiftIds?: readonly number[];
+}
+
+export interface AlertPayload {
+  /** At most ALERT_TITLE_MAX_LENGTH characters. */
+  title: string;
+  /** At most ALERT_BODY_MAX_LENGTH characters. */
+  body: string;
+  /** Default 'High'. */
+  priority?: NotificationPriority;
+}
+
+/** One message of the Expo Push API (https://exp.host/--/api/v2/push/send). */
+export interface ExpoPushMessage {
+  /** The recipient's ExponentPushToken[...]. */
+  to: string;
+  title: string;
+  body: string;
+  priority: 'default' | 'normal' | 'high';
+  sound: 'default';
+  data: { notificationLogId: number; councilId: number };
+}
+
+/** One Expo Push API call, carrying at most EXPO_PUSH_BATCH_SIZE messages. */
+export interface ExpoPushRequest {
+  method: 'POST';
+  url: string;
+  headers: Record<string, string>;
+  body: ExpoPushMessage[];
+}
+
+export interface AlertDispatchResult {
+  /** One NotificationLog row per recipient, in recipient id order. */
+  logs: NotificationLog[];
+  recipientIds: number[];
+  /** The Expo requests printed with console.log (the push stub); empty when no recipient has a registered device. */
+  pushRequests: ExpoPushRequest[];
+  /** Recipients without a registered device: logged, so they see the alert in the app, but not pushed. */
+  unreachableMemberIds: number[];
+}
+
+/** The dates (YYYY-MM-DD, inclusive) a Supreme form covers, labelled e.g. "2025" or "January-June 2026". */
+export interface SupremeReportingPeriod {
+  fromDate: string;
+  toDate: string;
+  label: string;
+}
+
+/** The council's compliance figures for one form and period, compiled by supreme.syncAlchemerReport. */
+export interface SupremeComplianceSnapshot {
+  councilId: number;
+  councilNumber: number;
+  councilName: string;
+  formType: SupremeFormType;
+  period: SupremeReportingPeriod;
+  /** EventTime on the council's events' shifts dated in the period, and ActivityTime on its activities dated in it. */
+  volunteerHours: { events: number; activities: number; total: number };
+  /** Those hours by the event's or activity's Category, ordered by category. */
+  hoursByCategory: { category: string; hours: number }[];
+  /** Distinct members behind those hours. */
+  volunteers: number;
+  /** The council's events starting in the period. */
+  eventsHeld: number;
+  /** The council's donations dated in the period. */
+  donations: DonationTotals;
+  /** Spend of the events starting in the period. */
+  eventSpend: number;
+  /** Expense checks the council paid in the period (by PayoutDate). */
+  expenseChecks: { count: number; total: number };
+}
+
+/** An Alchemer REST API v5 "create survey response" call. */
+export interface AlchemerRequest {
+  method: 'POST';
+  /** Carries _method=PUT and the api_token / api_token_secret query parameters. */
+  url: string;
+  headers: Record<string, string>;
+  /** Form-encoded data[<shortname>][value]=... pairs plus status=Complete. */
+  body: string;
+  /** The same answers keyed by question shortname, for display and tests. */
+  answers: Record<string, string | number>;
+}
+
+/** The part of Alchemer's reply the sync reads. */
+export interface AlchemerResponse {
+  result_ok: boolean;
+  message?: string;
+}
+
+export interface SupremeSyncResult {
+  /** The SupremeReportingSync row written for this attempt, 'Success' or 'Failed'. */
+  sync: SupremeReportingSync;
+  snapshot: SupremeComplianceSnapshot;
+  request: AlchemerRequest;
+  /** Why a 'Failed' sync failed; null on success. */
+  error: string | null;
+}
+
+// 16. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -1119,6 +1228,44 @@ export interface DataService {
      * Time End - Time Start, oldest first with a running total. Optional inclusive date range.
      */
     memberHours(memberId: number, range?: { fromDate?: string; toDate?: string }): Promise<MemberMeetingHours>;
+  };
+
+  /**
+   * Smartphone push alerts (Sprint 5T). Every member may register their own device and read their own alerts. Only
+   * council leadership sends alerts: an Active Admin, Financial Secretary or Treasurer of the council, or any Active
+   * Super Admin (SecurityPrivilegeError ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED; nothing written). An unknown actor
+   * rejects MEMBER_NOT_FOUND.
+   */
+  notifications: {
+    /**
+     * Saves the actor's Expo push token (ExponentPushToken[...], at most EXPO_PUSH_TOKEN_MAX_LENGTH characters) to
+     * Member.ExpoPushToken; `null` or blank unregisters the device. A token another member holds is cleared from them
+     * in the same transaction, so a shared phone receives only its current member's alerts. Rejects INVALID_INPUT for
+     * a malformed token. Member reads never return the token.
+     */
+    registerDeviceToken(actorId: number, pushToken: string | null): Promise<void>;
+    /** The alerts sent to the actor in the trailing ALERT_HISTORY_MONTHS (6) months, newest first. */
+    listMemberAlerts(actorId: number): Promise<NotificationLog[]>;
+    /**
+     * Logs one NotificationLog row per recipient (see AlertFilters) in one transaction, then builds the Expo Push API
+     * requests for recipients with a registered device and prints them with console.log (no push credentials exist
+     * yet). Rejects INVALID_INPUT for an unknown council, no filter, an unknown skill, a shift that is unknown or not
+     * on an event linked to the council, a blank or over-long title or body, or an unknown priority; NO_RECIPIENTS
+     * when the filters match no Active member of the council.
+     */
+    dispatchHighPriorityAlert(actorId: number, councilId: number, filters: AlertFilters, payload: AlertPayload): Promise<AlertDispatchResult>;
+  };
+
+  /** Supreme Council reporting (Sprint 5T), with the same leadership rule as notifications.dispatchHighPriorityAlert. */
+  supreme: {
+    /**
+     * Compiles the council's compliance snapshot for the form's last completed period (supremeReportingPeriod) from
+     * one consistent read of its logged hours, events, donations and expense checks; files it to Alchemer survey
+     * `surveyId` as an API v5 survey response (a stub that prints the request until Alchemer is configured); and
+     * records the attempt in SupremeReportingSync: 'Success', or 'Failed' with `error` when the post fails.
+     * Rejects INVALID_INPUT for an unknown council or form type, or a survey id that is not a number.
+     */
+    syncAlchemerReport(actorId: number, councilId: number, formType: SupremeFormType, surveyId: string): Promise<SupremeSyncResult>;
   };
 
   feedback: {

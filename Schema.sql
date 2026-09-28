@@ -166,6 +166,7 @@ CREATE TABLE [Member] (
 	[WorkingStatusID] INTEGER, -- Phase 2: optional until the member fills in their profile
 	[ProfilePhotoURL] VARCHAR(2000) NULL, -- Sprint 5S: the member's avatar (a local file path while there is no file store)
 	[Biography] TEXT NULL, -- Sprint 5S: a short personal fraternal biography, written by the member
+	[ExpoPushToken] VARCHAR(512) NULL, -- Sprint 5T: the phone's push address (ExponentPushToken[...]); never returned by member reads
 	PRIMARY KEY([id])
 );
 GO
@@ -936,4 +937,63 @@ GO
 CREATE INDEX [ExpenseReport_Council_Status_Idx] ON [ExpenseReport] ([CouncilID], [Status]);
 GO
 CREATE INDEX [ExpenseLineItem_Report_Idx] ON [ExpenseLineItem] ([ExpenseReportID]);
+GO
+
+-- =========================================================================
+-- 11. PUSH NOTIFICATIONS AND SUPREME COUNCIL REPORTING (Sprint 5T)
+-- NotificationLog keeps one row per alert per recipient, so every member can read back the alerts
+-- sent to them. SupremeReportingSync records each push of compliance answers to an Alchemer survey
+-- (AnnualSurvey = Form 1728, CouncilAudit = Form 1295). As with ExpenseReport.Status, the shared rules
+-- layer enforces the Priority, FormType and Status values, so there are no CHECK constraints here.
+-- SentAt and SyncDate are DATETIME: T-SQL's TIMESTAMP is a ROWVERSION counter, not a point in time.
+-- =========================================================================
+CREATE TABLE [NotificationLog] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL, -- the council whose leadership sent the alert
+	[TargetMemberID] INTEGER NOT NULL,
+	[Title] VARCHAR(100) NOT NULL,
+	[MessageBody] VARCHAR(2000) NOT NULL,
+	[Priority] VARCHAR(10) NOT NULL, -- Low, Medium, High
+	[SentAt] DATETIME NOT NULL DEFAULT getdate(),
+	[IsRead] BIT NOT NULL DEFAULT 0,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [SupremeReportingSync] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[FormType] VARCHAR(20) NOT NULL, -- AnnualSurvey, CouncilAudit
+	[SyncDate] DATETIME NOT NULL DEFAULT getdate(),
+	[SyncedByID] INTEGER NOT NULL,
+	[AlchemerSurveyID] VARCHAR(100) NOT NULL,
+	[Status] VARCHAR(10) NOT NULL, -- Success, Failed
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [NotificationLog]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [NotificationLog]
+ADD FOREIGN KEY([TargetMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [SupremeReportingSync]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [SupremeReportingSync]
+ADD FOREIGN KEY([SyncedByID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE INDEX [NotificationLog_Target_SentAt_Idx] ON [NotificationLog] ([TargetMemberID], [SentAt]);
+GO
+CREATE INDEX [SupremeReportingSync_Council_Idx] ON [SupremeReportingSync] ([CouncilID], [SyncDate]);
 GO

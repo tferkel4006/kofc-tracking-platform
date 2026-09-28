@@ -1075,7 +1075,41 @@ export function assertNoSelfPayout(actor: MemberWriteActor, report: { id: number
 /** The sheet is the actor's own, which they may neither approve nor pay, whatever their role. */
 const isOwnExpense = (actor: MemberWriteActor, report: { SubmitterMemberID: number }): boolean => report.SubmitterMemberID === actor.memberId;
 
-function expenseAuditDenial(actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null {
+const expenseAuditDenial = (actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null =>
+  councilLeadershipDenial(actor, councilId, action, "expense reports are reviewed only by that council's own leadership");
+
+/**
+ * Push alerts (Sprint 5T): notifications.dispatchHighPriorityAlert. The same leadership as the expense queue: an
+ * Active Super Admin for any council; an Active Admin, Financial Secretary or Treasurer for their own council only.
+ * Registering a device and reading one's own alerts need no leadership. `action` completes "cannot ...".
+ */
+export function assertMayDispatchCouncilAlerts(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = councilLeadershipDenial(actor, councilId, action, "a council's alerts are sent only by its own leadership");
+  if (denial) throw denial;
+}
+
+/** assertMayDispatchCouncilAlerts as a yes/no. */
+export const mayDispatchCouncilAlerts = (actor: MemberWriteActor, councilId: number): boolean =>
+  councilLeadershipDenial(actor, councilId, 'send alerts', '') === null;
+
+/**
+ * Supreme Council reporting (Sprint 5T): supreme.syncAlchemerReport, with the same leadership as
+ * assertMayDispatchCouncilAlerts. `action` completes "cannot ...".
+ */
+export function assertMaySyncSupremeReports(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = councilLeadershipDenial(actor, councilId, action, "a council's Supreme reports are filed only by its own leadership");
+  if (denial) throw denial;
+}
+
+/** assertMaySyncSupremeReports as a yes/no. */
+export const maySyncSupremeReports = (actor: MemberWriteActor, councilId: number): boolean =>
+  councilLeadershipDenial(actor, councilId, 'file Supreme reports', '') === null;
+
+/**
+ * Council leadership: an Active Super Admin anywhere, or an Active Admin, Financial Secretary or Treasurer in their own
+ * council. `why` explains a cross-council refusal.
+ */
+function councilLeadershipDenial(actor: MemberWriteActor, councilId: number, action: string, why: string): SecurityPrivilegeError | null {
   if (hasSuperAdminRights(actor)) return null;
   if (!hasAdminRights(actor) && !(actor.active && holdsFinanceRole(actor.roles))) {
     return new SecurityPrivilegeError(
@@ -1087,7 +1121,7 @@ function expenseAuditDenial(actor: MemberWriteActor, councilId: number, action: 
   if (actor.councilId === councilId) return null;
   return new SecurityPrivilegeError(
     'COUNCIL_ACCESS_DENIED',
-    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; expense reports are reviewed only by that council's own leadership.`,
+    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; ${why}.`,
     { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
   );
 }

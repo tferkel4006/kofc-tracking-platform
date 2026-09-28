@@ -394,3 +394,34 @@ export interface ExpenseLineItem {
   ReceiptPhotoURL?: string | null;
   ExpenseDescription: string;
 }
+
+// 9. PUSH NOTIFICATIONS AND SUPREME COUNCIL REPORTING (Sprint 5T)
+/** How urgent an alert is; drives the Expo push priority (High -> 'high', Medium -> 'default', Low -> 'normal'). */
+export type NotificationPriority = 'Low' | 'Medium' | 'High';
+
+/** One alert as sent to one member. Member.ExpoPushToken is deliberately not on Member: it is a device credential. */
+export interface NotificationLog {
+  id: number;
+  CouncilID: number;
+  TargetMemberID: number;
+  Title: string;
+  MessageBody: string;
+  Priority: NotificationPriority;
+  SentAt: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+  IsRead: number; // BIT
+}
+
+/** The Supreme Council forms synced to Alchemer: Form 1728 (AnnualSurvey) and Form 1295 (CouncilAudit). */
+export type SupremeFormType = 'AnnualSurvey' | 'CouncilAudit';
+export type SupremeSyncStatus = 'Success' | 'Failed';
+
+/** One push of a council's compliance answers to an Alchemer survey. */
+export interface SupremeReportingSync {
+  id: number;
+  CouncilID: number;
+  FormType: SupremeFormType;
+  SyncDate: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+  SyncedByID: number;
+  AlchemerSurveyID: string;
+  Status: SupremeSyncStatus;
+}

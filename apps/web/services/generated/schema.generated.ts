@@ -786,6 +786,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "ExpoPushToken",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -2353,6 +2360,156 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "ExpenseReportID",
         "refTable": "ExpenseReport",
+        "refColumn": "id"
+      }
+    ]
+  },
+  "NotificationLog": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "TargetMemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "Title",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "MessageBody",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "Priority",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "SentAt",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      },
+      {
+        "name": "IsRead",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "TargetMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ]
+  },
+  "SupremeReportingSync": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "FormType",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "SyncDate",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      },
+      {
+        "name": "SyncedByID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "AlchemerSurveyID",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "Status",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "SyncedByID",
+        "refTable": "Member",
         "refColumn": "id"
       }
     ]

@@ -146,6 +146,14 @@ export function createRemoteDataService(): DataService {
       linkGoogleDrive: notImplemented('meetings.linkGoogleDrive'),
       memberHours: notImplemented('meetings.memberHours'),
     },
+    notifications: {
+      registerDeviceToken: notImplemented('notifications.registerDeviceToken'),
+      listMemberAlerts: notImplemented('notifications.listMemberAlerts'),
+      dispatchHighPriorityAlert: notImplemented('notifications.dispatchHighPriorityAlert'),
+    },
+    supreme: {
+      syncAlchemerReport: notImplemented('supreme.syncAlchemerReport'),
+    },
     feedback: {
       submit: notImplemented('feedback.submit'),
       listInbox: notImplemented('feedback.listInbox'),

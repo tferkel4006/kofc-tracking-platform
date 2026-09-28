@@ -21,6 +21,25 @@ import {
   assertMayAttachEventMedia,
   assertMayAuditCouncilExpenses,
   assertMayDisburseCouncilExpenses,
+  assertMayDispatchCouncilAlerts,
+  assertMaySyncSupremeReports,
+  alertHistoryThreshold,
+  cleanAlertFilters,
+  cleanAlertPayload,
+  cleanAlchemerSurveyId,
+  cleanExpoPushToken,
+  cleanSupremeFormType,
+  compileSupremeSnapshot,
+  alchemerAnswers,
+  buildAlchemerRequest,
+  deliverAlertsByStub,
+  logAlchemerRequest,
+  noAlertRecipients,
+  postAlchemerReport,
+  sortAlerts,
+  supremeReportingPeriod,
+  withoutPushToken,
+  type SupremeSnapshotRows,
   assertNoSelfPayout,
   assertNotSelfApproval,
   cleanRejectionReason,
@@ -126,6 +145,11 @@ import {
 } from '@kofc/shared';
 import type {
   Activities,
+  AlchemerRequest,
+  AlchemerResponse,
+  NotificationLog,
+  SupremeReportingPeriod,
+  SupremeReportingSync,
   ActivityTime,
   ChatThread,
   Council,
@@ -325,8 +349,10 @@ class MemoryStore {
 export interface MemoryDataServiceOptions {
   /** Clock used for seeding and the history-window rules. Tests pin it. Default: real time. */
   now?: () => Date;
-  /** Where system emails (the new-member welcome) go. Default: console.log (no mail infrastructure exists yet). */
+  /** Where system emails, push requests and Alchemer posts go. Default: console.log (no such infrastructure exists yet). */
   log?: (...args: unknown[]) => void;
+  /** How supreme.syncAlchemerReport posts to Alchemer. Default: print the request with `log` (logAlchemerRequest). */
+  postAlchemer?: (request: AlchemerRequest) => Promise<AlchemerResponse>;
 }
 
 export class MemoryDataService implements DataService {
@@ -334,10 +360,12 @@ export class MemoryDataService implements DataService {
   private initialised: Promise<void> | null = null;
   private readonly now: () => Date;
   private readonly log: (...args: unknown[]) => void;
+  private readonly postAlchemer: (request: AlchemerRequest) => Promise<AlchemerResponse>;
 
   constructor(options: MemoryDataServiceOptions = {}) {
     this.now = options.now ?? (() => new Date());
     this.log = options.log ?? console.log;
+    this.postAlchemer = options.postAlchemer ?? logAlchemerRequest((...args) => this.log(...args));
   }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -1029,12 +1057,12 @@ export class MemoryDataService implements DataService {
     get: async (id) => {
       const s = await this.ready();
       const row = s.rows('Member').find((m) => m.id === id);
-      return row ? ({ ...row } as unknown as Member) : null;
+      return row ? (withoutPushToken({ ...row }) as unknown as Member) : null;
     },
     getByEmail: async (email) => {
       const s = await this.ready();
       const row = s.rows('Member').find((m) => lower(m.Email) === email.toLowerCase());
-      return row ? ({ ...row } as unknown as Member) : null;
+      return row ? (withoutPushToken({ ...row }) as unknown as Member) : null;
     },
     listByCouncil: async (councilId, options) => {
       const s = await this.ready();
@@ -1042,7 +1070,7 @@ export class MemoryDataService implements DataService {
       const rows = s
         .rows('Member')
         .filter((m) => m.CouncilID === councilId && (activeId === null || m.StatusID === activeId))
-        .map((m) => ({ ...m })) as unknown as Member[];
+        .map((m) => withoutPushToken({ ...m })) as unknown as Member[];
       return rows.sort(
         (a, b) => a.MemberLastName.localeCompare(b.MemberLastName) || a.MemberFirstName.localeCompare(b.MemberFirstName),
       );
@@ -1066,7 +1094,7 @@ export class MemoryDataService implements DataService {
         for (const c of MEMBER_COLUMNS) values[c] = clean[c] ?? null;
         return s.insert('Member', values);
       });
-      const created = { ...row } as unknown as Member;
+      const created = withoutPushToken({ ...row }) as unknown as Member;
       this.sendWelcomeEmail(s, created);
       return created;
     },
@@ -1096,7 +1124,7 @@ export class MemoryDataService implements DataService {
         for (const c of MEMBER_COLUMNS) existing[c] = clean[c] ?? null;
         return existing;
       });
-      return { ...row } as unknown as Member;
+      return withoutPushToken({ ...row }) as unknown as Member;
     },
   };
 
@@ -2294,6 +2322,142 @@ export class MemoryDataService implements DataService {
   // ---- messages ----------------------------------------------------------
 
   // ---- system feedback ---------------------------------------------------
+
+  notifications: DataService['notifications'] = {
+    registerDeviceToken: async (actorId, pushToken) => {
+      const token = cleanExpoPushToken(pushToken);
+      const s = await this.ready();
+      s.transaction(() => {
+        const member = this.requireMember(s, actorId);
+        // A phone belongs to whoever registered it last, so a member still holding the token lets it go.
+        if (token !== null) {
+          for (const other of s.rows('Member')) if (other.id !== actorId && other.ExpoPushToken === token) other.ExpoPushToken = null;
+        }
+        member.ExpoPushToken = token;
+      });
+    },
+
+    listMemberAlerts: async (actorId) => {
+      const s = await this.ready();
+      this.requireMember(s, actorId);
+      const since = alertHistoryThreshold(this.now());
+      return sortAlerts(
+        s
+          .rows('NotificationLog')
+          .filter((n) => n.TargetMemberID === actorId && (n.SentAt as string) >= since)
+          .map((n) => ({ ...n })) as unknown as NotificationLog[],
+      );
+    },
+
+    dispatchHighPriorityAlert: async (actorId, councilId, filters, payload) => {
+      const target = cleanAlertFilters(filters);
+      const alert = cleanAlertPayload(payload);
+      const s = await this.ready();
+      const logs = s.transaction(() => {
+        assertMayDispatchCouncilAlerts(this.memberWriteActor(s, actorId), councilId, `send alerts to council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        for (const skillId of target.skillIds) {
+          if (!s.rows('Skill').some((r) => r.id === skillId)) throw new BusinessRuleError('INVALID_INPUT', `No skill with id ${skillId}.`, { skillId });
+        }
+        for (const shiftId of target.shiftIds) {
+          const shift = s.rows('Shift').find((r) => r.id === shiftId);
+          if (!shift || !this.councilIdsOf(s, shift.EventID as number).includes(councilId)) {
+            throw new BusinessRuleError('INVALID_INPUT', `Shift ${shiftId} is not on an event of council ${councilId}.`, { shiftId, councilId });
+          }
+        }
+        const skills = new Set<SeedValue>(target.skillIds);
+        const shifts = new Set<SeedValue>(target.shiftIds);
+        const candidates = new Set([
+          ...s.rows('MemberSkill').filter((r) => skills.has(r.SkillID)).map((r) => r.MemberID),
+          ...s.rows('EventSignup').filter((r) => shifts.has(r.ShiftID)).map((r) => r.MemberID),
+        ]);
+        const activeId = this.activeStatusId(s);
+        const recipientIds = s
+          .rows('Member')
+          .filter((m) => m.CouncilID === councilId && m.StatusID === activeId && candidates.has(m.id))
+          .map((m) => m.id as number)
+          .sort((a, b) => a - b);
+        if (recipientIds.length === 0) throw noAlertRecipients(councilId, target);
+        const sentAt = toTimestamp(this.now());
+        return recipientIds.map((memberId) => {
+          const row = s.insert('NotificationLog', {
+            CouncilID: councilId,
+            TargetMemberID: memberId,
+            Title: alert.title,
+            MessageBody: alert.body,
+            Priority: alert.priority,
+            SentAt: sentAt,
+            IsRead: 0,
+          });
+          return { ...row } as unknown as NotificationLog;
+        });
+      });
+      const tokens = new Map(logs.map((l) => [l.TargetMemberID, (this.requireMember(s, l.TargetMemberID).ExpoPushToken as string | null) ?? null]));
+      return deliverAlertsByStub(logs, tokens, this.log);
+    },
+  };
+
+  supreme: DataService['supreme'] = {
+    syncAlchemerReport: async (actorId, councilId, formType, surveyId) => {
+      const form = cleanSupremeFormType(formType);
+      const survey = cleanAlchemerSurveyId(surveyId);
+      const s = await this.ready();
+      assertMaySyncSupremeReports(this.memberWriteActor(s, actorId), councilId, `file Supreme reports for council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      // The store is synchronous, so this read is a consistent snapshot.
+      const period = supremeReportingPeriod(form, this.now());
+      const snapshot = compileSupremeSnapshot(form, period, this.supremeSnapshotRows(s, councilId, period));
+      const request = buildAlchemerRequest(survey, alchemerAnswers(snapshot));
+      const { status, error } = await postAlchemerReport(this.postAlchemer, request);
+      const row = s.insert('SupremeReportingSync', {
+        CouncilID: councilId,
+        FormType: form,
+        SyncDate: toTimestamp(this.now()),
+        SyncedByID: actorId,
+        AlchemerSurveyID: survey,
+        Status: status,
+      });
+      return { sync: { ...row } as unknown as SupremeReportingSync, snapshot, request, error };
+    },
+  };
+
+  /** The council's hours, events, donations and expense checks in the period, for compileSupremeSnapshot. */
+  private supremeSnapshotRows(s: MemoryStore, councilId: number, period: SupremeReportingPeriod): SupremeSnapshotRows {
+    const inPeriod = (date: SeedValue | undefined) => (date as string) >= period.fromDate && (date as string) <= period.toDate;
+    const categoryName = (id: SeedValue | undefined) => (s.rows('Category').find((c) => c.id === id)?.Category as string | undefined) ?? 'Uncategorized';
+    const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+    const councilEvents = s.rows('Event').filter((e) => linked.has(e.id));
+    const eventCategory = new Map(councilEvents.map((e) => [e.id, categoryName(e.CategoryID)]));
+    const shiftCategory = new Map(
+      s
+        .rows('Shift')
+        .filter((sh) => eventCategory.has(sh.EventID) && inPeriod(sh.ShiftDate))
+        .map((sh) => [sh.id, eventCategory.get(sh.EventID)!]),
+    );
+    const activityCategory = new Map(s.rows('Activities').filter((a) => a.CouncilID === councilId).map((a) => [a.id, categoryName(a.CategoryID)]));
+    const methodKind = new Map(s.rows('DonationMethod').map((m) => [m.id, donationMethodKind(m.DonationMethod as string)]));
+    const council = s.rows('Council').find((c) => c.id === councilId)!;
+    return {
+      council: { id: councilId, CouncilNumber: council.CouncilNumber as number, CouncilName: council.CouncilName as string },
+      eventTime: s
+        .rows('EventTime')
+        .filter((t) => shiftCategory.has(t.ShiftID))
+        .map((t) => ({ MemberID: t.MemberID as number, Hours: t.Hours as number, category: shiftCategory.get(t.ShiftID)! })),
+      activityTime: s
+        .rows('ActivityTime')
+        .filter((t) => activityCategory.has(t.ActivityID) && inPeriod(t.ActivityDate))
+        .map((t) => ({ MemberID: t.MemberID as number, Hours: t.Hours as number, category: activityCategory.get(t.ActivityID)! })),
+      events: councilEvents.filter((e) => inPeriod(e.StartDate)).map((e) => ({ Spend: e.Spend as number | null })),
+      donations: s
+        .rows('Donation')
+        .filter((d) => d.CouncilID === councilId && inPeriod(d.DonationDate))
+        .map((d) => ({ DonationAmount: d.DonationAmount as number, kind: methodKind.get(d.DonationMethodID) ?? 'other' })),
+      disbursements: s
+        .rows('ExpenseDisbursement')
+        .filter((d) => d.CouncilID === councilId && inPeriod(d.PayoutDate))
+        .map((d) => ({ TotalAmount: d.TotalAmount as number })),
+    };
+  }
 
   feedback: DataService['feedback'] = {
     submit: async (memberId, text) => {
