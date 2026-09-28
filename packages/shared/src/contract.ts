@@ -17,6 +17,8 @@ import type {
   ChatThread,
   Council,
   CouncilDonationMethod,
+  CouncilElectionBallot,
+  CouncilLeadershipHistory,
   Degree,
   DistributionLists,
   Donation,
@@ -43,7 +45,9 @@ import type {
   MessageAttachment,
   NoShowReason,
   NotificationLog,
+  LeadershipExitReason,
   NotificationPriority,
+  OfficerNominations,
   Parish,
   Pastor,
   ReadReceipt,
@@ -731,7 +735,93 @@ export interface SupremeSyncResult {
   error: string | null;
 }
 
-// 16. THE SERVICE
+// 16. OFFICER ELECTIONS (Sprint 5U)
+/** How a council office is filled: by ballot, by the trustee ladder, or by the Grand Knight's appointment. */
+export type OfficeKind = 'elected' | 'trustee' | 'appointed';
+
+/** Who holds a seat; `since` is the StartDate of their open CouncilLeadershipHistory row (null if none is recorded). */
+export interface SeatHolder {
+  memberId: number;
+  firstName: string;
+  lastName: string;
+  since: string | null;
+}
+
+/** One council office, as elections.listOfficerSeats reports it. */
+export interface OfficerSeat {
+  roleId: number;
+  roleName: string;
+  kind: OfficeKind;
+  holder: SeatHolder | null;
+  /** Elected seats only (all flags 0 for a seat never opened); null for trustee and appointed seats. */
+  ballot: CouncilElectionBallot | null;
+}
+
+export interface BallotNominee {
+  nomination: OfficerNominations;
+  firstName: string;
+  lastName: string;
+  nominatedByName: string;
+}
+
+/** An elected seat open for nomination, as elections.listBallotConfig reports it. */
+export interface BallotSeat {
+  roleId: number;
+  roleName: string;
+  ballot: CouncilElectionBallot;
+  /** The term the election fills (ballotTermYear). */
+  fraternalYear: string;
+  /** Whether submitNomination accepts nominations right now (May, or before a mid-year election closes). */
+  nominationsOpen: boolean;
+  holder: SeatHolder | null;
+  /** This term's nominations for the seat, oldest first. */
+  nominees: BallotNominee[];
+}
+
+export interface NominationResult {
+  nomination: OfficerNominations;
+  /** False (IsEligible = 0) for a Grand Knight nominee who never served as Deputy Grand Knight or Grand Knight. */
+  eligible: boolean;
+  /** Nominations for the seat this term, including this one. */
+  tally: number;
+}
+
+/** An appointed or trustee seat nobody holds, with whoever last left it. */
+export interface SeatVacancy {
+  roleId: number;
+  roleName: string;
+  kind: 'appointed' | 'trustee';
+  previous: { memberId: number; firstName: string; lastName: string; endDate: string; exitReason: LeadershipExitReason | null } | null;
+}
+
+export interface AbdicationResult {
+  /** The member's history row for the seat, now closed 'Abdicated'; null when no open term was recorded. */
+  history: CouncilLeadershipHistory | null;
+  /** Appointed and trustee seats wait for the Grand Knight; elected seats go to a mid-year election. */
+  outcome: 'AwaitingAppointment' | 'MidYearElection';
+  /** The seat's ballot row after a mid-year election opened; null for appointed and trustee seats. */
+  ballot: CouncilElectionBallot | null;
+}
+
+/** One seat changing hands when the year concludes; equal ids mean a renewed term. */
+export interface SeatChange {
+  roleId: number;
+  roleName: string;
+  previousMemberId: number | null;
+  memberId: number | null;
+}
+
+export interface FraternalYearConclusion {
+  /** True when the trustee chairs rotated (the Grand Knight seat was on the ballot and a new Grand Knight took it). */
+  rotated: boolean;
+  /** The term new history rows start in. */
+  fraternalYear: string;
+  changes: SeatChange[];
+  /** Ballot rows cleared for the next cycle. */
+  ballotsReset: number;
+}
+
+// 17. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -1304,6 +1394,66 @@ export interface DataService {
     ): Promise<SupremeSyncResult>;
     /** The council's sync attempts, newest SyncDate first, with who ran each. Rejects INVALID_INPUT for an unknown council. */
     listSyncHistory(actorId: number, councilId: number): Promise<SupremeSyncHistoryEntry[]>;
+  };
+
+  /**
+   * Officer elections (Sprint 5U). Offices are matched by Role name (elections.ts): ELECTED_ROLE_NAMES go on the
+   * ballot; the trustee ladder (Trustee 1-3) rotates when the year concludes; APPOINTED_ROLE_NAMES (Financial
+   * Secretary, Chaplain, Lecturer and the four directors) and vacant trustee seats are filled by the Grand Knight. A
+   * seat's holder is whoever holds the role in MemberRoles, so access follows every change at once, and every change
+   * is recorded in CouncilLeadershipHistory. Before each write the council's Active office holders without an open
+   * history row get one (planHistoryBackfill). Writes are all or nothing; an unknown actor rejects MEMBER_NOT_FOUND,
+   * an unknown council or role INVALID_INPUT.
+   */
+  elections: {
+    /** Every council office in OFFICE_ROLE_NAMES order with its holder and, for elected seats, its ballot state. */
+    listOfficerSeats(councilId: number): Promise<OfficerSeat[]>;
+    /** The council's elected seats open for nomination (IsUpForElection = 1) with this term's nominees. Appointed seats never appear. */
+    listBallotConfig(councilId: number): Promise<BallotSeat[]>;
+    /** Appointed and trustee seats in the council that nobody holds, with whoever last left each. */
+    listVacancies(councilId: number): Promise<SeatVacancy[]>;
+    /**
+     * Opens (`isOpen` true) or closes an elected seat for nomination and resolves to its ballot row. Closing also
+     * ends a mid-year election. An Active Admin of the council or an Active Super Admin (ADMIN_REQUIRED,
+     * COUNCIL_ACCESS_DENIED). Rejects ROLE_NOT_ELECTED for an appointed, trustee or non-office role.
+     */
+    toggleRoleBallotStatus(actorId: number, councilId: number, roleId: number, isOpen: boolean): Promise<CouncilElectionBallot>;
+    /**
+     * Records a nomination for the seat's current term (ballotTermYear). The actor must be an Active member of the
+     * council or an Active Super Admin (COUNCIL_ACCESS_DENIED). Rejects ROLE_NOT_ELECTED for a seat that is never
+     * elected, ROLE_NOT_ON_BALLOT when the seat is not open this cycle, NOMINATIONS_WINDOW_CLOSED outside May 1-31
+     * and outside an open mid-year window, NOT_ACTIVE_COUNCIL_MEMBER for a nominee who is not an Active member of the
+     * council, and ALREADY_NOMINATED for a repeat nomination. A Grand Knight nominee with no Deputy Grand Knight or
+     * Grand Knight history row (current or past) is stored with IsEligible = 0; the nomination still counts.
+     */
+    submitNomination(actorId: number, councilId: number, roleId: number, nomineeMemberId: number): Promise<NominationResult>;
+    /**
+     * A member steps down mid-term: closes their open history row for the seat as 'Abdicated' today and takes the
+     * role from them. Appointed and trustee seats stay vacant for the Grand Knight (listVacancies); an elected seat
+     * goes to a mid-year election (IsUpForElection = 1, IsMidYearElection = 1, NominationsCloseAt two weeks out).
+     * An Active Super Admin, an Active Admin of the council, or the member resigning their own seat (ADMIN_REQUIRED,
+     * COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for a role that is not a council office and ROLE_NOT_HELD when
+     * the member does not hold it in the council.
+     */
+    recordOfficerAbdication(actorId: number, councilId: number, memberId: number, roleId: number): Promise<AbdicationResult>;
+    /**
+     * Fills a vacant appointed office or trustee seat: gives `targetMemberId` the role and opens their history row
+     * with AppointedByID = actorId. Only the council's sitting Grand Knight or an Active Super Admin
+     * (GRAND_KNIGHT_REQUIRED). Rejects ROLE_NOT_APPOINTED for an elected or non-office role, ROLE_OCCUPIED while
+     * someone holds the seat (record their abdication first), and NOT_ACTIVE_COUNCIL_MEMBER for an appointee who is
+     * not an Active member of the council.
+     */
+    assignAppointedRole(actorId: number, councilId: number, roleId: number, targetMemberId: number): Promise<CouncilLeadershipHistory>;
+    /**
+     * Ends the fraternal year (planFraternalYearConclusion). With the Grand Knight seat on the ballot the chairs rotate
+     * (outgoing Grand Knight to Trustee 1, Trustee 1 to 2, 2 to 3, Trustee 3 off the board, `newGrandKnightId` to
+     * Grand Knight), each departure closed 'TermConcluded' and each arrival opening a row in the new term. Off the
+     * ballot every chair stays put, and a different `newGrandKnightId` rejects GRAND_KNIGHT_TERM_CONTINUES. Either way
+     * the council's ballot rows are reset for the next cycle. An Active Super Admin, an Active Admin of the council or
+     * its sitting Grand Knight (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects NOT_ACTIVE_COUNCIL_MEMBER when the
+     * incoming Grand Knight is not an Active member of the council.
+     */
+    concludeFraternalYear(actorId: number, councilId: number, newGrandKnightId: number): Promise<FraternalYearConclusion>;
   };
 
   feedback: {

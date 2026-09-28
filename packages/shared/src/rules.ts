@@ -74,7 +74,17 @@ export type BusinessRuleCode =
   | 'NO_SHOW_HAS_HOURS'
   | 'EXPENSE_STATUS_CONFLICT'
   | 'SELF_APPROVAL_BLOCKED'
-  | 'SELF_PAYOUT_BLOCKED';
+  | 'SELF_PAYOUT_BLOCKED'
+  | 'NOMINATIONS_WINDOW_CLOSED'
+  | 'ROLE_NOT_ON_BALLOT'
+  | 'ROLE_NOT_ELECTED'
+  | 'ROLE_NOT_APPOINTED'
+  | 'ROLE_NOT_HELD'
+  | 'ROLE_OCCUPIED'
+  | 'ALREADY_NOMINATED'
+  | 'NOT_ACTIVE_COUNCIL_MEMBER'
+  | 'GRAND_KNIGHT_TERM_CONTINUES'
+  | 'GRAND_KNIGHT_REQUIRED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -94,7 +104,7 @@ export class BusinessRuleError extends Error {
  */
 export class SecurityPrivilegeError extends BusinessRuleError {
   constructor(
-    code: 'ADMIN_REQUIRED' | 'SUPER_ADMIN_REQUIRED' | 'COUNCIL_ACCESS_DENIED' | 'FINANCE_OFFICER_REQUIRED',
+    code: 'ADMIN_REQUIRED' | 'SUPER_ADMIN_REQUIRED' | 'COUNCIL_ACCESS_DENIED' | 'FINANCE_OFFICER_REQUIRED' | 'GRAND_KNIGHT_REQUIRED',
     message: string,
     details: Record<string, unknown> = {},
   ) {
@@ -821,9 +831,12 @@ export function assertMayLinkMeetingDrive(actor: MemberWriteActor, meeting: Medi
 export const mayLinkMeetingDrive = (actor: MemberWriteActor, meeting: MediaMeeting): boolean =>
   mediaDenial(actor, [meeting.CouncilID], meeting.OwnerID ?? null, 'link Google Drive files', { meetingId: meeting.id }) === null;
 
-const hasSuperAdminRights = (a: MemberWriteActor): boolean => a.active && a.memberType === SUPER_ADMIN_TYPE;
-const hasAdminRights = (a: MemberWriteActor): boolean => a.active && (a.memberType === 'Admin' || a.memberType === SUPER_ADMIN_TYPE);
-const describeActor = (a: MemberWriteActor): string => `${a.active ? '' : 'an inactive '}${a.memberType ?? 'of unknown type'}`;
+/** An Active Super Admin. */
+export const hasSuperAdminRights = (a: MemberWriteActor): boolean => a.active && a.memberType === SUPER_ADMIN_TYPE;
+/** An Active Admin or Super Admin. */
+export const hasAdminRights = (a: MemberWriteActor): boolean => a.active && (a.memberType === 'Admin' || a.memberType === SUPER_ADMIN_TYPE);
+/** 'Admin', 'an inactive Member', ... for refusal messages. */
+export const describeActor = (a: MemberWriteActor): string => `${a.active ? '' : 'an inactive '}${a.memberType ?? 'of unknown type'}`;
 
 /** The member fields a Member without admin rights may change on their own record (contact details, photo and biography). */
 export const MEMBER_SELF_SERVICE_COLUMNS = [

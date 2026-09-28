@@ -36,7 +36,7 @@ VALUES
 ('Advocate', 1),
 ('Inside Guard', 1),
 ('Outside Guard', 1),
-('Lector', 0),
+('Lecturer', 0),
 ('Trustee 1', 1),
 ('Trustee 2', 1),
 ('Trustee 3', 1),
@@ -44,7 +44,7 @@ VALUES
 ('Community Director', 0),
 ('Program Director', 0),
 ('Family Director', 0),
-('Priest', 0),
+('Chaplain', 0),
 ('Member', 0);
 GO
 

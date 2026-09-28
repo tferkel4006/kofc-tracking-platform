@@ -8,10 +8,16 @@
 // Each grid is edited in place and saved as one batch, all or nothing: a clash anywhere (a duplicate name, an
 // unknown method) leaves every row as it was and the drafts stay on screen to fix. Deletes are one row at a time
 // and are refused (RECORD_IN_USE) while logged time or donations still point at the row; they never cascade.
+//
+// Officer Election Parameters (Sprint 5U): the council's Admins and Super Admins tick which elected offices are open
+// for nomination this season (elections.toggleRoleBallotStatus, saved per click). Appointed offices and the trustee
+// ladder are never on a ballot, so only elected seats are listed.
 import { useEffect, useState } from 'react';
 import {
+  canConfigureBallot,
   councilLookupTablesFor,
   describeError,
+  formatTimestamp,
   type CouncilLookupRecord,
   type CouncilLookupTableName,
 } from '@kofc/shared';
@@ -217,12 +223,90 @@ function LookupEditor({ councilId, table }: { councilId: number; table: CouncilL
   );
 }
 
+function ElectionParameters({ councilId }: { councilId: number }) {
+  const user = useUser();
+  const seats = useLoad(async () => (await db.elections.listOfficerSeats(councilId)).filter((s) => s.kind === 'elected'), [councilId]);
+  const [busyRoleId, setBusyRoleId] = useState<number | null>(null);
+  const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+
+  const toggle = async (roleId: number, roleName: string, isOpen: boolean) => {
+    setBusyRoleId(roleId);
+    setMessage(null);
+    try {
+      await db.elections.toggleRoleBallotStatus(user.memberId, councilId, roleId, isOpen);
+      setMessage({ tone: 'info', text: `${roleName} is ${isOpen ? 'now open for nomination' : 'off the ballot'} this season.` });
+      await seats.reload();
+    } catch (err) {
+      setMessage({ tone: 'error', text: describeError(err) });
+    } finally {
+      setBusyRoleId(null);
+    }
+  };
+
+  if (seats.error) return <Notice tone="error">{seats.error}</Notice>;
+  if (!seats.data) return <p className="text-sm text-muted">Loading…</p>;
+  const openCount = seats.data.filter((s) => s.ballot?.IsUpForElection === 1).length;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {message ? (
+        <Notice tone={message.tone} onDismiss={() => setMessage(null)}>
+          {message.text}
+        </Notice>
+      ) : null}
+      <p className="text-xs text-muted">
+        Tick each elected office open for nomination this season ({openCount} of {seats.data.length} open). Leave the Grand Knight unticked in the
+        second year of a two-year term: the Grand Knight and trustees then keep their chairs when the year concludes. Each change saves at once.
+      </p>
+      <Table caption="Elected offices and their ballot status" head={['Office', 'Sitting officer', 'Status', 'Open for nomination']}>
+        {seats.data.map((seat) => {
+          const open = seat.ballot?.IsUpForElection === 1;
+          const midYear = seat.ballot?.IsMidYearElection === 1;
+          return (
+            <tr key={seat.roleId} className={cx(open && 'outline outline-2 -outline-offset-2 outline-gold')}>
+              <Td className="font-bold">{seat.roleName}</Td>
+              <Td>{seat.holder ? `${seat.holder.firstName} ${seat.holder.lastName}` : <span className="text-muted">Vacant</span>}</Td>
+              <Td>
+                {midYear ? (
+                  <Pill tone="red">Mid-year · closes {formatTimestamp(seat.ballot?.NominationsCloseAt)}</Pill>
+                ) : open ? (
+                  <Pill tone="navy">On ballot</Pill>
+                ) : (
+                  <Pill tone="outline">Not on ballot</Pill>
+                )}
+              </Td>
+              <Td>
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={open}
+                    disabled={busyRoleId !== null}
+                    onChange={(e) => void toggle(seat.roleId, seat.roleName, e.target.checked)}
+                  />
+                  <span className="sr-only">Open {seat.roleName} for nomination</span>
+                  <span aria-hidden="true">{busyRoleId === seat.roleId ? 'Saving…' : open ? 'Open' : 'Closed'}</span>
+                </label>
+              </Td>
+            </tr>
+          );
+        })}
+      </Table>
+    </div>
+  );
+}
+
+type LookupTab = CouncilLookupTableName | 'elections';
+
 function CouncilLookups() {
   const user = useUser();
   const scope = useCouncilScope();
   const tables = councilLookupTablesFor(user, scope.councilId);
-  const [chosen, setChosen] = useState<CouncilLookupTableName | null>(null);
-  const table = chosen && tables.includes(chosen) ? chosen : tables[0];
+  const tabs: { id: LookupTab; label: string }[] = [
+    ...tables.map((t) => ({ id: t, label: TAB_LABELS[t] })),
+    ...(canConfigureBallot(user, scope.councilId) ? [{ id: 'elections' as const, label: 'Officer Election Parameters' }] : []),
+  ];
+  const [chosen, setChosen] = useState<LookupTab | null>(null);
+  const table = chosen && tabs.some((t) => t.id === chosen) ? chosen : tabs[0]?.id;
 
   return (
     <>
@@ -232,9 +316,13 @@ function CouncilLookups() {
       ) : null}
       {table ? (
         <>
-          <Tabs tabs={tables.map((t) => ({ id: t, label: TAB_LABELS[t] }))} value={table} onChange={setChosen} label="Council lookup tables" idPrefix="council-lookup" />
+          <Tabs tabs={tabs} value={table} onChange={setChosen} label="Council lookup tables" idPrefix="council-lookup" />
           <div id="council-lookup-panel" role="tabpanel" aria-labelledby={`council-lookup-tab-${table}`} className="pt-4">
-            <LookupEditor key={`${scope.councilId}-${table}`} councilId={scope.councilId} table={table} />
+            {table === 'elections' ? (
+              <ElectionParameters key={scope.councilId} councilId={scope.councilId} />
+            ) : (
+              <LookupEditor key={`${scope.councilId}-${table}`} councilId={scope.councilId} table={table} />
+            )}
           </div>
         </>
       ) : (

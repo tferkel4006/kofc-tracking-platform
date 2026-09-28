@@ -997,3 +997,110 @@ CREATE INDEX [NotificationLog_Target_SentAt_Idx] ON [NotificationLog] ([TargetMe
 GO
 CREATE INDEX [SupremeReportingSync_Council_Idx] ON [SupremeReportingSync] ([CouncilID], [SyncDate]);
 GO
+
+
+-- =========================================================================
+-- 12. OFFICER ELECTIONS AND LEADERSHIP HISTORY (Sprint 5U)
+-- CouncilElectionBallot says which of a council's elected seats are open for nomination this cycle,
+-- and whether a seat is up in a mid-year election after an abdication (open until NominationsCloseAt).
+-- OfficerNominations holds one row per nominee per seat per term; FraternalYear ('2026-2027', July 1 -
+-- June 30) is the term the election fills, so the same nominee may be put up again in a later year.
+-- IsEligible = 0 marks a Grand Knight nominee who has never served as Deputy Grand Knight or Grand Knight.
+-- CouncilLeadershipHistory holds one row per member per seat per term; a NULL EndDate is the sitting holder.
+-- ExitReason is TermConcluded or Abdicated, enforced by the shared rules layer as elsewhere (no CHECK).
+-- Roles are matched by name there (Grand Knight, Trustee 1-3, the appointed offices), never by id.
+-- =========================================================================
+CREATE TABLE [CouncilElectionBallot] (
+	[CouncilID] INTEGER NOT NULL,
+	[RoleID] INTEGER NOT NULL,
+	[IsUpForElection] BIT NOT NULL DEFAULT 0,
+	[IsMidYearElection] BIT NOT NULL DEFAULT 0,
+	[NominationsCloseAt] DATETIME NULL, -- mid-year elections only: two weeks after the abdication
+	PRIMARY KEY([CouncilID], [RoleID])
+);
+GO
+
+CREATE TABLE [OfficerNominations] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[OfficeRoleID] INTEGER NOT NULL,
+	[NomineeMemberID] INTEGER NOT NULL,
+	[NominatedByMemberID] INTEGER NOT NULL,
+	[NominatedAt] DATETIME NOT NULL DEFAULT getdate(),
+	[FraternalYear] VARCHAR(9) NOT NULL, -- the term the election fills, e.g. '2027-2028'
+	[IsEligible] BIT NOT NULL DEFAULT 1,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [CouncilLeadershipHistory] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[MemberID] INTEGER NOT NULL,
+	[RoleID] INTEGER NOT NULL,
+	[FraternalYear] VARCHAR(9) NOT NULL,
+	[StartDate] DATE NOT NULL,
+	[EndDate] DATE NULL, -- NULL while the member holds the seat
+	[ExitReason] VARCHAR(50) NULL, -- TermConcluded, Abdicated
+	[AppointedByID] INTEGER NULL, -- the Grand Knight or Super Admin who appointed the member; NULL when elected or backfilled
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CouncilElectionBallot]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilElectionBallot]
+ADD FOREIGN KEY([RoleID])
+REFERENCES [Role]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [OfficerNominations]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [OfficerNominations]
+ADD FOREIGN KEY([OfficeRoleID])
+REFERENCES [Role]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [OfficerNominations]
+ADD FOREIGN KEY([NomineeMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [OfficerNominations]
+ADD FOREIGN KEY([NominatedByMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilLeadershipHistory]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilLeadershipHistory]
+ADD FOREIGN KEY([MemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilLeadershipHistory]
+ADD FOREIGN KEY([RoleID])
+REFERENCES [Role]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilLeadershipHistory]
+ADD FOREIGN KEY([AppointedByID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [OfficerNominations_Council_Role_Nominee_Year_Idx] ON [OfficerNominations] ([CouncilID], [OfficeRoleID], [NomineeMemberID], [FraternalYear]);
+GO
+CREATE INDEX [CouncilLeadershipHistory_Council_Role_Idx] ON [CouncilLeadershipHistory] ([CouncilID], [RoleID], [EndDate]);
+GO
+CREATE INDEX [CouncilLeadershipHistory_Member_Idx] ON [CouncilLeadershipHistory] ([MemberID]);
+GO

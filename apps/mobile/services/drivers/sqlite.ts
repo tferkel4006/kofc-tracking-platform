@@ -138,6 +138,38 @@ import {
   trainingDateToYear,
   trainingYearToDate,
   UNREGISTERED_PASSWORD,
+  alreadyNominated,
+  assertActiveCouncilMember,
+  assertAppointableRole,
+  assertElectedRole,
+  assertMayAppointOfficers,
+  assertMayConcludeFraternalYear,
+  assertMayConfigureBallot,
+  assertMayNominate,
+  assertMayRecordAbdication,
+  assertNominationsOpen,
+  assertOfficeRole,
+  assertOneTrusteeSeat,
+  ballotTermYear,
+  buildBallotSeats,
+  buildOfficerSeats,
+  buildVacancies,
+  cleanBallotStatus,
+  conclusionResult,
+  electionTermYear,
+  fraternalYearOf,
+  GRAND_KNIGHT_ROLE,
+  isEligibleNominee,
+  midYearNominationsCloseAt,
+  planConclusionFromSeats,
+  planHistoryBackfill,
+  requireRole,
+  roleNotHeld,
+  roleOccupied,
+  seatHolderId,
+  seatHolderIdByName,
+  type ElectionRows,
+  type SeatTransition,
   type CleanDonation,
   type CouncilAdminDetails,
   type EventFunds,
@@ -213,6 +245,9 @@ import type {
   NewMeeting,
   ReadReceipt,
   Role,
+  CouncilElectionBallot,
+  CouncilLeadershipHistory,
+  OfficerNominations,
   SessionUser,
   Shift,
   ShiftChanges,
@@ -249,8 +284,9 @@ const DB_NAME = 'kofc.db';
  * 9: ExpenseReport.RejectionReason (Sprint 5R-1.5).
  * 10: Member.ProfilePhotoURL and Member.Biography (Sprint 5S).
  * 11: Member.ExpoPushToken, NotificationLog and SupremeReportingSync (Sprint 5T).
+ * 12: CouncilElectionBallot, OfficerNominations and CouncilLeadershipHistory; Priest and Lector renamed Chaplain and Lecturer (Sprint 5U).
  */
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -385,6 +421,8 @@ export class SqliteDataService implements DataService {
       await this.seedDevEvents(db);
       await this.seedDevExtras(db);
       await this.seedDevDonationMethods(db);
+      // Day-one leadership history: every seated officer gets an open term for the current fraternal year.
+      for (const c of await db.getAllAsync<{ id: number }>('SELECT [id] FROM [Council] ORDER BY [id]')) await this.backfillLeadershipHistory(db, c.id);
       await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION};`);
     });
   }
@@ -2929,6 +2967,262 @@ export class SqliteDataService implements DataService {
       donations: donations.map((d) => ({ DonationAmount: d.DonationAmount, kind: donationMethodKind(d.method) })),
       disbursements,
     };
+  }
+
+  // ---- officer elections (Sprint 5U) ----------------------------------------
+
+  elections: DataService['elections'] = {
+    listOfficerSeats: async (councilId) => {
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      return buildOfficerSeats(councilId, await this.electionRows(db, councilId));
+    },
+
+    listBallotConfig: async (councilId) => {
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      return buildBallotSeats(await this.electionRows(db, councilId), this.now());
+    },
+
+    listVacancies: async (councilId) => {
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      return buildVacancies(await this.electionRows(db, councilId));
+    },
+
+    toggleRoleBallotStatus: async (actorId, councilId, roleId, isOpen) => {
+      const open = cleanBallotStatus(isOpen);
+      const db = await this.ready();
+      let ballot!: CouncilElectionBallot;
+      await db.withTransactionAsync(async () => {
+        assertMayConfigureBallot(await this.memberWriteActor(db, actorId), councilId);
+        await this.assertCouncilsExist(db, [councilId]);
+        assertElectedRole(requireRole(await this.allRoles(db), roleId));
+        await this.backfillLeadershipHistory(db, councilId);
+        // Closing a seat also ends any mid-year election on it; opening keeps a mid-year window already running.
+        ballot = await this.upsertBallot(db, councilId, roleId, open ? { IsUpForElection: 1 } : { IsUpForElection: 0, IsMidYearElection: 0, NominationsCloseAt: null });
+      });
+      return ballot;
+    },
+
+    submitNomination: async (actorId, councilId, roleId, nomineeMemberId) => {
+      const db = await this.ready();
+      const now = this.now();
+      let result!: Awaited<ReturnType<DataService['elections']['submitNomination']>>;
+      await db.withTransactionAsync(async () => {
+        assertMayNominate(await this.memberWriteActor(db, actorId), councilId);
+        await this.assertCouncilsExist(db, [councilId]);
+        const role = requireRole(await this.allRoles(db), roleId);
+        assertElectedRole(role);
+        await this.backfillLeadershipHistory(db, councilId);
+        const stored = await db.getFirstAsync<CouncilElectionBallot>('SELECT * FROM [CouncilElectionBallot] WHERE [CouncilID] = ? AND [RoleID] = ?', [councilId, roleId]);
+        const ballot = assertNominationsOpen(stored ?? undefined, role.Role, now);
+        await this.assertActiveCouncilMember(db, nomineeMemberId, councilId, `nominated for ${role.Role}`);
+        const fraternalYear = ballotTermYear(ballot, now);
+        const seatNominees = await db.getAllAsync<{ NomineeMemberID: number }>(
+          'SELECT [NomineeMemberID] FROM [OfficerNominations] WHERE [CouncilID] = ? AND [OfficeRoleID] = ? AND [FraternalYear] = ?',
+          [councilId, roleId, fraternalYear],
+        );
+        if (seatNominees.some((n) => n.NomineeMemberID === nomineeMemberId)) throw alreadyNominated(role.Role, nomineeMemberId, fraternalYear);
+        const served = await db.getAllAsync<{ Role: string }>(
+          'SELECT r.[Role] FROM [CouncilLeadershipHistory] h JOIN [Role] r ON r.[id] = h.[RoleID] WHERE h.[MemberID] = ?',
+          [nomineeMemberId],
+        );
+        const eligible = isEligibleNominee(role.Role, served.map((r) => r.Role));
+        const res = await db.runAsync(
+          `INSERT INTO [OfficerNominations] ([CouncilID], [OfficeRoleID], [NomineeMemberID], [NominatedByMemberID], [NominatedAt], [FraternalYear], [IsEligible])
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [councilId, roleId, nomineeMemberId, actorId, toTimestamp(now), fraternalYear, eligible ? 1 : 0],
+        );
+        const nomination = (await db.getFirstAsync<OfficerNominations>('SELECT * FROM [OfficerNominations] WHERE [id] = ?', [res.lastInsertRowId]))!;
+        result = { nomination, eligible, tally: seatNominees.length + 1 };
+      });
+      return result;
+    },
+
+    recordOfficerAbdication: async (actorId, councilId, memberId, roleId) => {
+      const db = await this.ready();
+      const now = this.now();
+      let result!: Awaited<ReturnType<DataService['elections']['recordOfficerAbdication']>>;
+      await db.withTransactionAsync(async () => {
+        assertMayRecordAbdication(await this.memberWriteActor(db, actorId), councilId, memberId);
+        await this.assertCouncilsExist(db, [councilId]);
+        const role = requireRole(await this.allRoles(db), roleId);
+        const kind = assertOfficeRole(role);
+        const held = await db.getFirstAsync(
+          'SELECT 1 FROM [MemberRoles] mr JOIN [Member] m ON m.[id] = mr.[MemberID] WHERE mr.[MemberID] = ? AND mr.[RoleID] = ? AND m.[CouncilID] = ?',
+          [memberId, roleId, councilId],
+        );
+        if (!held) throw roleNotHeld(memberId, role.Role, councilId);
+        await this.backfillLeadershipHistory(db, councilId);
+        const term = await this.openTerm(db, councilId, memberId, roleId);
+        if (term) {
+          await db.runAsync("UPDATE [CouncilLeadershipHistory] SET [EndDate] = ?, [ExitReason] = 'Abdicated' WHERE [id] = ?", [toIsoDate(now), term.id]);
+        }
+        await db.runAsync('DELETE FROM [MemberRoles] WHERE [MemberID] = ? AND [RoleID] = ?', [memberId, roleId]);
+        const ballot =
+          kind === 'elected'
+            ? await this.upsertBallot(db, councilId, roleId, { IsUpForElection: 1, IsMidYearElection: 1, NominationsCloseAt: midYearNominationsCloseAt(now) })
+            : null;
+        result = {
+          history: term ? (await db.getFirstAsync<CouncilLeadershipHistory>('SELECT * FROM [CouncilLeadershipHistory] WHERE [id] = ?', [term.id]))! : null,
+          outcome: kind === 'elected' ? 'MidYearElection' : 'AwaitingAppointment',
+          ballot,
+        };
+      });
+      return result;
+    },
+
+    assignAppointedRole: async (actorId, councilId, roleId, targetMemberId) => {
+      const db = await this.ready();
+      const now = this.now();
+      let term!: CouncilLeadershipHistory;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        await this.assertCouncilsExist(db, [councilId]);
+        const rows = await this.electionRows(db, councilId);
+        assertMayAppointOfficers(actor, councilId, seatHolderIdByName(rows, GRAND_KNIGHT_ROLE));
+        const role = requireRole(rows.roles, roleId);
+        assertAppointableRole(role);
+        const holder = seatHolderId(rows, roleId);
+        if (holder !== null) throw roleOccupied(role.Role, holder);
+        await this.assertActiveCouncilMember(db, targetMemberId, councilId, `appointed ${role.Role}`);
+        assertOneTrusteeSeat(role, (await this.rolesFor(db, targetMemberId)).map((r) => r.Role), targetMemberId);
+        await this.backfillLeadershipHistory(db, councilId);
+        await db.runAsync('INSERT INTO [MemberRoles] ([RoleID], [MemberID]) VALUES (?, ?)', [roleId, targetMemberId]);
+        const id = await this.insertTerm(db, councilId, targetMemberId, roleId, fraternalYearOf(now), toIsoDate(now), actorId);
+        term = (await db.getFirstAsync<CouncilLeadershipHistory>('SELECT * FROM [CouncilLeadershipHistory] WHERE [id] = ?', [id]))!;
+      });
+      return term;
+    },
+
+    concludeFraternalYear: async (actorId, councilId, newGrandKnightId) => {
+      const db = await this.ready();
+      const now = this.now();
+      let result!: Awaited<ReturnType<DataService['elections']['concludeFraternalYear']>>;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        await this.assertCouncilsExist(db, [councilId]);
+        assertMayConcludeFraternalYear(actor, councilId, seatHolderIdByName(await this.electionRows(db, councilId), GRAND_KNIGHT_ROLE));
+        await this.assertActiveCouncilMember(db, newGrandKnightId, councilId, 'seated as Grand Knight');
+        await this.backfillLeadershipHistory(db, councilId);
+        const rows = await this.electionRows(db, councilId);
+        const plan = planConclusionFromSeats(buildOfficerSeats(councilId, rows), newGrandKnightId);
+        const fraternalYear = electionTermYear(now);
+        await this.applySeatTransitions(db, councilId, rows, plan.transitions, fraternalYear, toIsoDate(now));
+        const reset = await db.runAsync('DELETE FROM [CouncilElectionBallot] WHERE [CouncilID] = ?', [councilId]);
+        result = conclusionResult(plan, rows.roles, fraternalYear, reset.changes);
+      });
+      return result;
+    },
+  };
+
+  private allRoles(db: SQLite.SQLiteDatabase): Promise<Role[]> {
+    return db.getAllAsync<Role>('SELECT * FROM [Role] ORDER BY [id]');
+  }
+
+  /** Everything the election views read for one council (elections.ts ElectionRows). */
+  private async electionRows(db: SQLite.SQLiteDatabase, councilId: number): Promise<ElectionRows> {
+    return {
+      roles: await this.allRoles(db),
+      members: await db.getAllAsync<ElectionRows['members'][number]>('SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member]'),
+      holdings: await db.getAllAsync<{ RoleID: number; MemberID: number }>(
+        'SELECT mr.[RoleID], mr.[MemberID] FROM [MemberRoles] mr JOIN [Member] m ON m.[id] = mr.[MemberID] WHERE m.[CouncilID] = ?',
+        [councilId],
+      ),
+      history: await db.getAllAsync<CouncilLeadershipHistory>('SELECT * FROM [CouncilLeadershipHistory] WHERE [CouncilID] = ? ORDER BY [id]', [councilId]),
+      ballots: await db.getAllAsync<CouncilElectionBallot>('SELECT * FROM [CouncilElectionBallot] WHERE [CouncilID] = ? ORDER BY [RoleID]', [councilId]),
+      nominations: await db.getAllAsync<OfficerNominations>('SELECT * FROM [OfficerNominations] WHERE [CouncilID] = ? ORDER BY [id]', [councilId]),
+    };
+  }
+
+  /** Opens a history row for every Active office holder of the council who has none (planHistoryBackfill). */
+  private async backfillLeadershipHistory(db: SQLite.SQLiteDatabase, councilId: number): Promise<void> {
+    const active = await db.getAllAsync<{ id: number }>(`SELECT m.[id] FROM [Member] m WHERE ${ACTIVE_MEMBER_FILTER}`, [councilId]);
+    const plan = planHistoryBackfill(councilId, await this.electionRows(db, councilId), new Set(active.map((m) => m.id)), this.now());
+    for (const t of plan) await this.insertTerm(db, councilId, t.MemberID, t.RoleID, t.FraternalYear, t.StartDate, null);
+  }
+
+  private async insertTerm(
+    db: SQLite.SQLiteDatabase,
+    councilId: number,
+    memberId: number,
+    roleId: number,
+    fraternalYear: string,
+    startDate: string,
+    appointedById: number | null,
+  ): Promise<number> {
+    const res = await db.runAsync(
+      `INSERT INTO [CouncilLeadershipHistory] ([CouncilID], [MemberID], [RoleID], [FraternalYear], [StartDate], [AppointedByID])
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [councilId, memberId, roleId, fraternalYear, startDate, appointedById],
+    );
+    return res.lastInsertRowId;
+  }
+
+  /** The open history row of a member's seat. */
+  private openTerm(db: SQLite.SQLiteDatabase, councilId: number, memberId: number, roleId: number): Promise<{ id: number } | null> {
+    return db.getFirstAsync<{ id: number }>(
+      'SELECT [id] FROM [CouncilLeadershipHistory] WHERE [CouncilID] = ? AND [MemberID] = ? AND [RoleID] = ? AND [EndDate] IS NULL',
+      [councilId, memberId, roleId],
+    );
+  }
+
+  private async upsertBallot(
+    db: SQLite.SQLiteDatabase,
+    councilId: number,
+    roleId: number,
+    fields: Partial<Pick<CouncilElectionBallot, 'IsUpForElection' | 'IsMidYearElection' | 'NominationsCloseAt'>>,
+  ): Promise<CouncilElectionBallot> {
+    const columns = Object.keys(fields) as (keyof typeof fields)[];
+    const values = columns.map((c) => fields[c] ?? null);
+    await db.runAsync(
+      `INSERT INTO [CouncilElectionBallot] ([CouncilID], [RoleID], ${columns.map((c) => `[${c}]`).join(', ')})
+       VALUES (?, ?, ${marks(columns.length)})
+       ON CONFLICT ([CouncilID], [RoleID]) DO UPDATE SET ${columns.map((c) => `[${c}] = excluded.[${c}]`).join(', ')}`,
+      [councilId, roleId, ...values],
+    );
+    return (await db.getFirstAsync<CouncilElectionBallot>('SELECT * FROM [CouncilElectionBallot] WHERE [CouncilID] = ? AND [RoleID] = ?', [councilId, roleId]))!;
+  }
+
+  /** NOT_ACTIVE_COUNCIL_MEMBER unless `memberId` is an Active member of the council. */
+  private async assertActiveCouncilMember(db: SQLite.SQLiteDatabase, memberId: number, councilId: number, purpose: string): Promise<void> {
+    const m = await db.getFirstAsync<{ id: number; CouncilID: number; active: number }>(
+      `SELECT m.[id], m.[CouncilID], (st.[Status] = 'Active') AS active FROM [Member] m
+         LEFT JOIN [MemberStatus] st ON st.[id] = m.[StatusID]
+        WHERE m.[id] = ?`,
+      [memberId],
+    );
+    assertActiveCouncilMember(m, m?.active === 1, councilId, purpose);
+  }
+
+  /**
+   * Carries out a conclusion plan: every departing holder's term closes 'TermConcluded' and their role goes; then every
+   * arriving holder gets the role and a term in `fraternalYear`. A renewal (same member) closes and reopens the term.
+   */
+  private async applySeatTransitions(
+    db: SQLite.SQLiteDatabase,
+    councilId: number,
+    rows: ElectionRows,
+    transitions: readonly SeatTransition[],
+    fraternalYear: string,
+    today: string,
+  ): Promise<void> {
+    const roleId = (name: string) => rows.roles.find((r) => r.Role === name)!.id;
+    for (const t of transitions) {
+      if (t.from === null) continue;
+      await db.runAsync(
+        `UPDATE [CouncilLeadershipHistory] SET [EndDate] = ?, [ExitReason] = 'TermConcluded'
+          WHERE [CouncilID] = ? AND [MemberID] = ? AND [RoleID] = ? AND [EndDate] IS NULL`,
+        [today, councilId, t.from, roleId(t.roleName)],
+      );
+      if (t.from !== t.to) await db.runAsync('DELETE FROM [MemberRoles] WHERE [MemberID] = ? AND [RoleID] = ?', [t.from, roleId(t.roleName)]);
+    }
+    for (const t of transitions) {
+      if (t.to === null) continue;
+      if (t.from !== t.to) await db.runAsync('INSERT INTO [MemberRoles] ([RoleID], [MemberID]) VALUES (?, ?)', [roleId(t.roleName), t.to]);
+      await this.insertTerm(db, councilId, t.to, roleId(t.roleName), fraternalYear, today, null);
+    }
   }
 
   feedback: DataService['feedback'] = {

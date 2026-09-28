@@ -425,3 +425,41 @@ export interface SupremeReportingSync {
   AlchemerSurveyID: string;
   Status: SupremeSyncStatus;
 }
+
+// 10. OFFICER ELECTIONS AND LEADERSHIP HISTORY (Sprint 5U)
+/** Why a member left a seat: the fraternal year ended, or they stepped down mid-term. */
+export type LeadershipExitReason = 'TermConcluded' | 'Abdicated';
+
+/** Whether one of a council's elected seats is open for nomination; one row per council and role. */
+export interface CouncilElectionBallot {
+  CouncilID: number;
+  RoleID: number;
+  IsUpForElection: number; // BIT
+  IsMidYearElection: number; // BIT: opened by an abdication, nominations run until NominationsCloseAt
+  NominationsCloseAt?: string | null; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC; mid-year elections only
+}
+
+/** One member put up for one seat in one term. */
+export interface OfficerNominations {
+  id: number;
+  CouncilID: number;
+  OfficeRoleID: number;
+  NomineeMemberID: number;
+  NominatedByMemberID: number;
+  NominatedAt: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+  FraternalYear: string; // the term the election fills, e.g. '2027-2028'
+  IsEligible: number; // BIT: 0 for a Grand Knight nominee who has never served as Deputy Grand Knight or Grand Knight
+}
+
+/** One member's time in one seat; EndDate NULL means they hold it now. */
+export interface CouncilLeadershipHistory {
+  id: number;
+  CouncilID: number;
+  MemberID: number;
+  RoleID: number;
+  FraternalYear: string; // e.g. '2026-2027' (July 1 - June 30)
+  StartDate: string; // YYYY-MM-DD
+  EndDate?: string | null; // YYYY-MM-DD
+  ExitReason?: LeadershipExitReason | null;
+  AppointedByID?: number | null; // the Grand Knight or Super Admin who appointed them
+}

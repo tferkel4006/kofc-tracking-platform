@@ -144,12 +144,12 @@ function parseSchema(sql) {
       }
       if (!pk.length) fail(`[${name}] has no PRIMARY KEY`, stmt);
       for (const c of pk) if (!columns.some((x) => x.name === c)) fail(`PK column [${c}] missing on [${name}]`, stmt);
-      tables.set(name, { columns, pk, fks: [] });
+      tables.set(name, { columns, pk, fks: [], uniqueKeys: [] });
     } else if ((m = stmt.match(/^ALTER TABLE \[([^\]]+)\]\s+ADD FOREIGN KEY\s*\(\[([^\]]+)\]\)\s+REFERENCES\s+\[?([^\s(\]]+)\]?\s*(?:\(\[?([^\])]+)\]?\))?(?:\s+ON\s+(?:UPDATE|DELETE)\s+NO\s+ACTION)*$/i))) {
       // ON UPDATE/DELETE NO ACTION is SQLite's default too, so the clauses need no translation.
       alters.push({ table: m[1], column: m[2], refTable: m[3], refColumn: m[4] ?? null, stmt });
-    } else if ((m = stmt.match(/^CREATE INDEX \[([^\]]+)\]\s+ON\s+\[([^\]]+)\]\s*\(([^)]*)\)(?:\s*INCLUDE\s*\([^)]*\))?$/i))) {
-      indexes.push({ name: m[1], table: m[2], columns: m[3].trim(), stmt });
+    } else if ((m = stmt.match(/^CREATE (UNIQUE )?INDEX \[([^\]]+)\]\s+ON\s+\[([^\]]+)\]\s*\(([^)]*)\)(?:\s*INCLUDE\s*\([^)]*\))?$/i))) {
+      indexes.push({ unique: Boolean(m[1]), name: m[2], table: m[3], columns: m[4].trim(), stmt });
     } else if ((m = stmt.match(/^CREATE OR ALTER VIEW \[([^\]]+)\]\s+AS\s+([\s\S]+)$/i))) {
       views.push({ name: m[1], body: m[2].trim() });
     } else {
@@ -166,7 +166,14 @@ function parseSchema(sql) {
     if (!parent.columns.some((c) => c.name === refColumn)) fail(`FK references unknown column [${a.refTable}].[${refColumn}]`, a.stmt);
     child.fks.push({ column: a.column, refTable: a.refTable, refColumn });
   }
-  for (const ix of indexes) if (!tables.has(ix.table)) fail(`Index [${ix.name}] on unknown table [${ix.table}]`, ix.stmt);
+  for (const ix of indexes) {
+    const t = tables.get(ix.table) ?? fail(`Index [${ix.name}] on unknown table [${ix.table}]`, ix.stmt);
+    if (!ix.unique) continue;
+    // A unique index is a uniqueness rule the web mock enforces too, so its columns must be plain names.
+    const cols = splitTopLevel(ix.columns).map((c) => c.match(/^\[([^\]]+)\]$/)?.[1] ?? fail(`Unique index [${ix.name}] may list only [column] names`, ix.stmt));
+    for (const c of cols) if (!t.columns.some((x) => x.name === c)) fail(`Unique index column [${ix.table}].[${c}] does not exist`, ix.stmt);
+    t.uniqueKeys.push(cols);
+  }
 
   return { tables, indexes, views };
 }
@@ -193,7 +200,7 @@ function sqliteCreateTable(name, t) {
 function sqliteSchemaStatements({ tables, indexes, views }) {
   const out = [];
   for (const [name, t] of tables) out.push(sqliteCreateTable(name, t));
-  for (const ix of indexes) out.push(`CREATE INDEX [${ix.name}] ON [${ix.table}] (${ix.columns});`);
+  for (const ix of indexes) out.push(`CREATE ${ix.unique ? 'UNIQUE ' : ''}INDEX [${ix.name}] ON [${ix.table}] (${ix.columns});`);
   for (const v of views) {
     out.push(`DROP VIEW IF EXISTS [${v.name}];`);
     out.push(`CREATE VIEW [${v.name}] AS\n${v.body};`);
@@ -276,6 +283,7 @@ function renderWeb(tables, seed) {
         name: c.name, kind: c.kind, notNull: c.notNull, identity: c.identity, default: c.default,
       })),
       foreignKeys: t.fks,
+      uniqueKeys: t.uniqueKeys,
     }]),
   );
   return (
@@ -300,6 +308,8 @@ export interface TableMeta {
   primaryKey: string[];
   columns: ColumnMeta[];
   foreignKeys: ForeignKeyMeta[];
+  /** Column sets of the table's CREATE UNIQUE INDEX statements, besides the primary key. */
+  uniqueKeys: string[][];
 }
 
 export type SeedValue = string | number | null;

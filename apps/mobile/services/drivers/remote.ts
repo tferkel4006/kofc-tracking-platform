@@ -152,6 +152,16 @@ export function createRemoteDataService(): DataService {
       markAsRead: notImplemented('notifications.markAsRead'),
       dispatchHighPriorityAlert: notImplemented('notifications.dispatchHighPriorityAlert'),
     },
+    elections: {
+      listOfficerSeats: notImplemented('elections.listOfficerSeats'),
+      listBallotConfig: notImplemented('elections.listBallotConfig'),
+      listVacancies: notImplemented('elections.listVacancies'),
+      toggleRoleBallotStatus: notImplemented('elections.toggleRoleBallotStatus'),
+      submitNomination: notImplemented('elections.submitNomination'),
+      recordOfficerAbdication: notImplemented('elections.recordOfficerAbdication'),
+      assignAppointedRole: notImplemented('elections.assignAppointedRole'),
+      concludeFraternalYear: notImplemented('elections.concludeFraternalYear'),
+    },
     supreme: {
       previewReport: notImplemented('supreme.previewReport'),
       syncAlchemerReport: notImplemented('supreme.syncAlchemerReport'),

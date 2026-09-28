@@ -24,6 +24,8 @@ export interface TableMeta {
   primaryKey: string[];
   columns: ColumnMeta[];
   foreignKeys: ForeignKeyMeta[];
+  /** Column sets of the table's CREATE UNIQUE INDEX statements, besides the primary key. */
+  uniqueKeys: string[][];
 }
 
 export type SeedValue = string | number | null;
@@ -62,7 +64,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "MemberStatus": {
     "primaryKey": [
@@ -84,7 +87,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "Degree": {
     "primaryKey": [
@@ -106,7 +110,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "MemberType": {
     "primaryKey": [
@@ -128,7 +133,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "Role": {
     "primaryKey": [
@@ -160,7 +166,8 @@ export const TABLES: Record<string, TableMeta> = {
         }
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "NoShowReason": {
     "primaryKey": [
@@ -189,7 +196,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "Category": {
     "primaryKey": [
@@ -218,7 +226,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "LessonsLearnedCategory": {
     "primaryKey": [
@@ -240,7 +249,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "MeetingType": {
     "primaryKey": [
@@ -269,7 +279,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "Council": {
     "primaryKey": [
@@ -319,7 +330,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "AffiliatedCouncils": {
     "primaryKey": [
@@ -342,7 +354,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "Parish": {
     "primaryKey": [
@@ -412,7 +425,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Council",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "Pastor": {
     "primaryKey": [
@@ -468,7 +482,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Parish",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "Meeting": {
     "primaryKey": [
@@ -590,7 +605,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Member",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "MeetingInvites": {
     "primaryKey": [
@@ -640,7 +656,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Member",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "Member": {
     "primaryKey": [
@@ -826,7 +843,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "WorkingStatus",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "MemberRoles": {
     "primaryKey": [
@@ -866,7 +884,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Role",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "Event": {
     "primaryKey": [
@@ -997,7 +1016,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Member",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "EventCouncils": {
     "primaryKey": [
@@ -1026,7 +1046,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "Shift": {
     "primaryKey": [
@@ -1103,7 +1124,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Event",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "EventSignup": {
     "primaryKey": [
@@ -1172,7 +1194,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "NoShowReason",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "EventTime": {
     "primaryKey": [
@@ -1226,7 +1249,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Shift",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "LessonsLearned": {
     "primaryKey": [
@@ -1273,7 +1297,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Event",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "Activities": {
     "primaryKey": [
@@ -1327,7 +1352,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Council",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "ActivityTime": {
     "primaryKey": [
@@ -1388,7 +1414,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Activities",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "DistributionLists": {
     "primaryKey": [
@@ -1433,7 +1460,8 @@ export const TABLES: Record<string, TableMeta> = {
         }
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "DistributionListMembers": {
     "primaryKey": [
@@ -1467,7 +1495,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Member",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "ChatThreads": {
     "primaryKey": [
@@ -1514,7 +1543,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Council",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "Messages": {
     "primaryKey": [
@@ -1592,7 +1622,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Messages",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "MessageAttachments": {
     "primaryKey": [
@@ -1650,7 +1681,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Messages",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "ReadReceipts": {
     "primaryKey": [
@@ -1707,7 +1739,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Member",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "WorkingStatus": {
     "primaryKey": [
@@ -1729,7 +1762,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "Donation": {
     "primaryKey": [
@@ -1840,7 +1874,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Member",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "DonationMethod": {
     "primaryKey": [
@@ -1862,7 +1897,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "DonationType": {
     "primaryKey": [
@@ -1897,7 +1933,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Council",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "Skill": {
     "primaryKey": [
@@ -1919,7 +1956,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "SkillLevel": {
     "primaryKey": [
@@ -1941,7 +1979,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "MemberSkill": {
     "primaryKey": [
@@ -1993,7 +2032,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Member",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "KOCTrainingClasses": {
     "primaryKey": [
@@ -2015,7 +2055,8 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       }
     ],
-    "foreignKeys": []
+    "foreignKeys": [],
+    "uniqueKeys": []
   },
   "MemberTraining": {
     "primaryKey": [
@@ -2062,7 +2103,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Member",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "CouncilDonationMethod": {
     "primaryKey": [
@@ -2109,7 +2151,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "DonationMethod",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "SystemFeedback": {
     "primaryKey": [
@@ -2153,7 +2196,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Member",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "ExpenseDisbursement": {
     "primaryKey": [
@@ -2209,7 +2253,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Council",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "ExpenseReport": {
     "primaryKey": [
@@ -2299,7 +2344,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "ExpenseDisbursement",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "ExpenseLineItem": {
     "primaryKey": [
@@ -2362,7 +2408,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "ExpenseReport",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "NotificationLog": {
     "primaryKey": [
@@ -2442,7 +2489,8 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Member",
         "refColumn": "id"
       }
-    ]
+    ],
+    "uniqueKeys": []
   },
   "SupremeReportingSync": {
     "primaryKey": [
@@ -2512,7 +2560,261 @@ export const TABLES: Record<string, TableMeta> = {
         "refTable": "Member",
         "refColumn": "id"
       }
+    ],
+    "uniqueKeys": []
+  },
+  "CouncilElectionBallot": {
+    "primaryKey": [
+      "CouncilID",
+      "RoleID"
+    ],
+    "columns": [
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "RoleID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "IsUpForElection",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "IsMidYearElection",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "NominationsCloseAt",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "RoleID",
+        "refTable": "Role",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": []
+  },
+  "OfficerNominations": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "OfficeRoleID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "NomineeMemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "NominatedByMemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "NominatedAt",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      },
+      {
+        "name": "FraternalYear",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "IsEligible",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 1
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "OfficeRoleID",
+        "refTable": "Role",
+        "refColumn": "id"
+      },
+      {
+        "column": "NomineeMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "NominatedByMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "CouncilID",
+        "OfficeRoleID",
+        "NomineeMemberID",
+        "FraternalYear"
+      ]
     ]
+  },
+  "CouncilLeadershipHistory": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "MemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "RoleID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "FraternalYear",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "StartDate",
+        "kind": "date",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "EndDate",
+        "kind": "date",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ExitReason",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "AppointedByID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "MemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "RoleID",
+        "refTable": "Role",
+        "refColumn": "id"
+      },
+      {
+        "column": "AppointedByID",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": []
   }
 };
 
@@ -2608,7 +2910,7 @@ export const SEED_DATA: readonly SeedTable[] = [
         "Officer": 1
       },
       {
-        "Role": "Lector",
+        "Role": "Lecturer",
         "Officer": 0
       },
       {
@@ -2640,7 +2942,7 @@ export const SEED_DATA: readonly SeedTable[] = [
         "Officer": 0
       },
       {
-        "Role": "Priest",
+        "Role": "Chaplain",
         "Officer": 0
       },
       {

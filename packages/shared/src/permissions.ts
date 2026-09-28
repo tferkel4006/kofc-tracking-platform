@@ -10,6 +10,7 @@
 // identity yet, so until the remote driver's API enforces them server-side they are a usability gate.
 // =========================================================================
 import type { CouncilLookupTableName, SessionUser } from './contract';
+import { GRAND_KNIGHT_ROLE } from './elections';
 import { FINANCE_LOOKUP_TABLES, holdsFinanceRole } from './rules';
 import type { Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
 
@@ -29,6 +30,8 @@ export type PortalArea =
   | 'activities'
   | 'events'
   | 'meetings'
+  | 'elections'
+  | 'elections/appointments'
   | 'distribution-lists'
   | 'ledger'
   | 'expenses'
@@ -183,6 +186,15 @@ export const canDispatchCouncilAlerts = (u: Actor, councilId: number): boolean =
 export const canSyncSupremeReports = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
 
 /**
+ * The Appointed Leadership Matrix, mirroring assertMayAppointOfficers (Sprint 5U; activity status and the seat's council
+ * are checked there): the sitting Grand Knight and any Super Admin.
+ */
+export const canAppointOfficers = (u: Actor): boolean => isSuperAdmin(u) || (u.roles ?? []).includes(GRAND_KNIGHT_ROLE);
+
+/** The Officer Election Parameters tab, mirroring assertMayConfigureBallot: the council's Admins and any Super Admin. */
+export const canConfigureBallot = (u: Actor, councilId: number): boolean => canAdministerCouncil(u, councilId);
+
+/**
  * Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it, and the
  * meeting center because a meeting's owner may be any member (it is read-only for everyone else without rights).
  */
@@ -192,9 +204,11 @@ export function portalAreas(u: Actor): PortalArea[] {
   if (canMaintainLookups(u)) areas.push('lookups');
   if (canMaintainCouncils(u)) areas.push('councils');
   if (canOpenCouncilLookups(u)) areas.push('council-lookups');
+  if (canAppointOfficers(u)) areas.push('elections/appointments');
   if (isAdmin(u)) areas.push('parishes', 'members', 'activities');
   if (canPlanEvents(u)) areas.push('events');
-  areas.push('meetings');
+  // Every member may put a brother Knight up for office (the drivers check they are Active).
+  areas.push('meetings', 'elections');
   if (isAdmin(u)) areas.push('distribution-lists');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('donations');
   // Every member files their own expense reports; the council's leadership audits them; only its finance officers
@@ -226,10 +240,10 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
     id: 'volunteer',
     label: 'Volunteer Operations',
     collapsible: true,
-    items: ['calendar', 'activities', 'members', 'events', 'meetings', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
+    items: ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
   },
   { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements'] },
-  { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'supreme-sync', 'lookups', 'parishes', 'councils'] },
+  { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'] },
 ];
 
 /** The sidebar for `u`: each group holding only the links portalAreas allows (help is for everyone); empty groups are dropped. */

@@ -138,14 +138,49 @@ import {
   trainingDateToYear,
   trainingYearToDate,
   UNREGISTERED_PASSWORD,
+  alreadyNominated,
+  assertActiveCouncilMember,
+  assertAppointableRole,
+  assertElectedRole,
+  assertMayAppointOfficers,
+  assertMayConcludeFraternalYear,
+  assertMayConfigureBallot,
+  assertMayNominate,
+  assertMayRecordAbdication,
+  assertNominationsOpen,
+  assertOfficeRole,
+  assertOneTrusteeSeat,
+  ballotTermYear,
+  buildBallotSeats,
+  buildOfficerSeats,
+  buildVacancies,
+  cleanBallotStatus,
+  conclusionResult,
+  electionTermYear,
+  fraternalYearOf,
+  GRAND_KNIGHT_ROLE,
+  isEligibleNominee,
+  midYearNominationsCloseAt,
+  planConclusionFromSeats,
+  planHistoryBackfill,
+  requireRole,
+  roleNotHeld,
+  roleOccupied,
+  seatHolderId,
+  seatHolderIdByName,
   type CleanDonation,
+  type ElectionRows,
   type EventFunds,
   type MaintainedTable,
   type MemberWriteActor,
   type MessagingRows,
+  type SeatTransition,
   type SignupContextRow,
 } from '@kofc/shared';
 import type {
+  CouncilElectionBallot,
+  CouncilLeadershipHistory,
+  OfficerNominations,
   Activities,
   AlchemerRequest,
   AlchemerResponse,
@@ -337,6 +372,11 @@ class MemoryStore {
     if (stored.some((r) => meta.primaryKey.every((k) => r[k] === row[k]))) {
       throw new Error(`UNIQUE constraint failed: ${meta.primaryKey.map((k) => `${table}.${k}`).join(', ')}`);
     }
+    for (const key of meta.uniqueKeys) {
+      if (stored.some((r) => key.every((k) => r[k] === row[k]))) {
+        throw new Error(`UNIQUE constraint failed: ${key.map((k) => `${table}.${k}`).join(', ')}`);
+      }
+    }
     for (const fk of meta.foreignKeys) {
       const v = row[fk.column];
       if (v !== null && !this.rows(fk.refTable).some((r) => r[fk.refColumn] === v)) {
@@ -421,6 +461,9 @@ export class MemoryDataService implements DataService {
       if (!methodRow) throw new Error(`Seed.sql is missing donation method ${method}`);
       this.store.insert('CouncilDonationMethod', { CouncilID: council.id, DonationMethodID: methodRow.id, DonationMethodURL: qrUrl });
     }
+
+    // Day-one leadership history: every seated officer gets an open term for the current fraternal year.
+    for (const c of this.store.rows('Council')) this.backfillLeadershipHistory(this.store, c.id as number);
   }
 
   /** A pre-provisioned member with a placeholder Credentials row, plus one council activity. */
@@ -2496,6 +2539,226 @@ export class MemoryDataService implements DataService {
         .filter((d) => d.CouncilID === councilId && inPeriod(d.PayoutDate))
         .map((d) => ({ TotalAmount: d.TotalAmount as number })),
     };
+  }
+
+  // ---- officer elections (Sprint 5U) ----------------------------------------
+
+  elections: DataService['elections'] = {
+    listOfficerSeats: async (councilId) => {
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      return buildOfficerSeats(councilId, this.electionRows(s, councilId));
+    },
+
+    listBallotConfig: async (councilId) => {
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      return buildBallotSeats(this.electionRows(s, councilId), this.now());
+    },
+
+    listVacancies: async (councilId) => {
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      return buildVacancies(this.electionRows(s, councilId));
+    },
+
+    toggleRoleBallotStatus: async (actorId, councilId, roleId, isOpen) => {
+      const open = cleanBallotStatus(isOpen);
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayConfigureBallot(this.memberWriteActor(s, actorId), councilId);
+        this.assertCouncilsExist(s, [councilId]);
+        assertElectedRole(requireRole(this.electionRows(s, councilId).roles, roleId));
+        this.backfillLeadershipHistory(s, councilId);
+        // Closing a seat also ends any mid-year election on it; opening keeps a mid-year window already running.
+        return this.upsertBallot(s, councilId, roleId, open ? { IsUpForElection: 1 } : { IsUpForElection: 0, IsMidYearElection: 0, NominationsCloseAt: null });
+      });
+    },
+
+    submitNomination: async (actorId, councilId, roleId, nomineeMemberId) => {
+      const s = await this.ready();
+      const now = this.now();
+      return s.transaction(() => {
+        assertMayNominate(this.memberWriteActor(s, actorId), councilId);
+        this.assertCouncilsExist(s, [councilId]);
+        const role = requireRole(this.electionRows(s, councilId).roles, roleId);
+        assertElectedRole(role);
+        this.backfillLeadershipHistory(s, councilId);
+        const stored = s.rows('CouncilElectionBallot').find((b) => b.CouncilID === councilId && b.RoleID === roleId);
+        const ballot = assertNominationsOpen(stored as unknown as CouncilElectionBallot | undefined, role.Role, now);
+        this.assertActiveCouncilMember(s, nomineeMemberId, councilId, `nominated for ${role.Role}`);
+        const fraternalYear = ballotTermYear(ballot, now);
+        const seatNominations = s
+          .rows('OfficerNominations')
+          .filter((n) => n.CouncilID === councilId && n.OfficeRoleID === roleId && n.FraternalYear === fraternalYear);
+        if (seatNominations.some((n) => n.NomineeMemberID === nomineeMemberId)) throw alreadyNominated(role.Role, nomineeMemberId, fraternalYear);
+        const served = s
+          .rows('CouncilLeadershipHistory')
+          .filter((h) => h.MemberID === nomineeMemberId)
+          .map((h) => s.rows('Role').find((r) => r.id === h.RoleID)?.Role as string);
+        const eligible = isEligibleNominee(role.Role, served);
+        const row = s.insert('OfficerNominations', {
+          CouncilID: councilId,
+          OfficeRoleID: roleId,
+          NomineeMemberID: nomineeMemberId,
+          NominatedByMemberID: actorId,
+          NominatedAt: toTimestamp(now),
+          FraternalYear: fraternalYear,
+          IsEligible: eligible ? 1 : 0,
+        });
+        return { nomination: { ...row } as unknown as OfficerNominations, eligible, tally: seatNominations.length + 1 };
+      });
+    },
+
+    recordOfficerAbdication: async (actorId, councilId, memberId, roleId) => {
+      const s = await this.ready();
+      const now = this.now();
+      return s.transaction(() => {
+        assertMayRecordAbdication(this.memberWriteActor(s, actorId), councilId, memberId);
+        this.assertCouncilsExist(s, [councilId]);
+        const role = requireRole(this.electionRows(s, councilId).roles, roleId);
+        const kind = assertOfficeRole(role);
+        const member = s.rows('Member').find((m) => m.id === memberId);
+        if (member?.CouncilID !== councilId || !s.rows('MemberRoles').some((mr) => mr.MemberID === memberId && mr.RoleID === roleId)) {
+          throw roleNotHeld(memberId, role.Role, councilId);
+        }
+        this.backfillLeadershipHistory(s, councilId);
+        const term = this.openTerm(s, councilId, memberId, roleId);
+        if (term) Object.assign(term, { EndDate: toIsoDate(now), ExitReason: 'Abdicated' });
+        s.remove('MemberRoles', (mr) => mr.MemberID === memberId && mr.RoleID === roleId);
+        const ballot =
+          kind === 'elected'
+            ? this.upsertBallot(s, councilId, roleId, { IsUpForElection: 1, IsMidYearElection: 1, NominationsCloseAt: midYearNominationsCloseAt(now) })
+            : null;
+        return {
+          history: term ? ({ ...term } as unknown as CouncilLeadershipHistory) : null,
+          outcome: kind === 'elected' ? 'MidYearElection' : 'AwaitingAppointment',
+          ballot,
+        };
+      });
+    },
+
+    assignAppointedRole: async (actorId, councilId, roleId, targetMemberId) => {
+      const s = await this.ready();
+      const now = this.now();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        this.assertCouncilsExist(s, [councilId]);
+        const rows = this.electionRows(s, councilId);
+        assertMayAppointOfficers(actor, councilId, seatHolderIdByName(rows, GRAND_KNIGHT_ROLE));
+        const role = requireRole(rows.roles, roleId);
+        assertAppointableRole(role);
+        const holder = seatHolderId(rows, roleId);
+        if (holder !== null) throw roleOccupied(role.Role, holder);
+        this.assertActiveCouncilMember(s, targetMemberId, councilId, `appointed ${role.Role}`);
+        assertOneTrusteeSeat(role, this.rolesFor(s, targetMemberId).map((r) => r.Role), targetMemberId);
+        this.backfillLeadershipHistory(s, councilId);
+        s.insert('MemberRoles', { RoleID: roleId, MemberID: targetMemberId });
+        const term = s.insert('CouncilLeadershipHistory', {
+          CouncilID: councilId,
+          MemberID: targetMemberId,
+          RoleID: roleId,
+          FraternalYear: fraternalYearOf(now),
+          StartDate: toIsoDate(now),
+          AppointedByID: actorId,
+        });
+        return { ...term } as unknown as CouncilLeadershipHistory;
+      });
+    },
+
+    concludeFraternalYear: async (actorId, councilId, newGrandKnightId) => {
+      const s = await this.ready();
+      const now = this.now();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        this.assertCouncilsExist(s, [councilId]);
+        assertMayConcludeFraternalYear(actor, councilId, seatHolderIdByName(this.electionRows(s, councilId), GRAND_KNIGHT_ROLE));
+        this.assertActiveCouncilMember(s, newGrandKnightId, councilId, 'seated as Grand Knight');
+        this.backfillLeadershipHistory(s, councilId);
+        const rows = this.electionRows(s, councilId);
+        const plan = planConclusionFromSeats(buildOfficerSeats(councilId, rows), newGrandKnightId);
+        const fraternalYear = electionTermYear(now);
+        this.applySeatTransitions(s, councilId, rows, plan.transitions, fraternalYear, toIsoDate(now));
+        const ballotsReset = s.remove('CouncilElectionBallot', (b) => b.CouncilID === councilId);
+        return conclusionResult(plan, rows.roles, fraternalYear, ballotsReset);
+      });
+    },
+  };
+
+  /** Everything the election views read for one council (elections.ts ElectionRows), copied out of the store. */
+  private electionRows(s: MemoryStore, councilId: number): ElectionRows {
+    const inCouncil = new Set(s.rows('Member').filter((m) => m.CouncilID === councilId).map((m) => m.id));
+    const copy = <T>(rows: readonly Row[]) => rows.map((r) => ({ ...r })) as unknown as T[];
+    return {
+      roles: copy<Role>(s.rows('Role')),
+      members: s.rows('Member').map((m) => ({ id: m.id as number, MemberFirstName: m.MemberFirstName as string, MemberLastName: m.MemberLastName as string })),
+      holdings: s
+        .rows('MemberRoles')
+        .filter((h) => inCouncil.has(h.MemberID))
+        .map((h) => ({ RoleID: h.RoleID as number, MemberID: h.MemberID as number })),
+      history: copy<CouncilLeadershipHistory>(s.rows('CouncilLeadershipHistory').filter((h) => h.CouncilID === councilId)),
+      ballots: copy<CouncilElectionBallot>(s.rows('CouncilElectionBallot').filter((b) => b.CouncilID === councilId)),
+      nominations: copy<OfficerNominations>(s.rows('OfficerNominations').filter((n) => n.CouncilID === councilId)),
+    };
+  }
+
+  /** Opens a history row for every Active office holder of the council who has none (planHistoryBackfill). */
+  private backfillLeadershipHistory(s: MemoryStore, councilId: number): void {
+    const activeId = this.activeStatusId(s);
+    const active = new Set(s.rows('Member').filter((m) => m.CouncilID === councilId && m.StatusID === activeId).map((m) => m.id as number));
+    for (const term of planHistoryBackfill(councilId, this.electionRows(s, councilId), active, this.now())) {
+      s.insert('CouncilLeadershipHistory', { ...term });
+    }
+  }
+
+  /** The stored (mutable) open history row of a member's seat. */
+  private openTerm(s: MemoryStore, councilId: number, memberId: number, roleId: number): Row | undefined {
+    return s
+      .rows('CouncilLeadershipHistory')
+      .find((h) => h.CouncilID === councilId && h.MemberID === memberId && h.RoleID === roleId && h.EndDate == null) as Row | undefined;
+  }
+
+  private upsertBallot(s: MemoryStore, councilId: number, roleId: number, fields: Partial<CouncilElectionBallot>): CouncilElectionBallot {
+    const existing = s.rows('CouncilElectionBallot').find((b) => b.CouncilID === councilId && b.RoleID === roleId) as Row | undefined;
+    const row = existing ? Object.assign(existing, fields) : s.insert('CouncilElectionBallot', { CouncilID: councilId, RoleID: roleId, ...fields });
+    return { ...row } as unknown as CouncilElectionBallot;
+  }
+
+  /** NOT_ACTIVE_COUNCIL_MEMBER unless `memberId` is an Active member of the council. */
+  private assertActiveCouncilMember(s: MemoryStore, memberId: number, councilId: number, purpose: string): void {
+    const m = s.rows('Member').find((r) => r.id === memberId);
+    assertActiveCouncilMember(
+      m ? { id: m.id as number, CouncilID: m.CouncilID as number } : null,
+      m?.StatusID === this.activeStatusId(s),
+      councilId,
+      purpose,
+    );
+  }
+
+  /**
+   * Carries out a conclusion plan: every departing holder's term closes 'TermConcluded' and their role goes; then every
+   * arriving holder gets the role and a term in `fraternalYear`. A renewal (same member) closes and reopens the term.
+   */
+  private applySeatTransitions(
+    s: MemoryStore,
+    councilId: number,
+    rows: ElectionRows,
+    transitions: readonly SeatTransition[],
+    fraternalYear: string,
+    today: string,
+  ): void {
+    const roleId = (name: string) => rows.roles.find((r) => r.Role === name)!.id;
+    for (const t of transitions) {
+      if (t.from === null) continue;
+      const term = this.openTerm(s, councilId, t.from, roleId(t.roleName));
+      if (term) Object.assign(term, { EndDate: today, ExitReason: 'TermConcluded' });
+      if (t.from !== t.to) s.remove('MemberRoles', (mr) => mr.MemberID === t.from && mr.RoleID === roleId(t.roleName));
+    }
+    for (const t of transitions) {
+      if (t.to === null) continue;
+      if (t.from !== t.to) s.insert('MemberRoles', { RoleID: roleId(t.roleName), MemberID: t.to });
+      s.insert('CouncilLeadershipHistory', { CouncilID: councilId, MemberID: t.to, RoleID: roleId(t.roleName), FraternalYear: fraternalYear, StartDate: today });
+    }
   }
 
   feedback: DataService['feedback'] = {

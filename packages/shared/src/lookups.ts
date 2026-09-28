@@ -6,6 +6,7 @@
 // Column names here are the only ones a driver may interpolate into SQL.
 // =========================================================================
 import type { CouncilLookupTableName, LookupTableName, LookupValues } from './contract';
+import { OFFICE_ROLE_NAMES } from './elections';
 import { cleanActivity, cleanCouncilDonationMethod, cleanDonationType, RECORD_LABELS } from './maintenance';
 import { assertInteger, assertText, BusinessRuleError } from './rules';
 
@@ -62,8 +63,13 @@ export const LOOKUP_META: Record<LookupTableName, LookupTableMeta> = {
     label: 'Role',
     fields: [text('Role', 'Role', 50), { key: 'Officer', label: 'Officer', kind: 'flag', required: true, maxLength: 1 }],
     keyField: 'Role',
-    references: [{ table: 'MemberRoles', column: 'RoleID' }],
-    protectedValues: [],
+    references: [
+      { table: 'MemberRoles', column: 'RoleID' },
+      { table: 'CouncilElectionBallot', column: 'RoleID' },
+      { table: 'OfficerNominations', column: 'OfficeRoleID' },
+      { table: 'CouncilLeadershipHistory', column: 'RoleID' },
+    ],
+    protectedValues: [...OFFICE_ROLE_NAMES], // elections, appointments and finance access are resolved by these names
   },
   Degree: {
     label: 'Degree',

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   canAdministerCouncil,
+  canAppointOfficers,
   canChangeDonation,
+  canConfigureBallot,
   canMaintainCouncilRecords,
   canDispatchCouncilAlerts,
   canManageFinances,
@@ -84,11 +86,13 @@ describe('portal permissions', () => {
       'lookups',
       'councils',
       'council-lookups',
+      'elections/appointments',
       'parishes',
       'members',
       'activities',
       'events',
       'meetings',
+      'elections',
       'distribution-lists',
       'donations',
       'ledger',
@@ -111,6 +115,7 @@ describe('portal permissions', () => {
       'activities',
       'events',
       'meetings',
+      'elections',
       'distribution-lists',
       'donations',
       'ledger',
@@ -122,8 +127,8 @@ describe('portal permissions', () => {
       'messages',
       'profile',
     ]);
-    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'expenses', 'messages', 'profile']);
-    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'expenses', 'messages', 'profile']);
+    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'messages', 'profile']);
+    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'messages', 'profile']);
   });
 
   it('gives every member their own expense reports, leadership the audit queue, and only finance officers and Super Admins the check ledger', () => {
@@ -139,7 +144,7 @@ describe('portal permissions', () => {
     }
   });
 
-  describe('sidebar accordion groups (Sprint 5S)', () => {
+  describe('sidebar accordion groups (Sprint 5S, election desks Sprint 5U)', () => {
     const shape = (u: Parameters<typeof portalNavGroups>[0]) => portalNavGroups(u).map((g) => [g.label, g.items]);
 
     it('files every area but the profile into exactly one group, and adds the help center', () => {
@@ -166,16 +171,16 @@ describe('portal permissions', () => {
     it('shows a Super Admin every group in full', () => {
       expect(shape(superAdmin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'messages', 'help']],
-        ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
+        ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
         ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements']],
-        ['Administrative Lookups', ['council-lookups', 'supreme-sync', 'lookups', 'parishes', 'councils']],
+        ['Administrative Lookups', ['council-lookups', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils']],
       ]);
     });
 
     it('shows a council Admin everything but the global tables, councils and the check ledger', () => {
       expect(shape(admin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'messages', 'help']],
-        ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
+        ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
         ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue']],
         ['Administrative Lookups', ['council-lookups', 'supreme-sync', 'parishes']],
       ]);
@@ -184,9 +189,18 @@ describe('portal permissions', () => {
     it('shows a Treasurer the full financial ledgers and the donation lookups', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Treasurer'] }))).toEqual([
         ['Self-Service Hub', ['member-actions', 'messages', 'help']],
-        ['Volunteer Operations', ['calendar', 'meetings', 'gallery', 'ledger']],
+        ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
         ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements']],
         ['Administrative Lookups', ['council-lookups', 'supreme-sync']],
+      ]);
+    });
+
+    it('files the Appointed Leadership Matrix under Administrative Lookups for a Grand Knight who is a plain Member', () => {
+      expect(shape(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual([
+        ['Self-Service Hub', ['member-actions', 'messages', 'help']],
+        ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
+        ['Financial Ledgers', ['expenses']],
+        ['Administrative Lookups', ['elections/appointments']],
       ]);
     });
 
@@ -194,11 +208,31 @@ describe('portal permissions', () => {
       for (const u of [member, officer]) {
         expect(shape(u)).toEqual([
           ['Self-Service Hub', ['member-actions', 'messages', 'help']],
-          ['Volunteer Operations', ['calendar', 'meetings', 'gallery', 'ledger']],
+          ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
           ['Financial Ledgers', ['expenses']],
         ]);
       }
     });
+  });
+
+  it('opens nominations to every member, appointments to the Grand Knight and Super Admins, and the ballot switches to council Admins (Sprint 5U)', () => {
+    const grandKnight = actor({ isOfficer: true, roles: ['Grand Knight'] });
+    for (const u of [superAdmin, admin, officer, member, grandKnight]) expect(portalAreas(u)).toContain('elections');
+    expect([superAdmin, grandKnight, admin, officer, member, actor({ isOfficer: true, roles: ['Deputy Grand Knight'] })].map(canAppointOfficers)).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(portalAreas(grandKnight)).toContain('elections/appointments');
+    expect(portalAreas(admin)).not.toContain('elections/appointments');
+    expect(canConfigureBallot(admin, 1)).toBe(true);
+    expect(canConfigureBallot(admin, 2)).toBe(false);
+    expect(canConfigureBallot(superAdmin, 2)).toBe(true);
+    expect(canConfigureBallot(grandKnight, 1)).toBe(false);
+    expect(canConfigureBallot(actor({ isOfficer: true, roles: ['Treasurer'] }), 1)).toBe(false);
   });
 
   it('leads every role, Admins included, with the Member Actions hub', () => {
@@ -232,6 +266,7 @@ describe('portal permissions', () => {
         'gallery',
         'council-lookups',
         'meetings',
+        'elections',
         'donations',
         'ledger',
         'expenses',
@@ -243,7 +278,7 @@ describe('portal permissions', () => {
         'profile',
       ]);
     }
-    expect(portalAreas(actor({ isOfficer: true, roles: ['Grand Knight', 'Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'ledger', 'expenses', 'messages', 'profile']);
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'messages', 'profile']);
   });
 
   it('gives council leadership the Supreme sync and the alert dispatch, each for their own council (Sprint 5T)', () => {
