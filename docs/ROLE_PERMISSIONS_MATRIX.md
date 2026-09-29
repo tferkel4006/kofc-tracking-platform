@@ -75,7 +75,7 @@ Every permission also requires an **Active** membership status. Inactive members
 | Message every member who holds a skill (roster skill filter) | — | — | — | — | ✅ | — |
 | Send a high-priority push alert | — | — | ✅ | ✅ | ✅ | — |
 
-The **Board of Trustees** group was retired in Sprint 5Y-5. Only All Members and Active Officers remain (`DISTRIBUTION_GROUPS`). Every member may register their phone for push alerts and read their own. Rule: `assertMayDispatchCouncilAlerts`.
+The built-in groups are All Members and Active Officers (`DISTRIBUTION_GROUPS`). Every member may register their phone for push alerts and read their own. Rule: `assertMayDispatchCouncilAlerts`.
 
 ## 4. Calendars
 
