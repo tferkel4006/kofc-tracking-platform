@@ -1038,6 +1038,29 @@ export interface BudgetCategoryPerformance {
  * Actual spend counts what reports.monthlySummary counts - events' Spend, line items of 'Approved' and 'Reimbursed'
  * expense sheets, and charity checks - so it is the sum of the period's monthly summaries.
  */
+/** One line's dual prior-year baseline (Sprint 5Y-6.5). */
+export interface BudgetLineBaseline {
+  /** The current year's CouncilBudgetForecast.id. */
+  lineId: number;
+  /** The previous year's line this one continues, or null. */
+  priorLineId: number | null;
+  /** That line's ApprovedBudgetAmount - last year's approved cap - or null when there is no such line or last year was never approved. */
+  priorApproved: number | null;
+  /** Last year's whole-year actual spend charged to this line (0 for a custom Operational line, which has no source to read). */
+  priorActual: number;
+}
+
+/** budget.getPriorYearBaselines: last year's approved cap and actual spend beside each line of a council year. */
+export interface BudgetPriorYearBaselines {
+  councilId: number;
+  fraternalYear: string;
+  priorFraternalYear: string;
+  /** The previous year's lifecycle, or null when it has no budget lines. */
+  priorStatus: BudgetLineStatus | null;
+  /** One entry per line of the year, in listAnnualForecast order. */
+  lines: BudgetLineBaseline[];
+}
+
 export interface BudgetYearPerformance {
   councilId: number;
   fraternalYear: string;
@@ -1895,7 +1918,8 @@ export interface DataService {
      * - Operational: one 'Council Meetings' line (BUDGET_MEETINGS_LINE_NAME) when the council met in the previous
      *   year - the council's expenses linked to those meetings.
      * - Operational: each custom line of the previous year's own forecast (Sprint 5Y-2), carried forward under the same
-     *   name with a PrePopulatedAmount of 0.
+     *   name with a PrePopulatedAmount of that line's ApprovedBudgetAmount - last year's approved cap (Sprint 5Y-6.5; 0
+     *   when last year was never approved) - so the council's own running costs keep their funding level.
      * Re-running is safe: a line that already exists keeps its figures, BudgetStatus and Notes and only has its
      * PrePopulatedAmount (and a renamed source's LineItemName) refreshed. New lines start 'Draft' with proposed and
      * approved amounts of 0 for review. Nothing is deleted. A new line takes the BudgetCategoryID of the previous year's line it continues (same
@@ -1904,6 +1928,14 @@ export interface DataService {
      * drafting window.
      */
     prePopulateNextYear(actorId: number, councilId: number, targetFraternalYear: string, options?: BudgetWriteOptions): Promise<BudgetPrePopulationResult>;
+    /**
+     * The dual prior-year baseline beside each line of the council's year (Sprint 5Y-6.5; buildPriorYearBaselines): the
+     * previous year's approved cap for the line it continues and the previous year's whole-year actual spend charged to
+     * the line. Read by whoever may read the budget (assertMayViewBudgetForecast: every Active member of the council, any
+     * Active Super Admin; COUNCIL_ACCESS_DENIED otherwise). Rejects MEMBER_NOT_FOUND for an unknown actor and
+     * INVALID_INPUT for a malformed year or an unknown council.
+     */
+    getPriorYearBaselines(actorId: number, councilId: number, fraternalYear: string): Promise<BudgetPriorYearBaselines>;
     /**
      * Records the council's vote (Sprint 5Y-4), usually at its July meeting: in one transaction every line of the
      * council's year gets ApprovedBudgetAmount = ProposedBudgetAmount and BudgetStatus 'Approved', and resolves to the

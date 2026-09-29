@@ -205,6 +205,7 @@ import {
   budgetStatusOf,
   budgetWindowOf,
   buildBudgetYearPerformance,
+  buildPriorYearBaselines,
   completedFraternalYears,
   budgetLineExists,
   budgetLineNotFound,
@@ -237,6 +238,7 @@ import type {
   DistributionGroup,
   AnnualBudgetForecast,
   BudgetYearPerformance,
+  BudgetYearSpend,
   CharitableDisbursementLedger,
   CouncilBudgetCategory,
   CouncilBudgetForecast,
@@ -3241,6 +3243,21 @@ export class MemoryDataService implements DataService {
       return this.budgetYearPerformance(s, councilId, year, budgetProgressThrough(year, this.now()));
     },
 
+    getPriorYearBaselines: async (actorId, councilId, fraternalYear) => {
+      const year = assertFraternalYear(fraternalYear);
+      const s = await this.ready();
+      assertMayViewBudgetForecast(this.memberWriteActor(s, actorId), councilId, `read the budget baselines of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      const prior = previousFraternalYear(year);
+      return buildPriorYearBaselines({
+        councilId,
+        fraternalYear: year,
+        lines: this.budgetLines(s, councilId, year).map((l) => ({ ...l })),
+        priorLines: this.budgetLines(s, councilId, prior).map((l) => ({ ...l })),
+        priorSpend: this.budgetYearSpend(s, councilId, prior, fraternalYearBounds(prior).toDate),
+      });
+    },
+
     getHistoricalKPIs: async (actorId, councilId) => {
       const s = await this.ready();
       assertMayReviewBudgetPerformance(this.memberWriteActor(s, actorId), councilId, `review the budget history of council ${councilId}`);
@@ -3271,6 +3288,18 @@ export class MemoryDataService implements DataService {
    * paid in it.
    */
   private budgetYearPerformance(s: MemoryStore, councilId: number, year: string, throughDate: string): BudgetYearPerformance {
+    return buildBudgetYearPerformance({
+      councilId,
+      fraternalYear: year,
+      lines: this.budgetLines(s, councilId, year).map((l) => ({ ...l })),
+      categories: this.budgetCategories(s, councilId).map((c) => ({ ...c })),
+      throughDate,
+      spend: this.budgetYearSpend(s, councilId, year, throughDate),
+    });
+  }
+
+  /** The council's spend from the year's July 1 through `throughDate`, as budgetYearPerformance counts it. */
+  private budgetYearSpend(s: MemoryStore, councilId: number, year: string, throughDate: string): BudgetYearSpend {
     const { fromDate } = fraternalYearBounds(year);
     const inPeriod = (date: unknown) => (date as string) >= fromDate && (date as string) <= throughDate;
     const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
@@ -3281,13 +3310,7 @@ export class MemoryDataService implements DataService {
         .filter((r) => r.CouncilID === councilId && EXPENSE_SPEND_STATUSES.includes(r.Status as ExpenseReportStatus))
         .map((r) => [r.id, r]),
     );
-    return buildBudgetYearPerformance({
-      councilId,
-      fraternalYear: year,
-      lines: this.budgetLines(s, councilId, year).map((l) => ({ ...l })),
-      categories: this.budgetCategories(s, councilId).map((c) => ({ ...c })),
-      throughDate,
-      spend: {
+    return {
         events: s
           .rows('Event')
           .filter((e) => linked.has(e.id) && inPeriod(e.StartDate))
@@ -3309,8 +3332,7 @@ export class MemoryDataService implements DataService {
           .rows('CharitableDisbursementLedger')
           .filter((d) => d.CouncilID === councilId && inPeriod(d.PayoutDate))
           .map((d) => ({ CharityID: d.CharityID as number, Amount: d.Amount as number })),
-      },
-    });
+    };
   }
 
   /** The council's budget categories in id order, as stored (not copied). */

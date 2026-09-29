@@ -208,6 +208,7 @@ import {
   budgetStatusOf,
   budgetWindowOf,
   buildBudgetYearPerformance,
+  buildPriorYearBaselines,
   completedFraternalYears,
   budgetLineExists,
   budgetLineNotFound,
@@ -310,6 +311,7 @@ import type {
   CouncilBudgetCategory,
   AnnualBudgetForecast,
   BudgetYearPerformance,
+  BudgetYearSpend,
   CouncilBudgetForecast,
   CharitableDisbursementLedger,
   CharityDonationProposal,
@@ -3807,6 +3809,21 @@ export class SqliteDataService implements DataService {
       return this.budgetYearPerformance(db, councilId, year, budgetProgressThrough(year, this.now()));
     },
 
+    getPriorYearBaselines: async (actorId, councilId, fraternalYear) => {
+      const year = assertFraternalYear(fraternalYear);
+      const db = await this.ready();
+      assertMayViewBudgetForecast(await this.memberWriteActor(db, actorId), councilId, `read the budget baselines of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const prior = previousFraternalYear(year);
+      return buildPriorYearBaselines({
+        councilId,
+        fraternalYear: year,
+        lines: await this.budgetLines(db, councilId, year),
+        priorLines: await this.budgetLines(db, councilId, prior),
+        priorSpend: await this.budgetYearSpend(db, councilId, prior, fraternalYearBounds(prior).toDate),
+      });
+    },
+
     getHistoricalKPIs: async (actorId, councilId) => {
       const db = await this.ready();
       assertMayReviewBudgetPerformance(await this.memberWriteActor(db, actorId), councilId, `review the budget history of council ${councilId}`);
@@ -3842,6 +3859,18 @@ export class SqliteDataService implements DataService {
    * paid in it.
    */
   private async budgetYearPerformance(db: SQLite.SQLiteDatabase, councilId: number, year: string, throughDate: string): Promise<BudgetYearPerformance> {
+    return buildBudgetYearPerformance({
+      councilId,
+      fraternalYear: year,
+      lines: await this.budgetLines(db, councilId, year),
+      categories: await this.budgetCategories(db, councilId),
+      throughDate,
+      spend: await this.budgetYearSpend(db, councilId, year, throughDate),
+    });
+  }
+
+  /** The council's spend from the year's July 1 through `throughDate`, as budgetYearPerformance counts it. */
+  private async budgetYearSpend(db: SQLite.SQLiteDatabase, councilId: number, year: string, throughDate: string): Promise<BudgetYearSpend> {
     const { fromDate } = fraternalYearBounds(year);
     const events = await db.getAllAsync<{ id: number; EventName: string; Spend: number | null }>(
       `SELECT [id], [EventName], [Spend] FROM [Event]
@@ -3859,14 +3888,7 @@ export class SqliteDataService implements DataService {
       'SELECT [CharityID], [Amount] FROM [CharitableDisbursementLedger] WHERE [CouncilID] = ? AND [PayoutDate] BETWEEN ? AND ?',
       [councilId, fromDate, throughDate],
     );
-    return buildBudgetYearPerformance({
-      councilId,
-      fraternalYear: year,
-      lines: await this.budgetLines(db, councilId, year),
-      categories: await this.budgetCategories(db, councilId),
-      throughDate,
-      spend: { events, expenses, charityChecks },
-    });
+    return { events, expenses, charityChecks };
   }
 
   /** The council's budget categories in id order. */

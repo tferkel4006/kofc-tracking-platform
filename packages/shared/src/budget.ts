@@ -13,6 +13,7 @@ import type {
   BudgetHistoricalKPIs,
   BudgetLinePerformance,
   BudgetWriteOptions,
+  BudgetPriorYearBaselines,
   BudgetYearPerformance,
   NewCustomBudgetLine,
 } from './contract';
@@ -160,9 +161,10 @@ export interface BudgetActuals {
   meetingExpenses: readonly { Amount: number }[];
   /**
    * That year's own forecast lines, in id order: its custom Operational lines are carried forward by name (Sprint
-   * 5Y-2), and every line passes its BudgetCategoryID on to the line that continues it (Sprint 5Y-3).
+   * 5Y-2) at their ApprovedBudgetAmount (Sprint 5Y-6.5), and every line passes its BudgetCategoryID on to the line that
+   * continues it (Sprint 5Y-3).
    */
-  priorLines: readonly Pick<CouncilBudgetForecast, 'CategoryType' | 'ReferenceSourceID' | 'LineItemName' | 'BudgetCategoryID'>[];
+  priorLines: readonly Pick<CouncilBudgetForecast, 'CategoryType' | 'ReferenceSourceID' | 'LineItemName' | 'BudgetCategoryID' | 'ApprovedBudgetAmount'>[];
 }
 
 /** One line prePopulateNextYear wants in the new year. */
@@ -176,7 +178,10 @@ export type BudgetSeed = Pick<CouncilBudgetForecast, 'CategoryType' | 'LineItemN
  * The previous year's line a seed continues: the same charity for a Donation line (charities keep their id from year
  * to year), otherwise the same category type and name ignoring case (each year's event is a new Event row).
  */
-function priorLineOf(seed: Omit<BudgetSeed, 'BudgetCategoryID'>, priorLines: BudgetActuals['priorLines']) {
+function priorLineOf<T extends BudgetActuals['priorLines'][number]>(
+  seed: Pick<BudgetSeed, 'CategoryType' | 'ReferenceSourceID' | 'LineItemName'> | Pick<CouncilBudgetForecast, 'CategoryType' | 'ReferenceSourceID' | 'LineItemName'>,
+  priorLines: readonly T[],
+): T | undefined {
   if (seed.CategoryType === 'Donation') return priorLines.find((l) => l.CategoryType === 'Donation' && l.ReferenceSourceID === seed.ReferenceSourceID);
   return priorLines.find((l) => l.CategoryType === seed.CategoryType && lineKey(l.LineItemName) === lineKey(seed.LineItemName));
 }
@@ -184,8 +189,9 @@ function priorLineOf(seed: Omit<BudgetSeed, 'BudgetCategoryID'>, priorLines: Bud
 /**
  * The lines last year's actuals call for: one per annual event (its Spend plus its expenses), one per annual charity
  * (the sum of its checks), the meetings line when the council met, and each of last year's custom Operational lines
- * again under the same name with a baseline of 0 (custom lines have no spend to read). Each keeps the category of the
- * previous year's line it continues. In listAnnualForecast order.
+ * again under the same name. Custom lines have no spend to read, so their baseline is last year's approved cap, its
+ * ApprovedBudgetAmount (Sprint 5Y-6.5; 0 when last year was never approved). Each keeps the category of the previous
+ * year's line it continues. In listAnnualForecast order.
  */
 export function planBudgetPrePopulation(actuals: BudgetActuals): BudgetSeed[] {
   const seeds: Omit<BudgetSeed, 'BudgetCategoryID'>[] = actuals.annualEvents.map((e) => ({
@@ -213,10 +219,10 @@ export function planBudgetPrePopulation(actuals: BudgetActuals): BudgetSeed[] {
   }
   // The meetings line is re-read from actuals above, so only the officers' own lines are carried, once per name.
   const carried = new Set([lineKey(BUDGET_MEETINGS_LINE_NAME)]);
-  for (const { CategoryType, ReferenceSourceID, LineItemName } of actuals.priorLines) {
+  for (const { CategoryType, ReferenceSourceID, LineItemName, ApprovedBudgetAmount } of actuals.priorLines) {
     if (CategoryType !== 'Operational' || ReferenceSourceID != null || carried.has(lineKey(LineItemName))) continue;
     carried.add(lineKey(LineItemName));
-    seeds.push({ CategoryType: 'Operational', ReferenceSourceID: null, LineItemName, PrePopulatedAmount: 0 });
+    seeds.push({ CategoryType: 'Operational', ReferenceSourceID: null, LineItemName, PrePopulatedAmount: sumCents([ApprovedBudgetAmount]) });
   }
   return sortBudgetLines(seeds.map((seed) => ({ ...seed, BudgetCategoryID: priorLineOf(seed, actuals.priorLines)?.BudgetCategoryID ?? null })));
 }
@@ -510,6 +516,41 @@ export function attributeBudgetSpend(
   }
   for (const c of spend.charityChecks) charge(lines.find((l) => l.CategoryType === 'Donation' && l.ReferenceSourceID === c.CharityID), c.Amount);
   return { byLine, unbudgetedCents };
+}
+
+/**
+ * The dual prior-year baseline beside each line of a council year (Sprint 5Y-6.5): the previous year's approved cap for
+ * the line it continues (matched as prePopulateNextYear matches: a Donation line by charity, others by category type and
+ * name; null when there is no such line or that year was never approved) and the previous year's whole-year actual
+ * spend charged to the line, counted as attributeBudgetSpend counts it (custom Operational lines have no source to
+ * read, so theirs is 0). In listAnnualForecast order.
+ */
+export function buildPriorYearBaselines(input: {
+  councilId: number;
+  fraternalYear: string;
+  lines: readonly CouncilBudgetForecast[];
+  priorLines: readonly CouncilBudgetForecast[];
+  priorSpend: BudgetYearSpend;
+}): BudgetPriorYearBaselines {
+  const { councilId, fraternalYear, priorLines, priorSpend } = input;
+  const lines = sortBudgetLines(input.lines);
+  const priorStatus = priorLines.length > 0 ? budgetStatusOf(priorLines) : null;
+  const { byLine } = attributeBudgetSpend(lines, priorSpend);
+  return {
+    councilId,
+    fraternalYear,
+    priorFraternalYear: previousFraternalYear(fraternalYear),
+    priorStatus,
+    lines: lines.map((line) => {
+      const prior = priorLineOf(line, priorLines) as CouncilBudgetForecast | undefined;
+      return {
+        lineId: line.id,
+        priorLineId: prior?.id ?? null,
+        priorApproved: prior && priorStatus === 'Approved' ? prior.ApprovedBudgetAmount : null,
+        priorActual: (byLine.get(line.id) ?? 0) / 100,
+      };
+    }),
+  };
 }
 
 /**

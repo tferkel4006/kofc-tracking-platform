@@ -396,7 +396,7 @@ The navy **Initialize Automated Prior Year Baseline Rollup** button, next to the
 - **Each annual event** of the council: the event's recorded **Spend** plus the approved and reimbursed expense reports linked to it.
 - **Each annual charity** the council paid: the total of that year's charity checks.
 - **Council Meetings**: the approved and reimbursed expense reports linked to the council's meetings.
-- **Last year's custom lines** are carried forward under the same names with a baseline of **$0.00**.
+- **Last year's custom lines** are carried forward under the same names. Their baseline is **last year's approved amount** for that line, so running costs such as Bank Fees keep their funding level. It is $0.00 if last year's budget was never approved.
 
 New lines start as **Draft** with a **Proposed Budget Amount** of $0.00 for your review. You can run the rollup again at any time from May 1 to June 30: it refreshes the baselines (and renamed events or charities) but **never changes proposed or approved amounts or notes**, and never removes a line.
 
@@ -408,7 +408,7 @@ Lines are grouped under **your council's own budget categories** (funds), each w
 - Every other council adds its own.
 - A rollup files each new line under the same category as the line it continues from last year. File a line once and it stays filed year after year.
 
-Each row shows the **Line Item**, its **Pre-Populated Baseline**, the **Proposed Budget Amount**, the **Approved Budget Amount** and its **Status** (Draft, Proposed or Approved). While the budget is in Draft, editors can:
+Each row shows the **Line Item**, then last year's two figures side by side inside a navy frame, then this year's figures. Last year's figures are its **Approved Cap** (the amount the council voted for that line last year, or — if there was no approved line) and its **Actual Spend** (what the line really cost last year, shown in red when it went over the cap). This year's figures are the **Pre-Populated Baseline**, the **Proposed Budget Amount**, the **Approved Budget Amount** and its **Status** (Draft, Proposed or Approved). Custom lines show $0.00 actual spend, because their spending is not tracked line by line. Every member who can read the budget sees last year's columns. While the budget is in Draft, editors can:
 - type the proposed amount and any **Notes** in the row's boxes (the line becomes **Proposed**);
 - pick the row's **Category**.
 

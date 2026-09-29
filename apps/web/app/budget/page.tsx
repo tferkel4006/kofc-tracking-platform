@@ -17,6 +17,10 @@
 // figure into the approved column and freezes the year for good (BUDGET_YEAR_APPROVED). The "Historical Performance
 // Review" tab (canReviewBudgetPerformance: the executive summaries' readers) compares a completed year's final
 // allocations with its actual year-end spend (budget.getHistoricalKPIs).
+//
+// Sprint 5Y-6.5 dual baseline: beside every line the sheet shows last year's approved cap and last year's actual spend
+// (budget.getPriorYearBaselines), so the Budget Director drafts against both. Custom lines roll forward at last year's
+// approved cap.
 import { useEffect, useMemo, useState } from 'react';
 import {
   BUDGET_LINE_NAME_MAX_LENGTH,
@@ -34,6 +38,7 @@ import {
   sumBudgetAmounts,
   upcomingFraternalYear,
   type BudgetHistoricalKPIs,
+  type BudgetLineBaseline,
   type BudgetLineStatus,
   type BudgetPrePopulationResult,
   type BudgetWindowState,
@@ -109,14 +114,38 @@ type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved' } | { k
  * One spreadsheet row. Editors change the proposed amount and notes (saved when the box loses focus, if changed) and
  * the category (saved on pick); the approved figure is always read-only. Everyone else reads the same figures as text.
  */
+/** Last year's approved cap and actual spend, side by side; actual spend over the cap is red. */
+function PriorYearCells({ baseline }: { baseline: BudgetLineBaseline | undefined }) {
+  const over = baseline?.priorApproved != null && baseline.priorActual > baseline.priorApproved;
+  return (
+    <>
+      <Td className="whitespace-nowrap border-l-4 border-navy text-right font-bold">
+        {baseline?.priorApproved != null ? (
+          formatMoney(baseline.priorApproved)
+        ) : (
+          <span className="font-normal text-muted" title="No approved line for this item last year">
+            —
+          </span>
+        )}
+      </Td>
+      <Td className={cx('whitespace-nowrap border-r-4 border-navy text-right font-bold', over && 'text-brand-red')}>
+        {baseline ? formatMoney(baseline.priorActual) : '…'}
+        {over ? <span className="sr-only"> (over last year&apos;s cap)</span> : null}
+      </Td>
+    </>
+  );
+}
+
 function BudgetRow({
   line,
+  baseline,
   editable,
   categories,
   write,
   onSaved,
 }: {
   line: CouncilBudgetForecast;
+  baseline: BudgetLineBaseline | undefined;
   editable: boolean;
   categories: CouncilBudgetCategory[];
   write: WriteContext;
@@ -156,6 +185,7 @@ function BudgetRow({
           <Pill tone="outline">{line.CategoryType}</Pill>
         </span>
       </Td>
+      <PriorYearCells baseline={baseline} />
       <Td className="whitespace-nowrap text-right">{formatMoney(line.PrePopulatedAmount)}</Td>
       <Td className="w-40">
         {editable ? (
@@ -406,6 +436,16 @@ function Projections({ councilId, year, today, simulated }: { councilId: number;
 
   const lines = forecast.data?.lines ?? [];
   const categories = forecast.data?.categories ?? [];
+  // Reloaded whenever the set of lines changes (a rollup or a new custom line).
+  const lineIds = lines.map((l) => l.id).join(',');
+  const baselines = useLoad(() => db.budget.getPriorYearBaselines(user.memberId, councilId, year), [user.memberId, councilId, year, lineIds]);
+  const baselineOf = useMemo(() => new Map((baselines.data?.lines ?? []).map((b) => [b.lineId, b])), [baselines.data]);
+  const priorYear = shiftYear(year, -1);
+  const priorCapTotal = (ls: readonly CouncilBudgetForecast[]) => {
+    const caps = ls.map((l) => baselineOf.get(l.id)?.priorApproved).filter((v): v is number => v != null);
+    return caps.length > 0 ? formatMoney(sumBudgetAmounts(caps)) : '—';
+  };
+  const priorActualTotal = (ls: readonly CouncilBudgetForecast[]) => formatMoney(sumBudgetAmounts(ls.map((l) => baselineOf.get(l.id)?.priorActual ?? 0)));
   const status: BudgetLineStatus = forecast.data?.status ?? 'Draft';
   const windowState: BudgetWindowState = simulated ? 'Draft' : (forecast.data?.window ?? budgetWindowOf(year, today));
   const editable = canEditBudgetYear(user, councilId, year, today, simulated, status);
@@ -437,7 +477,18 @@ function Projections({ councilId, year, today, simulated }: { councilId: number;
     }
   };
 
-  const head = ['Line Item', 'Pre-Populated Baseline', 'Proposed Budget Amount', 'Approved Budget Amount', 'Status', 'Notes', ...(editable ? ['Category'] : []), ''];
+  const head = [
+    'Line Item',
+    `${priorYear} Approved Cap`,
+    `${priorYear} Actual Spend`,
+    'Pre-Populated Baseline',
+    'Proposed Budget Amount',
+    'Approved Budget Amount',
+    'Status',
+    'Notes',
+    ...(editable ? ['Category'] : []),
+    '',
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -476,9 +527,10 @@ function Projections({ councilId, year, today, simulated }: { councilId: number;
         </Notice>
       ) : null}
       {forecast.error ? <Notice tone="error">{forecast.error}</Notice> : null}
+      {baselines.error ? <Notice tone="error">Last year&apos;s baselines could not be loaded: {baselines.error}</Notice> : null}
       {rollup ? (
         <Notice tone="info" onDismiss={() => setRollup(null)}>
-          Rollup complete from {rollup.sourceFraternalYear} actual spend: {rollup.created} new line{rollup.created === 1 ? '' : 's'}, {rollup.refreshed} refreshed. Proposed amounts were left for
+          Rollup complete from {rollup.sourceFraternalYear} actual spend and approved caps: {rollup.created} new line{rollup.created === 1 ? '' : 's'}, {rollup.refreshed} refreshed. Proposed amounts were left for
           your review.
         </Notice>
       ) : null}
@@ -489,7 +541,11 @@ function Projections({ councilId, year, today, simulated }: { councilId: number;
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <Scorecard label="Pre-populated baseline" value={formatMoney(baselineTotal)} detail={`${shiftYear(year, -1)} actual spend across ${lines.length} lines`} />
+        <Scorecard
+          label="Pre-populated baseline"
+          value={formatMoney(baselineTotal)}
+          detail={`${priorYear} actual spend, and approved caps for custom lines, across ${lines.length} lines`}
+        />
         <Scorecard label="Proposed budget" value={formatMoney(proposedTotal)} detail={`${year} total across ${categories.length} categor${categories.length === 1 ? 'y' : 'ies'}`} />
         <Scorecard
           label="Approved budget"
@@ -550,14 +606,16 @@ function Projections({ councilId, year, today, simulated }: { councilId: number;
                 ) : (
                   <Table caption={`${group.label} budget lines for ${year}`} head={head}>
                     {group.lines.map((line) => (
-                      <BudgetRow key={line.id} line={line} editable={editable} categories={categories} write={write} onSaved={() => void forecast.reload()} />
+                      <BudgetRow key={line.id} line={line} baseline={baselineOf.get(line.id)} editable={editable} categories={categories} write={write} onSaved={() => void forecast.reload()} />
                     ))}
                     <tr className="font-bold">
                       <Td className="border-t-2 border-navy">{group.label} subtotal</Td>
+                      <Td className="border-t-2 border-l-4 border-navy text-right">{priorCapTotal(group.lines)}</Td>
+                      <Td className="border-t-2 border-r-4 border-navy text-right">{priorActualTotal(group.lines)}</Td>
                       <Td className="border-t-2 border-navy text-right">{formatMoney(group.prePopulatedTotal)}</Td>
                       <Td className="border-t-2 border-navy text-right">{formatMoney(group.proposedTotal)}</Td>
                       <Td className="border-t-2 border-navy text-right">{status === 'Approved' ? formatMoney(group.approvedTotal) : '—'}</Td>
-                      <Td colSpan={head.length - 4} className="border-t-2 border-navy" />
+                      <Td colSpan={head.length - 6} className="border-t-2 border-navy" />
                     </tr>
                   </Table>
                 )}
@@ -567,6 +625,9 @@ function Projections({ councilId, year, today, simulated }: { councilId: number;
           {lines.length > 0 ? (
             <div className="flex flex-wrap justify-end gap-8 rounded bg-navy px-4 py-3 text-white" data-surface="navy">
               <span className="font-bold uppercase tracking-wide">Council total</span>
+              <span>
+                {priorYear} cap {priorCapTotal(lines)} · actual {priorActualTotal(lines)}
+              </span>
               <span>Baseline {formatMoney(baselineTotal)}</span>
               <span>Proposed {formatMoney(proposedTotal)}</span>
               <span className="font-bold">Approved {status === 'Approved' ? formatMoney(approvedTotal) : '(locked)'}</span>

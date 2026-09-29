@@ -86,6 +86,18 @@ export default function LogScreen() {
     );
   };
 
+  // Only a shift's own length is a default: an activity starts from zero, and returning to a shift fills it in again.
+  const switchMode = (next: Mode) => {
+    if (next === mode) return;
+    setMode(next);
+    setMessage(null);
+    if (next === 'shift' && shiftId !== null) pickShift(shiftId);
+    else {
+      picking.current = null;
+      setPicker(NO_TIME);
+    }
+  };
+
   // Low-click defaults: the most recent shift still missing hours (with its length filled in), and the council's
   // first activity.
   useEffect(() => {
@@ -132,7 +144,7 @@ export default function LogScreen() {
       <AppText variant="heading" accessibilityRole="header">
         Report Hours
       </AppText>
-      <Segmented value={mode} onChange={(m) => { setMode(m); setMessage(null); }} />
+      <Segmented value={mode} onChange={switchMode} />
 
       {message ? <Notice tone={message.tone} message={message.text} onDismiss={() => setMessage(null)} /> : null}
       {state.error ? <Notice tone="error" message={state.error} /> : null}

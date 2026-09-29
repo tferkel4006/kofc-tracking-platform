@@ -246,7 +246,7 @@ describe('budget helpers (pure)', () => {
     expect(planBudgetPrePopulation(noActuals())).toEqual([]);
   });
 
-  it("carries last year's custom lines forward once each at 0.00, and every line's category to the line that continues it", () => {
+  it("carries last year's custom lines forward once each at last year's approved cap (Sprint 5Y-6.5), and every line's category to the line that continues it", () => {
     const seeds = planBudgetPrePopulation(
       noActuals({
         annualEvents: [{ id: 40, EventName: 'Fish Fry', Spend: 300 }],
@@ -254,9 +254,9 @@ describe('budget helpers (pure)', () => {
         priorLines: [
           { CategoryType: 'Event', ReferenceSourceID: 12, LineItemName: 'fish  FRY', BudgetCategoryID: 6 },
           { CategoryType: 'Donation', ReferenceSourceID: 3, LineItemName: 'Old charity name', BudgetCategoryID: 2 },
-          { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bulletin Ads', BudgetCategoryID: 5 },
-          { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bank Fees', BudgetCategoryID: null },
-          { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'bank  FEES', BudgetCategoryID: 5 },
+          { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bulletin Ads', BudgetCategoryID: 5, ApprovedBudgetAmount: 480 },
+          { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bank Fees', BudgetCategoryID: null, ApprovedBudgetAmount: 120.5 },
+          { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'bank  FEES', BudgetCategoryID: 5, ApprovedBudgetAmount: 999 },
           { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Council Meetings', BudgetCategoryID: 5 },
         ],
       }),
@@ -264,8 +264,8 @@ describe('budget helpers (pure)', () => {
     expect(seeds).toEqual([
       { CategoryType: 'Event', ReferenceSourceID: 40, LineItemName: 'Fish Fry', PrePopulatedAmount: 300, BudgetCategoryID: 6 },
       { CategoryType: 'Donation', ReferenceSourceID: 3, LineItemName: 'Pregnancy Center', PrePopulatedAmount: 250, BudgetCategoryID: 2 },
-      { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bank Fees', PrePopulatedAmount: 0, BudgetCategoryID: null },
-      { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bulletin Ads', PrePopulatedAmount: 0, BudgetCategoryID: 5 },
+      { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bank Fees', PrePopulatedAmount: 120.5, BudgetCategoryID: null },
+      { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bulletin Ads', PrePopulatedAmount: 480, BudgetCategoryID: 5 },
     ]);
   });
 
