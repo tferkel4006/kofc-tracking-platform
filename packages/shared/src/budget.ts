@@ -136,6 +136,8 @@ export interface BudgetActuals {
   meetingCount: number;
   /** Expense lines on sheets linked to those meetings. */
   meetingExpenses: readonly { Amount: number }[];
+  /** The council's unsourced Operational lines of that year's own forecast, carried forward by name (Sprint 5Y-2). */
+  priorCustomLines: readonly Pick<CouncilBudgetForecast, 'LineItemName'>[];
 }
 
 /** One line prePopulateNextYear wants in the new year. */
@@ -145,7 +147,8 @@ export type BudgetSeed = Pick<CouncilBudgetForecast, 'CategoryType' | 'LineItemN
 
 /**
  * The lines last year's actuals call for: one per annual event (its Spend plus its expenses), one per annual charity
- * (the sum of its checks), and the meetings line when the council met. In listAnnualForecast order.
+ * (the sum of its checks), the meetings line when the council met, and each of last year's custom Operational lines
+ * again under the same name with a baseline of 0 (custom lines have no spend to read). In listAnnualForecast order.
  */
 export function planBudgetPrePopulation(actuals: BudgetActuals): BudgetSeed[] {
   const seeds: BudgetSeed[] = actuals.annualEvents.map((e) => ({
@@ -170,6 +173,13 @@ export function planBudgetPrePopulation(actuals: BudgetActuals): BudgetSeed[] {
       LineItemName: BUDGET_MEETINGS_LINE_NAME,
       PrePopulatedAmount: sumCents(actuals.meetingExpenses.map((x) => x.Amount)),
     });
+  }
+  // The meetings line is re-read from actuals above, so only the officers' own lines are carried, once per name.
+  const carried = new Set([lineKey(BUDGET_MEETINGS_LINE_NAME)]);
+  for (const { LineItemName } of actuals.priorCustomLines) {
+    if (carried.has(lineKey(LineItemName))) continue;
+    carried.add(lineKey(LineItemName));
+    seeds.push({ CategoryType: 'Operational', ReferenceSourceID: null, LineItemName, PrePopulatedAmount: 0 });
   }
   return sortBudgetLines(seeds);
 }
@@ -203,3 +213,94 @@ export function mergeBudgetSeeds(
   }
   return { inserts, updates };
 }
+
+// ---- the June drafting window (Sprint 5Y-2) -----------------------------------------
+
+/**
+ * Where a fraternal year's budget stands on a given day: prepared in the June before the year starts ('Draft'), locked
+ * as 'Finalized' from July 1 when the year begins, and 'Not Yet Open' before that June.
+ */
+export type BudgetWindowState = 'Not Yet Open' | 'Draft' | 'Finalized';
+
+/** The month (0-based: June) in which the next fraternal year's budget is drafted. */
+export const BUDGET_DRAFT_MONTH = 5;
+
+/** budgetWindowOf for `fraternalYear` on `today`: Draft through June 1-30 of its first year, Finalized from July 1. */
+export function budgetWindowOf(fraternalYear: string, today: Date): BudgetWindowState {
+  const start = Number(assertFraternalYear(fraternalYear).slice(0, 4));
+  const opens = new Date(start, BUDGET_DRAFT_MONTH, 1);
+  const locks = new Date(start, BUDGET_DRAFT_MONTH + 1, 1);
+  if (today >= locks) return 'Finalized';
+  return today >= opens ? 'Draft' : 'Not Yet Open';
+}
+
+/** The fraternal year whose budget is prepared next: the one starting this July 1, or next year's once July has come. */
+export function upcomingFraternalYear(today: Date): string {
+  const start = today.getMonth() > BUDGET_DRAFT_MONTH ? today.getFullYear() + 1 : today.getFullYear();
+  return `${start}-${start + 1}`;
+}
+
+// ---- council funds ------------------------------------------------------------------
+
+/** The council's funds, in the order the budget presents them. */
+export const BUDGET_FUNDS = [
+  'Father George Wolf Memorial Fund',
+  'Sister Rita Rose Vistica Parish Community Fund',
+  'Cathedral School & Student Support',
+  'Other Donations & Projects',
+  'Council Maintenance & State/Supreme Programs',
+  'Blessed Michael McGivney Fraternal Activities Fund',
+] as const;
+export type BudgetFund = (typeof BUDGET_FUNDS)[number];
+
+/** What budgetFundOf knows about a line's source: the charity's CharityType, or the event's category name. */
+export interface BudgetLineSource {
+  charityType?: string | null;
+  eventCategory?: string | null;
+}
+
+/**
+ * The fund a line is budgeted under. CouncilBudgetForecast has no fund column, so the fund follows from the line:
+ * 1. a name that names a fund or its purpose ('Wolf', 'Vistica', 'McGivney', school, student, scholarship);
+ * 2. Operational lines - Council Maintenance & State/Supreme Programs;
+ * 3. Donation lines - the Parish Community fund for a 'Parish' charity, else Other Donations & Projects;
+ * 4. Event lines - the Parish Community fund for a 'Parish Community' event, else the McGivney Fraternal Activities Fund.
+ */
+export function budgetFundOf(line: Pick<CouncilBudgetForecast, 'CategoryType' | 'LineItemName'>, source: BudgetLineSource = {}): BudgetFund {
+  const name = line.LineItemName.toLowerCase();
+  if (name.includes('wolf')) return 'Father George Wolf Memorial Fund';
+  if (name.includes('vistica')) return 'Sister Rita Rose Vistica Parish Community Fund';
+  if (name.includes('mcgivney')) return 'Blessed Michael McGivney Fraternal Activities Fund';
+  if (/\b(school|student|students|scholarship|scholarships)\b/.test(name)) return 'Cathedral School & Student Support';
+  if (line.CategoryType === 'Operational') return 'Council Maintenance & State/Supreme Programs';
+  if (line.CategoryType === 'Donation') {
+    return source.charityType?.toLowerCase() === 'parish' ? 'Sister Rita Rose Vistica Parish Community Fund' : 'Other Donations & Projects';
+  }
+  return source.eventCategory?.toLowerCase() === 'parish community'
+    ? 'Sister Rita Rose Vistica Parish Community Fund'
+    : 'Blessed Michael McGivney Fraternal Activities Fund';
+}
+
+/** One fund's lines with their subtotals, to the cent. */
+export interface BudgetFundGroup<T extends CouncilBudgetForecast = CouncilBudgetForecast> {
+  fund: BudgetFund;
+  lines: T[];
+  prePopulatedTotal: number;
+  approvedTotal: number;
+}
+
+/** Every fund in BUDGET_FUNDS order (empty funds included), each holding its lines in listAnnualForecast order. */
+export function groupBudgetByFund<T extends CouncilBudgetForecast>(lines: readonly T[], sourceOf: (line: T) => BudgetLineSource): BudgetFundGroup<T>[] {
+  return BUDGET_FUNDS.map((fund) => {
+    const mine = sortBudgetLines(lines.filter((l) => budgetFundOf(l, sourceOf(l)) === fund));
+    return {
+      fund,
+      lines: mine,
+      prePopulatedTotal: sumCents(mine.map((l) => l.PrePopulatedAmount)),
+      approvedTotal: sumCents(mine.map((l) => l.ApprovedBudgetAmount)),
+    };
+  });
+}
+
+/** Adds budget amounts to the cent. */
+export const sumBudgetAmounts = (amounts: readonly number[]): number => sumCents(amounts);

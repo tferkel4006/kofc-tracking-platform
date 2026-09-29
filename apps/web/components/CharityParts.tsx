@@ -101,6 +101,15 @@ export function CharityRecordFields({ draft, onChange }: { draft: CharityDraft; 
         <input type="checkbox" className="size-4" checked={draft.IsCatholic} onChange={(e) => set('IsCatholic', e.target.checked)} />
         Catholic ministry or organization
       </label>
+      <label className="flex items-start gap-2 text-sm md:col-span-2">
+        <input type="checkbox" className="mt-0.5 size-4" checked={draft.IsAnnual} onChange={(e) => set('IsAnnual', e.target.checked)} />
+        <span>
+          <span className="font-bold">Is Annual</span>
+          <span className="block text-xs text-muted">
+            A budgeting tag only: councils give to this charity every year, so next June&apos;s budget reads what each council paid it.
+          </span>
+        </span>
+      </label>
     </div>
   );
 }

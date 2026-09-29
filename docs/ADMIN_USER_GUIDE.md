@@ -1,7 +1,7 @@
 # Knights of Columbus Tracking Platform — Administrator Operations Manual
 
 **Audience:** Council Admins, Super Admins, council officers, Treasurers and Financial Secretaries.
-**Covers:** the desktop portal's management screens: planning, roster, meetings, audits, ledger, lookups, donations and executive summaries.
+**Covers:** the desktop portal's management screens: planning, roster, meetings, audits, ledger, lookups, donations, executive summaries and the annual budget.
 
 > Administrators volunteer too. For signing up, logging hours and taking donations on the phone, see [MEMBER_USER_GUIDE.md](MEMBER_USER_GUIDE.md).
 
@@ -20,9 +20,10 @@
 9. [Configuring council lookups](#9-configuring-council-lookups)
 10. [The donations workspace](#10-the-donations-workspace)
 11. [Interpreting the executive scorecard (monthly summaries)](#11-interpreting-the-executive-scorecard-monthly-summaries)
-12. [Super Admin: system lookups and councils](#12-super-admin-system-lookups-and-councils)
-13. [Data protection rules](#13-data-protection-rules)
-14. [Administrator troubleshooting reference](#14-administrator-troubleshooting-reference)
+12. [Annual budget projections](#12-annual-budget-projections)
+13. [Super Admin: system lookups and councils](#13-super-admin-system-lookups-and-councils)
+14. [Data protection rules](#14-data-protection-rules)
+15. [Administrator troubleshooting reference](#15-administrator-troubleshooting-reference)
 
 ---
 
@@ -46,6 +47,7 @@ Expense checks are issued only by the council's **Financial Secretary** or **Tre
 | Post-event ledger | Owners of an event | Owners of an event | Owners of an event | ✔ | ✔ |
 | Lessons registry | | | | ✔ (read all councils) | ✔ |
 | Executive Summaries | | | Monthly summary only | ✔ incl. audits | ✔ incl. audits |
+| Annual Budget Projections | | | ✔ own council | ✔ own council | ✔ any council |
 
 Key points:
 - **Admins act only on their own council.** Super Admins act on any council.
@@ -328,9 +330,71 @@ The **Highlights** text of each of the month's events, in date order. If none ap
 
 ---
 
-## 12. Super Admin: system lookups and councils
+## 12. Annual budget projections
 
-### 12.1 System lookups
+**Path:** sidebar → **Financial Ledgers** → **Annual Budget Projections** (the council's Admins, Treasurer and Financial Secretary, and Super Admins). Standard members and officers without a finance role never see the budget.
+
+> **The Annual Forecasting Tag System**
+>
+> The **Is Annual** checkbox on the **Event** form (Event Planner) and on a **Global Charities Registry** entry is a **financial accounting tag only**.
+>
+> - It does **not** duplicate calendar cards, copy the event, or create any future schedule entries. Next year's edition of an event is still planned in the Event Planner (for example with **Copy as twin**, which keeps the tag).
+> - It tells the Budget Engine which events and charities recur each year. When the budget is prepared, the engine reads the **prior fraternal year's actual audited spend** on every tagged event and tagged charity and uses it to **pre-populate baseline estimates** for the year ahead.
+> - An untagged event or charity is still counted in the monthly summaries. It simply gets no line of its own in next year's budget.
+>
+> **Budgets are prepared in June and locked automatically as Finalized on July 1st**, the day the new fraternal year begins. Outside June the budget can be read but not changed.
+
+### 12.1 The budget year and its window
+
+Choose the **Fraternal year** (July 1 – June 30). The picker opens on the next year to prepare. The **Budget window** badge shows where that year stands:
+
+| Badge | When | What you can do |
+|---|---|---|
+| **Not Yet Open** | Before June 1 of the year's first calendar year | Read only |
+| **Draft** | June 1 – June 30 | Run the rollup, add custom lines, edit approved amounts and notes |
+| **Finalized** | From July 1 | Read only |
+
+### 12.2 Initialize Automated Prior Year Baseline Rollup
+
+The navy **Initialize Automated Prior Year Baseline Rollup** button, next to the year picker, reads the previous fraternal year's actual spend for your council only and fills in the **Pre-Populated Baseline** column:
+
+- **Each annual event** of the council: the event's recorded **Spend** plus the approved and reimbursed expense reports linked to it.
+- **Each annual charity** the council paid: the total of that year's charity checks.
+- **Council Meetings**: the approved and reimbursed expense reports linked to the council's meetings.
+- **Last year's custom lines** are carried forward under the same names with a baseline of **$0.00**.
+
+New lines start with an **Approved Budget Amount** of $0.00 for your review. You can run the rollup again at any time in June: it refreshes the baselines (and renamed events or charities) but **never changes approved amounts or notes**, and never removes a line.
+
+### 12.3 The budget spreadsheet
+
+Lines are grouped under the council's six funds, each with a subtotal, and a council total closes the sheet:
+
+| Fund | Lines filed there |
+|---|---|
+| **Father George Wolf Memorial Fund** | Lines whose name mentions *Wolf* |
+| **Sister Rita Rose Vistica Parish Community Fund** | Lines naming *Vistica*, gifts to *Parish* charities, and *Parish Community* events |
+| **Cathedral School & Student Support** | Lines naming a school, students or scholarships |
+| **Other Donations & Projects** | Every other charity gift |
+| **Council Maintenance & State/Supreme Programs** | Council Meetings and custom operational lines |
+| **Blessed Michael McGivney Fraternal Activities Fund** | Every other event, and lines naming *McGivney* |
+
+Each row shows the **Line Item**, its **Pre-Populated Baseline** and the **Approved Budget Amount**. While the budget is in Draft, type the approved amount and any **Notes** in the row's boxes; each change saves when you leave the box (**Saved** appears beside the row, or the reason it was refused). The scorecards above the sheet show the baseline total, the approved total and the change between them.
+
+### 12.4 Custom council operational lines
+
+Use **+ Add Custom Council Operational Line** at the top of the spreadsheet for running costs that are not an event or a charity, such as **Bank Fees** or **Bulletin Ads**. Enter the **Line item name** and a **Target budget amount**. Each name can be used once per council and year (capitals and spacing are ignored). Custom lines are carried into next June's rollup automatically.
+
+### 12.5 Demonstrations: Simulate June Drafting Window
+
+On the demonstration build (in-memory data), Super Admins see a **Simulate June Drafting Window** checkbox. Ticking it treats the chosen year as Draft so the inputs unlock outside June. It does not appear for other roles or on the production data service.
+
+![Image: Annual Budget Projections]
+
+---
+
+## 13. Super Admin: system lookups and councils
+
+### 13.1 System lookups
 
 **Path:** sidebar → **Global Governance Matrices** (Super Admins only)
 
@@ -349,17 +413,17 @@ Values marked **Built in** (*"The application depends on this value"*) cannot be
 
 > **Caution:** finance access is granted by the role **names** *Treasurer* and *Financial Secretary*. These roles are not locked, so renaming either one (for example to "Treasurer (2026)") silently removes finance access from the officers who hold it. Keep those two names exactly as they are.
 
-### 12.2 Feedback inbox
+### 13.2 Feedback inbox
 
 Members send feedback and bug reports from **Online Help Center → Submit System Feedback or Bug Report**. Super Admins see the **Feedback inbox** below that form on the same page. It lists each report newest first, with the sender's name, council, phone, email and the time it was submitted (UTC). No one else can read the inbox.
 
-### 12.3 Councils
+### 13.3 Councils
 
 **Path:** sidebar → **Councils**. Only a Super Admin may add, edit or delete a council. Admins manage their council's parishes, pastors, activities and distribution lists instead.
 
 ---
 
-## 13. Data protection rules
+## 14. Data protection rules
 
 - **Nothing cascades.** A record that other records still point to cannot be deleted. You will see a **record in use** message naming what depends on it. For example, a shift with sign-ups, a member with logged hours, or a lookup value in use are all protected, which keeps the council's history of hours, donations and messages intact. Remove or reassign the dependent records first, or leave the record in place.
 - The only exception: deleting a distribution list also clears its member list.
@@ -367,7 +431,7 @@ Members send feedback and bug reports from **Online Help Center → Submit Syste
 
 ---
 
-## 14. Administrator troubleshooting reference
+## 15. Administrator troubleshooting reference
 
 | Symptom / message | Cause | Fix |
 |---|---|---|
@@ -375,12 +439,15 @@ Members send feedback and bug reports from **Online Help Center → Submit Syste
 | *"…cannot …"* refusal when saving | You are acting outside your council, or without the required tier. | Switch the **Council** selector, or ask a Super Admin. |
 | Shift date refused | It is outside the event's Starts–Ends range. | Adjust the event dates or the shift date. |
 | Event date refused | **Ends** is before **Starts**. | Correct the dates. |
-| Delete refused (record in use) | Other records depend on it (§13). | Clear the dependants first, or keep the record. |
+| Delete refused (record in use) | Other records depend on it (§14). | Clear the dependants first, or keep the record. |
 | Cash or electronic fields locked on the ledger | Donations now drive those totals. | Correct the donations in **Donations** instead. |
 | Council lookups save refused | One row failed, so nothing was saved. | Fix the row named in the message and save again. |
 | Member cannot find their QR code | No **QR code image URL** is on file. | Add it under **Council Lookup Tables → Enabled donation methods**. |
 | *"Your role cannot maintain this council's lookups."* | Finance officer on another council, or no finance role. | A council Admin or Super Admin must make the change. |
 | Audits missing from Executive Summaries | Finance officers see the monthly summary only. | Ask an Admin for the audit figures. |
+| Budget inputs and buttons greyed out | The chosen year is **Not Yet Open** or **Finalized** (§12.1). | Budgets are edited only in June. Pick the year you are preparing. |
+| *"…already has a line named…"* | That custom line exists for this council and year. | Edit the existing line's approved amount instead. |
+| An annual event is missing from the budget | It is not tagged **Is Annual**, it is not linked to your council, or it did not start in the prior fraternal year. | Tick **Is Annual** on the event, then run the rollup again. |
 | **Mark no-show** missing on a turnout row | The volunteer has hours logged, or the event is not linked to your council. | Correct the hours first, or ask an Admin of the event's council. |
 | New member cannot sign in | They have not onboarded, or their roster email is wrong. | Check the **Email (also the login)** field. They must create a password on the phone first. |
 

@@ -1691,6 +1691,8 @@ export interface DataService {
      *   checks. ReferenceSourceID is the charity.
      * - Operational: one 'Council Meetings' line (BUDGET_MEETINGS_LINE_NAME) when the council met in the previous
      *   year - the council's expenses linked to those meetings.
+     * - Operational: each custom line of the previous year's own forecast (Sprint 5Y-2), carried forward under the same
+     *   name with a PrePopulatedAmount of 0.
      * Re-running is safe: a line that already exists keeps its ApprovedBudgetAmount and Notes and only has its
      * PrePopulatedAmount (and a renamed source's LineItemName) refreshed. New lines start with ApprovedBudgetAmount 0
      * for review. Nothing is deleted.

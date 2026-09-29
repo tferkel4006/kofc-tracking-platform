@@ -6,7 +6,11 @@ import {
   assertFraternalYear,
   assertMayManageBudgetForecast,
   BUDGET_MEETINGS_LINE_NAME,
+  budgetFundOf,
+  budgetWindowOf,
   cleanBudgetLineUpdate,
+  groupBudgetByFund,
+  upcomingFraternalYear,
   cleanCustomBudgetLine,
   cleanEventFields,
   cleanGlobalCharity,
@@ -145,6 +149,7 @@ describe('budget helpers (pure)', () => {
       ],
       meetingCount: 10,
       meetingExpenses: [{ Amount: 12.34 }],
+      priorCustomLines: [],
     });
     expect(seeds).toEqual([
       { CategoryType: 'Event', ReferenceSourceID: 4, LineItemName: 'Fish Fry', PrePopulatedAmount: 50 },
@@ -153,7 +158,7 @@ describe('budget helpers (pure)', () => {
       { CategoryType: 'Donation', ReferenceSourceID: 3, LineItemName: 'Pregnancy Center', PrePopulatedAmount: 500 },
       { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: BUDGET_MEETINGS_LINE_NAME, PrePopulatedAmount: 12.34 },
     ]);
-    const quiet = planBudgetPrePopulation({ annualEvents: [], eventExpenses: [], annualCharityChecks: [], meetingCount: 0, meetingExpenses: [] });
+    const quiet = planBudgetPrePopulation({ annualEvents: [], eventExpenses: [], annualCharityChecks: [], meetingCount: 0, meetingExpenses: [], priorCustomLines: [] });
     expect(quiet).toEqual([]);
   });
 
@@ -172,6 +177,61 @@ describe('budget helpers (pure)', () => {
       { id: 2, LineItemName: 'council  MEETINGS', PrePopulatedAmount: 12 },
     ]);
     expect(plan.inserts).toEqual([{ CategoryType: 'Donation', ReferenceSourceID: 4, LineItemName: 'Food Bank', PrePopulatedAmount: 100 }]);
+  });
+
+  it('carries last year\'s custom Operational lines forward once each at a 0.00 baseline, never the meetings line (Sprint 5Y-2)', () => {
+    const seeds = planBudgetPrePopulation({
+      annualEvents: [],
+      eventExpenses: [],
+      annualCharityChecks: [],
+      meetingCount: 0,
+      meetingExpenses: [],
+      priorCustomLines: [{ LineItemName: 'Bulletin Ads' }, { LineItemName: 'Bank Fees' }, { LineItemName: 'bank  FEES' }, { LineItemName: 'Council Meetings' }],
+    });
+    expect(seeds).toEqual([
+      { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bank Fees', PrePopulatedAmount: 0 },
+      { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bulletin Ads', PrePopulatedAmount: 0 },
+    ]);
+  });
+
+  it('opens a budget for drafting through June, locks it as Finalized on July 1, and names the year to prepare next', () => {
+    expect(budgetWindowOf('2027-2028', new Date(2027, 4, 31, 23, 59))).toBe('Not Yet Open');
+    expect(budgetWindowOf('2027-2028', new Date(2027, 5, 1))).toBe('Draft');
+    expect(budgetWindowOf('2027-2028', new Date(2027, 5, 30, 23, 59))).toBe('Draft');
+    expect(budgetWindowOf('2027-2028', new Date(2027, 6, 1))).toBe('Finalized');
+    expect(budgetWindowOf('2026-2027', new Date(2026, 8, 20))).toBe('Finalized');
+    expect(upcomingFraternalYear(new Date(2027, 5, 15))).toBe('2027-2028');
+    expect(upcomingFraternalYear(new Date(2027, 0, 5))).toBe('2027-2028');
+    expect(upcomingFraternalYear(new Date(2026, 8, 20))).toBe('2027-2028');
+    expect(upcomingFraternalYear(new Date(2026, 6, 1))).toBe('2027-2028');
+  });
+
+  it('files each line under one of the six council funds', () => {
+    const fund = (CategoryType: CouncilBudgetForecast['CategoryType'], LineItemName: string, source = {}) => budgetFundOf({ CategoryType, LineItemName }, source);
+    expect(fund('Donation', 'Fr. George Wolf Seminarian Burse')).toBe('Father George Wolf Memorial Fund');
+    expect(fund('Event', 'Sister Rita Vistica Dinner')).toBe('Sister Rita Rose Vistica Parish Community Fund');
+    expect(fund('Donation', 'Cathedral School Tuition Aid')).toBe('Cathedral School & Student Support');
+    expect(fund('Donation', 'Student Scholarships')).toBe('Cathedral School & Student Support');
+    expect(fund('Donation', 'St. Joseph Parish', { charityType: 'Parish' })).toBe('Sister Rita Rose Vistica Parish Community Fund');
+    expect(fund('Donation', 'Food Bank', { charityType: 'Food Security' })).toBe('Other Donations & Projects');
+    expect(fund('Operational', 'Bank Fees')).toBe('Council Maintenance & State/Supreme Programs');
+    expect(fund('Event', 'Parish Picnic', { eventCategory: 'Parish Community' })).toBe('Sister Rita Rose Vistica Parish Community Fund');
+    expect(fund('Event', 'Fish Fry', { eventCategory: 'Fundraising' })).toBe('Blessed Michael McGivney Fraternal Activities Fund');
+    expect(fund('Event', 'Schoolhouse Rock Night')).toBe('Blessed Michael McGivney Fraternal Activities Fund');
+
+    const groups = groupBudgetByFund(
+      [
+        line(1, { LineItemName: 'Bank Fees', PrePopulatedAmount: 10.1, ApprovedBudgetAmount: 12 }),
+        line(2, { LineItemName: 'Bulletin Ads', PrePopulatedAmount: 0.2, ApprovedBudgetAmount: 100 }),
+        line(3, { CategoryType: 'Event', ReferenceSourceID: 4, LineItemName: 'Fish Fry', PrePopulatedAmount: 300 }),
+      ],
+      () => ({}),
+    );
+    expect(groups.map((g) => g.fund)).toHaveLength(6);
+    expect(groups[4]).toMatchObject({ fund: 'Council Maintenance & State/Supreme Programs', prePopulatedTotal: 10.3, approvedTotal: 112 });
+    expect(groups[4].lines.map((l) => l.id)).toEqual([1, 2]);
+    expect(groups[5].lines.map((l) => l.id)).toEqual([3]);
+    expect(groups[0]).toMatchObject({ lines: [], prePopulatedTotal: 0, approvedTotal: 0 });
   });
 
   it('gates the forecast to council leadership: Admins, Financial Secretaries, Treasurers and Super Admins', () => {
@@ -371,6 +431,31 @@ for (const d of drivers) {
       await expectRule(db.budget.updateLineItemBudget(MEMBER.admin, 999_999, 5), 'RECORD_NOT_FOUND');
       await expectRule(db.budget.listAnnualForecast(MEMBER.admin, OWN, '2026'), 'INVALID_INPUT');
       await expectRule(db.budget.prePopulateNextYear(MEMBER.superAdmin, 999, TARGET), 'INVALID_INPUT');
+    });
+
+    it('clones last year\'s custom lines into the new year at a 0.00 baseline, for that council only (Sprint 5Y-2)', async () => {
+      const db = await d.make();
+      await db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bank Fees', ApprovedBudgetAmount: 60, Notes: 'Monthly service charge' });
+      await db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bulletin Ads', ApprovedBudgetAmount: 400 });
+      await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OTHER, { FraternalYear: SOURCE, LineItemName: 'Neighbour Dues', ApprovedBudgetAmount: 90 });
+      const result = await db.budget.prePopulateNextYear(MEMBER.admin, OWN, TARGET);
+      const custom = result.lines.filter((l) => l.LineItemName !== BUDGET_MEETINGS_LINE_NAME);
+      expect(custom.map(({ CategoryType, ReferenceSourceID, LineItemName, PrePopulatedAmount, ApprovedBudgetAmount, Notes }) => ({
+        CategoryType,
+        ReferenceSourceID,
+        LineItemName,
+        PrePopulatedAmount,
+        ApprovedBudgetAmount,
+        Notes: Notes ?? null,
+      }))).toEqual([
+        { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bank Fees', PrePopulatedAmount: 0, ApprovedBudgetAmount: 0, Notes: null },
+        { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bulletin Ads', PrePopulatedAmount: 0, ApprovedBudgetAmount: 0, Notes: null },
+      ]);
+      // Running again adds nothing, and a line the officers already approved keeps its figure.
+      await db.budget.updateLineItemBudget(MEMBER.admin, custom[0].id, 75);
+      const again = await db.budget.prePopulateNextYear(MEMBER.admin, OWN, TARGET);
+      expect(again.created).toBe(0);
+      expect(again.lines.find((l) => l.id === custom[0].id)).toMatchObject({ PrePopulatedAmount: 0, ApprovedBudgetAmount: 75 });
     });
 
     it('keeps standard members and other councils out, and lets a Treasurer in', async () => {

@@ -14,8 +14,11 @@ import { postAlchemerViaServer } from './alchemer-transport';
 import { MemoryDataService } from './drivers/memory';
 import { createRemoteDataService } from './drivers/remote';
 
+/** Which driver backs `db`. Demo-only controls (the budget's June simulator) appear only on the in-memory mock. */
+export const DATA_DRIVER = process.env.NEXT_PUBLIC_DATA_DRIVER ?? 'memory';
+
 function createDataService(): DataService {
-  const driver = process.env.NEXT_PUBLIC_DATA_DRIVER ?? 'memory';
+  const driver = DATA_DRIVER;
   switch (driver) {
     case 'memory':
       // Supreme reports go through the server route, which holds the Alchemer credentials.

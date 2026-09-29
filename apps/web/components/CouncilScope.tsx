@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
-import { councilLabel, isSuperAdmin, portalAreas, sortCouncils, type Council, type PortalArea } from '@kofc/shared';
+import { councilLabel, isSuperAdmin, portalAreaHref, portalAreas, sortCouncils, type Council, type PortalArea } from '@kofc/shared';
 import { Field, Notice, Select } from '@/components/ui';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -19,7 +19,7 @@ export function RequireArea({ area, children }: { area: PortalArea; children: Re
       {areas.map((a, i) => (
         <span key={a}>
           {i > 0 ? ', ' : ''}
-          <Link href={`/${a}`} className="font-bold underline">
+          <Link href={portalAreaHref(a)} className="font-bold underline">
             {a}
           </Link>
         </span>

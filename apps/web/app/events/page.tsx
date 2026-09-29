@@ -81,6 +81,7 @@ function EventForm({
   const [budget, setBudget] = useState(toField(event?.Budget));
   const [planned, setPlanned] = useState(toField(event?.PlannedNumberAttendees));
   const [linked, setLinked] = useState<number[]>(event ? linkedCouncilIds : [councilId]);
+  const [annual, setAnnual] = useState(event?.IsAnnual === 1);
 
   const toggleCouncil = (id: number) => setLinked((now) => (now.includes(id) ? now.filter((c) => c !== id) : [...now, id]));
 
@@ -99,6 +100,7 @@ function EventForm({
           OwnerID: ownerId,
           Budget: budgetValue,
           PlannedNumberAttendees: plannedValue,
+          IsAnnual: annual ? 1 : 0,
         };
         await db.events.update(event.id, changes);
         await db.events.setCouncils(event.id, linked);
@@ -112,6 +114,7 @@ function EventForm({
           EndDate: endDate,
           CategoryID: categoryId,
           OwnerID: ownerId,
+          IsAnnual: annual ? 1 : 0,
         };
         if (budgetValue !== null) created.Budget = budgetValue;
         if (plannedValue !== null) created.PlannedNumberAttendees = plannedValue;
@@ -170,6 +173,15 @@ function EventForm({
         <Field label="Planned attendees">
           {(id) => <Input id={id} inputMode="numeric" value={planned} onChange={(e) => setPlanned(e.target.value)} />}
         </Field>
+        <label className="col-span-2 flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-0.5 size-4" checked={annual} onChange={(e) => setAnnual(e.target.checked)} />
+          <span>
+            <span className="font-bold">Is Annual</span>
+            <span className="block text-xs text-muted">
+              A budgeting tag only: next June the Annual Budget Projections read this event&apos;s actual spend. It does not copy the event or add future dates.
+            </span>
+          </span>
+        </label>
         <fieldset className="col-span-2 flex flex-col gap-1">
           <legend className="text-xs font-bold uppercase tracking-wide">Councils sharing this event</legend>
           <div className="flex flex-wrap gap-x-6 gap-y-1">

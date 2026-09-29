@@ -17,7 +17,10 @@ import type { Donation, Event, ExpenseReport, Meeting, Member, MemberType } from
 /** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. */
 type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'> & { roles?: readonly string[] };
 
-/** Each area is also its route: RequireArea links to `/${area}` (so 'expenses/queue' is /expenses/queue). */
+/**
+ * Each area is also its route: RequireArea links to `/${area}` (so 'expenses/queue' is /expenses/queue), except the
+ * areas PORTAL_AREA_ROUTES names (portalAreaHref).
+ */
 export type PortalArea =
   | 'member-actions'
   | 'calendar'
@@ -44,8 +47,15 @@ export type PortalArea =
   | 'donations'
   | 'dashboard'
   | 'supreme-sync'
+  | 'financials/budget'
   | 'messages'
   | 'profile';
+
+/** Areas served from a route other than `/${area}`: the budget center lives at /budget (Sprint 5Y-2). */
+export const PORTAL_AREA_ROUTES: Partial<Record<PortalArea, string>> = { 'financials/budget': '/budget' };
+
+/** The route of a portal area. */
+export const portalAreaHref = (area: PortalArea): string => PORTAL_AREA_ROUTES[area] ?? `/${area}`;
 
 export const isSuperAdmin = (u: Actor): boolean => u.memberType === 'Super Admin';
 export const isAdmin = (u: Actor): boolean => u.memberType === 'Admin' || isSuperAdmin(u);
@@ -247,6 +257,8 @@ export function portalAreas(u: Actor): PortalArea[] {
   if (canBrowseLessonsRegistry(u)) areas.push('lessons-registry');
   if (canManageCharityRegistry(u)) areas.push('charities/registry');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('dashboard', 'supreme-sync');
+  // The annual budget belongs to council leadership (canManageBudgetForecast, Sprint 5Y).
+  if (isAdmin(u) || isFinanceOfficer(u)) areas.push('financials/budget');
   areas.push('messages', 'profile');
   return areas;
 }
@@ -275,7 +287,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
     collapsible: true,
     items: ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
   },
-  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/queue'] },
+  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/queue', 'financials/budget'] },
   { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'] },
 ];
 

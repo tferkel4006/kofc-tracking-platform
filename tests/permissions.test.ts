@@ -7,6 +7,8 @@ import {
   canMaintainCouncilRecords,
   canDispatchCouncilAlerts,
   canManageFinances,
+  canManageBudgetForecast,
+  portalAreaHref,
   canSyncSupremeReports,
   isFinanceOfficer,
   canMaintainCouncils,
@@ -109,6 +111,7 @@ describe('portal permissions', () => {
       'charities/registry',
       'dashboard',
       'supreme-sync',
+      'financials/budget',
       'messages',
       'profile',
     ]);
@@ -133,6 +136,7 @@ describe('portal permissions', () => {
       'charities/registry',
       'dashboard',
       'supreme-sync',
+      'financials/budget',
       'messages',
       'profile',
     ]);
@@ -189,7 +193,7 @@ describe('portal permissions', () => {
       expect(shape(superAdmin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose']],
         ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
-        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/queue']],
+        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/queue', 'financials/budget']],
         ['Administrative Lookups', ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils']],
       ]);
     });
@@ -198,7 +202,7 @@ describe('portal permissions', () => {
       expect(shape(admin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose']],
         ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
-        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue']],
+        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'financials/budget']],
         ['Administrative Lookups', ['council-lookups', 'charities/registry', 'supreme-sync', 'parishes']],
       ]);
     });
@@ -207,7 +211,7 @@ describe('portal permissions', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Treasurer'] }))).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose']],
         ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
-        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/queue']],
+        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/queue', 'financials/budget']],
         ['Administrative Lookups', ['council-lookups', 'supreme-sync']],
       ]);
     });
@@ -268,6 +272,17 @@ describe('portal permissions', () => {
     expect([superAdmin, admin, treasurer, member].map((u) => canConnectCouncilCharity(u, 1))).toEqual([true, true, true, false]);
   });
 
+  it('opens the Annual Budget Projections to council leadership only, served from /budget (Sprint 5Y)', () => {
+    const treasurer = actor({ isOfficer: true, roles: ['Treasurer'] });
+    const secretary = actor({ isOfficer: true, roles: ['Financial Secretary'] });
+    for (const u of [superAdmin, admin, treasurer, secretary]) expect(portalAreas(u)).toContain('financials/budget');
+    for (const u of [officer, member, actor({ isOfficer: true, roles: ['Grand Knight'] })]) expect(portalAreas(u)).not.toContain('financials/budget');
+    expect([superAdmin, admin, treasurer, secretary, member].map((u) => canManageBudgetForecast(u, 1))).toEqual([true, true, true, true, false]);
+    expect([superAdmin, admin, treasurer].map((u) => canManageBudgetForecast(u, 2))).toEqual([true, false, false]);
+    expect(portalAreaHref('financials/budget')).toBe('/budget');
+    expect(portalAreaHref('expenses/queue')).toBe('/expenses/queue');
+  });
+
   it('leads every role, Admins included, with the Member Actions hub', () => {
     for (const u of [superAdmin, admin, officer, member, actor({ roles: ['Treasurer'] })]) expect(portalAreas(u)[0]).toBe('member-actions');
   });
@@ -309,6 +324,7 @@ describe('portal permissions', () => {
         'charities/queue',
         'dashboard',
         'supreme-sync',
+        'financials/budget',
         'messages',
         'profile',
       ]);

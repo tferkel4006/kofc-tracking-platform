@@ -414,11 +414,13 @@ export interface CharityDraft {
   ZipCode: string;
   IsCatholic: boolean;
   CharityType: string;
+  /** Sprint 5Y: a budgeting tag only - the council gives every fraternal year. */
+  IsAnnual: boolean;
 }
 
 /** An empty form, or one started from what is known (a registry entry, a proposed name, a state). */
 export function charityDraftFrom(
-  charity: Partial<Pick<GlobalCharityRegistry, keyof CharityDraft | 'IsCatholic'>> | null,
+  charity: Partial<Pick<GlobalCharityRegistry, keyof CharityDraft | 'IsCatholic' | 'IsAnnual'>> | null,
   defaults: { Name?: string; State?: string } = {},
 ): CharityDraft {
   const text = (v: string | null | undefined) => v ?? '';
@@ -434,6 +436,7 @@ export function charityDraftFrom(
     ZipCode: text(charity?.ZipCode),
     IsCatholic: charity?.IsCatholic === 1,
     CharityType: text(charity?.CharityType),
+    IsAnnual: charity?.IsAnnual === 1,
   };
 }
 

@@ -3565,6 +3565,12 @@ export class SqliteDataService implements DataService {
           annualCharityChecks,
           meetingCount: meetings?.n ?? 0,
           meetingExpenses,
+          priorCustomLines: await db.getAllAsync<Pick<CouncilBudgetForecast, 'LineItemName'>>(
+            `SELECT [LineItemName] FROM [CouncilBudgetForecast]
+              WHERE [CouncilID] = ? AND [FraternalYear] = ? AND [CategoryType] = 'Operational' AND [ReferenceSourceID] IS NULL
+              ORDER BY [id]`,
+            [councilId, source],
+          ),
         });
         const plan = mergeBudgetSeeds(await this.budgetLines(db, councilId, target), seeds);
         for (const line of plan.updates) {

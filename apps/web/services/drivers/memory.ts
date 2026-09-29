@@ -3047,6 +3047,7 @@ export class MemoryDataService implements DataService {
             .map((d) => ({ CharityID: d.CharityID as number, Name: annualCharities.get(d.CharityID)!, Amount: d.Amount as number })),
           meetingCount: meetingIds.size,
           meetingExpenses: expenseLines.filter((x) => meetingIds.has(x.report.LinkedMeetingID)).map((x) => ({ Amount: x.Amount })),
+          priorCustomLines: this.budgetLines(s, councilId, source).filter((l) => l.CategoryType === 'Operational' && l.ReferenceSourceID == null),
         });
         const plan = mergeBudgetSeeds(this.budgetLines(s, councilId, target), seeds);
         for (const { id, ...refresh } of plan.updates) Object.assign(s.rows('CouncilBudgetForecast').find((l) => l.id === id)!, refresh);
