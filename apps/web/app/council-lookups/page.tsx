@@ -13,9 +13,15 @@
 // Officer Election Parameters (Sprint 5U): the council's Admins and Super Admins tick which elected offices are open
 // for nomination this season (elections.toggleRoleBallotStatus, saved per click). Appointed offices and the trustee
 // ladder are never on a ballot, so only elected seats are listed.
+//
+// Meeting Agenda Templates (Sprint 5Y-6): the council's Admins, its Grand Knight and Super Admins pick one of the
+// council's own meeting types (CouncilMeetingType) and write its default agenda outline (meetings.saveAgendaTemplate,
+// CouncilAgendaTemplate). The Meeting center's schedule form pre-fills its agenda from it.
 import { useEffect, useState } from 'react';
 import {
+  AGENDA_TEMPLATE_MAX_LENGTH,
   canConfigureBallot,
+  canManageAgendaTemplates,
   councilLookupTablesFor,
   describeError,
   formatTimestamp,
@@ -23,7 +29,7 @@ import {
   type CouncilLookupTableName,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { Button, cx, Empty, Input, Notice, PageTitle, Pill, Select, Table, Tabs, Td } from '@/components/ui';
+import { Button, cx, Empty, Field, Input, Notice, PageTitle, Pill, Select, Table, Tabs, Td, Textarea } from '@/components/ui';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
@@ -299,7 +305,111 @@ function ElectionParameters({ councilId }: { councilId: number }) {
   );
 }
 
-type LookupTab = CouncilLookupTableName | 'elections';
+const AGENDA_PLACEHOLDER = ['1. Opening prayer', '2. Roll call of officers', '3. Reading of the minutes', '4. Reports', '5. Old business', '6. New business', '7. Closing prayer'].join('\n');
+
+function AgendaTemplates({ councilId }: { councilId: number }) {
+  const user = useUser();
+  const types = useLoad(() => db.meetings.listCouncilMeetingTypes(councilId), [councilId]);
+  const [picked, setPicked] = useState<number | null>(null);
+  const typeId = picked !== null && types.data?.some((t) => t.id === picked) ? picked : (types.data?.[0]?.id ?? null);
+  // Tagged with its type so a slower answer for a type no longer shown is never put in the editor.
+  const saved = useLoad(
+    async () => ({ typeId, text: typeId === null ? '' : ((await db.meetings.getAgendaTemplate(councilId, typeId))?.TemplateText ?? '') }),
+    [councilId, typeId],
+  );
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+  const current = saved.data?.typeId === typeId ? saved.data : undefined;
+
+  useEffect(() => {
+    if (current) setText(current.text);
+  }, [current]);
+
+  if (types.error) return <Notice tone="error">{types.error}</Notice>;
+  if (!types.data) return <p className="text-sm text-muted">Loading…</p>;
+  if (types.data.length === 0) return <Empty>This council has no meeting types yet, so there is nothing to write an agenda template for.</Empty>;
+
+  const typeName = types.data.find((t) => t.id === typeId)?.TypeName ?? '';
+  const dirty = current !== undefined && text.trim() !== current.text;
+
+  const save = async (value: string) => {
+    if (typeId === null) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await db.meetings.saveAgendaTemplate(user.memberId, councilId, typeId, value);
+      setMessage({ tone: 'info', text: result ? `Saved the ${typeName} agenda template.` : `Removed the ${typeName} agenda template.` });
+      await saved.reload();
+    } catch (err) {
+      setMessage({ tone: 'error', text: describeError(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex max-w-3xl flex-col gap-3">
+      {message ? (
+        <Notice tone={message.tone} onDismiss={() => setMessage(null)}>
+          {message.text}
+        </Notice>
+      ) : null}
+      {saved.error ? <Notice tone="error">{saved.error}</Notice> : null}
+      <p className="text-xs text-muted">
+        Pick one of the council&apos;s meeting types and write the outline its agendas start from. When anyone schedules a meeting of that type in the
+        Meeting center, the agenda box fills with this outline, and they can still edit it for that meeting.
+      </p>
+      <Field label="Meeting type">
+        {(id) => (
+          <Select
+            id={id}
+            value={typeId ?? ''}
+            disabled={busy}
+            onChange={(e) => {
+              setPicked(Number(e.target.value));
+              setMessage(null);
+            }}
+          >
+            {types.data!.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.TypeName}
+              </option>
+            ))}
+          </Select>
+        )}
+      </Field>
+      <Field label="Default agenda outline" hint={`Up to ${AGENDA_TEMPLATE_MAX_LENGTH.toLocaleString()} characters. Leave it empty and save to remove the template.`}>
+        {(id) => (
+          <Textarea
+            id={id}
+            rows={14}
+            className="text-sm"
+            value={text}
+            maxLength={AGENDA_TEMPLATE_MAX_LENGTH}
+            disabled={!current || busy}
+            placeholder={AGENDA_PLACEHOLDER}
+            onChange={(e) => setText(e.target.value)}
+          />
+        )}
+      </Field>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button disabled={busy || !dirty} onClick={() => void save(text)}>
+          {busy ? 'Saving…' : 'Save template'}
+        </Button>
+        {dirty ? (
+          <Button variant="secondary" disabled={busy} onClick={() => setText(current?.text ?? '')}>
+            Discard changes
+          </Button>
+        ) : null}
+        {current && current.text !== '' ? <Pill tone="navy">Template saved</Pill> : <Pill tone="outline">No template yet</Pill>}
+        {dirty ? <Pill tone="gold">Unsaved changes</Pill> : null}
+      </div>
+    </div>
+  );
+}
+
+type LookupTab = CouncilLookupTableName | 'elections' | 'agenda';
 
 function CouncilLookups() {
   const user = useUser();
@@ -308,6 +418,7 @@ function CouncilLookups() {
   const tabs: { id: LookupTab; label: string }[] = [
     ...tables.map((t) => ({ id: t, label: TAB_LABELS[t] })),
     ...(canConfigureBallot(user, scope.councilId) ? [{ id: 'elections' as const, label: 'Officer Election Parameters' }] : []),
+    ...(canManageAgendaTemplates(user, scope.councilId) ? [{ id: 'agenda' as const, label: 'Meeting Agenda Templates' }] : []),
   ];
   const [chosen, setChosen] = useState<LookupTab | null>(null);
   const table = chosen && tabs.some((t) => t.id === chosen) ? chosen : tabs[0]?.id;
@@ -315,7 +426,7 @@ function CouncilLookups() {
   return (
     <>
       <PageTitle actions={<CouncilSelect scope={scope} />}>Council lookups</PageTitle>
-      {tables.length < 3 ? (
+      {tables.length > 0 && tables.length < 3 ? (
         <p className="mb-3 text-sm text-muted">As your council&apos;s finance officer you maintain its donation types and enabled donation methods.</p>
       ) : null}
       {table ? (
@@ -324,6 +435,8 @@ function CouncilLookups() {
           <div id="council-lookup-panel" role="tabpanel" aria-labelledby={`council-lookup-tab-${table}`} className="pt-4">
             {table === 'elections' ? (
               <ElectionParameters key={scope.councilId} councilId={scope.councilId} />
+            ) : table === 'agenda' ? (
+              <AgendaTemplates key={scope.councilId} councilId={scope.councilId} />
             ) : (
               <LookupEditor key={`${scope.councilId}-${table}`} councilId={scope.councilId} table={table} />
             )}

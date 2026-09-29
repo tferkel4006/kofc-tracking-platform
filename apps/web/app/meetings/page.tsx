@@ -4,15 +4,22 @@
 // manages that meeting alongside them. Every member may open the center read-only. The Google Drive minutes and
 // flyer links are saved by the owner, the council's Admins and finance officers, and Super Admins. The invitation
 // message and the day-before reminder are the data layer's job, so this page only chooses who is invited.
-import { useState } from 'react';
+//
+// Sprint 5Y-6: the schedule form offers the council's own meeting types (CouncilMeetingType, saved as MeetingTypeID);
+// picking one fills the agenda with the council's template for it (meetings.getAgendaTemplate), which stays editable.
+// A Multi-Day Assembly checkbox swaps the clock times for an End Date: the meeting then runs over whole days.
+import { useEffect, useRef, useState } from 'react';
 import {
   canLinkMeetingDrive,
   canManageMeeting,
   canManageMeetings,
   describeError,
   formatDate,
-  formatTimeRange,
+  formatMeetingWhen,
+  globalMeetingTypeFor,
+  meetingLastDate,
   toIsoDate,
+  type CouncilMeetingType,
   type Meeting,
   type MeetingInviteMode,
   type MeetingType,
@@ -61,13 +68,28 @@ const Banner = ({ message, onDismiss }: { message: Message | null; onDismiss: ()
 
 // ---- schedule a meeting ------------------------------------------------------
 
-function NewMeetingForm({ councilId, types, onCreated }: { councilId: number; types: MeetingType[]; onCreated: (id: number) => void }) {
+function NewMeetingForm({
+  councilId,
+  types,
+  councilTypes,
+  onCreated,
+}: {
+  councilId: number;
+  types: MeetingType[];
+  councilTypes: CouncilMeetingType[];
+  onCreated: (id: number) => void;
+}) {
   const user = useUser();
   const { message, setMessage, run } = useAction();
   const members = useLoad(() => db.members.listByCouncil(councilId, { activeOnly: true }), [councilId]);
   const [name, setName] = useState('');
+  // A council with its own meeting types files the meeting under one (MeetingTypeID); otherwise the global types.
+  const useCouncilTypes = councilTypes.length > 0;
+  const [councilTypeId, setCouncilTypeId] = useState<number | null>(councilTypes[0]?.id ?? null);
   const [typeId, setTypeId] = useState(types[0]?.id ?? 0);
   const [date, setDate] = useState('');
+  const [multiDay, setMultiDay] = useState(false);
+  const [endDate, setEndDate] = useState('');
   const [start, setStart] = useState('19:00');
   const [end, setEnd] = useState('20:30');
   const [location, setLocation] = useState('');
@@ -76,6 +98,36 @@ function NewMeetingForm({ councilId, types, onCreated }: { councilId: number; ty
   const [ownerId, setOwnerId] = useState<number | null>(user.memberId);
   const [choice, setChoice] = useState<InviteChoice>('allActive');
   const [picked, setPicked] = useState<number[]>([]);
+  // The template text last put in the agenda box, so choosing another type replaces it but never someone's own edits.
+  const applied = useRef('');
+  const [offeredTemplate, setOfferedTemplate] = useState<string | null>(null);
+
+  // On-change trigger: each meeting type chosen (the first on open) fetches the council's template for it.
+  useEffect(() => {
+    if (councilTypeId === null) return;
+    let current = true;
+    void db.meetings.getAgendaTemplate(councilId, councilTypeId).then(
+      (template) => {
+        if (!current) return;
+        const text = template?.TemplateText ?? '';
+        setAgenda((now) => {
+          if (now.trim() === '' || now === applied.current) {
+            applied.current = text;
+            setOfferedTemplate(null);
+            return text;
+          }
+          setOfferedTemplate(text === '' ? null : text);
+          return now;
+        });
+      },
+      (err: unknown) => {
+        if (current) setMessage({ tone: 'error', text: describeError(err) });
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [councilId, councilTypeId, setMessage]);
 
   const toggle = (id: number) => setPicked((now) => (now.includes(id) ? now.filter((m) => m !== id) : [...now, id]));
 
@@ -83,15 +135,27 @@ function NewMeetingForm({ councilId, types, onCreated }: { councilId: number; ty
     let id = 0;
     const ok = await run(async () => {
       if (name.trim() === '' || date === '' || location.trim() === '') throw new Error('A meeting needs a name, a date and a location.');
-      if (end <= start) throw new Error(`The meeting ends (${end}) before it starts (${start}).`);
+      if (multiDay) {
+        if (endDate === '') throw new Error('A multi-day assembly needs an end date.');
+        if (endDate <= date) throw new Error(`A multi-day assembly must end (${endDate}) after the day it starts (${date}).`);
+      } else if (end <= start) {
+        throw new Error(`The meeting ends (${end}) before it starts (${start}).`);
+      }
+      const councilType = councilTypes.find((t) => t.id === councilTypeId);
+      const globalType = councilType ? globalMeetingTypeFor(councilType.TypeName, types) : typeId;
+      if (globalType === undefined) throw new Error('No meeting categories are set up yet; ask a Super Admin to add one.');
       const meeting: NewMeeting = {
         CouncilID: councilId,
         'Meeting Name': name.trim(),
         Date: date,
+        // The data service stores a multi-day assembly without clock times.
         'Time Start': `${start}:00`,
         'Time End': `${end}:00`,
+        IsMultiDay: multiDay ? 1 : 0,
+        EndDate: multiDay ? endDate : null,
         Location: location.trim(),
-        MeetingType: typeId,
+        MeetingType: globalType,
+        MeetingTypeID: councilType?.id ?? null,
         OwnerID: ownerId,
       };
       if (description.trim() !== '') meeting['Meeting Description'] = description.trim();
@@ -115,21 +179,46 @@ function NewMeetingForm({ councilId, types, onCreated }: { councilId: number; ty
           <Banner message={message} onDismiss={() => setMessage(null)} />
         </div>
         <Field label="Meeting name">{(id) => <Input id={id} value={name} maxLength={100} onChange={(e) => setName(e.target.value)} required />}</Field>
-        <Field label="Type">
-          {(id) => (
-            <Select id={id} value={typeId} onChange={(e) => setTypeId(Number(e.target.value))}>
-              {types.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.Type}
-                </option>
-              ))}
-            </Select>
-          )}
+        <Field label="Type" hint={useCouncilTypes ? "Your council's meeting types; each may fill in the agenda from its template." : undefined}>
+          {(id) =>
+            useCouncilTypes ? (
+              <Select id={id} value={councilTypeId ?? ''} onChange={(e) => setCouncilTypeId(Number(e.target.value))}>
+                {councilTypes.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.TypeName}
+                  </option>
+                ))}
+              </Select>
+            ) : (
+              <Select id={id} value={typeId} onChange={(e) => setTypeId(Number(e.target.value))}>
+                {types.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.Type}
+                  </option>
+                ))}
+              </Select>
+            )
+          }
         </Field>
-        <Field label="Date">{(id) => <Input id={id} type="date" value={date} onChange={(e) => setDate(e.target.value)} required />}</Field>
         <Field label="Location">{(id) => <Input id={id} value={location} maxLength={255} onChange={(e) => setLocation(e.target.value)} required />}</Field>
-        <Field label="Starts">{(id) => <Input id={id} type="time" value={start} onChange={(e) => setStart(e.target.value)} required />}</Field>
-        <Field label="Ends">{(id) => <Input id={id} type="time" value={end} onChange={(e) => setEnd(e.target.value)} required />}</Field>
+        <Field label={multiDay ? 'Start date' : 'Date'}>{(id) => <Input id={id} type="date" value={date} onChange={(e) => setDate(e.target.value)} required />}</Field>
+        <label className="flex items-center gap-2 self-end pb-2 text-sm">
+          <input type="checkbox" className="size-4" checked={multiDay} onChange={(e) => setMultiDay(e.target.checked)} />
+          <span>
+            <span className="font-bold">Multi-Day Assembly / Extended Event</span>
+            <span className="block text-xs text-muted">Runs over whole days, with no clock times.</span>
+          </span>
+        </label>
+        {multiDay ? (
+          <Field label="End date" className="col-span-2 sm:col-span-1">
+            {(id) => <Input id={id} type="date" value={endDate} min={date || undefined} onChange={(e) => setEndDate(e.target.value)} required />}
+          </Field>
+        ) : (
+          <>
+            <Field label="Starts">{(id) => <Input id={id} type="time" value={start} onChange={(e) => setStart(e.target.value)} required />}</Field>
+            <Field label="Ends">{(id) => <Input id={id} type="time" value={end} onChange={(e) => setEnd(e.target.value)} required />}</Field>
+          </>
+        )}
         <Field label="Meeting owner" hint="The owner manages this meeting, its attendance, minutes and Drive links, alongside the council's admins." className="col-span-2">
           {(id) => (
             <Select id={id} value={ownerId ?? ''} onChange={(e) => setOwnerId(e.target.value === '' ? null : Number(e.target.value))}>
@@ -145,9 +234,25 @@ function NewMeetingForm({ councilId, types, onCreated }: { councilId: number; ty
         <Field label="Description" className="col-span-2">
           {(id) => <Input id={id} value={description} maxLength={255} onChange={(e) => setDescription(e.target.value)} />}
         </Field>
-        <Field label="Agenda" className="col-span-2">
-          {(id) => <Textarea id={id} value={agenda} onChange={(e) => setAgenda(e.target.value)} />}
+        <Field label="Agenda" className="col-span-2" hint={useCouncilTypes ? "Starts from the council's template for the type chosen; edit it freely." : undefined}>
+          {(id) => <Textarea id={id} rows={8} value={agenda} onChange={(e) => setAgenda(e.target.value)} />}
         </Field>
+        {offeredTemplate !== null ? (
+          <div className="col-span-2 -mt-2 flex items-center gap-2 text-xs text-muted">
+            Your own agenda was kept. This meeting type has a template too.
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                applied.current = offeredTemplate;
+                setAgenda(offeredTemplate);
+                setOfferedTemplate(null);
+              }}
+            >
+              Use the template
+            </Button>
+          </div>
+        ) : null}
         <Field label="Invite" hint="Invited members receive a message in the app." className="col-span-2 sm:col-span-1">
           {(id) => (
             <Select id={id} value={choice} onChange={(e) => setChoice(e.target.value as InviteChoice)}>
@@ -221,9 +326,7 @@ function MeetingDetail({ meetingId, councilId, onChanged }: { meetingId: number;
       <Panel title={m['Meeting Name']}>
         <dl className="grid grid-cols-[8rem_1fr] gap-y-1 text-sm">
           <dt className="font-bold">When</dt>
-          <dd>
-            {formatDate(m.Date)} · {formatTimeRange(m['Time Start'], m['Time End'])}
-          </dd>
+          <dd>{formatMeetingWhen(m)}</dd>
           <dt className="font-bold">Where</dt>
           <dd>{m.Location}</dd>
           <dt className="font-bold">Owner</dt>
@@ -332,14 +435,16 @@ function MeetingCenter() {
   const scope = useCouncilScope();
   const [selected, setSelected] = useState<number | 'new' | null>(null);
   const types = useLoad(() => db.lookups.list('MeetingType'), []);
+  const councilTypes = useLoad(() => db.meetings.listCouncilMeetingTypes(scope.councilId), [scope.councilId]);
   const today = toIsoDate(new Date());
   // fromDate reaches back far enough to list past meetings too, so their attendance and minutes stay reachable.
   const meetings = useLoad(async () => {
     const all = await db.meetings.listUpcoming(scope.councilId, { fromDate: '1900-01-01' });
-    return [...all.filter((m) => m.Date >= today), ...all.filter((m) => m.Date < today).reverse()];
+    return [...all.filter((m) => meetingLastDate(m) >= today), ...all.filter((m) => meetingLastDate(m) < today).reverse()];
   }, [scope.councilId, today]);
   const editable = canManageMeetings(user, scope.councilId);
   const typeName = new Map((types.data ?? []).map((t) => [t.id, t.Type]));
+  const councilTypeName = new Map((councilTypes.data ?? []).map((t) => [t.id, t.TypeName]));
 
   return (
     <>
@@ -362,11 +467,13 @@ function MeetingCenter() {
                 >
                   <span className="block text-sm font-bold">{m['Meeting Name']}</span>
                   <span className="block text-xs text-muted">
-                    {formatDate(m.Date)} · {typeName.get(m.MeetingType) ?? ''}
+                    {m.IsMultiDay === 1 && m.EndDate ? `${formatDate(m.Date)} – ${formatDate(m.EndDate)}` : formatDate(m.Date)} ·{' '}
+                    {(m.MeetingTypeID != null ? councilTypeName.get(m.MeetingTypeID) : undefined) ?? typeName.get(m.MeetingType) ?? ''}
                   </span>
                   <span className="mt-1 flex gap-1">
-                    {m.Date < today ? <Pill tone="outline">Past</Pill> : <Pill tone="navy">Upcoming</Pill>}
-                    {m.Date < today && !m.MinutesURL && !m.GoogleDriveMinutesURL ? <Pill tone="redOutline">No minutes</Pill> : null}
+                    {meetingLastDate(m) < today ? <Pill tone="outline">Past</Pill> : <Pill tone="navy">Upcoming</Pill>}
+                    {m.IsMultiDay === 1 ? <Pill tone="gold">Multi-day</Pill> : null}
+                    {meetingLastDate(m) < today && !m.MinutesURL && !m.GoogleDriveMinutesURL ? <Pill tone="redOutline">No minutes</Pill> : null}
                     {m.GoogleDriveMinutesURL || m.GoogleDriveFlyerURL ? <Pill tone="gold">Drive</Pill> : null}
                     {m.OwnerID === user.memberId ? <Pill tone="outline">Mine</Pill> : null}
                   </span>
@@ -380,9 +487,10 @@ function MeetingCenter() {
             <Empty>Choose a meeting on the left{editable ? ', or schedule a new one' : ''}.</Empty>
           ) : selected === 'new' ? (
             <NewMeetingForm
-              key={`${scope.councilId}-${types.data?.length ?? 0}`}
+              key={`${scope.councilId}-${types.data?.length ?? 0}-${councilTypes.data?.length ?? 0}`}
               councilId={scope.councilId}
               types={types.data ?? []}
+              councilTypes={councilTypes.data ?? []}
               onCreated={(id) => {
                 void meetings.reload().then(() => setSelected(id));
               }}

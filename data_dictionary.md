@@ -129,8 +129,9 @@ Scheduled fraternal gatherings managed by Council Officers or Administrators.
 •	GoogleDriveMinutesURL (VARCHAR(2000), NULL) — Shared Google Drive link to the meeting minutes (https on drive.google.com or docs.google.com). Set only through meetings.linkGoogleDrive by the meeting's owner, the council's Admins, Financial Secretary or Treasurer, or a Super Admin.
 •	GoogleDriveFlyerURL (VARCHAR(2000), NULL) — Shared Google Drive link to the meeting flyer, with the same rules as GoogleDriveMinutesURL.
 •	OwnerID (INTEGER, NULL) — Foreign Key references Member(id). The member who runs the meeting; they manage its attendance, minutes and Google Drive links alongside the council's Admins and Super Admins.
-•	IsMultiDay (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y-5: the meeting spans more than one day.
-•	MeetingTypeID (INTEGER, NULL) — Sprint 5Y-5: Foreign Key references CouncilMeetingType(id). The council's own meeting type; NULL while the meeting is not filed under one. MeetingType above still points at the global MeetingType lookup.
+•	IsMultiDay (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y-5: the meeting spans more than one day. Sprint 5Y-6: such a meeting (a Multi-Day Assembly) runs from Date through EndDate as whole days with no clock times; its Time Start and Time End are stored as 00:00:00, so it counts no meeting hours (cleanMeetingSpan).
+•	MeetingTypeID (INTEGER, NULL) — Sprint 5Y-5: Foreign Key references CouncilMeetingType(id). The council's own meeting type; NULL while the meeting is not filed under one. MeetingType above still points at the global MeetingType lookup; the schedule form files the meeting under the global type of the same name, or the first one. It must be one of the meeting's own council's types (INVALID_INPUT).
+•	EndDate (DATE, NULL) — Sprint 5Y-6: the last day of a multi-day meeting, after its Date; NULL for a one-day meeting, which may not carry one (INVALID_INPUT). The calendar spans a multi-day meeting across its days, all day, and lists it as upcoming until its EndDate has passed.
 [MeetingInvites]
 Tracks meeting rosters, invitations, and recorded user attendance.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -144,11 +145,11 @@ Sprint 5Y-5: a meeting type a council defines for itself, read through meetings.
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
 •	TypeName (VARCHAR(100), NOT NULL) — The type's name. Unique per council (a unique index on CouncilID, TypeName), so councils never share or see each other's types.
 [CouncilAgendaTemplate]
-Sprint 5Y-5: a council's agenda outline for one of its meeting types, read through meetings.getAgendaTemplate (null when the council has none for that type). A council cannot be deleted while it has agenda templates (RECORD_IN_USE).
+Sprint 5Y-5: a council's agenda outline for one of its meeting types, read through meetings.getAgendaTemplate (null when the council has none for that type). Sprint 5Y-6: written through meetings.saveAgendaTemplate (Council Lookups, Meeting Agenda Templates tab) by an Active Admin or Grand Knight of the council, or an Active Super Admin (assertMayManageAgendaTemplates); saving blank text removes it. The Meeting center's schedule form fills its agenda from the template of the meeting type chosen. A council cannot be deleted while it has agenda templates (RECORD_IN_USE).
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
 •	MeetingTypeID (INTEGER, NOT NULL) — Foreign Key references CouncilMeetingType(id).
-•	TemplateText (TEXT, NOT NULL) — The agenda outline. One template per council and type (a unique index on CouncilID, MeetingTypeID).
+•	TemplateText (TEXT, NOT NULL) — The agenda outline, at most 10,000 characters (AGENDA_TEMPLATE_MAX_LENGTH). One template per council and type (a unique index on CouncilID, MeetingTypeID).
 
 ________________________________________
 # 3. Members & Relationships
@@ -213,7 +214,7 @@ Multi-day calendar activities managed by councils.
 •	ActualNumberAttendees (INTEGER, NULL) — Verified post-event foot-traffic count.
 •	PhotoGalleryURL (VARCHAR(2000), NULL) — Comma-separated local photo reference paths, appended to (never overwritten) through events.uploadPhotos by the event's owner, an Admin, Financial Secretary or Treasurer of a linked council, or a Super Admin.
 •	IsAnnual (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y: the event recurs every fraternal year. budget.prePopulateNextYear gives each annual event of the council a budget line; a copied (twin) annual event stays annual.
-•	IsMultiDay (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y-5: the event spans more than one day.
+•	IsMultiDay (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y-5: the event spans more than one day. Sprint 5Y-6: set by the event form's Multi-Day Assembly / Extended Event box through events.create and events.update; unticked, the form ends the event the day it starts. A copied (twin) multi-day event stays multi-day.
 [EventCouncils]
 Bridge table mapping event participation and cross-visibility among affiliated councils.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.

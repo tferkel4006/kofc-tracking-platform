@@ -78,12 +78,16 @@ function shiftsByEventDay(feed: readonly ShiftFeedItem[]): Map<string, ShiftFeed
   return map;
 }
 
+/** A meeting's clock times, or 'All day' for a multi-day meeting (Sprint 5Y-6), which has none. */
+const meetingTimes = (m: Pick<CalendarEntry, 'startTime' | 'endTime'>): string =>
+  m.startTime && m.endTime ? formatTimeRange(m.startTime, m.endTime) : 'All day';
+
 // ---- badges ------------------------------------------------------------------
 
 function EntryBadge({ entry, tone }: { entry: CalendarEntry; tone: CalendarTone }) {
   return (
     <span className={cx('block truncate rounded border-2 px-1.5 py-0.5 text-left text-xs font-bold', TONE_CLASS[tone])} title={`${entry.title} · ${TONE_LABEL[tone]}`}>
-      {entry.kind === 'meeting' ? `${entry.startTime.slice(0, 5)} ` : ''}
+      {entry.kind === 'meeting' && entry.startTime ? `${entry.startTime.slice(0, 5)} ` : ''}
       {entry.title}
       <span className="sr-only"> ({TONE_LABEL[tone]})</span>
     </span>
@@ -247,7 +251,7 @@ function DayDetails({
               <Pill tone="navy">Meeting</Pill>
             </div>
             <p className="text-sm">
-              {formatTimeRange(m.startTime, m.endTime)} · {m.location}
+              {meetingTimes(m)} · {m.location}
             </p>
             {m.meeting['Meeting Description'] ? <p className="text-xs text-muted">{m.meeting['Meeting Description']}</p> : null}
             <DriveButtons meeting={m.meeting} />
@@ -428,7 +432,7 @@ function MasterCalendar() {
                 model[0].items.map(({ entry, tone }) => (
                   <div key={`${entry.kind}-${entry.id}`} className={cx('flex items-center justify-between gap-3 rounded border-2 px-3 py-2', TONE_CLASS[tone])}>
                     <span className="font-bold">{entry.title}</span>
-                    <span className="text-sm">{entry.kind === 'meeting' ? formatTimeRange(entry.startTime, entry.endTime) : TONE_LABEL[tone]}</span>
+                    <span className="text-sm">{entry.kind === 'meeting' ? meetingTimes(entry) : TONE_LABEL[tone]}</span>
                   </div>
                 ))
               )}

@@ -32,6 +32,7 @@ export const EVENT_COLUMNS = [
   'PlannedNumberAttendees',
   'ActualNumberAttendees',
   'IsAnnual',
+  'IsMultiDay',
 ] as const satisfies readonly (keyof NewEvent)[];
 
 export const SHIFT_COLUMNS = [
@@ -108,15 +109,19 @@ export function cleanEventFields(input: EventChanges): EventChanges {
     if (has(key)) out[key] = input[key] === null ? null : assertInteger(input[key], FIELD_LABELS[key], 0);
   }
   if (has('Highlights')) out.Highlights = input.Highlights === null ? null : assertText(input.Highlights, 'Highlights', 10_000, false);
-  if (has('IsAnnual')) out.IsAnnual = annualFlag(input.IsAnnual);
+  if (has('IsAnnual')) out.IsAnnual = bitFlag(input.IsAnnual, 'IsAnnual');
+  if (has('IsMultiDay')) out.IsMultiDay = bitFlag(input.IsMultiDay, 'IsMultiDay');
   return out;
 }
 
-/** Event.IsAnnual (Sprint 5Y, BIT NOT NULL): 0, 1, false or true, stored as 0 or 1. It cannot be cleared. */
-function annualFlag(value: unknown): number {
+/**
+ * Event.IsAnnual (Sprint 5Y) and Event.IsMultiDay (Sprint 5Y-6), both BIT NOT NULL: 0, 1, false or true, stored as 0
+ * or 1. They cannot be cleared.
+ */
+function bitFlag(value: unknown, field: 'IsAnnual' | 'IsMultiDay'): number {
   if (value === 0 || value === 1) return value;
   if (typeof value === 'boolean') return value ? 1 : 0;
-  throw new BusinessRuleError('INVALID_INPUT', `IsAnnual must be 0, 1, true or false; received ${JSON.stringify(value)}.`, { field: 'IsAnnual' });
+  throw new BusinessRuleError('INVALID_INPUT', `${field} must be 0, 1, true or false; received ${JSON.stringify(value)}.`, { field });
 }
 
 /** A complete new event: every required field present and valid, End on or after Start. */
@@ -190,6 +195,7 @@ export function planEventCopy(
   if (event.PlannedNumberAttendees != null) copy.PlannedNumberAttendees = event.PlannedNumberAttendees;
   // A twin of an annual event is next year's edition, so it recurs too.
   if (event.IsAnnual === 1) copy.IsAnnual = 1;
+  if (event.IsMultiDay === 1) copy.IsMultiDay = 1;
   return {
     event: copy,
     shifts: shifts.map((s) => ({

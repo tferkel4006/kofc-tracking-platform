@@ -222,12 +222,12 @@ describe('portal permissions', () => {
       ]);
     });
 
-    it('files the Appointed Leadership Matrix under Administrative Lookups for a Grand Knight who is a plain Member', () => {
+    it('files the Council Lookups (agenda templates, Sprint 5Y-6) and the Appointed Leadership Matrix under Administrative Lookups for a Grand Knight who is a plain Member', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose']],
         ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
         ['Financial Ledgers', ['expenses', 'financials/budget']],
-        ['Administrative Lookups', ['elections/appointments']],
+        ['Administrative Lookups', ['council-lookups', 'elections/appointments']],
       ]);
     });
 

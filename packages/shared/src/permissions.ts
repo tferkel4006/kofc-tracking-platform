@@ -71,8 +71,18 @@ export const canMaintainLookups = (u: Actor): boolean => isSuperAdmin(u);
 export const canManageCouncilLookups = (u: Actor, councilId: number, table: CouncilLookupTableName): boolean =>
   canAdministerCouncil(u, councilId) || (FINANCE_LOOKUP_TABLES.includes(table) && isFinanceOfficer(u) && u.councilId === councilId);
 
-/** The council lookups screen: Admins and Super Admins, and finance officers for the donation lookups. */
-export const canOpenCouncilLookups = (u: Actor): boolean => isAdmin(u) || isFinanceOfficer(u);
+/**
+ * The council's Meeting Agenda Templates tab, mirroring assertMayManageAgendaTemplates (Sprint 5Y-6; activity status is
+ * checked there): the council's Admins and Grand Knight, and any Super Admin.
+ */
+export const canManageAgendaTemplates = (u: Actor, councilId: number): boolean =>
+  canAdministerCouncil(u, councilId) || ((u.roles ?? []).includes(GRAND_KNIGHT_ROLE) && u.councilId === councilId);
+
+/**
+ * The council lookups screen: Admins and Super Admins, finance officers for the donation lookups, and the Grand Knight
+ * for the agenda templates (Sprint 5Y-6).
+ */
+export const canOpenCouncilLookups = (u: Actor): boolean => isAdmin(u) || isFinanceOfficer(u) || (u.roles ?? []).includes(GRAND_KNIGHT_ROLE);
 
 /** The council lookup tables `u` may open for `councilId`, in tab order; a finance officer gets only the donation lookups. */
 export function councilLookupTablesFor(u: Actor, councilId: number): CouncilLookupTableName[] {

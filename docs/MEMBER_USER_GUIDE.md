@@ -136,6 +136,10 @@ The card then shows **ABSENCE REPORTED** with your reason, and your no-show badg
 
 Meetings you have been invited to are listed under **Upcoming meetings** on Home, with the date, time and location. Officers also see a **Take attendance** button on each meeting.
 
+**Tell the council you are coming.** On the **Meetings** tab, every meeting under **My Invites** has a gold **👍 Count Me In** button. One tap turns it into a green **✓ Attending** banner, and your answer is saved at once. Changed your mind? Tap the green banner to undo it. If the save fails, the button goes back and a message explains why.
+
+A **multi-day assembly** shows its first and last day (for example *Thu, Oct 8 – Sat, Oct 10*) instead of a time, and stays on your list until its last day is over.
+
 ![Image: Home Dashboard With Badge]
 
 ---
@@ -219,7 +223,7 @@ After these windows close, entries are frozen to protect the council's records.
 
 1. Open **Log time** and choose **A shift I worked**.
 2. **Which shift?** defaults to your most recent shift that is still missing hours. Tap another shift to change it.
-3. **How long?** Pick the hours and minutes.
+3. **How long?** For a shift you have not logged yet, the hours and minutes start at the shift's own length (for example 3 hours for a 9:00-12:00 shift). If you worked the whole shift, just check it and save; otherwise change it.
 4. Optional: add **NOTES**.
 5. Tap **Save time**. You will see *"Saved 1 hr 15 min (1.25 hours) to *shift*."*
 

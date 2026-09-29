@@ -397,6 +397,8 @@ export interface MeetingSchedules {
   myInvites: Meeting[];
   /** Every meeting of the council, invited or not, so members can see what leadership has scheduled. */
   allSchedules: Meeting[];
+  /** Sprint 5Y-6: the member's RSVP (MeetingInvites.ResponseStatus) to each meeting in myInvites, by meeting id. */
+  myResponses: Record<number, MeetingResponseStatus>;
 }
 
 // 9. COUNCIL-LEVEL MAINTENANCE (Sprint 5G)
@@ -582,7 +584,10 @@ export interface FeedbackInboxEntry {
 }
 
 // 13. MEDIA AND THE COUNCIL CALENDAR (Sprint 5Q)
-/** One item on a calendar grid: an event (all-day, possibly spanning days) or a meeting (one day, timed). */
+/**
+ * One item on a calendar grid: an event (all-day, possibly spanning days) or a meeting (one day and timed, or a
+ * multi-day meeting spanning its days all day, with null times; Sprint 5Y-6).
+ */
 export type CalendarEntry =
   | {
       kind: 'event';
@@ -600,12 +605,12 @@ export type CalendarEntry =
       kind: 'meeting';
       id: number;
       title: string;
-      /** The meeting's Date; a meeting starts and ends on the same day. */
+      /** The meeting's Date, and its last day: the same day, or EndDate for a multi-day meeting. */
       startDate: string;
       endDate: string;
-      /** HH:MM:SS */
-      startTime: string;
-      endTime: string;
+      /** HH:MM:SS; null for a multi-day meeting, which runs all day. */
+      startTime: string | null;
+      endTime: string | null;
       location: string;
       meeting: Meeting;
     };
@@ -1568,7 +1573,8 @@ export interface DataService {
   meetings: {
     get(id: number): Promise<Meeting | null>;
     /**
-     * Meetings on or after `fromDate` (default: today, local time), soonest first.
+     * Meetings still running on or after `fromDate` (default: today, local time; a multi-day meeting counts through its
+     * EndDate), soonest first.
      * With `memberId`, only meetings that member is invited to.
      */
     listUpcoming(
@@ -1580,7 +1586,11 @@ export interface DataService {
      * is invited to and all of them. Rejects MEMBER_NOT_FOUND for an unknown member.
      */
     listSchedules(councilId: number, memberId: number, options?: { fromDate?: string }): Promise<MeetingSchedules>;
-    /** OwnerID, when given, must name a member (INVALID_INPUT). */
+    /**
+     * OwnerID, when given, must name a member, and MeetingTypeID one of the council's own CouncilMeetingType rows
+     * (INVALID_INPUT). A multi-day meeting (IsMultiDay 1) needs an EndDate after its Date and is stored with no clock
+     * times (cleanMeetingSpan); a one-day meeting may not carry an EndDate (INVALID_INPUT).
+     */
     create(meeting: NewMeeting, invite?: MeetingInviteMode): Promise<Meeting>;
     listInvites(meetingId: number): Promise<MeetingInvites[]>;
     /** Adds invitations, skipping members already invited. Resolves to the number newly invited. */
@@ -1621,6 +1631,14 @@ export interface DataService {
      * has none for that type, including a type belonging to another council.
      */
     getAgendaTemplate(councilId: number, meetingTypeId: number): Promise<CouncilAgendaTemplate | null>;
+    /**
+     * Sets the council's agenda outline for one of its meeting types (Sprint 5Y-6), creating or replacing its
+     * CouncilAgendaTemplate row, and resolves to it; blank text removes the template and resolves to null. `actorId` is
+     * the signed-in member: an Active Admin or Grand Knight of the council, or any Active Super Admin (ADMIN_REQUIRED,
+     * COUNCIL_ACCESS_DENIED). Rejects MEMBER_NOT_FOUND for an unknown actor, INVALID_INPUT for a meeting type that is
+     * not the council's own and for text over AGENDA_TEMPLATE_MAX_LENGTH characters. Nothing is written when it rejects.
+     */
+    saveAgendaTemplate(actorId: number, councilId: number, meetingTypeId: number, templateText: string): Promise<CouncilAgendaTemplate | null>;
   };
 
   /** Shift helpers behind the automatic hour-reporting defaults (Sprint 5Y-5). */

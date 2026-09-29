@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { canManageMeeting, formatDate, formatTimeRange } from '@kofc/shared';
+import { canManageMeeting, formatMeetingWhen } from '@kofc/shared';
 import { NavStrip } from '@/components/NavStrip';
 import { AppText, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
@@ -67,9 +67,7 @@ export default function MeetingAttendanceScreen() {
             <AppText variant="heading" accessibilityRole="header">
               {data.meeting['Meeting Name']}
             </AppText>
-            <AppText>
-              {formatDate(data.meeting.Date)} · {formatTimeRange(data.meeting['Time Start'], data.meeting['Time End'])}
-            </AppText>
+            <AppText>{formatMeetingWhen(data.meeting)}</AppText>
             <AppText variant="small" tone="muted">
               {data.meeting.Location}
             </AppText>

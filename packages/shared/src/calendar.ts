@@ -9,6 +9,7 @@
 //   normal  - everything else: navy outline
 // =========================================================================
 import type { CalendarEntry } from './contract';
+import { isMultiDayMeeting } from './meetings';
 import { addDays, daysBetween } from './planning';
 import { assertIsoDate, toIsoDate } from './rules';
 import type { Meeting, Shift } from './types';
@@ -91,9 +92,12 @@ function localEnd(date: string, start: string, end: string): Date {
 /** The local date-time a shift ends. */
 export const shiftEnd = (shift: Pick<Shift, 'ShiftDate' | 'StartTime' | 'EndTime'>): Date => localEnd(shift.ShiftDate, shift.StartTime, shift.EndTime);
 
-/** The local date-time a meeting ends. */
-export const meetingEnd = (meeting: Pick<Meeting, 'Date' | 'Time Start' | 'Time End'>): Date =>
-  localEnd(meeting.Date, meeting['Time Start'], meeting['Time End']);
+/** The local date-time a meeting ends; a multi-day meeting at midnight after its EndDate. */
+export function meetingEnd(meeting: Pick<Meeting, 'Date' | 'Time Start' | 'Time End'> & Partial<Pick<Meeting, 'IsMultiDay' | 'EndDate'>>): Date {
+  if (!isMultiDayMeeting(meeting)) return localEnd(meeting.Date, meeting['Time Start'], meeting['Time End']);
+  const [y, m, d] = parts(meeting.EndDate!);
+  return new Date(y, m - 1, d + 1);
+}
 
 /**
  * The Home feed's upcoming lists without anything that has already finished by `now` (the device clock), for

@@ -281,6 +281,8 @@ export interface Meeting {
   IsMultiDay?: number;
   /** The council's own meeting type (CouncilMeetingType, Sprint 5Y-5); null while unfiled. */
   MeetingTypeID?: number | null;
+  /** DATE (Sprint 5Y-6): the last day of a multi-day meeting (IsMultiDay = 1); null for a one-day meeting. */
+  EndDate?: string | null;
 }
 
 /** An invitee's RSVP (Sprint 5Y-5); see MEETING_RESPONSE_STATUSES. */

@@ -149,6 +149,7 @@ export function createRemoteDataService(): DataService {
       listCouncilMeetingTypes: notImplemented('meetings.listCouncilMeetingTypes'),
       rsvpToInvite: notImplemented('meetings.rsvpToInvite'),
       getAgendaTemplate: notImplemented('meetings.getAgendaTemplate'),
+      saveAgendaTemplate: notImplemented('meetings.saveAgendaTemplate'),
     },
     shifts: { getShiftDefaultLength: notImplemented('shifts.getShiftDefaultLength') },
     notifications: {

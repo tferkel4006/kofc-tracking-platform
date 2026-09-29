@@ -132,6 +132,7 @@ CREATE TABLE [Meeting] (
 	[OwnerID] INTEGER NULL, -- Sprint 5Q: the member who runs the meeting; manages it alongside Admins and Super Admins
 	[IsMultiDay] BIT NOT NULL DEFAULT 0, -- Sprint 5Y-5: the meeting spans more than one day
 	[MeetingTypeID] INTEGER NULL, -- Sprint 5Y-5: the council's own meeting type (CouncilMeetingType)
+	[EndDate] DATE NULL, -- Sprint 5Y-6: last day of a multi-day meeting (IsMultiDay = 1); NULL for a one-day meeting
 	PRIMARY KEY([id])
 );
 GO

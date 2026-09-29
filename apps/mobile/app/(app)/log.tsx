@@ -2,7 +2,9 @@
 // 6 months back). Hours and minutes come from drop-downs (minutes 00/15/30/45) and are converted to
 // a decimal in exact 0.25 steps by pickerResult() immediately before the DataService call, which
 // validates the value again.
-import { useEffect, useState } from 'react';
+// Sprint 5Y-6: choosing a shift with no hours logged yet fills the picker with the shift's own length
+// (shifts.getShiftDefaultLength, rounded to 0.25), so a member who worked the whole shift just taps Save.
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
   addDays,
@@ -63,22 +65,38 @@ export default function LogScreen() {
   }, [user.memberId, user.councilId]);
   const { data } = state;
 
-  // Low-click defaults: the most recent shift still missing hours, and the council's first activity.
+  // The shift the picker is being filled for, so a slow default for a shift no longer chosen is dropped.
+  const picking = useRef<number | null>(null);
+
+  const pickShift = (id: number) => {
+    picking.current = id;
+    setShiftId(id);
+    setMessage(null);
+    const logged = data?.shifts.find((s) => s.shift.id === id)?.hoursLogged;
+    if (logged != null) {
+      setPicker(hoursToPicker(logged));
+      return;
+    }
+    setPicker(NO_TIME);
+    db.shifts.getShiftDefaultLength(id).then(
+      (hours) => {
+        if (picking.current === id && hours > 0) setPicker(hoursToPicker(hours));
+      },
+      () => undefined, // no default: the member picks the time themselves
+    );
+  };
+
+  // Low-click defaults: the most recent shift still missing hours (with its length filled in), and the council's
+  // first activity.
   useEffect(() => {
     if (!data) return;
     if (shiftId === null) {
       const first = data.shifts.find((s) => s.hoursLogged === null) ?? data.shifts[0];
-      if (first) setShiftId(first.shift.id);
+      if (first) pickShift(first.shift.id);
     }
     if (activityId === null && data.activities[0]) setActivityId(data.activities[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, shiftId, activityId]);
-
-  const pickShift = (id: number) => {
-    setShiftId(id);
-    const logged = data?.shifts.find((s) => s.shift.id === id)?.hoursLogged;
-    setPicker(logged != null ? hoursToPicker(logged) : NO_TIME);
-    setMessage(null);
-  };
 
   const hours = pickerResult(picker.hours, picker.minutes);
   const target = mode === 'shift' ? shiftId : activityId;

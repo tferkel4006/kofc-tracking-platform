@@ -6,6 +6,7 @@
 // assertMayLinkMeetingDrive).
 // =========================================================================
 import type { CalendarEntry } from './contract';
+import { isMultiDayMeeting, meetingLastDate } from './meetings';
 import { assertIsoDate, BusinessRuleError } from './rules';
 import type { Event, Meeting } from './types';
 
@@ -92,7 +93,7 @@ export function cleanCalendarRange(startDate: unknown, endDate: unknown): { star
 
 /**
  * The calendar grid for a range: `events` overlapping it (StartDate <= end and EndDate >= start) and `meetings`
- * dated inside it. Callers may pass wider sets; out-of-range rows are dropped. Ordered by start date, then
+ * overlapping it (a one-day meeting's Date inside it; a multi-day meeting's Date-EndDate, shown all day). Callers may pass wider sets; out-of-range rows are dropped. Ordered by start date, then
  * all-day events before timed meetings, then start time, title and id.
  */
 export function buildCalendarEntries(
@@ -116,15 +117,17 @@ export function buildCalendarEntries(
     });
   }
   for (const meeting of meetings) {
-    if (meeting.Date < range.startDate || meeting.Date > range.endDate) continue;
+    const lastDate = meetingLastDate(meeting);
+    if (meeting.Date > range.endDate || lastDate < range.startDate) continue;
+    const multiDay = isMultiDayMeeting(meeting);
     out.push({
       kind: 'meeting',
       id: meeting.id,
       title: meeting['Meeting Name'],
       startDate: meeting.Date,
-      endDate: meeting.Date,
-      startTime: meeting['Time Start'],
-      endTime: meeting['Time End'],
+      endDate: lastDate,
+      startTime: multiDay ? null : meeting['Time Start'],
+      endTime: multiDay ? null : meeting['Time End'],
       location: meeting.Location,
       meeting,
     });

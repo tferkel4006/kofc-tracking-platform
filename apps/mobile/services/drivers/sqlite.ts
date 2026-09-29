@@ -231,6 +231,9 @@ import {
   type SignupContextRow,
   assertMeetingResponseStatus,
   shiftDefaultLengthHours,
+  assertMayManageAgendaTemplates,
+  cleanAgendaTemplateText,
+  cleanMeetingSpan,
 } from '@kofc/shared';
 import type {
   DistributionGroup,
@@ -288,6 +291,7 @@ import type {
   LookupValues,
   Meeting,
   MeetingInvites,
+  MeetingResponseStatus,
   CouncilMeetingType,
   CouncilAgendaTemplate,
   MeetingInviteMode,
@@ -358,8 +362,9 @@ const DB_NAME = 'kofc.db';
  * 17: CouncilBudgetForecast.ProposedBudgetAmount and CouncilBudgetForecast.BudgetStatus (Sprint 5Y-4).
  * 18: CouncilMeetingType, CouncilAgendaTemplate, MeetingInvites.ResponseStatus, Meeting.IsMultiDay and MeetingTypeID,
  *     and Event.IsMultiDay (Sprint 5Y-5).
+ * 19: Meeting.EndDate (Sprint 5Y-6).
  */
-const SCHEMA_VERSION = 18;
+const SCHEMA_VERSION = 19;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -2189,8 +2194,9 @@ export class SqliteDataService implements DataService {
         hideEnded ? [councilId, range.endDate, range.startDate, today] : [councilId, range.endDate, range.startDate],
       );
       const meetings = await db.getAllAsync<Meeting>(
-        `SELECT * FROM [Meeting] WHERE [CouncilID] = ? AND [Date] BETWEEN ? AND ?${hideEnded ? ' AND [Date] >= ?' : ''}`,
-        hideEnded ? [councilId, range.startDate, range.endDate, today] : [councilId, range.startDate, range.endDate],
+        // A multi-day meeting overlaps the range through its EndDate.
+        `SELECT * FROM [Meeting] WHERE [CouncilID] = ? AND [Date] <= ? AND COALESCE([EndDate], [Date]) >= ?${hideEnded ? ' AND COALESCE([EndDate], [Date]) >= ?' : ''}`,
+        hideEnded ? [councilId, range.endDate, range.startDate, today] : [councilId, range.endDate, range.startDate],
       );
       return buildCalendarEntries(range, events, meetings);
     },
@@ -2729,7 +2735,7 @@ export class SqliteDataService implements DataService {
         params.push(options.memberId);
       }
       return db.getAllAsync<Meeting>(
-        `SELECT * FROM [Meeting] WHERE [CouncilID] = ? AND [Date] >= ?${invited}
+        `SELECT * FROM [Meeting] WHERE [CouncilID] = ? AND COALESCE([EndDate], [Date]) >= ?${invited}
           ORDER BY [Date], [Time Start], [id]`,
         params,
       );
@@ -2739,16 +2745,18 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       await this.requireMember(db, memberId);
       const from = options?.fromDate ?? toIsoDate(this.now());
-      const allSchedules = await db.getAllAsync<Meeting & { invited: number }>(
-        `SELECT m.*, EXISTS (SELECT 1 FROM [MeetingInvites] i WHERE i.[MeetingID] = m.[id] AND i.[MemberID] = ?) AS invited
-           FROM [Meeting] m WHERE m.[CouncilID] = ? AND m.[Date] >= ?
+      const allSchedules = await db.getAllAsync<Meeting & { response: MeetingResponseStatus | null }>(
+        `SELECT m.*, (SELECT i.[ResponseStatus] FROM [MeetingInvites] i WHERE i.[MeetingID] = m.[id] AND i.[MemberID] = ? ORDER BY i.[id] LIMIT 1) AS response
+           FROM [Meeting] m WHERE m.[CouncilID] = ? AND COALESCE(m.[EndDate], m.[Date]) >= ?
           ORDER BY m.[Date], m.[Time Start], m.[id]`,
         [memberId, councilId, from],
       );
-      const strip = ({ invited: _invited, ...meeting }: Meeting & { invited: number }): Meeting => meeting;
+      const strip = ({ response: _response, ...meeting }: Meeting & { response: MeetingResponseStatus | null }): Meeting => meeting;
+      const invited = allSchedules.filter((m) => m.response !== null);
       return {
-        myInvites: allSchedules.filter((m) => m.invited === 1).map(strip),
+        myInvites: invited.map(strip),
         allSchedules: allSchedules.map(strip),
+        myResponses: Object.fromEntries(invited.map((m) => [m.id, m.response!])),
       };
     },
 
@@ -2865,7 +2873,40 @@ export class SqliteDataService implements DataService {
         )) ?? null
       );
     },
+
+    saveAgendaTemplate: async (actorId, councilId, meetingTypeId, templateText) => {
+      const text = cleanAgendaTemplateText(templateText);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayManageAgendaTemplates(await this.memberWriteActor(db, actorId), councilId);
+        await this.requireCouncilMeetingType(db, councilId, meetingTypeId);
+        if (text === '') {
+          await db.runAsync('DELETE FROM [CouncilAgendaTemplate] WHERE [CouncilID] = ? AND [MeetingTypeID] = ?', [councilId, meetingTypeId]);
+          return;
+        }
+        const res = await db.runAsync('UPDATE [CouncilAgendaTemplate] SET [TemplateText] = ? WHERE [CouncilID] = ? AND [MeetingTypeID] = ?', [
+          text,
+          councilId,
+          meetingTypeId,
+        ]);
+        if (res.changes === 0) {
+          await db.runAsync('INSERT INTO [CouncilAgendaTemplate] ([CouncilID], [MeetingTypeID], [TemplateText]) VALUES (?, ?, ?)', [
+            councilId,
+            meetingTypeId,
+            text,
+          ]);
+        }
+      });
+      return this.meetings.getAgendaTemplate(councilId, meetingTypeId);
+    },
   };
+
+  /** A CouncilMeetingType of `councilId`; another council's type or an unknown id rejects INVALID_INPUT. */
+  private async requireCouncilMeetingType(db: SQLite.SQLiteDatabase, councilId: number, meetingTypeId: number): Promise<void> {
+    if (!(await db.getFirstAsync('SELECT [id] FROM [CouncilMeetingType] WHERE [id] = ? AND [CouncilID] = ?', [meetingTypeId, councilId]))) {
+      throw new BusinessRuleError('INVALID_INPUT', `Council ${councilId} has no meeting type with id ${meetingTypeId}.`, { councilId, meetingTypeId });
+    }
+  }
 
   // ---- shifts ------------------------------------------------------------
 
@@ -2885,22 +2926,29 @@ export class SqliteDataService implements DataService {
     if (ownerId !== null && !(await db.getFirstAsync('SELECT [id] FROM [Member] WHERE [id] = ?', [ownerId]))) {
       throw new BusinessRuleError('INVALID_INPUT', `No member with id ${ownerId} to own the meeting.`, { ownerId });
     }
+    const span = cleanMeetingSpan(m);
+    const meetingTypeId = m.MeetingTypeID ?? null;
+    if (meetingTypeId !== null) await this.requireCouncilMeetingType(db, m.CouncilID, meetingTypeId);
     const res = await db.runAsync(
       `INSERT INTO [Meeting] ([CouncilID], [Meeting Name], [Meeting Description], [Date],
-                              [Time Start], [Time End], [Location], [Agenda], [MinutesURL], [MeetingType], [OwnerID])
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                              [Time Start], [Time End], [Location], [Agenda], [MinutesURL], [MeetingType], [OwnerID],
+                              [IsMultiDay], [EndDate], [MeetingTypeID])
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         m.CouncilID,
         m['Meeting Name'],
         m['Meeting Description'] ?? null,
         m.Date,
-        m['Time Start'],
-        m['Time End'],
+        span['Time Start'],
+        span['Time End'],
         m.Location,
         m.Agenda ?? '', // Agenda and MinutesURL are NOT NULL in Schema.sql: '' means "none yet"
         m.MinutesURL ?? '',
         m.MeetingType,
         ownerId,
+        span.IsMultiDay,
+        span.EndDate,
+        meetingTypeId,
       ],
     );
     const meetingId = res.lastInsertRowId;

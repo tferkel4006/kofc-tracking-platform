@@ -184,12 +184,26 @@ If the drawer says *"No member of this council has recorded a skill yet,"* ask m
 **Path:** sidebar → **Meeting Center** (Admins, Super Admins and council officers)
 
 1. Select **New meeting** and fill in **Meeting name**, **Type**, **Date**, **Location**, **Starts**, **Ends**, **Description** and **Agenda**.
+   - **Type** lists your council's own meeting types. Choosing one fills **Agenda** with your council's template for that type (see below). You can still edit the agenda for this meeting. If you already typed your own agenda, it is kept, and a **Use the template** button offers the template instead.
+   - Tick **Multi-Day Assembly / Extended Event** for a meeting that runs over several days. The **Starts** and **Ends** times disappear and an **End date** appears. The meeting then shows on the calendar across each of its days, with no times. A multi-day assembly adds no meeting hours to members' totals.
 2. **Invite:** choose **All active members**, **Officers only** or **Choose members…**. Invited members get a message in the app.
 3. Select **Schedule meeting**. You will see *"Meeting scheduled and invitations sent."*
 4. **Minutes:** open the meeting and select **Upload minutes** (or **Replace minutes**). Members can then read them from their phones.
 5. **Invitations and attendance:** tick who attended and save. This feeds each member's meeting-hour totals. If members joined the council after the meeting was scheduled, select **Invite all active members** to invite every active member who is missing.
 
-Officers see **Take attendance** on each meeting on their phone's Home tab.
+Officers see **Take attendance** on each meeting on their phone's Home tab. Members answer their invitations from the phone's **Meetings** tab with **👍 Count Me In**.
+
+### 6.1 Meeting agenda templates
+
+**Path:** sidebar → **Council Lookups** → **Meeting Agenda Templates** (Council Admins, the Grand Knight and Super Admins)
+
+1. Pick a **Meeting type**.
+2. Write the **Default agenda outline** that meetings of this type should start from, then select **Save template**.
+3. To remove a template, clear the text and save.
+
+Each council keeps its own templates. The **Event** form has the same **Multi-Day Assembly / Extended Event** box: leave it unticked for a one-day event, which then ends the day it starts.
+
+For who may do what across the platform, see the [Role Permissions Matrix](ROLE_PERMISSIONS_MATRIX.md).
 
 ![Image: Meeting Center]
 

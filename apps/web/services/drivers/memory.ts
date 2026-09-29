@@ -228,6 +228,10 @@ import {
   type SignupContextRow,
   assertMeetingResponseStatus,
   shiftDefaultLengthHours,
+  assertMayManageAgendaTemplates,
+  cleanAgendaTemplateText,
+  cleanMeetingSpan,
+  meetingLastDate,
 } from '@kofc/shared';
 import type {
   DistributionGroup,
@@ -297,6 +301,7 @@ import type {
   LookupTableName,
   Meeting,
   MeetingInvites,
+  MeetingResponseStatus,
   CouncilMeetingType,
   CouncilAgendaTemplate,
   MeetingInviteMode,
@@ -1900,7 +1905,7 @@ export class MemoryDataService implements DataService {
         .map((e) => ({ ...e })) as unknown as CouncilEvent[];
       const meetings = s
         .rows('Meeting')
-        .filter((m) => m.CouncilID === councilId && (m.Date as string) >= floor)
+        .filter((m) => m.CouncilID === councilId && meetingLastDate(m as unknown as Meeting) >= floor)
         .map((m) => ({ ...m })) as unknown as Meeting[];
       return buildCalendarEntries(range, events, meetings);
     },
@@ -2333,7 +2338,7 @@ export class MemoryDataService implements DataService {
           : new Set(s.rows('MeetingInvites').filter((i) => i.MemberID === options.memberId).map((i) => i.MeetingID));
       const rows = s
         .rows('Meeting')
-        .filter((m) => m.CouncilID === councilId && (m.Date as string) >= from && (!invitedTo || invitedTo.has(m.id)))
+        .filter((m) => m.CouncilID === councilId && meetingLastDate(m as unknown as Meeting) >= from && (!invitedTo || invitedTo.has(m.id)))
         .map((m) => ({ ...m })) as unknown as Meeting[];
       return rows.sort(
         (a, b) => a.Date.localeCompare(b.Date) || a['Time Start'].localeCompare(b['Time Start']) || a.id - b.id,
@@ -2344,9 +2349,12 @@ export class MemoryDataService implements DataService {
       const s = await this.ready();
       this.requireMember(s, memberId);
       const fromDate = options?.fromDate ?? toIsoDate(this.now());
-      const invitedTo = new Set(s.rows('MeetingInvites').filter((i) => i.MemberID === memberId).map((i) => i.MeetingID));
+      const responses = new Map(
+        s.rows('MeetingInvites').filter((i) => i.MemberID === memberId).map((i) => [i.MeetingID as number, i.ResponseStatus as MeetingResponseStatus]),
+      );
       const allSchedules = await this.meetings.listUpcoming(councilId, { fromDate });
-      return { myInvites: allSchedules.filter((m) => invitedTo.has(m.id)), allSchedules };
+      const myInvites = allSchedules.filter((m) => responses.has(m.id));
+      return { myInvites, allSchedules, myResponses: Object.fromEntries(myInvites.map((m) => [m.id, responses.get(m.id)!])) };
     },
 
     create: async (meeting, invite = 'none') => {
@@ -2443,7 +2451,35 @@ export class MemoryDataService implements DataService {
       const row = s.rows('CouncilAgendaTemplate').find((t) => t.CouncilID === councilId && t.MeetingTypeID === meetingTypeId);
       return row ? ({ ...row } as unknown as CouncilAgendaTemplate) : null;
     },
+
+    saveAgendaTemplate: async (actorId, councilId, meetingTypeId, templateText) => {
+      const text = cleanAgendaTemplateText(templateText);
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayManageAgendaTemplates(this.memberWriteActor(s, actorId), councilId);
+        this.requireCouncilMeetingType(s, councilId, meetingTypeId);
+        const existing = s.rows('CouncilAgendaTemplate').find((t) => t.CouncilID === councilId && t.MeetingTypeID === meetingTypeId);
+        if (text === '') {
+          if (existing) s.remove('CouncilAgendaTemplate', (t) => t.id === existing.id);
+          return null;
+        }
+        if (existing) {
+          (existing as Row).TemplateText = text;
+          return { ...existing } as unknown as CouncilAgendaTemplate;
+        }
+        return { ...s.insert('CouncilAgendaTemplate', { CouncilID: councilId, MeetingTypeID: meetingTypeId, TemplateText: text }) } as unknown as CouncilAgendaTemplate;
+      });
+    },
   };
+
+  /** A CouncilMeetingType of `councilId`; another council's type or an unknown id rejects INVALID_INPUT. */
+  private requireCouncilMeetingType(s: MemoryStore, councilId: number, meetingTypeId: number): Row {
+    const type = s.rows('CouncilMeetingType').find((t) => t.id === meetingTypeId && t.CouncilID === councilId);
+    if (!type) {
+      throw new BusinessRuleError('INVALID_INPUT', `Council ${councilId} has no meeting type with id ${meetingTypeId}.`, { councilId, meetingTypeId });
+    }
+    return type;
+  }
 
   // ---- shifts ------------------------------------------------------------
 
@@ -2459,14 +2495,20 @@ export class MemoryDataService implements DataService {
     if (ownerId !== null && !this.store.rows('Member').some((x) => x.id === ownerId)) {
       throw new BusinessRuleError('INVALID_INPUT', `No member with id ${ownerId} to own the meeting.`, { ownerId });
     }
+    const span = cleanMeetingSpan(m);
+    const meetingTypeId = m.MeetingTypeID ?? null;
+    if (meetingTypeId !== null) this.requireCouncilMeetingType(this.store, m.CouncilID, meetingTypeId);
     const row = this.store.insert('Meeting', {
       OwnerID: ownerId,
       CouncilID: m.CouncilID,
       'Meeting Name': m['Meeting Name'],
       'Meeting Description': m['Meeting Description'] ?? null,
       Date: m.Date,
-      'Time Start': m['Time Start'],
-      'Time End': m['Time End'],
+      'Time Start': span['Time Start'],
+      'Time End': span['Time End'],
+      IsMultiDay: span.IsMultiDay,
+      EndDate: span.EndDate,
+      MeetingTypeID: meetingTypeId,
       Location: m.Location,
       Agenda: m.Agenda ?? '', // Agenda and MinutesURL are NOT NULL in Schema.sql: '' means "none yet"
       MinutesURL: m.MinutesURL ?? '',

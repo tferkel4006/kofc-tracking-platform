@@ -1,14 +1,16 @@
 // Meetings tab (Sprint 5X-Mobile): the council's upcoming meetings in two sub-tabs from meetings.listSchedules.
 // "My Invites" holds the meetings I am on the invitation list for; "All Schedules" every meeting of my council,
 // so members can see what leadership has on the calendar. Officers and a meeting's owner can take attendance.
+// Sprint 5Y-6: each card under My Invites carries a one-tap RSVP (meetings.rsvpToInvite). The card flips to
+// "Attending" the moment it is tapped and flips back, with a notice, if the save fails.
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { canManageMeeting } from '@kofc/shared';
+import { canManageMeeting, type MeetingResponseStatus } from '@kofc/shared';
 import { MeetingCard } from '@/components/MeetingCard';
 import { AppText, EmptyState, Loading, Notice, Pill, Screen } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
-import { useLoad } from '@/lib/use-async';
+import { describeError, useLoad } from '@/lib/use-async';
 import { color, radius, space, touchTarget } from '@/lib/theme';
 import { db } from '@/services/db';
 
@@ -24,6 +26,24 @@ export default function MeetingsScreen() {
   const router = useRouter();
   const [tab, setTab] = useState<MeetingsTab>('invites');
   const state = useLoad(() => db.meetings.listSchedules(user.councilId, user.memberId), [user.memberId, user.councilId]);
+  // Answers given on this screen, shown at once while (and after) they save; a reload brings the stored ones.
+  const [answered, setAnswered] = useState<Record<number, MeetingResponseStatus>>({});
+  const [rsvpError, setRsvpError] = useState<string | null>(null);
+
+  const responseTo = (meetingId: number): MeetingResponseStatus => answered[meetingId] ?? state.data?.myResponses[meetingId] ?? 'NoResponse';
+
+  const toggleRsvp = async (meetingId: number) => {
+    const before = responseTo(meetingId);
+    const next: MeetingResponseStatus = before === 'Accepted' ? 'NoResponse' : 'Accepted';
+    setRsvpError(null);
+    setAnswered((now) => ({ ...now, [meetingId]: next }));
+    try {
+      await db.meetings.rsvpToInvite(user.memberId, meetingId, next);
+    } catch (err) {
+      setAnswered((now) => ({ ...now, [meetingId]: before }));
+      setRsvpError(describeError(err));
+    }
+  };
 
   const { data } = state;
   const invitedIds = new Set((data?.myInvites ?? []).map((m) => m.id));
@@ -56,6 +76,7 @@ export default function MeetingsScreen() {
       </View>
 
       {state.error ? <Notice tone="error" message={state.error} /> : null}
+      {rsvpError ? <Notice tone="error" message={rsvpError} onDismiss={() => setRsvpError(null)} /> : null}
       {!data && state.loading ? <Loading /> : null}
 
       {data ? (
@@ -68,6 +89,7 @@ export default function MeetingsScreen() {
                 key={m.id}
                 meeting={m}
                 badge={tab === 'all' && invitedIds.has(m.id) ? <Pill label="INVITED" tone="navy" /> : undefined}
+                rsvp={tab === 'invites' ? { status: responseTo(m.id), onToggle: () => void toggleRsvp(m.id) } : undefined}
                 onAttendance={canManageMeeting(user, m) ? () => router.push(`/meeting/${m.id}`) : undefined}
               />
             ))

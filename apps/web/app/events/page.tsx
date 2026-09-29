@@ -82,6 +82,10 @@ function EventForm({
   const [planned, setPlanned] = useState(toField(event?.PlannedNumberAttendees));
   const [linked, setLinked] = useState<number[]>(event ? linkedCouncilIds : [councilId]);
   const [annual, setAnnual] = useState(event?.IsAnnual === 1);
+  // Sprint 5Y-6: a one-day event hides its End date and ends the day it starts. An older event already spanning days
+  // opens with the box ticked so its End date is not lost.
+  const [multiDay, setMultiDay] = useState(event ? event.IsMultiDay === 1 || event.StartDate !== event.EndDate : false);
+  const lastDay = multiDay ? endDate : startDate;
 
   const toggleCouncil = (id: number) => setLinked((now) => (now.includes(id) ? now.filter((c) => c !== id) : [...now, id]));
 
@@ -95,12 +99,13 @@ function EventForm({
           EventDescription: description,
           Location: location,
           StartDate: startDate,
-          EndDate: endDate,
+          EndDate: lastDay,
           CategoryID: categoryId,
           OwnerID: ownerId,
           Budget: budgetValue,
           PlannedNumberAttendees: plannedValue,
           IsAnnual: annual ? 1 : 0,
+          IsMultiDay: multiDay ? 1 : 0,
         };
         await db.events.update(event.id, changes);
         await db.events.setCouncils(event.id, linked);
@@ -111,10 +116,11 @@ function EventForm({
           EventDescription: description,
           Location: location,
           StartDate: startDate,
-          EndDate: endDate,
+          EndDate: lastDay,
           CategoryID: categoryId,
           OwnerID: ownerId,
           IsAnnual: annual ? 1 : 0,
+          IsMultiDay: multiDay ? 1 : 0,
         };
         if (budgetValue !== null) created.Budget = budgetValue;
         if (plannedValue !== null) created.PlannedNumberAttendees = plannedValue;
@@ -140,8 +146,29 @@ function EventForm({
         <Field label="Description" className="col-span-2">
           {(id) => <Textarea id={id} value={description} maxLength={255} onChange={(e) => setDescription(e.target.value)} />}
         </Field>
-        <Field label="Starts">{(id) => <Input id={id} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />}</Field>
-        <Field label="Ends">{(id) => <Input id={id} type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />}</Field>
+        <Field label={multiDay ? 'Starts' : 'Date'}>
+          {(id) => <Input id={id} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />}
+        </Field>
+        <label className="flex items-center gap-2 self-end pb-2 text-sm">
+          <input
+            type="checkbox"
+            className="size-4"
+            checked={multiDay}
+            onChange={(e) => {
+              setMultiDay(e.target.checked);
+              if (e.target.checked && endDate <= startDate) setEndDate('');
+            }}
+          />
+          <span>
+            <span className="font-bold">Multi-Day Assembly / Extended Event</span>
+            <span className="block text-xs text-muted">Unticked, the event is one day and ends the day it starts.</span>
+          </span>
+        </label>
+        {multiDay ? (
+          <Field label="Ends" className="col-span-2 sm:col-span-1">
+            {(id) => <Input id={id} type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} required />}
+          </Field>
+        ) : null}
         <Field label="Location" className="col-span-2">
           {(id) => <Input id={id} value={location} maxLength={255} onChange={(e) => setLocation(e.target.value)} required />}
         </Field>

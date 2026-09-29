@@ -604,6 +604,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "EndDate",
+        "kind": "date",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [

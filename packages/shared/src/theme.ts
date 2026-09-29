@@ -7,6 +7,7 @@
 //   Red   - urgency: shifts within 2 days, required alerts, the no-show badge
 //   Gold  - priority milestones and selection markers
 //   White - every content surface stays flat white for contrast
+//   Green - confirmation only: the phone's "Attending" RSVP banner (Sprint 5Y-6), white text at 6.8:1
 //
 // Gold on white is only ~2.3:1, so gold is never used as text on white. It is a
 // border, bar or fill, and the text on a gold fill is navy (~6.4:1).
@@ -21,6 +22,8 @@ export const BRAND = {
   muted: '#4A5568',
   /** Hairlines and disabled outlines only, never text. */
   line: '#C9D1DC',
+  /** Confirmation fills only (the RSVP "Attending" banner); text on it is white. */
+  green: '#17692F',
 } as const;
 
 /** Body copy, forms, lists, timestamps. */
