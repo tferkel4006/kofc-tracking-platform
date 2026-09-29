@@ -179,6 +179,9 @@ export function createRemoteDataService(): DataService {
       updateLineItemBudget: notImplemented('budget.updateLineItemBudget'),
       addCustomBudgetLine: notImplemented('budget.addCustomBudgetLine'),
       prePopulateNextYear: notImplemented('budget.prePopulateNextYear'),
+      approveAndFinalizeEntireBudget: notImplemented('budget.approveAndFinalizeEntireBudget'),
+      getBudgetProgress: notImplemented('budget.getBudgetProgress'),
+      getHistoricalKPIs: notImplemented('budget.getHistoricalKPIs'),
     },
     supreme: {
       previewReport: notImplemented('supreme.previewReport'),

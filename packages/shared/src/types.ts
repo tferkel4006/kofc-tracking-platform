@@ -535,10 +535,18 @@ export interface CouncilBudgetForecast {
   ReferenceSourceID?: number | null; // Event.id (Event), GlobalCharityRegistry.id (Donation); NULL for Operational
   LineItemName: string;
   PrePopulatedAmount: number; // DECIMAL(18,2): the previous fraternal year's actual spend
-  ApprovedBudgetAmount: number; // DECIMAL(18,2): set by council leadership
+  ApprovedBudgetAmount: number; // DECIMAL(18,2): the voted figure; 0 until budget.approveAndFinalizeEntireBudget (Sprint 5Y-4)
   Notes?: string | null;
   BudgetCategoryID?: number | null; // Sprint 5Y-3: the council budget category it is filed under; NULL while uncategorized
+  ProposedBudgetAmount: number; // DECIMAL(18,2) (Sprint 5Y-4): the figure leadership drafts May 1 - June 30
+  BudgetStatus: BudgetLineStatus; // Sprint 5Y-4
 }
+
+/**
+ * CouncilBudgetForecast.BudgetStatus (Sprint 5Y-4): 'Draft' when seeded with no figure proposed yet, 'Proposed' once
+ * leadership or the Budget Director drafts a figure, 'Approved' once the council's vote finalizes the whole year.
+ */
+export type BudgetLineStatus = 'Draft' | 'Proposed' | 'Approved';
 
 /** One of a council's own budget categories (funds), kept as a council lookup table (Sprint 5Y-3). */
 export interface CouncilBudgetCategory {

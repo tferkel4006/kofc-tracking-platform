@@ -191,12 +191,20 @@ import {
   normalizeStateCode,
   searchCharityRegistry,
   suggestLocalCharities,
+  assertBudgetYearApprovable,
+  assertBudgetYearNotApproved,
   assertBudgetYearWritable,
   assertCouncilBudgetCategory,
   assertFraternalYear,
+  assertMayApproveBudget,
   assertMayManageBudgetForecast,
+  assertMayReviewBudgetPerformance,
   assertMayViewBudgetForecast,
+  budgetProgressThrough,
+  budgetStatusOf,
   budgetWindowOf,
+  buildBudgetYearPerformance,
+  completedFraternalYears,
   budgetLineExists,
   budgetLineNotFound,
   cleanBudgetLineUpdate,
@@ -204,9 +212,11 @@ import {
   findOperationalBudgetLine,
   fraternalYearBounds,
   mergeBudgetSeeds,
+  planBudgetApproval,
   planBudgetPrePopulation,
   previousFraternalYear,
   sortBudgetLines,
+  summarizeBudgetHistory,
   type CleanDonation,
   type ElectionRows,
   type EventFunds,
@@ -217,6 +227,8 @@ import {
   type SignupContextRow,
 } from '@kofc/shared';
 import type {
+  AnnualBudgetForecast,
+  BudgetYearPerformance,
   CharitableDisbursementLedger,
   CouncilBudgetCategory,
   CouncilBudgetForecast,
@@ -2981,17 +2993,11 @@ export class MemoryDataService implements DataService {
       const s = await this.ready();
       assertMayViewBudgetForecast(this.memberWriteActor(s, actorId), councilId, `read the budget forecast of council ${councilId}`);
       this.assertCouncilsExist(s, [councilId]);
-      return {
-        councilId,
-        fraternalYear: year,
-        window: budgetWindowOf(year, this.now()),
-        categories: this.budgetCategories(s, councilId).map((c) => ({ ...c })),
-        lines: sortBudgetLines(this.budgetLines(s, councilId, year)).map((l) => ({ ...l })),
-      };
+      return this.annualForecast(s, councilId, year);
     },
 
-    updateLineItemBudget: async (actorId, budgetLineItemId, approvedAmount, notes, options = {}) => {
-      const changes = cleanBudgetLineUpdate(approvedAmount, notes);
+    updateLineItemBudget: async (actorId, budgetLineItemId, proposedAmount, notes, options = {}) => {
+      const changes = cleanBudgetLineUpdate(proposedAmount, notes);
       const s = await this.ready();
       return s.transaction(() => {
         const actor = this.memberWriteActor(s, actorId);
@@ -2999,6 +3005,7 @@ export class MemoryDataService implements DataService {
         if (!line) throw budgetLineNotFound(budgetLineItemId);
         const councilId = line.CouncilID as number;
         assertMayManageBudgetForecast(actor, councilId, `change budget line ${budgetLineItemId}`);
+        assertBudgetYearNotApproved(line.FraternalYear as string, this.budgetLines(s, councilId, line.FraternalYear as string));
         assertBudgetYearWritable(line.FraternalYear as string, this.now(), actor, options);
         const category = assertCouncilBudgetCategory(options.budgetCategoryId, this.budgetCategories(s, councilId), councilId);
         Object.assign(line, changes, category === undefined ? {} : { BudgetCategoryID: category });
@@ -3013,6 +3020,7 @@ export class MemoryDataService implements DataService {
         const actor = this.memberWriteActor(s, actorId);
         assertMayManageBudgetForecast(actor, councilId, `add budget lines for council ${councilId}`);
         this.assertCouncilsExist(s, [councilId]);
+        assertBudgetYearNotApproved(clean.FraternalYear, this.budgetLines(s, councilId, clean.FraternalYear));
         assertBudgetYearWritable(clean.FraternalYear, this.now(), actor, options);
         assertCouncilBudgetCategory(clean.BudgetCategoryID, this.budgetCategories(s, councilId), councilId);
         const existing = findOperationalBudgetLine(this.budgetLines(s, councilId, clean.FraternalYear), clean.LineItemName);
@@ -3024,7 +3032,9 @@ export class MemoryDataService implements DataService {
           ReferenceSourceID: null,
           LineItemName: clean.LineItemName,
           PrePopulatedAmount: 0,
-          ApprovedBudgetAmount: clean.ApprovedBudgetAmount,
+          ProposedBudgetAmount: clean.ProposedBudgetAmount,
+          ApprovedBudgetAmount: 0,
+          BudgetStatus: 'Proposed',
           Notes: clean.Notes,
           BudgetCategoryID: clean.BudgetCategoryID,
         });
@@ -3042,6 +3052,7 @@ export class MemoryDataService implements DataService {
         const actor = this.memberWriteActor(s, actorId);
         assertMayManageBudgetForecast(actor, councilId, `pre-populate the budget of council ${councilId}`);
         this.assertCouncilsExist(s, [councilId]);
+        assertBudgetYearNotApproved(target, this.budgetLines(s, councilId, target));
         assertBudgetYearWritable(target, this.now(), actor, options);
         const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
         const annualEvents = s.rows('Event').filter((e) => linked.has(e.id) && e.IsAnnual === 1 && inYear(e.StartDate));
@@ -3074,7 +3085,15 @@ export class MemoryDataService implements DataService {
         const plan = mergeBudgetSeeds(this.budgetLines(s, councilId, target), seeds);
         for (const { id, ...refresh } of plan.updates) Object.assign(s.rows('CouncilBudgetForecast').find((l) => l.id === id)!, refresh);
         for (const seed of plan.inserts) {
-          s.insert('CouncilBudgetForecast', { CouncilID: councilId, FraternalYear: target, ...seed, ApprovedBudgetAmount: 0, Notes: null });
+          s.insert('CouncilBudgetForecast', {
+            CouncilID: councilId,
+            FraternalYear: target,
+            ...seed,
+            ProposedBudgetAmount: 0,
+            ApprovedBudgetAmount: 0,
+            BudgetStatus: 'Draft',
+            Notes: null,
+          });
         }
         return { created: plan.inserts.length, refreshed: plan.updates.length };
       });
@@ -3086,7 +3105,100 @@ export class MemoryDataService implements DataService {
         lines: sortBudgetLines(this.budgetLines(s, councilId, target)).map((l) => ({ ...l })),
       };
     },
+
+    approveAndFinalizeEntireBudget: async (actorId, councilId, fraternalYear, options = {}) => {
+      const year = assertFraternalYear(fraternalYear);
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        assertMayApproveBudget(actor, councilId, `approve the ${year} budget of council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const lines = this.budgetLines(s, councilId, year);
+        assertBudgetYearApprovable(year, lines, this.now(), actor, options);
+        for (const { id, ...approval } of planBudgetApproval(lines)) Object.assign(lines.find((l) => l.id === id)!, approval);
+      });
+      return this.annualForecast(s, councilId, year);
+    },
+
+    getBudgetProgress: async (actorId, councilId, fraternalYear) => {
+      const year = assertFraternalYear(fraternalYear);
+      const s = await this.ready();
+      assertMayReviewBudgetPerformance(this.memberWriteActor(s, actorId), councilId, `review the budget progress of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return this.budgetYearPerformance(s, councilId, year, budgetProgressThrough(year, this.now()));
+    },
+
+    getHistoricalKPIs: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReviewBudgetPerformance(this.memberWriteActor(s, actorId), councilId, `review the budget history of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      const today = this.now();
+      const budgeted = s.rows('CouncilBudgetForecast').filter((l) => l.CouncilID === councilId).map((l) => l.FraternalYear as string);
+      const years = completedFraternalYears(budgeted, today).map((y) => this.budgetYearPerformance(s, councilId, y, fraternalYearBounds(y).toDate));
+      return summarizeBudgetHistory(councilId, years, today);
+    },
   };
+
+  /** budget.listAnnualForecast's answer for the council's year, copied out of the store. */
+  private annualForecast(s: MemoryStore, councilId: number, year: string): AnnualBudgetForecast {
+    const lines = this.budgetLines(s, councilId, year);
+    return {
+      councilId,
+      fraternalYear: year,
+      window: budgetWindowOf(year, this.now()),
+      status: budgetStatusOf(lines),
+      categories: this.budgetCategories(s, councilId).map((c) => ({ ...c })),
+      lines: sortBudgetLines(lines).map((l) => ({ ...l })),
+    };
+  }
+
+  /**
+   * The council's year against its spend from July 1 through `throughDate`, counted as reports.monthlySummary counts
+   * it: events starting in the period, line items dated in it on 'Approved' and 'Reimbursed' sheets, charity checks
+   * paid in it.
+   */
+  private budgetYearPerformance(s: MemoryStore, councilId: number, year: string, throughDate: string): BudgetYearPerformance {
+    const { fromDate } = fraternalYearBounds(year);
+    const inPeriod = (date: unknown) => (date as string) >= fromDate && (date as string) <= throughDate;
+    const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+    const eventNames = new Map(s.rows('Event').map((e) => [e.id, e.EventName as string]));
+    const spendingReports = new Map(
+      s
+        .rows('ExpenseReport')
+        .filter((r) => r.CouncilID === councilId && EXPENSE_SPEND_STATUSES.includes(r.Status as ExpenseReportStatus))
+        .map((r) => [r.id, r]),
+    );
+    return buildBudgetYearPerformance({
+      councilId,
+      fraternalYear: year,
+      lines: this.budgetLines(s, councilId, year).map((l) => ({ ...l })),
+      categories: this.budgetCategories(s, councilId).map((c) => ({ ...c })),
+      throughDate,
+      spend: {
+        events: s
+          .rows('Event')
+          .filter((e) => linked.has(e.id) && inPeriod(e.StartDate))
+          .map((e) => ({ id: e.id as number, EventName: e.EventName as string, Spend: e.Spend as number | null })),
+        expenses: s.rows('ExpenseLineItem').flatMap((li) => {
+          const report = spendingReports.get(li.ExpenseReportID);
+          if (!report || !inPeriod(li.DateOfExpense)) return [];
+          const eventId = (report.LinkedEventID as number | null) ?? null;
+          return [
+            {
+              EventID: eventId,
+              EventName: eventId === null ? null : (eventNames.get(eventId) ?? null),
+              MeetingID: (report.LinkedMeetingID as number | null) ?? null,
+              Amount: li.Amount as number,
+            },
+          ];
+        }),
+        charityChecks: s
+          .rows('CharitableDisbursementLedger')
+          .filter((d) => d.CouncilID === councilId && inPeriod(d.PayoutDate))
+          .map((d) => ({ CharityID: d.CharityID as number, Amount: d.Amount as number })),
+      },
+    });
+  }
 
   /** The council's budget categories in id order, as stored (not copied). */
   private budgetCategories(s: MemoryStore, councilId: number): CouncilBudgetCategory[] {

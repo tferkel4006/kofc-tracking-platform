@@ -4,14 +4,33 @@
 // Sprint 5Y-3: council budget categories (CouncilBudgetCategory, a council lookup table), member transparency (every
 // member reads the budget), the Designated Budget Director (Member.IsBudgetDirector) and the data layer's July 1 lock
 // (BUDGET_YEAR_FINALIZED, lifted only by an Active Super Admin's override).
+// Sprint 5Y-4: the Draft -> Proposed -> Approved lifecycle (budget.approveAndFinalizeEntireBudget freezes a year for good,
+// BUDGET_YEAR_APPROVED), budget-versus-actual gauges (budget.getBudgetProgress) and year-over-year KPIs
+// (budget.getHistoricalKPIs).
 import { describe, expect, it } from 'vitest';
 import {
+  assertBudgetYearApprovable,
+  assertBudgetYearNotApproved,
   assertBudgetYearWritable,
   assertFraternalYear,
+  assertMayApproveBudget,
   assertMayManageBudgetForecast,
+  assertMayReviewBudgetPerformance,
   assertMayViewBudgetForecast,
+  attributeBudgetSpend,
   BUDGET_MEETINGS_LINE_NAME,
+  BUDGET_WARNING_THRESHOLD_PERCENT,
+  budgetAlertOf,
+  budgetPercentUsed,
+  budgetProgressThrough,
+  budgetStatusOf,
   budgetWindowOf,
+  buildBudgetYearPerformance,
+  completedFraternalYears,
+  currentFraternalYear,
+  planBudgetApproval,
+  summarizeBudgetHistory,
+  type BudgetYearSpend,
   cleanBudgetCategory,
   cleanBudgetLineUpdate,
   cleanCustomBudgetLine,
@@ -82,7 +101,9 @@ const line = (id: number, over: Partial<CouncilBudgetForecast> = {}): CouncilBud
   ReferenceSourceID: null,
   LineItemName: `Line ${id}`,
   PrePopulatedAmount: 0,
+  ProposedBudgetAmount: 0,
   ApprovedBudgetAmount: 0,
+  BudgetStatus: 'Draft',
   Notes: null,
   BudgetCategoryID: null,
   ...over,
@@ -98,12 +119,14 @@ const noActuals = (over: Partial<BudgetActuals> = {}): BudgetActuals => ({
   ...over,
 });
 
-const seedShape = ({ CategoryType, ReferenceSourceID, LineItemName, PrePopulatedAmount, ApprovedBudgetAmount, BudgetCategoryID }: CouncilBudgetForecast) => ({
+const seedShape = ({ CategoryType, ReferenceSourceID, LineItemName, PrePopulatedAmount, ProposedBudgetAmount, ApprovedBudgetAmount, BudgetStatus, BudgetCategoryID }: CouncilBudgetForecast) => ({
   CategoryType,
   ReferenceSourceID: ReferenceSourceID ?? null,
   LineItemName,
   PrePopulatedAmount,
+  ProposedBudgetAmount,
   ApprovedBudgetAmount,
+  BudgetStatus,
   BudgetCategoryID: BudgetCategoryID ?? null,
 });
 
@@ -171,7 +194,7 @@ describe('budget helpers (pure)', () => {
     expect(cleanCustomBudgetLine({ FraternalYear: TARGET, LineItemName: '  Office   supplies ', Notes: ' ' })).toEqual({
       FraternalYear: TARGET,
       LineItemName: 'Office supplies',
-      ApprovedBudgetAmount: 0,
+      ProposedBudgetAmount: 0,
       Notes: null,
       BudgetCategoryID: null,
     });
@@ -179,10 +202,12 @@ describe('budget helpers (pure)', () => {
     expect(() => cleanCustomBudgetLine({ FraternalYear: TARGET, LineItemName: 'x', BudgetCategoryID: 'Wolf' as never })).toThrow(/record id/);
     expect(() => cleanCustomBudgetLine({ FraternalYear: TARGET, LineItemName: 'x', CategoryType: 'Event' } as never)).toThrow(/no field "CategoryType"/);
     expect(() => cleanCustomBudgetLine({ FraternalYear: TARGET, LineItemName: ' ' })).toThrow(/Line item name is required/);
-    expect(() => cleanCustomBudgetLine({ FraternalYear: TARGET, LineItemName: 'x', ApprovedBudgetAmount: 1.005 })).toThrow(/two decimal/);
-    expect(cleanBudgetLineUpdate(250, undefined)).toEqual({ ApprovedBudgetAmount: 250 });
-    expect(cleanBudgetLineUpdate(250, null)).toEqual({ ApprovedBudgetAmount: 250, Notes: null });
-    expect(cleanBudgetLineUpdate(0, ' Board vote ')).toEqual({ ApprovedBudgetAmount: 0, Notes: 'Board vote' });
+    expect(() => cleanCustomBudgetLine({ FraternalYear: TARGET, LineItemName: 'x', ProposedBudgetAmount: 1.005 })).toThrow(/two decimal/);
+    // Sprint 5Y-4: only the council's approval sets the approved figure.
+    expect(() => cleanCustomBudgetLine({ FraternalYear: TARGET, LineItemName: 'x', ApprovedBudgetAmount: 5 } as never)).toThrow(/no field "ApprovedBudgetAmount"/);
+    expect(cleanBudgetLineUpdate(250, undefined)).toEqual({ ProposedBudgetAmount: 250, BudgetStatus: 'Proposed' });
+    expect(cleanBudgetLineUpdate(250, null)).toEqual({ ProposedBudgetAmount: 250, BudgetStatus: 'Proposed', Notes: null });
+    expect(cleanBudgetLineUpdate(0, ' Board vote ')).toEqual({ ProposedBudgetAmount: 0, BudgetStatus: 'Proposed', Notes: 'Board vote' });
     expect(() => cleanBudgetLineUpdate(-1, undefined)).toThrow(/0 or more/);
     expect(() => cleanBudgetLineUpdate(1, 'x'.repeat(2001))).toThrow(/at most 2000/);
     expect(cleanBudgetCategory({ CategoryName: '  Building   Fund ' })).toEqual({ CategoryName: 'Building Fund' });
@@ -317,17 +342,17 @@ describe('budget helpers (pure)', () => {
     ];
     const groups = groupBudgetByCategory(
       [
-        line(1, { LineItemName: 'Roof', PrePopulatedAmount: 10.1, ApprovedBudgetAmount: 12, BudgetCategoryID: 7 }),
-        line(2, { LineItemName: 'Bank Fees', PrePopulatedAmount: 0.2, ApprovedBudgetAmount: 100 }),
-        line(3, { LineItemName: 'Boiler', PrePopulatedAmount: 0.2, ApprovedBudgetAmount: 0.1, BudgetCategoryID: 7 }),
+        line(1, { LineItemName: 'Roof', PrePopulatedAmount: 10.1, ProposedBudgetAmount: 13, ApprovedBudgetAmount: 12, BudgetCategoryID: 7 }),
+        line(2, { LineItemName: 'Bank Fees', PrePopulatedAmount: 0.2, ProposedBudgetAmount: 90, ApprovedBudgetAmount: 100 }),
+        line(3, { LineItemName: 'Boiler', PrePopulatedAmount: 0.2, ProposedBudgetAmount: 0.2, ApprovedBudgetAmount: 0.1, BudgetCategoryID: 7 }),
         line(4, { LineItemName: 'Stray', BudgetCategoryID: 99 }),
       ],
       categories,
     );
-    expect(groups.map((g) => [g.label, g.lines.map((l) => l.id), g.prePopulatedTotal, g.approvedTotal])).toEqual([
-      ['Building Fund', [3, 1], 10.3, 12.1],
-      ['Charity', [], 0, 0],
-      ['Uncategorized', [2, 4], 0.2, 100],
+    expect(groups.map((g) => [g.label, g.lines.map((l) => l.id), g.prePopulatedTotal, g.proposedTotal, g.approvedTotal])).toEqual([
+      ['Building Fund', [3, 1], 10.3, 13.2, 12.1],
+      ['Charity', [], 0, 0, 0],
+      ['Uncategorized', [2, 4], 0.2, 90, 100],
     ]);
     expect(groupBudgetByCategory([line(1, { BudgetCategoryID: 7 })], categories).map((g) => g.label)).toEqual(['Building Fund', 'Charity']);
   });
@@ -385,6 +410,182 @@ describe('budget helpers (pure)', () => {
     expect(planEventCopy(event, [], { startDate: '2027-02-19' }).event.IsAnnual).toBe(1);
     expect(planEventCopy({ ...event, IsAnnual: 0 }, [], { startDate: '2027-02-19' }).event.IsAnnual).toBeUndefined();
   });
+
+  it('walks a year through Draft, Proposed and Approved, and freezes it once approved with no override (Sprint 5Y-4)', () => {
+    expect(budgetStatusOf([])).toBe('Draft');
+    expect(budgetStatusOf([line(1), line(2)])).toBe('Draft');
+    expect(budgetStatusOf([line(1), line(2, { BudgetStatus: 'Proposed' })])).toBe('Proposed');
+    expect(budgetStatusOf([line(1, { BudgetStatus: 'Approved' })])).toBe('Approved');
+    expect(planBudgetApproval([line(1, { ProposedBudgetAmount: 12.34 }), line(2)])).toEqual([
+      { id: 1, ApprovedBudgetAmount: 12.34, BudgetStatus: 'Approved' },
+      { id: 2, ApprovedBudgetAmount: 0, BudgetStatus: 'Approved' },
+    ]);
+
+    const code = (fn: () => void) => {
+      try {
+        fn();
+        return 'ok';
+      } catch (e) {
+        return (e as { code: string }).code;
+      }
+    };
+    const superAdmin = actor({ memberType: 'Super Admin' });
+    const approved = [line(1, { BudgetStatus: 'Approved' })];
+    expect(code(() => assertBudgetYearNotApproved(TARGET, [line(1, { BudgetStatus: 'Proposed' })]))).toBe('ok');
+    expect(code(() => assertBudgetYearNotApproved(TARGET, approved))).toBe('BUDGET_YEAR_APPROVED');
+    expect(() => assertBudgetYearNotApproved(TARGET, approved)).toThrow(/approved and finalized/);
+
+    const proposed = [line(1, { BudgetStatus: 'Proposed' })];
+    const june = new Date(2027, 5, 15);
+    const july = new Date(2027, 6, 20);
+    const april = new Date(2027, 3, 20);
+    expect(code(() => assertBudgetYearApprovable(TARGET, proposed, june, actor()))).toBe('ok');
+    // The July meeting's vote comes after the July 1 lock.
+    expect(code(() => assertBudgetYearApprovable(TARGET, proposed, july, actor()))).toBe('ok');
+    expect(code(() => assertBudgetYearApprovable(TARGET, approved, july, superAdmin, { superAdminOverride: true }))).toBe('BUDGET_YEAR_APPROVED');
+    expect(code(() => assertBudgetYearApprovable(TARGET, [], june, actor()))).toBe('INVALID_INPUT');
+    expect(code(() => assertBudgetYearApprovable(TARGET, proposed, april, actor()))).toBe('BUDGET_WINDOW_NOT_OPEN');
+    expect(code(() => assertBudgetYearApprovable(TARGET, proposed, april, actor({ memberType: 'Admin' }), { superAdminOverride: true }))).toBe('BUDGET_WINDOW_NOT_OPEN');
+    expect(code(() => assertBudgetYearApprovable(TARGET, proposed, april, superAdmin, { superAdminOverride: true }))).toBe('ok');
+  });
+
+  it('lets leadership approve and read budget performance, but not the Budget Director or plain members (Sprint 5Y-4)', () => {
+    const allowed = (check: (a: MemberWriteActor, councilId: number) => void) => (a: MemberWriteActor, councilId = OWN) => {
+      try {
+        check(a, councilId);
+        return true;
+      } catch (e) {
+        expect(e).toBeInstanceOf(SecurityPrivilegeError);
+        return false;
+      }
+    };
+    for (const check of [
+      allowed((a, c) => assertMayApproveBudget(a, c, 'approve the budget')),
+      allowed((a, c) => assertMayReviewBudgetPerformance(a, c, 'review the budget')),
+    ]) {
+      expect(check(actor())).toBe(false);
+      expect(check(actor({ budgetDirector: true }))).toBe(false);
+      expect(check(actor({ roles: ['Grand Knight'] }))).toBe(false);
+      expect(check(actor({ roles: ['Treasurer'] }))).toBe(true);
+      expect(check(actor({ roles: ['Financial Secretary'] }))).toBe(true);
+      expect(check(actor({ roles: ['Treasurer'] }), OTHER)).toBe(false);
+      expect(check(actor({ memberType: 'Admin' }))).toBe(true);
+      expect(check(actor({ memberType: 'Admin', active: false }))).toBe(false);
+      expect(check(actor({ memberType: 'Super Admin', councilId: OTHER }))).toBe(true);
+    }
+  });
+
+  it('flags spend from 85% of an approved cap, over it past 100%, and spend with no cap as unbudgeted', () => {
+    expect(BUDGET_WARNING_THRESHOLD_PERCENT).toBe(85);
+    expect(budgetPercentUsed(0, 50)).toBeNull();
+    expect(budgetPercentUsed(300, 100)).toBe(33.3);
+    expect(budgetAlertOf(0, 0)).toBe('None');
+    expect(budgetAlertOf(0, 0.01)).toBe('Unbudgeted');
+    expect(budgetAlertOf(100, 0)).toBe('On Track');
+    expect(budgetAlertOf(100, 84.99)).toBe('On Track'); // shown as 85%, but not yet at the threshold
+    expect(budgetPercentUsed(100, 84.99)).toBe(85);
+    expect(budgetAlertOf(100, 85)).toBe('Warning');
+    expect(budgetAlertOf(100, 100)).toBe('Warning');
+    expect(budgetAlertOf(100, 100.01)).toBe('Over Budget');
+    expect(currentFraternalYear(new Date(2027, 5, 30))).toBe('2026-2027');
+    expect(currentFraternalYear(new Date(2027, 6, 1))).toBe('2027-2028');
+    expect(currentFraternalYear(new Date(2026, 8, 28))).toBe('2026-2027');
+    expect(budgetProgressThrough('2026-2027', new Date(2027, 2, 5))).toBe('2027-03-05');
+    expect(budgetProgressThrough('2026-2027', new Date(2027, 8, 1))).toBe('2027-06-30');
+    expect(completedFraternalYears(['2025-2026', '2027-2028', '2026-2027', '2025-2026'], new Date(2027, 6, 1))).toEqual(['2026-2027', '2025-2026']);
+    expect(completedFraternalYears(['2026-2027'], new Date(2027, 5, 30))).toEqual([]);
+  });
+
+  it('charges each piece of spend to its budget line, and the rest as unbudgeted, then totals lines, categories and the year', () => {
+    const lines = [
+      line(1, { CategoryType: 'Event', ReferenceSourceID: 900, LineItemName: 'Fish Fry', ApprovedBudgetAmount: 400, BudgetCategoryID: 7, BudgetStatus: 'Approved' }),
+      line(2, { CategoryType: 'Donation', ReferenceSourceID: 3, LineItemName: 'Food Bank', ApprovedBudgetAmount: 200, BudgetCategoryID: 7, BudgetStatus: 'Approved' }),
+      line(3, { LineItemName: BUDGET_MEETINGS_LINE_NAME, ApprovedBudgetAmount: 100, BudgetStatus: 'Approved' }),
+      line(4, { LineItemName: 'Bank Fees', ApprovedBudgetAmount: 60, BudgetStatus: 'Approved' }),
+    ];
+    const spend: BudgetYearSpend = {
+      // This year's Fish Fry is a new Event row: matched by name, ignoring case and spacing.
+      events: [
+        { id: 41, EventName: 'fish  FRY', Spend: 300 },
+        { id: 42, EventName: 'Picnic', Spend: 55.5 },
+      ],
+      expenses: [
+        { EventID: 41, EventName: 'fish  FRY', MeetingID: null, Amount: 120.25 },
+        { EventID: null, EventName: null, MeetingID: 8, Amount: 85 },
+        { EventID: null, EventName: null, MeetingID: null, Amount: 10 },
+      ],
+      charityChecks: [
+        { CharityID: 3, Amount: 150 },
+        { CharityID: 99, Amount: 25 },
+      ],
+    };
+    const { byLine, unbudgetedCents } = attributeBudgetSpend(lines, spend);
+    expect([...byLine]).toEqual([
+      [1, 42025],
+      [2, 15000],
+      [3, 8500],
+      [4, 0],
+    ]);
+    expect(unbudgetedCents).toBe(9050);
+
+    const categories: CouncilBudgetCategory[] = [{ id: 7, CouncilID: OWN, CategoryName: 'Programs' }];
+    const year = buildBudgetYearPerformance({ councilId: OWN, fraternalYear: SOURCE, lines, categories, spend, throughDate: '2027-03-01' });
+    expect(year).toMatchObject({
+      status: 'Approved',
+      fromDate: '2026-07-01',
+      throughDate: '2027-03-01',
+      complete: false,
+      approvedTotal: 760,
+      budgetedActual: 655.25,
+      unbudgetedActual: 90.5,
+      actualTotal: 745.75,
+      variance: 14.25,
+      utilizationPercent: 98.1,
+      alert: 'Warning',
+      linesWithinBudget: 3,
+      linesOverBudget: 1,
+    });
+    expect(year.lines.map((l) => [l.line.id, l.actual, l.variance, l.percentUsed, l.alert])).toEqual([
+      [1, 420.25, -20.25, 105.1, 'Over Budget'],
+      [2, 150, 50, 75, 'On Track'],
+      [4, 0, 60, 0, 'On Track'], // listAnnualForecast order: Bank Fees before Council Meetings
+      [3, 85, 15, 85, 'Warning'],
+    ]);
+    expect(year.categories.map((c) => [c.label, c.lineCount, c.approved, c.actual, c.percentUsed, c.alert])).toEqual([
+      ['Programs', 2, 600, 570.25, 95, 'Warning'],
+      ['Uncategorized', 2, 160, 85, 53.1, 'On Track'],
+    ]);
+    expect(buildBudgetYearPerformance({ councilId: OWN, fraternalYear: SOURCE, lines, categories, spend, throughDate: '2027-06-30' }).complete).toBe(true);
+  });
+
+  it('scores the trailing fiscal efficiency over approved completed years only, newest first', () => {
+    const perf = (fraternalYear: string, approvedTotal: number, actualTotal: number, status: 'Approved' | 'Proposed') => ({
+      ...buildBudgetYearPerformance({ councilId: OWN, fraternalYear, lines: [], categories: [], spend: { events: [], expenses: [], charityChecks: [] }, throughDate: '2000-01-01' }),
+      status,
+      approvedTotal,
+      actualTotal,
+      alert: budgetAlertOf(approvedTotal, actualTotal),
+    });
+    const kpis = summarizeBudgetHistory(
+      OWN,
+      [perf('2024-2025', 1000, 1100, 'Approved'), perf('2026-2027', 2000, 1500, 'Approved'), perf('2025-2026', 0, 900, 'Proposed')],
+      new Date(2027, 7, 1),
+    );
+    expect(kpis.asOf).toBe('2027-08-01');
+    expect(kpis.years.map((y) => y.fraternalYear)).toEqual(['2026-2027', '2025-2026', '2024-2025']);
+    expect(kpis.trailing).toEqual({
+      years: 3,
+      approvedYears: 2,
+      approvedTotal: 3000,
+      actualTotal: 2600,
+      variance: 400,
+      utilizationPercent: 86.7,
+      alert: 'Warning',
+      yearsWithinBudget: 1,
+      yearsOverBudget: 1,
+    });
+    expect(summarizeBudgetHistory(OWN, [], new Date(2027, 7, 1)).trailing).toMatchObject({ years: 0, approvedTotal: 0, utilizationPercent: null, alert: 'None' });
+  });
 });
 
 for (const d of drivers) {
@@ -393,8 +594,8 @@ for (const d of drivers) {
      * Last fraternal year (2026-2027) for council 1, with noise that must not count: another council's annual event
      * and charity check, a non-annual event and charity, an annual event from the following year, and a Draft sheet.
      */
-    async function withHistory() {
-      const db = await make(d);
+    async function withHistory(at: Date = DRAFTING) {
+      const db = await make(d, at);
       const category = (await db.lookups.list('Category'))[0].id;
       const event = (name: string, date: string, over: Partial<Event> = {}, councils = [OWN]) =>
         db.events.create(
@@ -465,7 +666,41 @@ for (const d of drivers) {
       check(OWN, annual.id, 999, '2027-07-01', '3003'); // the following fraternal year
       check(OWN, oneOff.id, 999, '2027-01-10', '3004');
       check(OTHER, annual.id, 999, '2027-01-10', '9001');
-      return { db, fishFry, tootsie, annual };
+      return { db, fishFry, tootsie, annual, oneOff };
+    }
+
+    /** A budget line inserted straight into the store (for years the service would no longer let anyone draft). */
+    const budgetLine = (
+      db: DataService,
+      year: string,
+      over: Partial<Record<'CategoryType' | 'LineItemName' | 'BudgetStatus', string>> & { ReferenceSourceID?: number | null; ProposedBudgetAmount?: number; BudgetCategoryID?: number | null; CouncilID?: number },
+    ) =>
+      raw(d, db, 'CouncilBudgetForecast', {
+        CouncilID: OWN,
+        FraternalYear: year,
+        CategoryType: 'Operational',
+        ReferenceSourceID: null,
+        LineItemName: 'Line',
+        PrePopulatedAmount: 0,
+        ProposedBudgetAmount: 0,
+        ApprovedBudgetAmount: 0,
+        BudgetStatus: 'Proposed',
+        BudgetCategoryID: null,
+        ...over,
+      });
+
+    /** Council 1's 2026-2027 budget over withHistory's spend, proposed and not yet approved. */
+    async function historyBudget(at: Date) {
+      const history = await withHistory(at);
+      const { db, annual } = history;
+      const fund = await categoryId(db, 'Blessed Michael McGivney Fraternal Activities Fund');
+      const donations = await categoryId(db, 'Other Donations & Projects');
+      budgetLine(db, SOURCE, { CategoryType: 'Event', LineItemName: 'Fish Fry', ProposedBudgetAmount: 400, BudgetCategoryID: fund });
+      budgetLine(db, SOURCE, { CategoryType: 'Event', LineItemName: 'Tootsie Roll Drive', ProposedBudgetAmount: 90, BudgetCategoryID: fund });
+      budgetLine(db, SOURCE, { CategoryType: 'Donation', ReferenceSourceID: annual.id, LineItemName: 'Salem Pregnancy Center', ProposedBudgetAmount: 1000, BudgetCategoryID: donations });
+      budgetLine(db, SOURCE, { LineItemName: BUDGET_MEETINGS_LINE_NAME, ProposedBudgetAmount: 50 });
+      budgetLine(db, SOURCE, { LineItemName: 'Bank Fees', ProposedBudgetAmount: 60 });
+      return { ...history, fund, donations };
     }
 
     it("seeds next year from last year's annual events, annual charity checks and meeting expenses of the council only", async () => {
@@ -474,17 +709,17 @@ for (const d of drivers) {
       expect(result).toMatchObject({ fraternalYear: TARGET, sourceFraternalYear: SOURCE, created: 4, refreshed: 0 });
       expect(result.lines.every((l) => l.CouncilID === OWN && l.FraternalYear === TARGET)).toBe(true);
       expect(result.lines.map(seedShape)).toEqual([
-        { CategoryType: 'Event', ReferenceSourceID: fishFry.id, LineItemName: 'Fish Fry', PrePopulatedAmount: 470.25, ApprovedBudgetAmount: 0, BudgetCategoryID: null },
-        { CategoryType: 'Event', ReferenceSourceID: tootsie.id, LineItemName: 'Tootsie Roll Drive', PrePopulatedAmount: 80, ApprovedBudgetAmount: 0, BudgetCategoryID: null },
-        { CategoryType: 'Donation', ReferenceSourceID: annual.id, LineItemName: 'Salem Pregnancy Center', PrePopulatedAmount: 500.5, ApprovedBudgetAmount: 0, BudgetCategoryID: null },
-        { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: BUDGET_MEETINGS_LINE_NAME, PrePopulatedAmount: 35.5, ApprovedBudgetAmount: 0, BudgetCategoryID: null },
+        { CategoryType: 'Event', ReferenceSourceID: fishFry.id, LineItemName: 'Fish Fry', PrePopulatedAmount: 470.25, ProposedBudgetAmount: 0, ApprovedBudgetAmount: 0, BudgetStatus: 'Draft', BudgetCategoryID: null },
+        { CategoryType: 'Event', ReferenceSourceID: tootsie.id, LineItemName: 'Tootsie Roll Drive', PrePopulatedAmount: 80, ProposedBudgetAmount: 0, ApprovedBudgetAmount: 0, BudgetStatus: 'Draft', BudgetCategoryID: null },
+        { CategoryType: 'Donation', ReferenceSourceID: annual.id, LineItemName: 'Salem Pregnancy Center', PrePopulatedAmount: 500.5, ProposedBudgetAmount: 0, ApprovedBudgetAmount: 0, BudgetStatus: 'Draft', BudgetCategoryID: null },
+        { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: BUDGET_MEETINGS_LINE_NAME, PrePopulatedAmount: 35.5, ProposedBudgetAmount: 0, ApprovedBudgetAmount: 0, BudgetStatus: 'Draft', BudgetCategoryID: null },
       ]);
       const other = await db.budget.listAnnualForecast(MEMBER.superAdmin, OTHER, TARGET);
       expect(other).toMatchObject({ councilId: OTHER, fraternalYear: TARGET, window: 'Draft', categories: [], lines: [] });
       expect((await db.budget.listAnnualForecast(MEMBER.admin, OWN, SOURCE)).lines).toEqual([]);
     });
 
-    it('re-runs safely: refreshes pre-populated figures and renamed sources, keeps approved figures, notes and categories', async () => {
+    it('re-runs safely: refreshes pre-populated figures and renamed sources, keeps proposed figures, notes and categories', async () => {
       const { db, fishFry } = await withHistory();
       const first = await db.budget.prePopulateNextYear(MEMBER.admin, OWN, TARGET);
       const fishLine = first.lines.find((l) => l.ReferenceSourceID === fishFry.id)!;
@@ -498,7 +733,9 @@ for (const d of drivers) {
       expect(again.lines.find((l) => l.id === fishLine.id)).toMatchObject({
         LineItemName: 'Lenten Fish Fry',
         PrePopulatedAmount: 570.25,
-        ApprovedBudgetAmount: 500,
+        ProposedBudgetAmount: 500,
+        ApprovedBudgetAmount: 0,
+        BudgetStatus: 'Proposed',
         Notes: 'Add a second fryer',
         BudgetCategoryID: fund,
       });
@@ -531,12 +768,12 @@ for (const d of drivers) {
       await expectPrivilege(db.lookups.saveCouncilSpecific(MEMBER.member, OWN, 'CouncilBudgetCategory', [{ CategoryName: 'Snacks' }]), 'ADMIN_REQUIRED');
     });
 
-    it('lets leadership approve figures and notes, and add unique custom Operational lines', async () => {
+    it('lets leadership propose figures and notes, and add unique custom Operational lines as Proposed', async () => {
       const db = await make(d);
       const custom = await db.budget.addCustomBudgetLine(MEMBER.admin, OWN, {
         FraternalYear: TARGET,
         LineItemName: 'Liability insurance',
-        ApprovedBudgetAmount: 1200,
+        ProposedBudgetAmount: 1200,
         Notes: 'Renews in October',
       });
       expect(custom).toMatchObject({
@@ -546,7 +783,9 @@ for (const d of drivers) {
         ReferenceSourceID: null,
         LineItemName: 'Liability insurance',
         PrePopulatedAmount: 0,
-        ApprovedBudgetAmount: 1200,
+        ProposedBudgetAmount: 1200,
+        ApprovedBudgetAmount: 0,
+        BudgetStatus: 'Proposed',
         Notes: 'Renews in October',
         BudgetCategoryID: null,
       });
@@ -556,7 +795,16 @@ for (const d of drivers) {
       await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: LATER, LineItemName: 'Liability insurance' }, { superAdminOverride: true });
       await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OTHER, { FraternalYear: TARGET, LineItemName: 'Liability insurance' });
 
-      expect(await db.budget.updateLineItemBudget(MEMBER.admin, custom.id, 1350.75)).toMatchObject({ ApprovedBudgetAmount: 1350.75, Notes: 'Renews in October' });
+      expect(await db.budget.updateLineItemBudget(MEMBER.admin, custom.id, 1350.75)).toMatchObject({
+        ProposedBudgetAmount: 1350.75,
+        ApprovedBudgetAmount: 0,
+        BudgetStatus: 'Proposed',
+        Notes: 'Renews in October',
+      });
+      await expectRule(
+        db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: TARGET, LineItemName: 'Ads', ApprovedBudgetAmount: 5 } as never),
+        'INVALID_INPUT',
+      );
       expect(await db.budget.updateLineItemBudget(MEMBER.admin, custom.id, 1350.75, null)).toMatchObject({ Notes: null });
       await expectRule(db.budget.updateLineItemBudget(MEMBER.admin, custom.id, -5), 'INVALID_INPUT');
       await expectRule(db.budget.updateLineItemBudget(MEMBER.admin, 999_999, 5), 'RECORD_NOT_FOUND');
@@ -570,7 +818,7 @@ for (const d of drivers) {
       await expectRule(db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bank Fees' }), 'BUDGET_YEAR_FINALIZED');
       await expectRule(db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bank Fees' }, { superAdminOverride: true }), 'BUDGET_YEAR_FINALIZED');
       await expectRule(db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bank Fees' }), 'BUDGET_YEAR_FINALIZED');
-      const locked = await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bank Fees', ApprovedBudgetAmount: 60 }, { superAdminOverride: true });
+      const locked = await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bank Fees', ProposedBudgetAmount: 60 }, { superAdminOverride: true });
 
       await expectRule(db.budget.updateLineItemBudget(MEMBER.admin, locked.id, 75), 'BUDGET_YEAR_FINALIZED');
       await expectRule(db.budget.updateLineItemBudget(MEMBER.admin, locked.id, 75, null, { superAdminOverride: true }), 'BUDGET_YEAR_FINALIZED');
@@ -578,9 +826,9 @@ for (const d of drivers) {
       await expectRule(db.budget.prePopulateNextYear(MEMBER.admin, OWN, SOURCE), 'BUDGET_YEAR_FINALIZED');
       const listed = await db.budget.listAnnualForecast(MEMBER.admin, OWN, SOURCE);
       expect(listed.window).toBe('Finalized');
-      expect(listed.lines.map((l) => l.ApprovedBudgetAmount)).toEqual([60]);
+      expect(listed.lines.map((l) => l.ProposedBudgetAmount)).toEqual([60]);
 
-      expect(await db.budget.updateLineItemBudget(MEMBER.superAdmin, locked.id, 75, undefined, { superAdminOverride: true })).toMatchObject({ ApprovedBudgetAmount: 75 });
+      expect(await db.budget.updateLineItemBudget(MEMBER.superAdmin, locked.id, 75, undefined, { superAdminOverride: true })).toMatchObject({ ProposedBudgetAmount: 75 });
       expect((await db.budget.prePopulateNextYear(MEMBER.superAdmin, OWN, SOURCE, { superAdminOverride: true })).fraternalYear).toBe(SOURCE);
     });
 
@@ -607,28 +855,29 @@ for (const d of drivers) {
       const db = await make(d);
       const maintenance = await categoryId(db, 'Council Maintenance & State/Supreme Programs');
       const override = { superAdminOverride: true };
-      await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bank Fees', ApprovedBudgetAmount: 60, Notes: 'Monthly service charge', BudgetCategoryID: maintenance }, override);
-      await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bulletin Ads', ApprovedBudgetAmount: 400 }, override);
-      await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OTHER, { FraternalYear: SOURCE, LineItemName: 'Neighbour Dues', ApprovedBudgetAmount: 90 }, override);
+      await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bank Fees', ProposedBudgetAmount: 60, Notes: 'Monthly service charge', BudgetCategoryID: maintenance }, override);
+      await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bulletin Ads', ProposedBudgetAmount: 400 }, override);
+      await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OTHER, { FraternalYear: SOURCE, LineItemName: 'Neighbour Dues', ProposedBudgetAmount: 90 }, override);
       const result = await db.budget.prePopulateNextYear(MEMBER.admin, OWN, TARGET);
       const custom = result.lines.filter((l) => l.LineItemName !== BUDGET_MEETINGS_LINE_NAME);
       expect(custom.map(seedShape)).toEqual([
-        { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bank Fees', PrePopulatedAmount: 0, ApprovedBudgetAmount: 0, BudgetCategoryID: maintenance },
-        { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bulletin Ads', PrePopulatedAmount: 0, ApprovedBudgetAmount: 0, BudgetCategoryID: null },
+        { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bank Fees', PrePopulatedAmount: 0, ProposedBudgetAmount: 0, ApprovedBudgetAmount: 0, BudgetStatus: 'Draft', BudgetCategoryID: maintenance },
+        { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: 'Bulletin Ads', PrePopulatedAmount: 0, ProposedBudgetAmount: 0, ApprovedBudgetAmount: 0, BudgetStatus: 'Draft', BudgetCategoryID: null },
       ]);
       expect(custom.map((l) => l.Notes ?? null)).toEqual([null, null]);
-      // Running again adds nothing, and a line the officers already approved keeps its figure.
+      // Running again adds nothing, and a line the officers already proposed keeps its figure.
       await db.budget.updateLineItemBudget(MEMBER.admin, custom[0].id, 75);
       const again = await db.budget.prePopulateNextYear(MEMBER.admin, OWN, TARGET);
       expect(again.created).toBe(0);
-      expect(again.lines.find((l) => l.id === custom[0].id)).toMatchObject({ PrePopulatedAmount: 0, ApprovedBudgetAmount: 75 });
+      expect(again.lines.find((l) => l.id === custom[0].id)).toMatchObject({ PrePopulatedAmount: 0, ProposedBudgetAmount: 75, BudgetStatus: 'Proposed' });
     });
 
     it('opens the budget read-only to every member of the council and keeps other councils out (Sprint 5Y-3 transparency)', async () => {
       const db = await make(d);
-      const line = await db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: TARGET, LineItemName: 'Office supplies', ApprovedBudgetAmount: 40 });
+      const line = await db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: TARGET, LineItemName: 'Office supplies', ProposedBudgetAmount: 40 });
       const seen = await db.budget.listAnnualForecast(MEMBER.member, OWN, TARGET);
-      expect(seen.lines.map((l) => [l.LineItemName, l.ApprovedBudgetAmount])).toEqual([['Office supplies', 40]]);
+      expect(seen.lines.map((l) => [l.LineItemName, l.ProposedBudgetAmount])).toEqual([['Office supplies', 40]]);
+      expect(seen.status).toBe('Proposed');
       await expectPrivilege(db.budget.updateLineItemBudget(MEMBER.member, line.id, 10), 'ADMIN_REQUIRED');
       await expectPrivilege(db.budget.addCustomBudgetLine(MEMBER.member, OWN, { FraternalYear: TARGET, LineItemName: 'Snacks' }), 'ADMIN_REQUIRED');
       await expectPrivilege(db.budget.prePopulateNextYear(MEMBER.member, OWN, TARGET), 'ADMIN_REQUIRED');
@@ -641,8 +890,138 @@ for (const d of drivers) {
 
       const treasurer = await addMember(db, OWN, 'Member', 'treasurer.budget@example.com');
       grantRole(d, db, treasurer, 'Treasurer');
-      expect(await db.budget.updateLineItemBudget(treasurer, line.id, 75)).toMatchObject({ ApprovedBudgetAmount: 75 });
+      expect(await db.budget.updateLineItemBudget(treasurer, line.id, 75)).toMatchObject({ ProposedBudgetAmount: 75 });
       await expectPrivilege(db.budget.listAnnualForecast(treasurer, OTHER, TARGET), 'COUNCIL_ACCESS_DENIED');
+    });
+
+    it('approves and finalizes the whole year in one step, then freezes it for everyone (Sprint 5Y-4)', async () => {
+      const db = await make(d);
+      const custom = await db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: TARGET, LineItemName: 'Liability insurance', ProposedBudgetAmount: 1200 });
+      expect((await db.budget.listAnnualForecast(MEMBER.member, OWN, TARGET)).status).toBe('Proposed');
+
+      // The Budget Director and plain members prepare or read; they cannot record the vote.
+      await db.members.update(MEMBER.admin, MEMBER.member, { IsBudgetDirector: 1 });
+      await expectPrivilege(db.budget.approveAndFinalizeEntireBudget(MEMBER.member, OWN, TARGET), 'ADMIN_REQUIRED');
+      const foreignAdmin = await addMember(db, OTHER, 'Admin', 'foreign.admin.vote@example.com');
+      await expectPrivilege(db.budget.approveAndFinalizeEntireBudget(foreignAdmin, OWN, TARGET), 'COUNCIL_ACCESS_DENIED');
+      await expectRule(db.budget.approveAndFinalizeEntireBudget(MEMBER.admin, OWN, '2027'), 'INVALID_INPUT');
+      await expectRule(db.budget.approveAndFinalizeEntireBudget(MEMBER.admin, OWN, LATER), 'INVALID_INPUT'); // no lines to approve
+
+      const approved = await db.budget.approveAndFinalizeEntireBudget(MEMBER.admin, OWN, TARGET);
+      expect(approved).toMatchObject({ councilId: OWN, fraternalYear: TARGET, status: 'Approved', window: 'Draft' });
+      expect(approved.lines.map((l) => [l.LineItemName, l.ProposedBudgetAmount, l.ApprovedBudgetAmount, l.BudgetStatus])).toEqual([['Liability insurance', 1200, 1200, 'Approved']]);
+      expect((await db.budget.listAnnualForecast(MEMBER.member, OWN, TARGET)).status).toBe('Approved');
+
+      // Frozen: every write rejects BUDGET_YEAR_APPROVED, even inside the drafting window and even a Super Admin's override.
+      const override = { superAdminOverride: true };
+      await expectRule(db.budget.updateLineItemBudget(MEMBER.admin, custom.id, 5), 'BUDGET_YEAR_APPROVED');
+      await expectRule(db.budget.updateLineItemBudget(MEMBER.superAdmin, custom.id, 5, null, override), 'BUDGET_YEAR_APPROVED');
+      await expectRule(db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: TARGET, LineItemName: 'Snacks' }, override), 'BUDGET_YEAR_APPROVED');
+      await expectRule(db.budget.prePopulateNextYear(MEMBER.superAdmin, OWN, TARGET, override), 'BUDGET_YEAR_APPROVED');
+      await expectRule(db.budget.approveAndFinalizeEntireBudget(MEMBER.superAdmin, OWN, TARGET, override), 'BUDGET_YEAR_APPROVED');
+      expect((await db.budget.listAnnualForecast(MEMBER.admin, OWN, TARGET)).lines.map((l) => l.ApprovedBudgetAmount)).toEqual([1200]);
+      // Another council's same year is its own budget.
+      await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OTHER, { FraternalYear: TARGET, LineItemName: 'Snacks' });
+    });
+
+    it('records the vote after the July 1 lock, but not before a year opens unless a Super Admin overrides it (Sprint 5Y-4)', async () => {
+      const july = await make(d, new Date(2027, 6, 12, 19, 0, 0));
+      const line = budgetLine(july, TARGET, { LineItemName: 'Bank Fees', ProposedBudgetAmount: 60 });
+      await expectRule(july.budget.updateLineItemBudget(MEMBER.admin, line, 70), 'BUDGET_YEAR_FINALIZED');
+      const treasurer = await addMember(july, OWN, 'Member', 'treasurer.vote@example.com');
+      grantRole(d, july, treasurer, 'Treasurer');
+      expect((await july.budget.approveAndFinalizeEntireBudget(treasurer, OWN, TARGET)).lines).toMatchObject([{ ApprovedBudgetAmount: 60, BudgetStatus: 'Approved' }]);
+
+      const db = await make(d);
+      budgetLine(db, LATER, { LineItemName: 'Bank Fees', ProposedBudgetAmount: 60 });
+      await expectRule(db.budget.approveAndFinalizeEntireBudget(MEMBER.admin, OWN, LATER), 'BUDGET_WINDOW_NOT_OPEN');
+      await expectRule(db.budget.approveAndFinalizeEntireBudget(MEMBER.admin, OWN, LATER, { superAdminOverride: true }), 'BUDGET_WINDOW_NOT_OPEN');
+      expect((await db.budget.approveAndFinalizeEntireBudget(MEMBER.superAdmin, OWN, LATER, { superAdminOverride: true })).status).toBe('Approved');
+    });
+
+    it("tracks the year's spend so far against each category's approved cap, counting what the monthly summaries count (Sprint 5Y-4)", async () => {
+      const { db, fund, donations } = await historyBudget(DRAFTING);
+      await db.budget.approveAndFinalizeEntireBudget(MEMBER.admin, OWN, SOURCE);
+      // May 15, 2027: the June 30 charity check has not been paid yet.
+      const progress = await db.budget.getBudgetProgress(MEMBER.admin, OWN, SOURCE);
+      expect(progress).toMatchObject({
+        councilId: OWN,
+        fraternalYear: SOURCE,
+        status: 'Approved',
+        fromDate: '2026-07-01',
+        throughDate: '2027-05-15',
+        complete: false,
+        approvedTotal: 1600,
+        budgetedActual: 835.75,
+        unbudgetedActual: 1998,
+        actualTotal: 2833.75,
+        alert: 'Over Budget',
+      });
+      expect(progress.lines.map((l) => [l.line.LineItemName, l.actual, l.alert])).toEqual([
+        ['Fish Fry', 470.25, 'Over Budget'],
+        ['Tootsie Roll Drive', 80, 'Warning'],
+        ['Salem Pregnancy Center', 250, 'On Track'],
+        ['Bank Fees', 0, 'On Track'],
+        [BUDGET_MEETINGS_LINE_NAME, 35.5, 'On Track'],
+      ]);
+      const byCategory = new Map(progress.categories.map((c) => [c.categoryId, c]));
+      expect(byCategory.get(fund)).toMatchObject({ approved: 490, actual: 550.25, percentUsed: 112.3, alert: 'Over Budget' });
+      expect(byCategory.get(donations)).toMatchObject({ approved: 1000, actual: 250, percentUsed: 25, alert: 'On Track' });
+      expect(byCategory.get(null)).toMatchObject({ label: 'Uncategorized', approved: 110, actual: 35.5 });
+      expect(progress.categories).toHaveLength(SEEDED_CATEGORIES.length + 1);
+
+      // The year's actual spend is the sum of its monthly executive summaries.
+      let monthly = 0;
+      for (let m = 0; m < 12; m += 1) {
+        const month = new Date(2026, 6 + m, 1);
+        monthly += Math.round((await db.reports.monthlySummary(OWN, month.getFullYear(), month.getMonth() + 1)).finances.spend * 100);
+      }
+      expect(monthly / 100).toBe(3084.25); // the full year, including the June 30 check
+
+      // Before July 1 of a year nothing has been spent; and only leadership reads the gauges.
+      expect((await db.budget.getBudgetProgress(MEMBER.admin, OWN, TARGET)).actualTotal).toBe(0);
+      await expectPrivilege(db.budget.getBudgetProgress(MEMBER.member, OWN, SOURCE), 'ADMIN_REQUIRED');
+      await db.members.update(MEMBER.admin, MEMBER.member, { IsBudgetDirector: 1 });
+      await expectPrivilege(db.budget.getBudgetProgress(MEMBER.member, OWN, SOURCE), 'ADMIN_REQUIRED');
+      await expectPrivilege(db.budget.getBudgetProgress(MEMBER.admin, OTHER, SOURCE), 'COUNCIL_ACCESS_DENIED');
+      expect((await db.budget.getBudgetProgress(MEMBER.superAdmin, OTHER, SOURCE)).actualTotal).toBe(999 + 999);
+    });
+
+    it('reviews every completed year against its full-year spend, with a trailing fiscal efficiency scorecard (Sprint 5Y-4)', async () => {
+      const { db } = await historyBudget(new Date(2027, 6, 15));
+      await db.budget.approveAndFinalizeEntireBudget(MEMBER.admin, OWN, SOURCE);
+      budgetLine(db, '2025-2026', { LineItemName: 'Bank Fees', ProposedBudgetAmount: 40 }); // proposed, never approved
+      budgetLine(db, TARGET, { LineItemName: 'Bank Fees', ProposedBudgetAmount: 40 }); // under way: not history yet
+      budgetLine(db, '2024-2025', { LineItemName: 'Hall Rent', ProposedBudgetAmount: 10, CouncilID: OTHER }); // another council
+
+      const kpis = await db.budget.getHistoricalKPIs(MEMBER.admin, OWN);
+      expect(kpis.asOf).toBe('2027-07-15');
+      expect(kpis.years.map((y) => [y.fraternalYear, y.status, y.complete])).toEqual([
+        [SOURCE, 'Approved', true],
+        ['2025-2026', 'Proposed', true],
+      ]);
+      const [source] = kpis.years;
+      expect(source).toMatchObject({
+        throughDate: '2027-06-30',
+        approvedTotal: 1600,
+        budgetedActual: 1086.25,
+        unbudgetedActual: 1998,
+        actualTotal: 3084.25,
+        variance: -1484.25,
+        utilizationPercent: 192.8,
+        linesWithinBudget: 4,
+        linesOverBudget: 1,
+      });
+      expect(source.lines.find((l) => l.line.LineItemName === 'Salem Pregnancy Center')).toMatchObject({ actual: 500.5, alert: 'On Track' });
+      expect(kpis.trailing).toMatchObject({ years: 2, approvedYears: 1, approvedTotal: 1600, actualTotal: 3084.25, utilizationPercent: 192.8, alert: 'Over Budget', yearsOverBudget: 1 });
+
+      const treasurer = await addMember(db, OWN, 'Member', 'treasurer.history@example.com');
+      grantRole(d, db, treasurer, 'Treasurer');
+      expect((await db.budget.getHistoricalKPIs(treasurer, OWN)).years).toHaveLength(2);
+      await expectPrivilege(db.budget.getHistoricalKPIs(MEMBER.member, OWN), 'ADMIN_REQUIRED');
+      await expectPrivilege(db.budget.getHistoricalKPIs(treasurer, OTHER), 'COUNCIL_ACCESS_DENIED');
+      expect((await db.budget.getHistoricalKPIs(MEMBER.superAdmin, OTHER)).years.map((y) => y.fraternalYear)).toEqual(['2024-2025']);
+      await expectRule(db.budget.getHistoricalKPIs(MEMBER.superAdmin, 999), 'INVALID_INPUT');
     });
 
     it('lets an Admin designate a Budget Director, who may then prepare the budget; members cannot designate themselves', async () => {
@@ -655,7 +1034,7 @@ for (const d of drivers) {
       expect(await db.members.update(MEMBER.admin, MEMBER.member, { IsBudgetDirector: 1 })).toMatchObject({ IsBudgetDirector: 1 });
       expect((await db.auth.signIn('testmember@kofc.org', 'koc15295'))?.isBudgetDirector).toBe(true);
       expect((await db.auth.signIn('testadmin@kofc.org', 'koc15295'))?.isBudgetDirector).toBe(false);
-      expect(await db.budget.updateLineItemBudget(MEMBER.member, line.id, 10)).toMatchObject({ ApprovedBudgetAmount: 10 });
+      expect(await db.budget.updateLineItemBudget(MEMBER.member, line.id, 10)).toMatchObject({ ProposedBudgetAmount: 10 });
       await db.budget.addCustomBudgetLine(MEMBER.member, OWN, { FraternalYear: TARGET, LineItemName: 'Snacks' });
       await db.budget.prePopulateNextYear(MEMBER.member, OWN, TARGET);
       // The delegation is for the director's own council, and it never lifts the July 1 lock.

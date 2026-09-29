@@ -7,9 +7,16 @@
 // Under the month, the council's Admins and Super Admins (canViewExecutiveAudits) also get two personnel audits:
 // every no-show of the trailing NO_SHOW_AUDIT_MONTHS (reports.listNoShowsAudit, with or without a reason), and every
 // past signup still waiting for hours (reports.listShiftsAwaitingHours), flagged once the day-5 reminder is due.
+//
+// Beside the scorecards (Sprint 5Y-4), the same readers (canReviewBudgetPerformance) get budget tracking gauges for the
+// fraternal year of the chosen month (budget.getBudgetProgress): each budget category's actual spend so far - events,
+// approved and reimbursed expenses, and charity checks - against its ApprovedBudgetAmount cap, flagged from 85%.
 import { useState, type ReactNode } from 'react';
 import {
+  BUDGET_WARNING_THRESHOLD_PERCENT,
+  canReviewBudgetPerformance,
   canViewExecutiveAudits,
+  currentFraternalYear,
   formatShiftWhen,
   HOURS_REMINDER_FIRST_DAY,
   hoursRemindersDue,
@@ -17,6 +24,7 @@ import {
   SHIFT_HISTORY_MONTHS,
   type MonthlySummary,
 } from '@kofc/shared';
+import { BudgetAlertTag, BudgetGauge, formatPercent } from '@/components/BudgetParts';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { cx, Empty, Field, Notice, PageTitle, Panel, Pill, Select, Table, Td } from '@/components/ui';
 import { formatDecimalHours, formatFullDate, formatMoney, formatPersonName, formatPhone } from '@/lib/format';
@@ -63,6 +71,63 @@ function Scorecards({ s }: { s: MonthlySummary }) {
         detail={`Attendees across ${s.outreach.events} event${s.outreach.events === 1 ? '' : 's'}`}
       />
     </div>
+  );
+}
+
+/**
+ * Budget tracking gauges for one fraternal year: the whole budget, then each category with an approved cap or spend.
+ * Before the council approves the year there are no caps, so the panel says so and shows only what has been spent.
+ */
+function BudgetTracking({ actorId, councilId, fraternalYear }: { actorId: number; councilId: number; fraternalYear: string }) {
+  const progress = useLoad(() => db.budget.getBudgetProgress(actorId, councilId, fraternalYear), [actorId, councilId, fraternalYear]);
+  const p = progress.data;
+  const active = p ? p.categories.filter((c) => c.approved > 0 || c.actual > 0) : [];
+  const flagged = active.filter((c) => c.alert === 'Warning' || c.alert === 'Over Budget').length;
+  return (
+    <Panel
+      title={`Budget tracking · ${fraternalYear}`}
+      actions={flagged > 0 ? <Pill tone="red">{flagged} past {BUDGET_WARNING_THRESHOLD_PERCENT}%</Pill> : p ? <Pill tone="outline">{p.status}</Pill> : null}
+    >
+      {progress.error ? <Notice tone="error">{progress.error}</Notice> : null}
+      {!p ? (
+        progress.error ? null : <p className="text-sm text-muted">Loading the budget…</p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {p.status !== 'Approved' ? (
+            <Notice tone="info">
+              The {fraternalYear} budget has not been approved and finalized yet ({p.status.toLowerCase()}), so there are no caps to track against. Spend so far:{' '}
+              {formatMoney(p.actualTotal)}.
+            </Notice>
+          ) : (
+            <>
+              <div className="rounded border-2 border-navy bg-white p-3">
+                <BudgetGauge label="Whole budget" approved={p.approvedTotal} actual={p.actualTotal} percentUsed={p.utilizationPercent} alert={p.alert} />
+              </div>
+              {active.length === 0 ? (
+                <Empty>No category has an approved cap or any spend yet.</Empty>
+              ) : (
+                <ul className="grid grid-cols-1 gap-4 md:grid-cols-2" aria-label="Budget categories">
+                  {active.map((c) => (
+                    <li key={c.categoryId ?? 'uncategorized'}>
+                      <BudgetGauge label={c.label} approved={c.approved} actual={c.actual} percentUsed={c.percentUsed} alert={c.alert} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2 text-xs">
+            <span>
+              Unbudgeted spend: <span className="font-bold">{formatMoney(p.unbudgetedActual)}</span>{' '}
+              {p.unbudgetedActual > 0 ? <BudgetAlertTag alert="Unbudgeted" /> : null}
+            </span>
+            <span className="text-muted">
+              {formatFullDate(p.fromDate)} to {formatFullDate(p.throughDate)} · {formatPercent(p.utilizationPercent)} of the approved budget used
+            </span>
+          </div>
+        </div>
+      )}
+    </Panel>
   );
 }
 
@@ -209,6 +274,9 @@ function Dashboard() {
       ) : (
         <div className="flex flex-col gap-4">
           <Scorecards s={s} />
+          {canReviewBudgetPerformance(user, scope.councilId) ? (
+            <BudgetTracking actorId={user.memberId} councilId={scope.councilId} fraternalYear={currentFraternalYear(new Date(year, month - 1, 1))} />
+          ) : null}
           <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
             <Panel title="Financial ledger">
               <Table caption={`Ledger for ${MONTHS[month - 1]} ${year}`} head={['Line', 'Amount']}>

@@ -9,6 +9,9 @@ import {
   canManageFinances,
   canManageBudgetForecast,
   canEditBudgetYear,
+  canApproveBudget,
+  canFinalizeBudgetYear,
+  canReviewBudgetPerformance,
   canViewBudgetForecast,
   canDesignateBudgetDirector,
   portalAreaHref,
@@ -295,6 +298,31 @@ describe('portal permissions', () => {
     expect(canEditBudgetYear(member, 1, '2027-2028', new Date(2027, 4, 15))).toBe(false);
     expect(portalAreaHref('financials/budget')).toBe('/budget');
     expect(portalAreaHref('expenses/queue')).toBe('/expenses/queue');
+  });
+
+  it('freezes an approved year, lets leadership (not the Budget Director) finalize it, and opens budget performance to the executive summary readers (Sprint 5Y-4)', () => {
+    const treasurer = actor({ isOfficer: true, roles: ['Treasurer'] });
+    const director = actor({ isBudgetDirector: true });
+    const june = new Date(2027, 5, 15);
+    const july = new Date(2027, 6, 15);
+    const april = new Date(2027, 3, 15);
+    // An approved year is read-only for everyone, even a Super Admin overriding the window.
+    expect(canEditBudgetYear(treasurer, 1, '2027-2028', june, false, 'Proposed')).toBe(true);
+    expect(canEditBudgetYear(treasurer, 1, '2027-2028', june, false, 'Approved')).toBe(false);
+    expect(canEditBudgetYear(superAdmin, 1, '2027-2028', july, true, 'Approved')).toBe(false);
+    expect([superAdmin, admin, treasurer, director, officer, member].map((u) => canApproveBudget(u, 1))).toEqual([true, true, true, false, false, false]);
+    expect([superAdmin, admin, treasurer].map((u) => canApproveBudget(u, 2))).toEqual([true, false, false]);
+    // The vote may be recorded from May 1 on, including after the July 1 lock, while the year has lines and is not yet approved.
+    expect(canFinalizeBudgetYear(treasurer, 1, '2027-2028', june, 'Proposed', 3)).toBe(true);
+    expect(canFinalizeBudgetYear(treasurer, 1, '2027-2028', july, 'Draft', 3)).toBe(true);
+    expect(canFinalizeBudgetYear(treasurer, 1, '2027-2028', july, 'Approved', 3)).toBe(false);
+    expect(canFinalizeBudgetYear(treasurer, 1, '2027-2028', july, 'Proposed', 0)).toBe(false);
+    expect(canFinalizeBudgetYear(treasurer, 1, '2027-2028', april, 'Proposed', 3)).toBe(false);
+    expect(canFinalizeBudgetYear(treasurer, 1, '2027-2028', april, 'Proposed', 3, true)).toBe(false);
+    expect(canFinalizeBudgetYear(superAdmin, 1, '2027-2028', april, 'Proposed', 3, true)).toBe(true);
+    expect(canFinalizeBudgetYear(director, 1, '2027-2028', june, 'Proposed', 3)).toBe(false);
+    expect([superAdmin, admin, treasurer, director, officer, member].map((u) => canReviewBudgetPerformance(u, 1))).toEqual([true, true, true, false, false, false]);
+    expect([superAdmin, admin, treasurer].map((u) => canReviewBudgetPerformance(u, 2))).toEqual([true, false, false]);
   });
 
   it('leads every role, Admins included, with the Member Actions hub', () => {

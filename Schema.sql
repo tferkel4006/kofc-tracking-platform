@@ -1241,12 +1241,17 @@ GO
 -- One row per budget line of a council's fraternal year ('YYYY-YYYY', July 1 - June 30). budget.prePopulateNextYear
 -- seeds PrePopulatedAmount from the previous year's actual spend: 'Event' rows from annual events (ReferenceSourceID =
 -- Event.id), 'Donation' rows from checks paid to annual charities (ReferenceSourceID = GlobalCharityRegistry.id) and
--- the 'Operational' meetings row from expenses linked to council meetings. Council leadership sets
--- ApprovedBudgetAmount. Custom 'Operational' lines carry no ReferenceSourceID. ReferenceSourceID has no foreign key
+-- the 'Operational' meetings row from expenses linked to council meetings. Council leadership proposes
+-- ProposedBudgetAmount. Custom 'Operational' lines carry no ReferenceSourceID. ReferenceSourceID has no foreign key
 -- because it points at a different table per CategoryType; CategoryType is enforced by the shared rules layer as
 -- elsewhere (no CHECK).
 -- Sprint 5Y-3: each council keeps its own budget categories (funds) in CouncilBudgetCategory, a council lookup table,
 -- and a line is filed under one through BudgetCategoryID (NULL while uncategorized).
+-- Sprint 5Y-4: budget lifecycle. BudgetStatus is 'Draft' (seeded, no figure proposed yet), 'Proposed' (leadership or
+-- the Budget Director drafted ProposedBudgetAmount) or 'Approved'. ApprovedBudgetAmount stays 0.00 until
+-- budget.approveAndFinalizeEntireBudget records the council's vote: in one transaction it copies every line's
+-- ProposedBudgetAmount into ApprovedBudgetAmount and marks the whole year 'Approved', after which its figures are
+-- frozen. BudgetStatus is enforced by the shared rules layer (no CHECK), like CategoryType.
 -- =========================================================================
 CREATE TABLE [CouncilBudgetCategory] (
 	[id] INTEGER NOT NULL IDENTITY,
@@ -1264,9 +1269,11 @@ CREATE TABLE [CouncilBudgetForecast] (
 	[ReferenceSourceID] INTEGER NULL, -- Event.id or GlobalCharityRegistry.id; NULL for Operational lines
 	[LineItemName] VARCHAR(255) NOT NULL,
 	[PrePopulatedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00, -- the previous fraternal year's actual spend
-	[ApprovedBudgetAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00, -- set by council leadership after review
+	[ApprovedBudgetAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00, -- Sprint 5Y-4: the voted figure, set only on approval
 	[Notes] TEXT NULL,
 	[BudgetCategoryID] INTEGER NULL, -- Sprint 5Y-3: the council budget category (fund) the line is filed under
+	[ProposedBudgetAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00, -- Sprint 5Y-4: the figure drafted May 1 - June 30
+	[BudgetStatus] VARCHAR(20) NOT NULL, -- Sprint 5Y-4: Draft, Proposed, Approved (written by every insert, like ExpenseReport.Status)
 	PRIMARY KEY([id])
 );
 GO

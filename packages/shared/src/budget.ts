@@ -4,11 +4,20 @@
 // bounds, line validation, the forecast order, and the pre-population plan
 // that turns last year's actual spend into next year's lines. Drivers load
 // rows already scoped to one council, call these, then only store. Who may
-// act is decided in rules.ts (assertMayViewBudgetForecast, assertMayManageBudgetForecast).
+// act is decided in rules.ts (assertMayViewBudgetForecast, assertMayManageBudgetForecast, assertMayApproveBudget,
+// assertMayReviewBudgetPerformance). Sprint 5Y-4 adds the Draft -> Proposed -> Approved lifecycle and the
+// budget-versus-actual performance figures behind the dashboard gauges and the historical KPIs.
 // =========================================================================
-import type { BudgetWriteOptions, NewCustomBudgetLine } from './contract';
-import { assertMoney, assertText, BusinessRuleError, hasSuperAdminRights, type MemberWriteActor } from './rules';
-import type { BudgetCategoryType, CouncilBudgetCategory, CouncilBudgetForecast } from './types';
+import type {
+  BudgetCategoryPerformance,
+  BudgetHistoricalKPIs,
+  BudgetLinePerformance,
+  BudgetWriteOptions,
+  BudgetYearPerformance,
+  NewCustomBudgetLine,
+} from './contract';
+import { assertMoney, assertText, BusinessRuleError, hasSuperAdminRights, toIsoDate, type MemberWriteActor } from './rules';
+import type { BudgetCategoryType, BudgetLineStatus, CouncilBudgetCategory, CouncilBudgetForecast } from './types';
 
 /** CouncilBudgetForecast.CategoryType values, in the order a forecast lists them. */
 export const BUDGET_CATEGORY_TYPES: readonly BudgetCategoryType[] = ['Event', 'Donation', 'Operational'];
@@ -58,13 +67,17 @@ function optionalNotes(value: unknown): string | null {
   return text === '' ? null : text;
 }
 
-/** The stored fields of a budget.addCustomBudgetLine line, validated. Rejects unknown fields. */
+/**
+ * The stored fields of a budget.addCustomBudgetLine line, validated. Rejects unknown fields, including
+ * ApprovedBudgetAmount: a new line records its figure as proposed (Sprint 5Y-4), and only the council's approval sets
+ * the approved figure.
+ */
 export function cleanCustomBudgetLine(input: NewCustomBudgetLine): Pick<
   CouncilBudgetForecast,
-  'FraternalYear' | 'LineItemName' | 'ApprovedBudgetAmount'
+  'FraternalYear' | 'LineItemName' | 'ProposedBudgetAmount'
 > & { Notes: string | null; BudgetCategoryID: number | null } {
   if (typeof input !== 'object' || input === null) throw invalid('Budget line details are required.');
-  const allowed = ['FraternalYear', 'LineItemName', 'ApprovedBudgetAmount', 'Notes', 'BudgetCategoryID'];
+  const allowed = ['FraternalYear', 'LineItemName', 'ProposedBudgetAmount', 'Notes', 'BudgetCategoryID'];
   for (const key of Object.keys(input)) {
     if (!allowed.includes(key)) throw invalid(`A custom budget line has no field "${key}"; its fields are ${allowed.join(', ')}.`, { field: key });
   }
@@ -75,19 +88,23 @@ export function cleanCustomBudgetLine(input: NewCustomBudgetLine): Pick<
   return {
     FraternalYear: assertFraternalYear(input.FraternalYear),
     LineItemName: assertText(input.LineItemName, 'Line item name', BUDGET_LINE_NAME_MAX_LENGTH).replace(/\s+/g, ' '),
-    ApprovedBudgetAmount: input.ApprovedBudgetAmount == null ? 0 : assertMoney(input.ApprovedBudgetAmount, 'Approved budget amount'),
+    ProposedBudgetAmount: input.ProposedBudgetAmount == null ? 0 : assertMoney(input.ProposedBudgetAmount, 'Proposed budget amount'),
     Notes: optionalNotes(input.Notes),
     BudgetCategoryID: category ?? null,
   };
 }
 
-/** budget.updateLineItemBudget's changes. `notes` undefined leaves Notes alone; blank or null clears them. */
+/**
+ * budget.updateLineItemBudget's changes: the proposed figure, and the line becomes 'Proposed' (Sprint 5Y-4). `notes`
+ * undefined leaves Notes alone; blank or null clears them.
+ */
 export function cleanBudgetLineUpdate(
-  approvedAmount: unknown,
+  proposedAmount: unknown,
   notes: unknown,
-): Pick<CouncilBudgetForecast, 'ApprovedBudgetAmount'> & { Notes?: string | null } {
-  const changes: Pick<CouncilBudgetForecast, 'ApprovedBudgetAmount'> & { Notes?: string | null } = {
-    ApprovedBudgetAmount: assertMoney(approvedAmount, 'Approved budget amount'),
+): Pick<CouncilBudgetForecast, 'ProposedBudgetAmount' | 'BudgetStatus'> & { Notes?: string | null } {
+  const changes: Pick<CouncilBudgetForecast, 'ProposedBudgetAmount' | 'BudgetStatus'> & { Notes?: string | null } = {
+    ProposedBudgetAmount: assertMoney(proposedAmount, 'Proposed budget amount'),
+    BudgetStatus: 'Proposed',
   };
   if (notes !== undefined) changes.Notes = optionalNotes(notes);
   return changes;
@@ -210,8 +227,8 @@ export type BudgetLineRefresh = Pick<CouncilBudgetForecast, 'id' | 'LineItemName
 /**
  * How `seeds` land on the council year's `existing` lines: a seed matching a line (same category and source, or for an
  * unsourced line the same name ignoring case) refreshes that line's PrePopulatedAmount and LineItemName; the others are
- * inserted. ApprovedBudgetAmount, Notes and BudgetCategoryID of existing lines are never part of the plan, and no line
- * is removed.
+ * inserted. The proposed and approved figures, BudgetStatus, Notes and BudgetCategoryID of existing lines are never part
+ * of the plan, and no line is removed.
  */
 export function mergeBudgetSeeds(
   existing: readonly CouncilBudgetForecast[],
@@ -320,6 +337,8 @@ export interface BudgetCategoryGroup<T extends CouncilBudgetForecast = CouncilBu
   label: string;
   lines: T[];
   prePopulatedTotal: number;
+  /** Sprint 5Y-4. */
+  proposedTotal: number;
   approvedTotal: number;
 }
 
@@ -339,6 +358,7 @@ export function groupBudgetByCategory<T extends CouncilBudgetForecast>(
     label,
     lines: sortBudgetLines(mine),
     prePopulatedTotal: sumCents(mine.map((l) => l.PrePopulatedAmount)),
+    proposedTotal: sumCents(mine.map((l) => l.ProposedBudgetAmount)),
     approvedTotal: sumCents(mine.map((l) => l.ApprovedBudgetAmount)),
   });
   const known = new Set(categories.map((c) => c.id));
@@ -350,3 +370,253 @@ export function groupBudgetByCategory<T extends CouncilBudgetForecast>(
 
 /** Adds budget amounts to the cent. */
 export const sumBudgetAmounts = (amounts: readonly number[]): number => sumCents(amounts);
+
+// ---- the budget lifecycle: Draft -> Proposed -> Approved (Sprint 5Y-4) ------------------------------
+
+/** CouncilBudgetForecast.BudgetStatus values, in lifecycle order. */
+export const BUDGET_LINE_STATUSES: readonly BudgetLineStatus[] = ['Draft', 'Proposed', 'Approved'];
+
+/**
+ * Where a council's year stands in the lifecycle: 'Approved' once the council's vote finalized it (every line is
+ * approved together, and no line can be added afterwards), 'Proposed' once any figure has been drafted, otherwise
+ * 'Draft' (including a year with no lines).
+ */
+export function budgetStatusOf(lines: readonly Pick<CouncilBudgetForecast, 'BudgetStatus'>[]): BudgetLineStatus {
+  if (lines.some((l) => l.BudgetStatus === 'Approved')) return 'Approved';
+  return lines.some((l) => l.BudgetStatus === 'Proposed') ? 'Proposed' : 'Draft';
+}
+
+/**
+ * An approved year is frozen: every budget write to it rejects BUDGET_YEAR_APPROVED, and no override lifts this - not
+ * even a Super Admin's. `lines` are the council's lines for the year.
+ */
+export function assertBudgetYearNotApproved(fraternalYear: string, lines: readonly Pick<CouncilBudgetForecast, 'BudgetStatus'>[]): void {
+  if (budgetStatusOf(lines) !== 'Approved') return;
+  throw new BusinessRuleError(
+    'BUDGET_YEAR_APPROVED',
+    `The ${fraternalYear} budget was approved and finalized by the council; its figures are frozen.`,
+    { fraternalYear },
+  );
+}
+
+/**
+ * budget.approveAndFinalizeEntireBudget's checks on the year: it must not already be approved (BUDGET_YEAR_APPROVED),
+ * must have lines to approve (INVALID_INPUT), and must have opened for drafting on May 1 (BUDGET_WINDOW_NOT_OPEN,
+ * lifted by an Active Super Admin's override as elsewhere). The vote may be recorded during the drafting window or
+ * after the July 1 lock - usually at the council's July meeting.
+ */
+export function assertBudgetYearApprovable(
+  fraternalYear: string,
+  lines: readonly Pick<CouncilBudgetForecast, 'BudgetStatus'>[],
+  today: Date,
+  actor: MemberWriteActor,
+  options: BudgetWriteOptions = {},
+): void {
+  assertBudgetYearNotApproved(fraternalYear, lines);
+  if (lines.length === 0) throw invalid(`The ${fraternalYear} budget has no lines to approve.`, { fraternalYear });
+  if (budgetWindowOf(fraternalYear, today) !== 'Not Yet Open') return;
+  if (options.superAdminOverride === true && hasSuperAdminRights(actor)) return;
+  throw new BusinessRuleError(
+    'BUDGET_WINDOW_NOT_OPEN',
+    `The ${fraternalYear} budget opens for drafting on May 1, ${fraternalYear.slice(0, 4)}; it cannot be approved before then.`,
+    { fraternalYear },
+  );
+}
+
+/** What approval stores on each line: its proposed figure becomes the approved figure, and the line is 'Approved'. */
+export function planBudgetApproval(
+  lines: readonly Pick<CouncilBudgetForecast, 'id' | 'ProposedBudgetAmount'>[],
+): Pick<CouncilBudgetForecast, 'id' | 'ApprovedBudgetAmount' | 'BudgetStatus'>[] {
+  return lines.map((l) => ({ id: l.id, ApprovedBudgetAmount: cents(l.ProposedBudgetAmount) / 100, BudgetStatus: 'Approved' }));
+}
+
+// ---- budget versus actual spend (Sprint 5Y-4) ------------------------------------------------------
+
+/** The fraternal year `today` falls in: July 1 through June 30. */
+export function currentFraternalYear(today: Date): string {
+  const start = today.getMonth() >= BUDGET_FINALIZED_MONTH ? today.getFullYear() : today.getFullYear() - 1;
+  return `${start}-${start + 1}`;
+}
+
+/** A gauge turns to a warning once spend reaches this share of the approved cap. */
+export const BUDGET_WARNING_THRESHOLD_PERCENT = 85;
+
+/**
+ * How spend stands against a cap: 'None' (no cap and no spend), 'Unbudgeted' (spend with no approved cap), 'Over Budget'
+ * (past 100%), 'Warning' (BUDGET_WARNING_THRESHOLD_PERCENT or more) or 'On Track'.
+ */
+export type BudgetAlert = 'None' | 'On Track' | 'Warning' | 'Over Budget' | 'Unbudgeted';
+
+/** Spend as a percentage of the cap, to one decimal place; null without a cap. */
+export function budgetPercentUsed(cap: number, actual: number): number | null {
+  if (cents(cap) <= 0) return null;
+  return Math.round((cents(actual) / cents(cap)) * 1000) / 10;
+}
+
+/** Compared in exact cents, not the rounded percentage, so 84.99% of a cap stays 'On Track'. */
+export function budgetAlertOf(cap: number, actual: number): BudgetAlert {
+  const capCents = cents(cap);
+  const spentCents = cents(actual);
+  if (capCents <= 0) return spentCents > 0 ? 'Unbudgeted' : 'None';
+  if (spentCents > capCents) return 'Over Budget';
+  return spentCents * 100 >= capCents * BUDGET_WARNING_THRESHOLD_PERCENT ? 'Warning' : 'On Track';
+}
+
+/**
+ * One council's spend over a period, as the drivers load it; it counts exactly what reports.monthlySummary counts, so
+ * a year's actual total is the sum of its monthly summaries.
+ */
+export interface BudgetYearSpend {
+  /** The council's events that start in the period, with their own Spend. */
+  events: readonly { id: number; EventName: string; Spend?: number | null }[];
+  /**
+   * Line items dated in the period on the council's 'Approved' and 'Reimbursed' expense sheets, with the event (id and
+   * name) or meeting the sheet is linked to.
+   */
+  expenses: readonly { EventID: number | null; EventName: string | null; MeetingID: number | null; Amount: number }[];
+  /** The council's charity checks paid in the period. */
+  charityChecks: readonly { CharityID: number; Amount: number }[];
+}
+
+/**
+ * Which budget line each piece of spend counts against, in cents by line id, plus what no line claims:
+ * - an event's Spend, and expenses linked to it, go to the year's Event line of the same name ignoring case (or whose
+ *   ReferenceSourceID is the event) - each year's event is a new Event row, so the name carries it;
+ * - charity checks go to the Donation line of that charity;
+ * - expenses linked to a meeting go to the 'Council Meetings' line (BUDGET_MEETINGS_LINE_NAME);
+ * - everything else - a one-off event, an unlinked expense, a charity with no line - is unbudgeted.
+ * Custom Operational lines have no source to read, so their actual is 0.
+ */
+export function attributeBudgetSpend(
+  lines: readonly CouncilBudgetForecast[],
+  spend: BudgetYearSpend,
+): { byLine: Map<number, number>; unbudgetedCents: number } {
+  const byLine = new Map<number, number>(lines.map((l) => [l.id, 0]));
+  let unbudgetedCents = 0;
+  const charge = (line: CouncilBudgetForecast | undefined, amount: number | null | undefined) => {
+    if (line) byLine.set(line.id, byLine.get(line.id)! + cents(amount));
+    else unbudgetedCents += cents(amount);
+  };
+  const eventLine = (id: number | null, name: string | null) =>
+    lines.find(
+      (l) => l.CategoryType === 'Event' && ((id !== null && l.ReferenceSourceID === id) || (name !== null && lineKey(l.LineItemName) === lineKey(name))),
+    );
+  const meetingsLine = findOperationalBudgetLine(lines, BUDGET_MEETINGS_LINE_NAME);
+  for (const e of spend.events) charge(eventLine(e.id, e.EventName), e.Spend);
+  for (const x of spend.expenses) {
+    if (x.EventID !== null) charge(eventLine(x.EventID, x.EventName), x.Amount);
+    else if (x.MeetingID !== null) charge(meetingsLine, x.Amount);
+    else charge(undefined, x.Amount);
+  }
+  for (const c of spend.charityChecks) charge(lines.find((l) => l.CategoryType === 'Donation' && l.ReferenceSourceID === c.CharityID), c.Amount);
+  return { byLine, unbudgetedCents };
+}
+
+/**
+ * A council year's budget against its actual spend from July 1 through `throughDate`: every line and category with its
+ * approved cap, actual, variance (cap minus actual), percentage used and alert, and the year's totals. The cap is
+ * ApprovedBudgetAmount, so a year the council has not approved has no caps. `complete` says the period covers the whole
+ * fraternal year.
+ */
+export function buildBudgetYearPerformance(input: {
+  councilId: number;
+  fraternalYear: string;
+  lines: readonly CouncilBudgetForecast[];
+  categories: readonly CouncilBudgetCategory[];
+  spend: BudgetYearSpend;
+  throughDate: string;
+}): BudgetYearPerformance {
+  const { councilId, fraternalYear, categories, spend, throughDate } = input;
+  const { fromDate, toDate } = fraternalYearBounds(fraternalYear);
+  const lines = sortBudgetLines(input.lines);
+  const { byLine, unbudgetedCents } = attributeBudgetSpend(lines, spend);
+  const actualOf = (l: CouncilBudgetForecast) => (byLine.get(l.id) ?? 0) / 100;
+  const linePerformance: BudgetLinePerformance[] = lines.map((line) => {
+    const actual = actualOf(line);
+    return {
+      line: { ...line },
+      actual,
+      variance: sumCents([line.ApprovedBudgetAmount, -actual]),
+      percentUsed: budgetPercentUsed(line.ApprovedBudgetAmount, actual),
+      alert: budgetAlertOf(line.ApprovedBudgetAmount, actual),
+    };
+  });
+  const categoryPerformance: BudgetCategoryPerformance[] = groupBudgetByCategory(lines, categories).map((g) => {
+    const actual = sumCents(g.lines.map(actualOf));
+    return {
+      categoryId: g.category?.id ?? null,
+      label: g.label,
+      lineCount: g.lines.length,
+      proposed: g.proposedTotal,
+      approved: g.approvedTotal,
+      actual,
+      variance: sumCents([g.approvedTotal, -actual]),
+      percentUsed: budgetPercentUsed(g.approvedTotal, actual),
+      alert: budgetAlertOf(g.approvedTotal, actual),
+    };
+  });
+  const approvedTotal = sumCents(lines.map((l) => l.ApprovedBudgetAmount));
+  const budgetedActual = sumCents(lines.map(actualOf));
+  const unbudgetedActual = unbudgetedCents / 100;
+  const actualTotal = sumCents([budgetedActual, unbudgetedActual]);
+  return {
+    councilId,
+    fraternalYear,
+    status: budgetStatusOf(lines),
+    fromDate,
+    throughDate,
+    complete: throughDate >= toDate,
+    proposedTotal: sumCents(lines.map((l) => l.ProposedBudgetAmount)),
+    approvedTotal,
+    budgetedActual,
+    unbudgetedActual,
+    actualTotal,
+    variance: sumCents([approvedTotal, -actualTotal]),
+    utilizationPercent: budgetPercentUsed(approvedTotal, actualTotal),
+    alert: budgetAlertOf(approvedTotal, actualTotal),
+    linesWithinBudget: linePerformance.filter((l) => l.alert === 'On Track' || l.alert === 'Warning').length,
+    linesOverBudget: linePerformance.filter((l) => l.alert === 'Over Budget').length,
+    lines: linePerformance,
+    categories: categoryPerformance,
+  };
+}
+
+/** The last day budget.getBudgetProgress counts for a year on `today`: today, or the year's June 30 once it has ended. */
+export function budgetProgressThrough(fraternalYear: string, today: Date): string {
+  const { toDate } = fraternalYearBounds(fraternalYear);
+  const iso = toIsoDate(today);
+  return iso < toDate ? iso : toDate;
+}
+
+/** The fraternal years among `years` that ended before `today`, newest first, without repeats. */
+export function completedFraternalYears(years: readonly string[], today: Date): string[] {
+  const iso = toIsoDate(today);
+  return [...new Set(years)].filter((y) => fraternalYearBounds(y).toDate < iso).sort((a, b) => b.localeCompare(a));
+}
+
+/**
+ * budget.getHistoricalKPIs from each completed year's performance. The trailing scorecard adds up the approved years
+ * only - a year the council never approved has no budget to measure against - and rates the council's fiscal
+ * efficiency as its actual spend over its approved budgets.
+ */
+export function summarizeBudgetHistory(councilId: number, years: readonly BudgetYearPerformance[], today: Date): BudgetHistoricalKPIs {
+  const approved = years.filter((y) => y.status === 'Approved');
+  const approvedTotal = sumCents(approved.map((y) => y.approvedTotal));
+  const actualTotal = sumCents(approved.map((y) => y.actualTotal));
+  return {
+    councilId,
+    asOf: toIsoDate(today),
+    years: [...years].sort((a, b) => b.fraternalYear.localeCompare(a.fraternalYear)),
+    trailing: {
+      years: years.length,
+      approvedYears: approved.length,
+      approvedTotal,
+      actualTotal,
+      variance: sumCents([approvedTotal, -actualTotal]),
+      utilizationPercent: budgetPercentUsed(approvedTotal, actualTotal),
+      alert: budgetAlertOf(approvedTotal, actualTotal),
+      yearsWithinBudget: approved.filter((y) => y.alert === 'On Track' || y.alert === 'Warning').length,
+      yearsOverBudget: approved.filter((y) => y.alert === 'Over Budget').length,
+    },
+  };
+}

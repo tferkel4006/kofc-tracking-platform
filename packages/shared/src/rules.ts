@@ -89,7 +89,8 @@ export type BusinessRuleCode =
   | 'PROPOSAL_STATUS_CONFLICT'
   | 'BUDGET_LINE_EXISTS'
   | 'BUDGET_YEAR_FINALIZED'
-  | 'BUDGET_WINDOW_NOT_OPEN';
+  | 'BUDGET_WINDOW_NOT_OPEN'
+  | 'BUDGET_YEAR_APPROVED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -1208,6 +1209,26 @@ export const mayManageBudgetForecast = (actor: MemberWriteActor, councilId: numb
 function budgetWriteDenial(actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null {
   if (actor.active && actor.budgetDirector && actor.councilId === councilId) return null;
   return councilLeadershipDenial(actor, councilId, action, "a council's budget is kept only by its own leadership");
+}
+
+/**
+ * budget.approveAndFinalizeEntireBudget (Sprint 5Y-4): recording the council's vote belongs to its leadership - an
+ * Active Admin, Financial Secretary or Treasurer of the council - or any Active Super Admin. The Designated Budget
+ * Director prepares the budget but does not finalize it. `action` completes "cannot ...".
+ */
+export function assertMayApproveBudget(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = councilLeadershipDenial(actor, councilId, action, "a council's budget is approved only by its own leadership");
+  if (denial) throw denial;
+}
+
+/**
+ * budget.getBudgetProgress and budget.getHistoricalKPIs (Sprint 5Y-4): budget-versus-actual figures sit beside the
+ * monthly executive summaries, so they are for the same readers - the council's Active Admins, Financial Secretary and
+ * Treasurer, and any Active Super Admin. `action` completes "cannot ...".
+ */
+export function assertMayReviewBudgetPerformance(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = councilLeadershipDenial(actor, councilId, action, "a council's budget performance is reviewed only by its own leadership");
+  if (denial) throw denial;
 }
 
 /**

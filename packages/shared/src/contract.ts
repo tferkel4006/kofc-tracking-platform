@@ -19,6 +19,7 @@ import type {
   ChatThread,
   Council,
   CouncilBudgetCategory,
+  BudgetLineStatus,
   CouncilBudgetForecast,
   CouncilCharityLink,
   CouncilDonationMethod,
@@ -66,7 +67,7 @@ import type {
   SystemFeedback,
   WorkingStatus,
 } from './types';
-import type { BudgetWindowState } from './budget';
+import type { BudgetAlert, BudgetWindowState } from './budget';
 
 // 1. LOOKUPS
 /** The global lookup tables a Super Admin maintains (Blueprint: "System Lookup Manager"). */
@@ -930,12 +931,13 @@ export interface CharityDisbursementResult {
 /**
  * A council-specific line for budget.addCustomBudgetLine: a running cost that is neither an annual event nor an annual
  * charity (insurance, supplies, dues). It is always CategoryType 'Operational' with no ReferenceSourceID and a
- * PrePopulatedAmount of 0. ApprovedBudgetAmount defaults to 0; blank Notes are stored as NULL.
+ * PrePopulatedAmount of 0. Sprint 5Y-4: its figure is recorded as ProposedBudgetAmount (default 0) with BudgetStatus
+ * 'Proposed'; ApprovedBudgetAmount stays 0 until budget.approveAndFinalizeEntireBudget. Blank Notes are stored as NULL.
  */
 export interface NewCustomBudgetLine {
   FraternalYear: string;
   LineItemName: string;
-  ApprovedBudgetAmount?: number | null;
+  ProposedBudgetAmount?: number | null;
   Notes?: string | null;
   /** Sprint 5Y-3: one of the council's CouncilBudgetCategory ids; omitted or null leaves the line uncategorized. */
   BudgetCategoryID?: number | null;
@@ -962,6 +964,8 @@ export interface AnnualBudgetForecast {
   fraternalYear: string;
   /** Where the year stands today by the data service's clock: 'Not Yet Open', 'Draft' (May 1 - June 30) or 'Finalized' (July 1 on). */
   window: BudgetWindowState;
+  /** Sprint 5Y-4: the year's lifecycle (budgetStatusOf): 'Draft', 'Proposed', or 'Approved' once the council voted. */
+  status: BudgetLineStatus;
   /** The council's CouncilBudgetCategory rows in id order (the order the council created them). */
   categories: CouncilBudgetCategory[];
   /** Event, then Donation, then Operational lines, each LineItemName A-Z ignoring case, then id. */
@@ -980,6 +984,85 @@ export interface BudgetPrePopulationResult {
   refreshed: number;
   /** The council's whole forecast for the year afterwards, in listAnnualForecast order. */
   lines: CouncilBudgetForecast[];
+}
+
+/** One line of budget.getBudgetProgress / getHistoricalKPIs (Sprint 5Y-4): its approved cap against its actual spend. */
+export interface BudgetLinePerformance {
+  line: CouncilBudgetForecast;
+  actual: number;
+  /** ApprovedBudgetAmount minus actual: negative when over budget. */
+  variance: number;
+  /** actual as a percentage of ApprovedBudgetAmount, to one decimal place; null without an approved figure. */
+  percentUsed: number | null;
+  alert: BudgetAlert;
+}
+
+/** One budget category (fund) of a year against its actual spend; categoryId null is the Uncategorized group. */
+export interface BudgetCategoryPerformance {
+  categoryId: number | null;
+  label: string;
+  lineCount: number;
+  proposed: number;
+  approved: number;
+  actual: number;
+  variance: number;
+  percentUsed: number | null;
+  alert: BudgetAlert;
+}
+
+/**
+ * A council's fraternal year, budget against actual spend from July 1 through `throughDate` (buildBudgetYearPerformance).
+ * Actual spend counts what reports.monthlySummary counts - events' Spend, line items of 'Approved' and 'Reimbursed'
+ * expense sheets, and charity checks - so it is the sum of the period's monthly summaries.
+ */
+export interface BudgetYearPerformance {
+  councilId: number;
+  fraternalYear: string;
+  status: BudgetLineStatus;
+  fromDate: string;
+  throughDate: string;
+  /** True when the period runs to the year's June 30. */
+  complete: boolean;
+  proposedTotal: number;
+  approvedTotal: number;
+  /** Spend counted against a budget line. */
+  budgetedActual: number;
+  /** Spend no line claims: one-off events, unlinked expenses, charities without a line. */
+  unbudgetedActual: number;
+  actualTotal: number;
+  /** approvedTotal minus actualTotal. */
+  variance: number;
+  /** actualTotal as a percentage of approvedTotal; null when nothing is approved. */
+  utilizationPercent: number | null;
+  alert: BudgetAlert;
+  linesWithinBudget: number;
+  linesOverBudget: number;
+  /** listAnnualForecast order. */
+  lines: BudgetLinePerformance[];
+  /** The council's categories in id order, then Uncategorized when any line has no category. */
+  categories: BudgetCategoryPerformance[];
+}
+
+/** budget.getHistoricalKPIs: every completed fraternal year the council budgeted, newest first, and its trailing scorecard. */
+export interface BudgetHistoricalKPIs {
+  councilId: number;
+  /** The day the figures were read, YYYY-MM-DD. */
+  asOf: string;
+  years: BudgetYearPerformance[];
+  /** The fiscal efficiency scorecard over the approved years (a year never approved has nothing to measure against). */
+  trailing: {
+    /** Completed years with a budget. */
+    years: number;
+    approvedYears: number;
+    approvedTotal: number;
+    actualTotal: number;
+    variance: number;
+    /** Actual spend as a percentage of the approved budgets. */
+    utilizationPercent: number | null;
+    alert: BudgetAlert;
+    yearsWithinBudget: number;
+    yearsOverBudget: number;
+  };
 }
 
 // 19. THE SERVICE
@@ -1709,22 +1792,25 @@ export interface DataService {
      */
     listAnnualForecast(actorId: number, councilId: number, fraternalYear: string): Promise<AnnualBudgetForecast>;
     /**
-     * Sets a line's ApprovedBudgetAmount and, unless `notes` is undefined, its Notes (blank or null clears them), and
-     * with options.budgetCategoryId its category; resolves to the stored line. Writers of the line's council. Rejects
-     * RECORD_NOT_FOUND for an unknown line, BUDGET_WINDOW_NOT_OPEN / BUDGET_YEAR_FINALIZED outside the drafting window, and INVALID_INPUT for a negative
-     * amount, one with fractions of a cent, notes over BUDGET_NOTES_MAX_LENGTH characters or another council's category.
+     * Sets a line's ProposedBudgetAmount (Sprint 5Y-4; BudgetStatus becomes 'Proposed') and, unless `notes` is
+     * undefined, its Notes (blank or null clears them), and with options.budgetCategoryId its category; resolves to the
+     * stored line. ApprovedBudgetAmount is never set here. Writers of the line's council. Rejects RECORD_NOT_FOUND for an
+     * unknown line, BUDGET_YEAR_APPROVED once the year is approved, BUDGET_WINDOW_NOT_OPEN / BUDGET_YEAR_FINALIZED
+     * outside the drafting window, and INVALID_INPUT for a negative amount, one with fractions of a cent, notes over
+     * BUDGET_NOTES_MAX_LENGTH characters or another council's category.
      */
     updateLineItemBudget(
       actorId: number,
       budgetLineItemId: number,
-      approvedAmount: number,
+      proposedAmount: number,
       notes?: string | null,
       options?: BudgetLineUpdateOptions,
     ): Promise<CouncilBudgetForecast>;
     /**
      * Adds a council-specific 'Operational' line (NewCustomBudgetLine) and resolves to it. Rejects BUDGET_LINE_EXISTS
      * (details.lineId names it) when the council's year already has an Operational line of that name ignoring case and
-     * spacing, BUDGET_WINDOW_NOT_OPEN / BUDGET_YEAR_FINALIZED outside the drafting window, and INVALID_INPUT for a bad field.
+     * spacing, BUDGET_YEAR_APPROVED once the year is approved, BUDGET_WINDOW_NOT_OPEN / BUDGET_YEAR_FINALIZED outside
+     * the drafting window, and INVALID_INPUT for a bad field (including ApprovedBudgetAmount, which only approval sets).
      */
     addCustomBudgetLine(actorId: number, councilId: number, data: NewCustomBudgetLine, options?: BudgetWriteOptions): Promise<CouncilBudgetForecast>;
     /**
@@ -1739,13 +1825,37 @@ export interface DataService {
      *   year - the council's expenses linked to those meetings.
      * - Operational: each custom line of the previous year's own forecast (Sprint 5Y-2), carried forward under the same
      *   name with a PrePopulatedAmount of 0.
-     * Re-running is safe: a line that already exists keeps its ApprovedBudgetAmount and Notes and only has its
-     * PrePopulatedAmount (and a renamed source's LineItemName) refreshed. New lines start with ApprovedBudgetAmount 0
-     * for review. Nothing is deleted. A new line takes the BudgetCategoryID of the previous year's line it continues (same
-     * source, or for an unsourced line the same name), so the council files each line once. Rejects BUDGET_WINDOW_NOT_OPEN
-     * or BUDGET_YEAR_FINALIZED when the target year is outside its drafting window.
+     * Re-running is safe: a line that already exists keeps its figures, BudgetStatus and Notes and only has its
+     * PrePopulatedAmount (and a renamed source's LineItemName) refreshed. New lines start 'Draft' with proposed and
+     * approved amounts of 0 for review. Nothing is deleted. A new line takes the BudgetCategoryID of the previous year's line it continues (same
+     * source, or for an unsourced line the same name), so the council files each line once. Rejects BUDGET_YEAR_APPROVED
+     * once the target year is approved, and BUDGET_WINDOW_NOT_OPEN or BUDGET_YEAR_FINALIZED when it is outside its
+     * drafting window.
      */
     prePopulateNextYear(actorId: number, councilId: number, targetFraternalYear: string, options?: BudgetWriteOptions): Promise<BudgetPrePopulationResult>;
+    /**
+     * Records the council's vote (Sprint 5Y-4), usually at its July meeting: in one transaction every line of the
+     * council's year gets ApprovedBudgetAmount = ProposedBudgetAmount and BudgetStatus 'Approved', and resolves to the
+     * year as listAnnualForecast returns it. From then on the year is frozen - every write rejects BUDGET_YEAR_APPROVED,
+     * with no override. Council leadership only - an Active Admin, Financial Secretary or Treasurer of the council, or an
+     * Active Super Admin (assertMayApproveBudget: ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED); the Budget Director prepares
+     * but does not approve. Allowed from the year's May 1 opening on, including after the July 1 lock. Rejects
+     * BUDGET_YEAR_APPROVED for an approved year, INVALID_INPUT for a year with no lines, and BUDGET_WINDOW_NOT_OPEN before
+     * May 1 unless an Active Super Admin passes superAdminOverride.
+     */
+    approveAndFinalizeEntireBudget(actorId: number, councilId: number, fraternalYear: string, options?: BudgetWriteOptions): Promise<AnnualBudgetForecast>;
+    /**
+     * The council's year against its actual spend so far (BudgetYearPerformance), through today or the year's June 30
+     * once it has ended; before July 1 of the year nothing has been spent. Behind the dashboard's budget gauges.
+     * Council leadership, as on the executive summaries (assertMayReviewBudgetPerformance).
+     */
+    getBudgetProgress(actorId: number, councilId: number, fraternalYear: string): Promise<BudgetYearPerformance>;
+    /**
+     * Every completed fraternal year (ended before today) the council has budget lines for, newest first, each with its
+     * final allocations against its full-year actual spend, and the trailing fiscal efficiency scorecard over the
+     * approved years (summarizeBudgetHistory). Council leadership, as getBudgetProgress.
+     */
+    getHistoricalKPIs(actorId: number, councilId: number): Promise<BudgetHistoricalKPIs>;
   };
 
   feedback: {

@@ -13,7 +13,7 @@ import type { CouncilLookupTableName, SessionUser } from './contract';
 import { budgetWindowOf } from './budget';
 import { GRAND_KNIGHT_ROLE } from './elections';
 import { FINANCE_LOOKUP_TABLES, holdsFinanceRole } from './rules';
-import type { Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
+import type { BudgetLineStatus, Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
 
 /** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. `isBudgetDirector` only to the budget. */
 type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'> & { roles?: readonly string[]; isBudgetDirector?: boolean };
@@ -239,8 +239,45 @@ export const canManageBudgetForecast = (u: Actor, councilId: number): boolean =>
  * (Sprint 5Y-3.5): canManageBudgetForecast, and the drafting window - May 1 00:00 through June 30 midnight local time
  * (budgetWindowOf 'Draft', assertBudgetYearWritable) - unless a Super Admin is overriding it.
  */
-export const canEditBudgetYear = (u: Actor, councilId: number, fraternalYear: string, today: Date, superAdminOverride = false): boolean =>
-  canManageBudgetForecast(u, councilId) && (budgetWindowOf(fraternalYear, today) === 'Draft' || (superAdminOverride && isSuperAdmin(u)));
+export const canEditBudgetYear = (
+  u: Actor,
+  councilId: number,
+  fraternalYear: string,
+  today: Date,
+  superAdminOverride = false,
+  status: BudgetLineStatus = 'Draft',
+): boolean =>
+  // Sprint 5Y-4: an approved year is frozen for everyone (BUDGET_YEAR_APPROVED); no override reopens it.
+  status !== 'Approved' &&
+  canManageBudgetForecast(u, councilId) &&
+  (budgetWindowOf(fraternalYear, today) === 'Draft' || (superAdminOverride && isSuperAdmin(u)));
+
+/**
+ * The "Approve & Finalize Entire Budget" button, mirroring assertMayApproveBudget and assertBudgetYearApprovable
+ * (Sprint 5Y-4): the council's Admins, Financial Secretary and Treasurer, or a Super Admin - not the Budget Director -
+ * once the year has opened on May 1 (or a Super Admin is overriding), while it is not yet approved and has lines.
+ */
+export const canApproveBudget = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
+
+export const canFinalizeBudgetYear = (
+  u: Actor,
+  councilId: number,
+  fraternalYear: string,
+  today: Date,
+  status: BudgetLineStatus,
+  lineCount: number,
+  superAdminOverride = false,
+): boolean =>
+  canApproveBudget(u, councilId) &&
+  status !== 'Approved' &&
+  lineCount > 0 &&
+  (budgetWindowOf(fraternalYear, today) !== 'Not Yet Open' || (superAdminOverride && isSuperAdmin(u)));
+
+/**
+ * The dashboard's budget gauges and the budget page's Historical Performance Review (Sprint 5Y-4), mirroring
+ * assertMayReviewBudgetPerformance: the same readers as the executive summaries.
+ */
+export const canReviewBudgetPerformance = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
 
 /** Reading the annual budget, mirroring assertMayViewBudgetForecast (Sprint 5Y-3): every member of the council, any Super Admin. */
 export const canViewBudgetForecast = (u: Actor, councilId: number): boolean => isSuperAdmin(u) || u.councilId === councilId;

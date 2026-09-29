@@ -329,6 +329,15 @@ The **Highlights** text of each of the month's events, in date order. If none ap
 - **A negative net balance** is normal for service events with no fundraising. Check it against the event's budget.
 - **Numbers look low early in the month?** Hours arrive as members log them (up to 3 months later for shifts). Re-check after the reminder cycle.
 
+### 11.5 Budget tracking gauges
+
+Admins, Treasurers, Financial Secretaries and Super Admins see a **Budget tracking** panel under the scorecard tiles, for the fraternal year of the chosen month (July – June).
+
+- A **Whole budget** gauge, then one gauge per budget category with an approved cap or any spend, compare actual spend so far with the category's **approved** budget. Spend counts exactly what the monthly summaries count: event spend, approved and reimbursed expenses, and charity checks.
+- Gauges fill navy while on track, turn gold with a pulsing **⚠ 85%+ of cap** tag from 85% of the cap, and red with **⚠ Over budget** past 100%. A thin red mark on each gauge shows the 85% line.
+- **Unbudgeted spend** (one-off events, expenses not linked to an event or meeting, charities without a budget line) is shown under the gauges.
+- Until the council approves and finalizes the year's budget (§12.6) there are no caps, so the panel shows only the spend to date.
+
 ![Image: Executive Scorecard]
 
 ---
@@ -363,7 +372,7 @@ Choose the **Fraternal year** (July 1 – June 30). The picker opens on the next
 | Badge | When | What you can do |
 |---|---|---|
 | **Not Yet Open** | Before May 1 of the year's first calendar year | Read only |
-| **Draft** | May 1 (00:00) – June 30 (midnight) | Run the rollup, add custom lines, edit approved amounts and notes |
+| **Draft** | May 1 (00:00) – June 30 (midnight) | Run the rollup, add custom lines, edit proposed amounts and notes |
 | **Finalized** | From July 1 | Read only |
 
 ### 12.2 Initialize Automated Prior Year Baseline Rollup
@@ -375,7 +384,7 @@ The navy **Initialize Automated Prior Year Baseline Rollup** button, next to the
 - **Council Meetings**: the approved and reimbursed expense reports linked to the council's meetings.
 - **Last year's custom lines** are carried forward under the same names with a baseline of **$0.00**.
 
-New lines start with an **Approved Budget Amount** of $0.00 for your review. You can run the rollup again at any time from May 1 to June 30: it refreshes the baselines (and renamed events or charities) but **never changes approved amounts or notes**, and never removes a line.
+New lines start as **Draft** with a **Proposed Budget Amount** of $0.00 for your review. You can run the rollup again at any time from May 1 to June 30: it refreshes the baselines (and renamed events or charities) but **never changes proposed or approved amounts or notes**, and never removes a line.
 
 ### 12.3 The budget spreadsheet
 
@@ -385,19 +394,39 @@ Lines are grouped under **your council's own budget categories** (funds), each w
 - Every other council adds its own.
 - A rollup files each new line under the same category as the line it continues from last year. File a line once and it stays filed year after year.
 
-Each row shows the **Line Item**, its **Pre-Populated Baseline** and the **Approved Budget Amount**. While the budget is in Draft, editors can:
-- type the approved amount and any **Notes** in the row's boxes;
+Each row shows the **Line Item**, its **Pre-Populated Baseline**, the **Proposed Budget Amount**, the **Approved Budget Amount** and its **Status** (Draft, Proposed or Approved). While the budget is in Draft, editors can:
+- type the proposed amount and any **Notes** in the row's boxes (the line becomes **Proposed**);
 - pick the row's **Category**.
 
-Each change saves when you leave the box or make the pick. **Saved** appears beside the row, or the reason it was refused. The scorecards above the sheet show the baseline total, the approved total and the change between them.
+The **Approved Budget Amount** is never typed in: it shows **🔒 Locked** until leadership approves and finalizes the whole budget (§12.6).
+
+Each change saves when you leave the box or make the pick. **Saved** appears beside the row, or the reason it was refused. The scorecards above the sheet show the baseline total, the proposed total, the approved total (once approved) and the change from the baseline.
 
 ### 12.4 Custom council operational lines
 
-Use **+ Add Custom Council Operational Line** at the top of the spreadsheet for running costs that are not an event or a charity, such as **Bank Fees** or **Bulletin Ads**. Enter the **Line item name**, a **Target budget amount** and optionally its **Budget category**. Each name can be used once per council and year (capitals and spacing are ignored). Custom lines are carried into next year's rollup automatically.
+Use **+ Add Custom Council Operational Line** at the top of the spreadsheet for running costs that are not an event or a charity, such as **Bank Fees** or **Bulletin Ads**. Enter the **Line item name**, a **Proposed budget amount** and optionally its **Budget category**. The line is added as **Proposed**; its approved figure stays locked until the council's vote (§12.6). Each name can be used once per council and year (capitals and spacing are ignored). Custom lines are carried into next year's rollup automatically.
 
 ### 12.5 Demonstrations: Simulate June Drafting Window
 
-On the demonstration build (in-memory data), Super Admins see a **Simulate June Drafting Window** checkbox. Ticking it treats the chosen year as Draft so the inputs unlock outside the May 1 – June 30 window. It also sends the Super Admin override with each change, so even a Finalized year can be edited for the demo. It does not appear for other roles or on the production data service.
+On the demonstration build (in-memory data), Super Admins see a **Simulate June Drafting Window** checkbox. Ticking it treats the chosen year as Draft so the inputs unlock outside the May 1 – June 30 window. It also sends the Super Admin override with each change, so even a Finalized year can be edited for the demo. It does not appear for other roles or on the production data service. It never reopens an approved budget.
+
+### 12.6 Approve & Finalize Entire Budget
+
+After the council votes on the budget, usually at its July meeting, an Admin, Treasurer, Financial Secretary or Super Admin records the vote with the red **Approve & Finalize Entire Budget** button above the spreadsheet, then confirms with **Yes, approve and finalize**.
+
+- In one step, every line's **Proposed Budget Amount** becomes its **Approved Budget Amount**, and the whole year shows **Approved**.
+- The approved year is **frozen for everyone**: no line can be edited, added or rolled up again, and not even a Super Admin override reopens it (*"The … budget was approved and finalized by the council; its figures are frozen"*).
+- The button works from the year's May 1 opening onward, including after the July 1 lock. The Designated Budget Director prepares the budget but cannot approve it.
+- The approved figures become the caps on the dashboard's budget tracking gauges (§11.5).
+
+### 12.7 Historical Performance Review
+
+Admins, Treasurers, Financial Secretaries and Super Admins see a second tab, **Historical Performance Review**.
+
+- The trailing scorecard sums every **approved**, completed fraternal year: total approved budgets, actual spend, and **fiscal efficiency** (actual spend ÷ approved budget), plus how many years stayed within budget.
+- Pick a **Completed fraternal year** (one whose June 30 has passed) to see a read-only sheet of each line's **Final Allocation** beside its **Actual Year-End Spend**, with the variance, the percentage used and a status tag, grouped by category.
+- A **Financial performance KPI** card heads the sheet with the year's allocation, actual spend (including unbudgeted spend), variance, fiscal efficiency and lines within budget.
+- A year the council never approved is listed but has no allocations to measure against.
 
 ![Image: Annual Budget Projections]
 
@@ -456,7 +485,9 @@ Members send feedback and bug reports from **Online Help Center → Submit Syste
 | Member cannot find their QR code | No **QR code image URL** is on file. | Add it under **Council Lookup Tables → Enabled donation methods**. |
 | *"Your role cannot maintain this council's lookups."* | Finance officer on another council, or no finance role. | A council Admin or Super Admin must make the change. |
 | Audits missing from Executive Summaries | Finance officers see the monthly summary only. | Ask an Admin for the audit figures. |
-| Budget inputs and buttons greyed out | The chosen year is **Not Yet Open** or **Finalized** (§12.1). | Budgets are edited only from May 1 to June 30. Pick the year you are preparing. |
+| Budget inputs and buttons greyed out | The chosen year is **Not Yet Open** or **Finalized** (§12.1), or it is **Approved** (§12.6). | Budgets are edited only from May 1 to June 30, before the council approves them. Pick the year you are preparing. |
+| *"The … budget was approved and finalized by the council"* | The council's vote was recorded (§12.6). | Approved budgets are frozen for everyone; nothing reopens them. |
+| Dashboard says there are no caps to track | The fraternal year's budget has not been approved and finalized. | Record the council's vote with **Approve & Finalize Entire Budget** (§12.6). |
 | *"The … budget opens for drafting on May 1"* | The drafting window for that year has not started. | Wait for May 1, or ask a Super Admin. |
 | *"The … budget was locked as Finalized on July 1"* | The year has started, so the data service refuses changes. | Only a Super Admin override can change a Finalized budget. |
 | Budget shows **Read only** / **Transparency view** | You are not an Admin, Treasurer, Financial Secretary or Designated Budget Director. | Ask a council Admin to tick **Designated Budget Director** on your roster record, then sign in again. |

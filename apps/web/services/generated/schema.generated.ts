@@ -3297,6 +3297,23 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "ProposedBudgetAmount",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "BudgetStatus",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
