@@ -146,7 +146,11 @@ export function createRemoteDataService(): DataService {
       setMinutes: notImplemented('meetings.setMinutes'),
       linkGoogleDrive: notImplemented('meetings.linkGoogleDrive'),
       memberHours: notImplemented('meetings.memberHours'),
+      listCouncilMeetingTypes: notImplemented('meetings.listCouncilMeetingTypes'),
+      rsvpToInvite: notImplemented('meetings.rsvpToInvite'),
+      getAgendaTemplate: notImplemented('meetings.getAgendaTemplate'),
     },
+    shifts: { getShiftDefaultLength: notImplemented('shifts.getShiftDefaultLength') },
     notifications: {
       registerDeviceToken: notImplemented('notifications.registerDeviceToken'),
       listMemberAlerts: notImplemented('notifications.listMemberAlerts'),

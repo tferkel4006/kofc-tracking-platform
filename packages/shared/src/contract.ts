@@ -41,6 +41,9 @@ import type {
   LessonsLearnedCategory,
   Meeting,
   MeetingInvites,
+  MeetingResponseStatus,
+  CouncilMeetingType,
+  CouncilAgendaTemplate,
   KOCTrainingClasses,
   MeetingType,
   Member,
@@ -1600,6 +1603,34 @@ export interface DataService {
      * Time End - Time Start, oldest first with a running total. Optional inclusive date range.
      */
     memberHours(memberId: number, range?: { fromDate?: string; toDate?: string }): Promise<MemberMeetingHours>;
+    /**
+     * The meeting types the council defines for itself (CouncilMeetingType, Sprint 5Y-5), by TypeName then id.
+     * Another council's types never appear. Rejects INVALID_INPUT for an unknown council.
+     */
+    listCouncilMeetingTypes(councilId: number): Promise<CouncilMeetingType[]>;
+    /**
+     * Records the signed-in member's own RSVP to a meeting in one call: sets their MeetingInvites.ResponseStatus to
+     * `status` ('NoResponse', 'Accepted' or 'Declined'; see MEETING_RESPONSE_STATUSES) and resolves to the updated
+     * invitation. Resending the current status is allowed. Rejects INVALID_INPUT for any other status,
+     * MEMBER_NOT_FOUND for an unknown member, MEETING_NOT_FOUND for an unknown meeting and NOT_INVITED when the
+     * member has no invitation to it. Nothing is written when it rejects.
+     */
+    rsvpToInvite(actorId: number, meetingId: number, status: MeetingResponseStatus): Promise<MeetingInvites>;
+    /**
+     * The council's agenda outline for one of its meeting types (CouncilAgendaTemplate), or null when the council
+     * has none for that type, including a type belonging to another council.
+     */
+    getAgendaTemplate(councilId: number, meetingTypeId: number): Promise<CouncilAgendaTemplate | null>;
+  };
+
+  /** Shift helpers behind the automatic hour-reporting defaults (Sprint 5Y-5). */
+  shifts: {
+    /**
+     * The shift's length in hours, StartTime to EndTime (an overnight shift runs past midnight), rounded to the
+     * nearest 0.25 so it is always a valid hours entry (shiftDefaultLengthHours). The default a member's time
+     * report starts from; it does not cap what they may log. Rejects SHIFT_NOT_FOUND for an unknown shift.
+     */
+    getShiftDefaultLength(shiftId: number): Promise<number>;
   };
 
   /**

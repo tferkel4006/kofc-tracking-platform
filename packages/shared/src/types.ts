@@ -139,6 +139,8 @@ export interface Event {
   PhotoGalleryURL?: string | null;
   /** BIT: the event recurs every fraternal year, so budget.prePopulateNextYear forecasts it (Sprint 5Y). Default 0. */
   IsAnnual?: number;
+  /** BIT (Sprint 5Y-5): the event spans more than one day. Default 0. */
+  IsMultiDay?: number;
 }
 
 
@@ -275,13 +277,37 @@ export interface Meeting {
   GoogleDriveFlyerURL?: string | null;
   /** The member who runs the meeting (Sprint 5Q); null when none is designated. Manages it alongside Admins. */
   OwnerID?: number | null;
+  /** BIT (Sprint 5Y-5): the meeting spans more than one day. Default 0. */
+  IsMultiDay?: number;
+  /** The council's own meeting type (CouncilMeetingType, Sprint 5Y-5); null while unfiled. */
+  MeetingTypeID?: number | null;
 }
+
+/** An invitee's RSVP (Sprint 5Y-5); see MEETING_RESPONSE_STATUSES. */
+export type MeetingResponseStatus = 'NoResponse' | 'Accepted' | 'Declined';
 
 export interface MeetingInvites {
   id: number;
   MeetingID: number;
   MemberID: number;
   Attended: 1 | 0; // SQL BIT flag tracker
+  /** Default 'NoResponse'; written by meetings.rsvpToInvite. */
+  ResponseStatus: MeetingResponseStatus;
+}
+
+/** A meeting type a council defines for itself (Sprint 5Y-5); TypeName is unique within the council. */
+export interface CouncilMeetingType {
+  id: number;
+  CouncilID: number;
+  TypeName: string;
+}
+
+/** A council's agenda outline for one of its meeting types (Sprint 5Y-5); one per council and type. */
+export interface CouncilAgendaTemplate {
+  id: number;
+  CouncilID: number;
+  MeetingTypeID: number;
+  TemplateText: string;
 }
 
 

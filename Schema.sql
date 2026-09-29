@@ -130,6 +130,8 @@ CREATE TABLE [Meeting] (
 	[GoogleDriveMinutesURL] VARCHAR(2000) NULL, -- Sprint 5Q: shared Google Drive link to the minutes
 	[GoogleDriveFlyerURL] VARCHAR(2000) NULL, -- Sprint 5Q: shared Google Drive link to the flyer
 	[OwnerID] INTEGER NULL, -- Sprint 5Q: the member who runs the meeting; manages it alongside Admins and Super Admins
+	[IsMultiDay] BIT NOT NULL DEFAULT 0, -- Sprint 5Y-5: the meeting spans more than one day
+	[MeetingTypeID] INTEGER NULL, -- Sprint 5Y-5: the council's own meeting type (CouncilMeetingType)
 	PRIMARY KEY([id])
 );
 GO
@@ -139,6 +141,7 @@ CREATE TABLE [MeetingInvites] (
 	[MeetingID] INTEGER,
 	[MemberID] INTEGER,
 	[Attended] BIT DEFAULT 0,
+	[ResponseStatus] VARCHAR(50) NOT NULL DEFAULT 'NoResponse', -- Sprint 5Y-5: NoResponse, Accepted, Declined (rules layer, no CHECK)
 	PRIMARY KEY([id])
 );
 GO
@@ -200,6 +203,7 @@ CREATE TABLE [Event] (
 	[ActualNumberAttendees] INTEGER,
 	[PhotoGalleryURL] VARCHAR(2000) NULL, -- Sprint 5Q: comma-separated local photo reference paths
 	[IsAnnual] BIT NOT NULL DEFAULT 0, -- Sprint 5Y: recurs every fraternal year; seeds the next year's budget forecast
+	[IsMultiDay] BIT NOT NULL DEFAULT 0, -- Sprint 5Y-5: the event spans more than one day
 	PRIMARY KEY([id])
 );
 GO
@@ -1300,4 +1304,56 @@ GO
 -- SQL Server treats NULL ReferenceSourceIDs as equal in this index and SQLite does not, so the drivers also refuse a
 -- duplicate Operational line by name (BUDGET_LINE_EXISTS).
 CREATE UNIQUE INDEX [CouncilBudgetForecast_Line_Idx] ON [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName]);
+GO
+
+-- =========================================================================
+-- Sprint 5Y-5: COUNCIL MEETING TYPES AND AGENDA TEMPLATES
+-- Each council keeps its own meeting types in CouncilMeetingType, a council lookup table isolated per council by the
+-- (CouncilID, TypeName) index; Meeting.MeetingTypeID files a meeting under one (NULL while unfiled; the older
+-- Meeting.MeetingType still points at the global MeetingType lookup). CouncilAgendaTemplate holds at most one agenda
+-- outline per council and meeting type. MeetingInvites.ResponseStatus records the invitee's RSVP: NoResponse,
+-- Accepted or Declined, enforced by the shared rules layer (no CHECK).
+-- =========================================================================
+CREATE TABLE [CouncilMeetingType] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[TypeName] VARCHAR(100) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [CouncilAgendaTemplate] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[MeetingTypeID] INTEGER NOT NULL,
+	[TemplateText] TEXT NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CouncilMeetingType]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilAgendaTemplate]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilAgendaTemplate]
+ADD FOREIGN KEY([MeetingTypeID])
+REFERENCES [CouncilMeetingType]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [Meeting]
+ADD FOREIGN KEY([MeetingTypeID])
+REFERENCES [CouncilMeetingType]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [CouncilMeetingType_Council_TypeName_Idx] ON [CouncilMeetingType] ([CouncilID], [TypeName]);
+GO
+
+CREATE UNIQUE INDEX [CouncilAgendaTemplate_Council_MeetingType_Idx] ON [CouncilAgendaTemplate] ([CouncilID], [MeetingTypeID]);
 GO

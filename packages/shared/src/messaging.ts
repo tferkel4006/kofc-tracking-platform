@@ -116,16 +116,9 @@ export function assertThreadParticipant(
 export const DISTRIBUTION_GROUPS = [
   { value: 'all_members', label: 'All Members' },
   { value: 'active_officers', label: 'Active Officers' },
-  { value: 'board_of_trustees', label: 'Board of Trustees' },
 ] as const;
 
 export type DistributionGroup = (typeof DISTRIBUTION_GROUPS)[number]['value'];
-
-/**
- * A council's board of trustees: the Grand Knight, who chairs it, and the three trustee seats (the names match
- * TRUSTEE_ROLE_NAMES in elections.ts, which imports this module, so they are spelled out here).
- */
-export const BOARD_OF_TRUSTEES_ROLE_NAMES: readonly string[] = ['Grand Knight', 'Trustee 1', 'Trustee 2', 'Trustee 3'];
 
 export const distributionGroupLabel = (group: DistributionGroup): string =>
   DISTRIBUTION_GROUPS.find((g) => g.value === group)?.label ?? group;
@@ -144,7 +137,6 @@ export function distributionGroupMemberIds(group: DistributionGroup, roster: rea
   let matches: (e: DistributionRosterEntry) => boolean;
   if (group === 'all_members') matches = () => true;
   else if (group === 'active_officers') matches = (e) => e.roles.some((r) => r.Officer === 1);
-  else if (group === 'board_of_trustees') matches = (e) => e.roles.some((r) => BOARD_OF_TRUSTEES_ROLE_NAMES.includes(r.Role));
   else throw new BusinessRuleError('INVALID_INPUT', `Unknown distribution list "${String(group)}".`, { group });
   return [...new Set(roster.filter(matches).map((e) => e.memberId))].sort((a, b) => a - b);
 }

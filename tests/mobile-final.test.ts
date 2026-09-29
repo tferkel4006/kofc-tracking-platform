@@ -1,4 +1,4 @@
-// Sprint 5Y-Mobile final: message Distribution Lists (All Members, Active Officers, Board of Trustees) and the
+// Sprint 5Y-Mobile final: message Distribution Lists (All Members, Active Officers) and the
 // Home feed's eviction of shifts and meetings that have already ended by the device clock.
 import { describe, expect, it } from 'vitest';
 import {
@@ -22,20 +22,19 @@ const roster = [
 ];
 
 describe('distribution groups', () => {
-  it('offers the three built-in lists with their labels', () => {
-    expect(DISTRIBUTION_GROUPS.map((g) => g.label)).toEqual(['All Members', 'Active Officers', 'Board of Trustees']);
-    expect(distributionGroupLabel('board_of_trustees')).toBe('Board of Trustees');
+  it('offers only the two built-in lists with their labels (Sprint 5Y-5 retired Board of Trustees)', () => {
+    expect(DISTRIBUTION_GROUPS.map((g) => g.label)).toEqual(['All Members', 'Active Officers']);
+    expect(distributionGroupLabel('active_officers')).toBe('Active Officers');
   });
 
   it('resolves each list against the roster, ascending by id', () => {
     expect(distributionGroupMemberIds('all_members', roster)).toEqual([1, 2, 3, 4, 5]);
     expect(distributionGroupMemberIds('active_officers', roster)).toEqual([1, 2, 5]);
-    // The board is the Grand Knight plus the trustee seats; other officers are not on it.
-    expect(distributionGroupMemberIds('board_of_trustees', roster)).toEqual([1, 5]);
   });
 
-  it('rejects an unknown list', () => {
+  it('rejects an unknown list, including the retired Board of Trustees', () => {
     expect(() => distributionGroupMemberIds('everyone' as DistributionGroup, roster)).toThrow(/Unknown distribution list/);
+    expect(() => distributionGroupMemberIds('board_of_trustees' as DistributionGroup, roster)).toThrow(/Unknown distribution list/);
   });
 });
 
@@ -62,7 +61,7 @@ describe.each(drivers)('$name driver: sending to a distribution list', (d) => {
       senderId: MEMBER.member,
       councilId: 1,
       recipientIds: [MEMBER.superAdmin],
-      distributionGroups: ['board_of_trustees', 'active_officers'],
+      distributionGroups: ['active_officers'],
       text: 'Question for leadership.',
     });
     const thread = (await db.messages.listThreads(MEMBER.member)).find((t) => t.thread.id === sent.ThreadID)!;
@@ -81,9 +80,10 @@ describe.each(drivers)('$name driver: sending to a distribution list', (d) => {
   it('rejects a list that reaches nobody but the sender', async () => {
     const db = await d.make();
     const messages = d.count(db, 'Messages');
-    // The dev seed has no trustees, and the only Grand Knight is the sender.
+    // A brand-new council has no members, so its officers list is empty.
+    const council = await db.councils.create(MEMBER.superAdmin, { CouncilNumber: 99002, CouncilName: 'Empty Council', State: 'OR' });
     await expectRule(
-      db.messages.send({ senderId: MEMBER.superAdmin, councilId: 1, distributionGroups: ['board_of_trustees'], text: 'Board only.' }),
+      db.messages.send({ senderId: MEMBER.superAdmin, councilId: council.id, distributionGroups: ['active_officers'], text: 'Officers only.' }),
       'NO_RECIPIENTS',
     );
     expect(d.count(db, 'Messages')).toBe(messages);

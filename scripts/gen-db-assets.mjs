@@ -107,11 +107,12 @@ function parseColumn(item, table) {
   const mapped = TYPE_MAP[rawType.toUpperCase()];
   if (!mapped) fail(`Unsupported type ${rawType} on [${table}].[${name}]`, item);
 
-  const defMatch = rest.match(/\bDEFAULT\s+(\S+)/i);
+  const defMatch = rest.match(/\bDEFAULT\s+('[^']*'|\S+)/i);
   let def = null;
   if (defMatch) {
     const raw = defMatch[1].toLowerCase();
     if (raw === 'getdate()') def = { kind: 'now' };
+    else if (/^'[^']*'$/.test(raw)) def = { kind: 'literal', value: defMatch[1].slice(1, -1) };
     else if (/^-?\d+(\.\d+)?$/.test(raw)) def = { kind: 'literal', value: Number(raw) };
     else fail(`Unsupported DEFAULT ${defMatch[1]} on [${table}].[${name}]`, item);
   }
@@ -191,7 +192,7 @@ function sqliteCreateTable(name, t) {
     }
     let l = `  [${c.name}] ${c.sqlType}`;
     if (c.notNull) l += ' NOT NULL';
-    if (c.default) l += c.default.kind === 'now' ? ' DEFAULT CURRENT_TIMESTAMP' : ` DEFAULT ${c.default.value}`;
+    if (c.default) l += c.default.kind === 'now' ? ' DEFAULT CURRENT_TIMESTAMP' : ` DEFAULT ${typeof c.default.value === 'string' ? `'${c.default.value}'` : c.default.value}`;
     return l;
   });
   const identityPk = t.columns.some((c) => c.identity);
@@ -301,7 +302,7 @@ export interface ColumnMeta {
   kind: ColumnKind;
   notNull: boolean;
   identity: boolean;
-  default: { kind: 'literal'; value: number } | { kind: 'now' } | null;
+  default: { kind: 'literal'; value: number | string } | { kind: 'now' } | null;
 }
 
 export interface ForeignKeyMeta {

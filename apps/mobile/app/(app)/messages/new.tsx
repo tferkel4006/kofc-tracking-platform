@@ -1,5 +1,5 @@
 // New message: pick one or more people from my council and its affiliated councils, and/or a Distribution List
-// of my own council (All Members, Active Officers, Board of Trustees; Sprint 5Y-Mobile), write, send.
+// of my own council (All Members, Active Officers; Sprint 5Y-Mobile), write, send.
 // The person list follows the spec: "Last, First – Council name", sorted by council name then last name.
 // A Distribution List is resolved to its Active members when the message is sent, and each of them gets an
 // unread receipt (the envelope badge), just like a person picked one by one.

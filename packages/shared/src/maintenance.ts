@@ -77,6 +77,8 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
     { table: 'CharitableDisbursementLedger', column: 'CouncilID', noun: ['charity check', 'charity checks'] },
     { table: 'CouncilBudgetForecast', column: 'CouncilID', noun: ['budget line', 'budget lines'] },
     { table: 'CouncilBudgetCategory', column: 'CouncilID', noun: ['budget category', 'budget categories'] },
+    { table: 'CouncilMeetingType', column: 'CouncilID', noun: ['meeting type', 'meeting types'] },
+    { table: 'CouncilAgendaTemplate', column: 'CouncilID', noun: ['agenda template', 'agenda templates'] },
     { table: 'AffiliatedCouncils', column: 'PrimaryCouncilID', noun: ['affiliation', 'affiliations'] },
     { table: 'AffiliatedCouncils', column: 'AffiliatedCouncilID', noun: ['affiliation', 'affiliations'] },
   ],

@@ -208,3 +208,12 @@ Values
 (1, 'Council Maintenance & State/Supreme Programs'),
 (1, 'Blessed Michael McGivney Fraternal Activities Fund');
 GO
+-- ==============================================================================
+-- Sprint 5Y-5: standard meeting types of Council 15295 (CouncilID 1) only; every other council defines its own
+-- ==============================================================================
+Insert Into [CouncilMeetingType] ([CouncilID], [TypeName])
+Values 
+(1, 'Monthly'),
+(1, 'Officer'),
+(1, 'Community');
+GO

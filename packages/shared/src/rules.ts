@@ -19,7 +19,7 @@ import type {
   NewDonation,
   NewMember,
 } from './contract';
-import type { Donation, Meeting, Member, Shift } from './types';
+import type { Donation, Meeting, MeetingResponseStatus, Member, Shift } from './types';
 
 /** Time entries move in 15-minute steps (Blueprint: "Time Increments & History Boundaries"). */
 export const HOURS_STEP = 0.25;
@@ -57,6 +57,7 @@ export type BusinessRuleCode =
   | 'INVALID_INPUT'
   | 'EVENT_NOT_FOUND'
   | 'MEETING_NOT_FOUND'
+  | 'NOT_INVITED'
   | 'THREAD_NOT_FOUND'
   | 'MESSAGE_NOT_FOUND'
   | 'SHIFT_HAS_SIGNUPS'
@@ -325,6 +326,27 @@ export function aggregateMeetingHours(
     return { meetingId: m.id, meetingName: m['Meeting Name'], date: m.Date, hours, runningTotal: running };
   });
   return { totalHours: running, meetings };
+}
+
+/**
+ * Sprint 5Y-5: the default hours a member reports for a shift, from its StartTime-EndTime (an overnight shift runs
+ * past midnight, as in hoursBetween), rounded to the nearest HOURS_STEP so the default always passes
+ * assertValidHours' 15-minute rule. The member may still report more or less (SHIFT_DURATION_IS_A_CEILING).
+ */
+export const shiftDefaultLengthHours = (shift: Pick<Shift, 'StartTime' | 'EndTime'>): number =>
+  Math.round(hoursBetween(shift.StartTime, shift.EndTime) / HOURS_STEP) * HOURS_STEP;
+
+/** The RSVP answers an invitee may give (MeetingInvites.ResponseStatus, Sprint 5Y-5); 'NoResponse' is the default. */
+export const MEETING_RESPONSE_STATUSES = ['NoResponse', 'Accepted', 'Declined'] as const satisfies readonly MeetingResponseStatus[];
+
+/** Rejects INVALID_INPUT for anything but one of MEETING_RESPONSE_STATUSES. */
+export function assertMeetingResponseStatus(value: unknown): MeetingResponseStatus {
+  if ((MEETING_RESPONSE_STATUSES as readonly unknown[]).includes(value)) return value as MeetingResponseStatus;
+  throw new BusinessRuleError(
+    'INVALID_INPUT',
+    `A meeting response must be ${MEETING_RESPONSE_STATUSES.join(', ')}; received ${JSON.stringify(value)}.`,
+    { field: 'ResponseStatus', value },
+  );
 }
 
 /** DonationMethod names the phone UI treats specially; any other name a Super Admin adds is 'other'. */

@@ -229,6 +229,8 @@ import {
   type MemberWriteActor,
   type MessagingRows,
   type SignupContextRow,
+  assertMeetingResponseStatus,
+  shiftDefaultLengthHours,
 } from '@kofc/shared';
 import type {
   DistributionGroup,
@@ -286,6 +288,8 @@ import type {
   LookupValues,
   Meeting,
   MeetingInvites,
+  CouncilMeetingType,
+  CouncilAgendaTemplate,
   MeetingInviteMode,
   Member,
   MemberShift,
@@ -352,8 +356,10 @@ const DB_NAME = 'kofc.db';
  * 15: Event.IsAnnual, GlobalCharityRegistry.IsAnnual and CouncilBudgetForecast (Sprint 5Y).
  * 16: CouncilBudgetCategory, CouncilBudgetForecast.BudgetCategoryID and Member.IsBudgetDirector (Sprint 5Y-3).
  * 17: CouncilBudgetForecast.ProposedBudgetAmount and CouncilBudgetForecast.BudgetStatus (Sprint 5Y-4).
+ * 18: CouncilMeetingType, CouncilAgendaTemplate, MeetingInvites.ResponseStatus, Meeting.IsMultiDay and MeetingTypeID,
+ *     and Event.IsMultiDay (Sprint 5Y-5).
  */
-const SCHEMA_VERSION = 17;
+const SCHEMA_VERSION = 18;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -2817,6 +2823,56 @@ export class SqliteDataService implements DataService {
         [memberId, range?.fromDate ?? '0000-01-01', range?.toDate ?? '9999-12-31'],
       );
       return { memberId, ...aggregateMeetingHours(attended) };
+    },
+
+    listCouncilMeetingTypes: async (councilId) => {
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      return db.getAllAsync<CouncilMeetingType>(
+        'SELECT * FROM [CouncilMeetingType] WHERE [CouncilID] = ? ORDER BY [TypeName], [id]',
+        [councilId],
+      );
+    },
+
+    rsvpToInvite: async (actorId, meetingId, status) => {
+      const response = assertMeetingResponseStatus(status);
+      const db = await this.ready();
+      let inviteId = 0;
+      await db.withTransactionAsync(async () => {
+        await this.requireMember(db, actorId);
+        if (!(await db.getFirstAsync('SELECT [id] FROM [Meeting] WHERE [id] = ?', [meetingId]))) {
+          throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
+        }
+        const invite = await db.getFirstAsync<{ id: number }>(
+          'SELECT [id] FROM [MeetingInvites] WHERE [MeetingID] = ? AND [MemberID] = ? ORDER BY [id]',
+          [meetingId, actorId],
+        );
+        if (!invite) {
+          throw new BusinessRuleError('NOT_INVITED', `Member ${actorId} is not invited to meeting ${meetingId}.`, { meetingId, memberId: actorId });
+        }
+        inviteId = invite.id;
+        await db.runAsync('UPDATE [MeetingInvites] SET [ResponseStatus] = ? WHERE [id] = ?', [response, inviteId]);
+      });
+      return (await db.getFirstAsync<MeetingInvites>('SELECT * FROM [MeetingInvites] WHERE [id] = ?', [inviteId]))!;
+    },
+
+    getAgendaTemplate: async (councilId, meetingTypeId) => {
+      const db = await this.ready();
+      return (
+        (await db.getFirstAsync<CouncilAgendaTemplate>(
+          'SELECT * FROM [CouncilAgendaTemplate] WHERE [CouncilID] = ? AND [MeetingTypeID] = ?',
+          [councilId, meetingTypeId],
+        )) ?? null
+      );
+    },
+  };
+
+  // ---- shifts ------------------------------------------------------------
+
+  shifts: DataService['shifts'] = {
+    getShiftDefaultLength: async (shiftId) => {
+      const db = await this.ready();
+      return shiftDefaultLengthHours(await this.requireShift(db, shiftId));
     },
   };
 

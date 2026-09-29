@@ -11,7 +11,7 @@ export interface ColumnMeta {
   kind: ColumnKind;
   notNull: boolean;
   identity: boolean;
-  default: { kind: 'literal'; value: number } | { kind: 'now' } | null;
+  default: { kind: 'literal'; value: number | string } | { kind: 'now' } | null;
 }
 
 export interface ForeignKeyMeta {
@@ -587,6 +587,23 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "IsMultiDay",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "MeetingTypeID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -603,6 +620,11 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "OwnerID",
         "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "MeetingTypeID",
+        "refTable": "CouncilMeetingType",
         "refColumn": "id"
       }
     ],
@@ -642,6 +664,16 @@ export const TABLES: Record<string, TableMeta> = {
         "default": {
           "kind": "literal",
           "value": 0
+        }
+      },
+      {
+        "name": "ResponseStatus",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": "NoResponse"
         }
       }
     ],
@@ -1016,6 +1048,16 @@ export const TABLES: Record<string, TableMeta> = {
       },
       {
         "name": "IsAnnual",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "IsMultiDay",
         "kind": "bit",
         "notNull": true,
         "identity": false,
@@ -3337,6 +3379,100 @@ export const TABLES: Record<string, TableMeta> = {
         "LineItemName"
       ]
     ]
+  },
+  "CouncilMeetingType": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "TypeName",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "CouncilID",
+        "TypeName"
+      ]
+    ]
+  },
+  "CouncilAgendaTemplate": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "MeetingTypeID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "TemplateText",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "MeetingTypeID",
+        "refTable": "CouncilMeetingType",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "CouncilID",
+        "MeetingTypeID"
+      ]
+    ]
   }
 };
 
@@ -3842,6 +3978,23 @@ export const SEED_DATA: readonly SeedTable[] = [
       {
         "CouncilID": 1,
         "CategoryName": "Blessed Michael McGivney Fraternal Activities Fund"
+      }
+    ]
+  },
+  {
+    "table": "CouncilMeetingType",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "TypeName": "Monthly"
+      },
+      {
+        "CouncilID": 1,
+        "TypeName": "Officer"
+      },
+      {
+        "CouncilID": 1,
+        "TypeName": "Community"
       }
     ]
   }

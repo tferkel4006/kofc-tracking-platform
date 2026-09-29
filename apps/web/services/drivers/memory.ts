@@ -226,6 +226,8 @@ import {
   type MessagingRows,
   type SeatTransition,
   type SignupContextRow,
+  assertMeetingResponseStatus,
+  shiftDefaultLengthHours,
 } from '@kofc/shared';
 import type {
   DistributionGroup,
@@ -295,6 +297,8 @@ import type {
   LookupTableName,
   Meeting,
   MeetingInvites,
+  CouncilMeetingType,
+  CouncilAgendaTemplate,
   MeetingInviteMode,
   Member,
   MemberShift,
@@ -2407,6 +2411,46 @@ export class MemoryDataService implements DataService {
         .filter((m) => attendedIds.has(m.id) && (m.Date as string) >= from && (m.Date as string) <= to)
         .map((m) => ({ ...m })) as unknown as Meeting[];
       return { memberId, ...aggregateMeetingHours(attended) };
+    },
+
+    listCouncilMeetingTypes: async (councilId) => {
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      return (s.rows('CouncilMeetingType').filter((t) => t.CouncilID === councilId).map((t) => ({ ...t })) as unknown as CouncilMeetingType[]).sort(
+        (a, b) => (a.TypeName < b.TypeName ? -1 : a.TypeName > b.TypeName ? 1 : a.id - b.id), // binary order, as SQLite's ORDER BY
+      );
+    },
+
+    rsvpToInvite: async (actorId, meetingId, status) => {
+      const response = assertMeetingResponseStatus(status);
+      const s = await this.ready();
+      return s.transaction(() => {
+        this.requireMember(s, actorId);
+        if (!s.rows('Meeting').some((m) => m.id === meetingId)) {
+          throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
+        }
+        const invite = s.rows('MeetingInvites').find((i) => i.MeetingID === meetingId && i.MemberID === actorId);
+        if (!invite) {
+          throw new BusinessRuleError('NOT_INVITED', `Member ${actorId} is not invited to meeting ${meetingId}.`, { meetingId, memberId: actorId });
+        }
+        (invite as Row).ResponseStatus = response;
+        return { ...invite } as unknown as MeetingInvites;
+      });
+    },
+
+    getAgendaTemplate: async (councilId, meetingTypeId) => {
+      const s = await this.ready();
+      const row = s.rows('CouncilAgendaTemplate').find((t) => t.CouncilID === councilId && t.MeetingTypeID === meetingTypeId);
+      return row ? ({ ...row } as unknown as CouncilAgendaTemplate) : null;
+    },
+  };
+
+  // ---- shifts ------------------------------------------------------------
+
+  shifts: DataService['shifts'] = {
+    getShiftDefaultLength: async (shiftId) => {
+      const s = await this.ready();
+      return shiftDefaultLengthHours(this.requireShift(s, shiftId) as unknown as Shift);
     },
   };
 
