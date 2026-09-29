@@ -88,7 +88,8 @@ export type BusinessRuleCode =
   | 'CHARITY_ALREADY_REGISTERED'
   | 'PROPOSAL_STATUS_CONFLICT'
   | 'BUDGET_LINE_EXISTS'
-  | 'BUDGET_YEAR_FINALIZED';
+  | 'BUDGET_YEAR_FINALIZED'
+  | 'BUDGET_WINDOW_NOT_OPEN';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {

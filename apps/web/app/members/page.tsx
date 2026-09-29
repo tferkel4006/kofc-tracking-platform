@@ -260,7 +260,7 @@ function MemberForm({
             <span>
               <span className="block font-bold">Designated Budget Director</span>
               <span className="block text-xs text-muted">
-                Lets this member prepare the council&apos;s annual budget (rollup, custom lines, approved amounts) during the June drafting window, alongside the Admins, Financial Secretary and Treasurer. Saved with the member.
+                Lets this member prepare the council&apos;s annual budget (rollup, custom lines, approved amounts) during the May 1 - June 30 drafting window, alongside the Admins, Financial Secretary and Treasurer. Saved with the member.
               </span>
             </span>
           </label>

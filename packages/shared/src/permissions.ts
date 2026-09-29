@@ -10,6 +10,7 @@
 // identity yet, so until the remote driver's API enforces them server-side they are a usability gate.
 // =========================================================================
 import type { CouncilLookupTableName, SessionUser } from './contract';
+import { budgetWindowOf } from './budget';
 import { GRAND_KNIGHT_ROLE } from './elections';
 import { FINANCE_LOOKUP_TABLES, holdsFinanceRole } from './rules';
 import type { Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
@@ -232,6 +233,14 @@ export const canDisburseCharity = (u: Actor, councilId: number): boolean => canD
  */
 export const canManageBudgetForecast = (u: Actor, councilId: number): boolean =>
   canManageFinances(u, councilId) || (u.isBudgetDirector === true && u.councilId === councilId);
+
+/**
+ * The budget's inputs, rollup and custom-line controls for one year, mirroring the drivers' two write checks
+ * (Sprint 5Y-3.5): canManageBudgetForecast, and the drafting window - May 1 00:00 through June 30 midnight local time
+ * (budgetWindowOf 'Draft', assertBudgetYearWritable) - unless a Super Admin is overriding it.
+ */
+export const canEditBudgetYear = (u: Actor, councilId: number, fraternalYear: string, today: Date, superAdminOverride = false): boolean =>
+  canManageBudgetForecast(u, councilId) && (budgetWindowOf(fraternalYear, today) === 'Draft' || (superAdminOverride && isSuperAdmin(u)));
 
 /** Reading the annual budget, mirroring assertMayViewBudgetForecast (Sprint 5Y-3): every member of the council, any Super Admin. */
 export const canViewBudgetForecast = (u: Actor, councilId: number): boolean => isSuperAdmin(u) || u.councilId === councilId;

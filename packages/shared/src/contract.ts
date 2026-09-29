@@ -942,9 +942,10 @@ export interface NewCustomBudgetLine {
 }
 
 /**
- * Options of the budget writes (Sprint 5Y-3). A fraternal year's budget is Finalized from July 1 of its first year
- * (budgetWindowOf) and then refuses writes with BUDGET_YEAR_FINALIZED; `superAdminOverride` lifts that lock, and only
- * for an Active Super Admin (anyone else passing it is still refused).
+ * Options of the budget writes (Sprint 5Y-3, window recalibrated in 5Y-3.5). A fraternal year's budget accepts writes
+ * only while it is 'Draft', May 1 00:00 through June 30 midnight of its first year (budgetWindowOf): before May 1 they
+ * reject BUDGET_WINDOW_NOT_OPEN, from July 1 BUDGET_YEAR_FINALIZED. `superAdminOverride` lifts both, and only for an
+ * Active Super Admin (anyone else passing it is still refused).
  */
 export interface BudgetWriteOptions {
   superAdminOverride?: boolean;
@@ -959,7 +960,7 @@ export interface BudgetLineUpdateOptions extends BudgetWriteOptions {
 export interface AnnualBudgetForecast {
   councilId: number;
   fraternalYear: string;
-  /** Where the year stands today by the data service's clock: 'Not Yet Open', 'Draft' (June) or 'Finalized' (July 1 on). */
+  /** Where the year stands today by the data service's clock: 'Not Yet Open', 'Draft' (May 1 - June 30) or 'Finalized' (July 1 on). */
   window: BudgetWindowState;
   /** The council's CouncilBudgetCategory rows in id order (the order the council created them). */
   categories: CouncilBudgetCategory[];
@@ -1694,8 +1695,9 @@ export interface DataService {
    * ('YYYY-YYYY', July 1 - June 30). Every Active member of the council may read it (Sprint 5Y-3 transparency;
    * assertMayViewBudgetForecast: COUNCIL_ACCESS_DENIED). Writes are for council leadership - an Active Admin, Financial
    * Secretary or Treasurer of the council, or its Active Designated Budget Director (Member.IsBudgetDirector) - or an
-   * Active Super Admin for any council (assertMayManageBudgetForecast: ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Writes to
-   * a Finalized year (July 1 on) reject BUDGET_YEAR_FINALIZED unless an Active Super Admin passes superAdminOverride.
+   * Active Super Admin for any council (assertMayManageBudgetForecast: ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Writes are
+   * accepted only from May 1 through June 30 before the year starts (assertBudgetYearWritable): earlier they reject
+   * BUDGET_WINDOW_NOT_OPEN, from July 1 BUDGET_YEAR_FINALIZED, unless an Active Super Admin passes superAdminOverride.
    * Rows are always read and written for one council; nothing crosses councils. Writes are all or nothing; an unknown
    * actor rejects MEMBER_NOT_FOUND, an unknown council INVALID_INPUT, a fraternal year that is not 'YYYY-YYYY' with
    * consecutive years INVALID_INPUT, a BudgetCategoryID that is not one of the council's categories INVALID_INPUT.
@@ -1709,7 +1711,7 @@ export interface DataService {
     /**
      * Sets a line's ApprovedBudgetAmount and, unless `notes` is undefined, its Notes (blank or null clears them), and
      * with options.budgetCategoryId its category; resolves to the stored line. Writers of the line's council. Rejects
-     * RECORD_NOT_FOUND for an unknown line, BUDGET_YEAR_FINALIZED for a Finalized year, and INVALID_INPUT for a negative
+     * RECORD_NOT_FOUND for an unknown line, BUDGET_WINDOW_NOT_OPEN / BUDGET_YEAR_FINALIZED outside the drafting window, and INVALID_INPUT for a negative
      * amount, one with fractions of a cent, notes over BUDGET_NOTES_MAX_LENGTH characters or another council's category.
      */
     updateLineItemBudget(
@@ -1722,7 +1724,7 @@ export interface DataService {
     /**
      * Adds a council-specific 'Operational' line (NewCustomBudgetLine) and resolves to it. Rejects BUDGET_LINE_EXISTS
      * (details.lineId names it) when the council's year already has an Operational line of that name ignoring case and
-     * spacing, BUDGET_YEAR_FINALIZED for a Finalized year, and INVALID_INPUT for a bad field.
+     * spacing, BUDGET_WINDOW_NOT_OPEN / BUDGET_YEAR_FINALIZED outside the drafting window, and INVALID_INPUT for a bad field.
      */
     addCustomBudgetLine(actorId: number, councilId: number, data: NewCustomBudgetLine, options?: BudgetWriteOptions): Promise<CouncilBudgetForecast>;
     /**
@@ -1740,8 +1742,8 @@ export interface DataService {
      * Re-running is safe: a line that already exists keeps its ApprovedBudgetAmount and Notes and only has its
      * PrePopulatedAmount (and a renamed source's LineItemName) refreshed. New lines start with ApprovedBudgetAmount 0
      * for review. Nothing is deleted. A new line takes the BudgetCategoryID of the previous year's line it continues (same
-     * source, or for an unsourced line the same name), so the council files each line once. Rejects BUDGET_YEAR_FINALIZED
-     * for a Finalized target year.
+     * source, or for an unsourced line the same name), so the council files each line once. Rejects BUDGET_WINDOW_NOT_OPEN
+     * or BUDGET_YEAR_FINALIZED when the target year is outside its drafting window.
      */
     prePopulateNextYear(actorId: number, councilId: number, targetFraternalYear: string, options?: BudgetWriteOptions): Promise<BudgetPrePopulationResult>;
   };

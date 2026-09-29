@@ -235,43 +235,54 @@ export function mergeBudgetSeeds(
   return { inserts, updates };
 }
 
-// ---- the June drafting window (Sprint 5Y-2) and the July 1 lock (Sprint 5Y-3) ----------
+// ---- the May-June drafting window and the July 1 lock (Sprint 5Y-2, 5Y-3, 5Y-3.5) ----------
 
 /**
- * Where a fraternal year's budget stands on a given day: prepared in the June before the year starts ('Draft'), locked
- * as 'Finalized' from July 1 when the year begins, and 'Not Yet Open' before that June.
+ * Where a fraternal year's budget stands on a given day: prepared from May 1 through June 30 before the year starts
+ * ('Draft'), locked as 'Finalized' from July 1 when the year begins, and 'Not Yet Open' before May 1.
  */
 export type BudgetWindowState = 'Not Yet Open' | 'Draft' | 'Finalized';
 
-/** The month (0-based: June) in which the next fraternal year's budget is drafted. */
-export const BUDGET_DRAFT_MONTH = 5;
+/** The month (0-based: May) the drafting window opens, on its 1st at 00:00 local time (Sprint 5Y-3.5). */
+export const BUDGET_DRAFT_OPENS_MONTH = 4;
+/** The month (0-based: July) the budget locks as Finalized, on its 1st at 00:00 local time: the window ends at midnight June 30. */
+export const BUDGET_FINALIZED_MONTH = 6;
 
-/** budgetWindowOf for `fraternalYear` on `today`: Draft through June 1-30 of its first year, Finalized from July 1. */
+/** budgetWindowOf for `fraternalYear` on `today`: Draft May 1 - June 30 of its first year, Finalized from July 1. */
 export function budgetWindowOf(fraternalYear: string, today: Date): BudgetWindowState {
   const start = Number(assertFraternalYear(fraternalYear).slice(0, 4));
-  const opens = new Date(start, BUDGET_DRAFT_MONTH, 1);
-  const locks = new Date(start, BUDGET_DRAFT_MONTH + 1, 1);
+  const opens = new Date(start, BUDGET_DRAFT_OPENS_MONTH, 1);
+  const locks = new Date(start, BUDGET_FINALIZED_MONTH, 1);
   if (today >= locks) return 'Finalized';
   return today >= opens ? 'Draft' : 'Not Yet Open';
 }
 
 /** The fraternal year whose budget is prepared next: the one starting this July 1, or next year's once July has come. */
 export function upcomingFraternalYear(today: Date): string {
-  const start = today.getMonth() > BUDGET_DRAFT_MONTH ? today.getFullYear() + 1 : today.getFullYear();
+  const start = today.getMonth() >= BUDGET_FINALIZED_MONTH ? today.getFullYear() + 1 : today.getFullYear();
   return `${start}-${start + 1}`;
 }
 
 /**
- * The data layer's July 1 lock (Sprint 5Y-3): a write to a Finalized year rejects BUDGET_YEAR_FINALIZED unless an Active
- * Super Admin passes superAdminOverride. Anyone else's override is ignored.
+ * The data layer's drafting window (Sprint 5Y-3, recalibrated in 5Y-3.5): budget writes are accepted only while the year
+ * is 'Draft' - May 1 00:00 through June 30 midnight, local time. Before May 1 a write rejects BUDGET_WINDOW_NOT_OPEN,
+ * from July 1 BUDGET_YEAR_FINALIZED, unless an Active Super Admin passes superAdminOverride (anyone else's is ignored).
  */
 export function assertBudgetYearWritable(fraternalYear: string, today: Date, actor: MemberWriteActor, options: BudgetWriteOptions = {}): void {
-  if (budgetWindowOf(fraternalYear, today) !== 'Finalized') return;
+  const state = budgetWindowOf(fraternalYear, today);
+  if (state === 'Draft') return;
   if (options.superAdminOverride === true && hasSuperAdminRights(actor)) return;
   const start = fraternalYear.slice(0, 4);
+  if (state === 'Finalized') {
+    throw new BusinessRuleError(
+      'BUDGET_YEAR_FINALIZED',
+      `The ${fraternalYear} budget was locked as Finalized on July 1, ${start}; it can no longer be changed.`,
+      { fraternalYear },
+    );
+  }
   throw new BusinessRuleError(
-    'BUDGET_YEAR_FINALIZED',
-    `The ${fraternalYear} budget was locked as Finalized on July 1, ${start}; it can no longer be changed.`,
+    'BUDGET_WINDOW_NOT_OPEN',
+    `The ${fraternalYear} budget opens for drafting on May 1, ${start}; it cannot be changed before then.`,
     { fraternalYear },
   );
 }

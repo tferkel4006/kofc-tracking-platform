@@ -33,6 +33,7 @@ import {
   type MemberWriteActor,
 } from '@kofc/shared';
 import { MemoryDataService } from '../apps/web/services/drivers/memory';
+import { SqliteDataService } from '../apps/mobile/services/drivers/sqlite';
 import { drivers, expectRule, MEMBER, NOW, type DriverUnderTest } from './helpers';
 import { openDatabases } from './shims/expo-sqlite';
 
@@ -40,10 +41,21 @@ import { openDatabases } from './shims/expo-sqlite';
 // Seed.sql gives council 1 (only) its six budget categories.
 const OWN = 1;
 const OTHER = 2;
-// The tests run on 2026-09-20 (NOW): 2027-2028 has not opened yet, so the data layer accepts writes to it, and
-// 2026-2027 was Finalized on July 1, 2026.
+// The driver tests run on May 15, 2027 (DRAFTING): 2027-2028 is open for drafting (May 1 - June 30, 2027), 2026-2027
+// was Finalized on July 1, 2026, and 2028-2029 does not open until May 1, 2028. NOW (2026-09-20) is before 2027-2028 opens.
 const TARGET = '2027-2028';
 const SOURCE = '2026-2027';
+const LATER = '2028-2029';
+const DRAFTING = new Date(2027, 4, 15, 12, 0, 0);
+
+/** A seeded data service whose clock reads `at` (default: inside the 2027-2028 drafting window). */
+async function make(d: DriverUnderTest, at: Date = DRAFTING): Promise<DataService> {
+  const now = () => new Date(at);
+  if (d.name === 'sqlite') openDatabases.length = 0; // so `openDatabases.at(-1)` is this service's database
+  const db = d.name === 'memory' ? new MemoryDataService({ now }) : new SqliteDataService({ now });
+  await db.init();
+  return db;
+}
 const SEEDED_CATEGORIES = [
   'Father George Wolf Memorial Fund',
   'Sister Rita Rose Vistica Parish Community Fund',
@@ -249,9 +261,12 @@ describe('budget helpers (pure)', () => {
     expect(plan.inserts).toEqual([{ CategoryType: 'Donation', ReferenceSourceID: 4, LineItemName: 'Food Bank', PrePopulatedAmount: 100, BudgetCategoryID: null }]);
   });
 
-  it('opens a budget for drafting through June, locks it as Finalized on July 1, and names the year to prepare next', () => {
-    expect(budgetWindowOf('2027-2028', new Date(2027, 4, 31, 23, 59))).toBe('Not Yet Open');
+  it('opens a budget for drafting from May 1 00:00 to June 30 midnight, locks it as Finalized on July 1, and names the year to prepare next', () => {
+    expect(budgetWindowOf('2027-2028', new Date(2027, 3, 30, 23, 59, 59))).toBe('Not Yet Open');
+    expect(budgetWindowOf('2027-2028', new Date(2027, 4, 1, 0, 0, 0))).toBe('Draft');
     expect(budgetWindowOf('2027-2028', new Date(2027, 5, 1))).toBe('Draft');
+    expect(budgetWindowOf('2027-2028', new Date(2027, 5, 30, 23, 59, 59))).toBe('Draft');
+    expect(budgetWindowOf('2027-2028', new Date(2027, 6, 1, 0, 0, 0))).toBe('Finalized');
     expect(budgetWindowOf('2027-2028', new Date(2027, 5, 30, 23, 59))).toBe('Draft');
     expect(budgetWindowOf('2027-2028', new Date(2027, 6, 1))).toBe('Finalized');
     expect(budgetWindowOf('2026-2027', new Date(2026, 8, 20))).toBe('Finalized');
@@ -261,7 +276,7 @@ describe('budget helpers (pure)', () => {
     expect(upcomingFraternalYear(new Date(2026, 6, 1))).toBe('2027-2028');
   });
 
-  it('locks a Finalized year against every write but an Active Super Admin override (Sprint 5Y-3)', () => {
+  it('accepts writes only inside the May 1 - June 30 window, except with an Active Super Admin override (Sprint 5Y-3.5)', () => {
     const finalized = (a: MemberWriteActor, options?: { superAdminOverride?: boolean }) => {
       try {
         assertBudgetYearWritable(SOURCE, NOW, a, options);
@@ -276,8 +291,22 @@ describe('budget helpers (pure)', () => {
     expect(finalized(superAdmin)).toBe('BUDGET_YEAR_FINALIZED');
     expect(finalized(actor({ memberType: 'Super Admin', active: false }), { superAdminOverride: true })).toBe('BUDGET_YEAR_FINALIZED');
     expect(finalized(superAdmin, { superAdminOverride: true })).toBe('open');
-    expect(() => assertBudgetYearWritable(TARGET, NOW, actor())).not.toThrow();
-    expect(() => assertBudgetYearWritable(TARGET, new Date(2027, 5, 15), actor())).not.toThrow();
+    const code = (today: Date, a: MemberWriteActor = actor(), options?: { superAdminOverride?: boolean }) => {
+      try {
+        assertBudgetYearWritable(TARGET, today, a, options);
+        return 'open';
+      } catch (e) {
+        return (e as { code: string }).code;
+      }
+    };
+    expect(code(NOW)).toBe('BUDGET_WINDOW_NOT_OPEN');
+    expect(code(new Date(2027, 3, 30, 23, 59, 59))).toBe('BUDGET_WINDOW_NOT_OPEN');
+    expect(code(new Date(2027, 3, 30), actor({ memberType: 'Admin' }), { superAdminOverride: true })).toBe('BUDGET_WINDOW_NOT_OPEN');
+    expect(code(new Date(2027, 3, 30), superAdmin, { superAdminOverride: true })).toBe('open');
+    expect(code(new Date(2027, 4, 1, 0, 0, 0))).toBe('open');
+    expect(code(new Date(2027, 5, 30, 23, 59, 59))).toBe('open');
+    expect(code(new Date(2027, 6, 1, 0, 0, 0))).toBe('BUDGET_YEAR_FINALIZED');
+    expect(() => assertBudgetYearWritable(TARGET, new Date(2027, 3, 1), actor())).toThrow(/opens for drafting on May 1, 2027/);
     expect(() => assertBudgetYearWritable(TARGET, new Date(2027, 6, 1), actor())).toThrow(/locked as Finalized on July 1, 2027/);
   });
 
@@ -365,7 +394,7 @@ for (const d of drivers) {
      * and charity check, a non-annual event and charity, an annual event from the following year, and a Draft sheet.
      */
     async function withHistory() {
-      const db = await d.make();
+      const db = await make(d);
       const category = (await db.lookups.list('Category'))[0].id;
       const event = (name: string, date: string, over: Partial<Event> = {}, councils = [OWN]) =>
         db.events.create(
@@ -451,7 +480,7 @@ for (const d of drivers) {
         { CategoryType: 'Operational', ReferenceSourceID: null, LineItemName: BUDGET_MEETINGS_LINE_NAME, PrePopulatedAmount: 35.5, ApprovedBudgetAmount: 0, BudgetCategoryID: null },
       ]);
       const other = await db.budget.listAnnualForecast(MEMBER.superAdmin, OTHER, TARGET);
-      expect(other).toMatchObject({ councilId: OTHER, fraternalYear: TARGET, window: 'Not Yet Open', categories: [], lines: [] });
+      expect(other).toMatchObject({ councilId: OTHER, fraternalYear: TARGET, window: 'Draft', categories: [], lines: [] });
       expect((await db.budget.listAnnualForecast(MEMBER.admin, OWN, SOURCE)).lines).toEqual([]);
     });
 
@@ -477,7 +506,7 @@ for (const d of drivers) {
     });
 
     it('lists council 15295\'s six seeded categories, and files lines only under the council\'s own categories', async () => {
-      const db = await d.make();
+      const db = await make(d);
       const forecast = await db.budget.listAnnualForecast(MEMBER.member, OWN, TARGET);
       expect(forecast.categories.map((c) => c.CategoryName)).toEqual(SEEDED_CATEGORIES);
       expect(forecast.categories.every((c) => c.CouncilID === OWN)).toBe(true);
@@ -503,7 +532,7 @@ for (const d of drivers) {
     });
 
     it('lets leadership approve figures and notes, and add unique custom Operational lines', async () => {
-      const db = await d.make();
+      const db = await make(d);
       const custom = await db.budget.addCustomBudgetLine(MEMBER.admin, OWN, {
         FraternalYear: TARGET,
         LineItemName: 'Liability insurance',
@@ -524,7 +553,7 @@ for (const d of drivers) {
       const dup = await expectRule(db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: TARGET, LineItemName: ' LIABILITY  insurance' }), 'BUDGET_LINE_EXISTS');
       expect(dup.details.lineId).toBe(custom.id);
       // Another year, or another council, is a different budget.
-      await db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: '2028-2029', LineItemName: 'Liability insurance' });
+      await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: LATER, LineItemName: 'Liability insurance' }, { superAdminOverride: true });
       await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OTHER, { FraternalYear: TARGET, LineItemName: 'Liability insurance' });
 
       expect(await db.budget.updateLineItemBudget(MEMBER.admin, custom.id, 1350.75)).toMatchObject({ ApprovedBudgetAmount: 1350.75, Notes: 'Renews in October' });
@@ -536,7 +565,7 @@ for (const d of drivers) {
     });
 
     it('refuses every write to a Finalized year with BUDGET_YEAR_FINALIZED unless a Super Admin overrides it (Sprint 5Y-3)', async () => {
-      const db = await d.make();
+      const db = await make(d);
       // Only the Super Admin's override can still add to 2026-2027, finalized on July 1, 2026.
       await expectRule(db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bank Fees' }), 'BUDGET_YEAR_FINALIZED');
       await expectRule(db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bank Fees' }, { superAdminOverride: true }), 'BUDGET_YEAR_FINALIZED');
@@ -555,8 +584,27 @@ for (const d of drivers) {
       expect((await db.budget.prePopulateNextYear(MEMBER.superAdmin, OWN, SOURCE, { superAdminOverride: true })).fraternalYear).toBe(SOURCE);
     });
 
+    it('refuses writes before a year\'s May 1 opening with BUDGET_WINDOW_NOT_OPEN unless a Super Admin overrides it (Sprint 5Y-3.5)', async () => {
+      const db = await make(d);
+      await expectRule(db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: LATER, LineItemName: 'Bank Fees' }), 'BUDGET_WINDOW_NOT_OPEN');
+      await expectRule(db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: LATER, LineItemName: 'Bank Fees' }, { superAdminOverride: true }), 'BUDGET_WINDOW_NOT_OPEN');
+      await expectRule(db.budget.prePopulateNextYear(MEMBER.admin, OWN, LATER), 'BUDGET_WINDOW_NOT_OPEN');
+      const early = await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: LATER, LineItemName: 'Bank Fees' }, { superAdminOverride: true });
+      await expectRule(db.budget.updateLineItemBudget(MEMBER.admin, early.id, 10), 'BUDGET_WINDOW_NOT_OPEN');
+      expect((await db.budget.listAnnualForecast(MEMBER.member, OWN, LATER)).window).toBe('Not Yet Open');
+
+      // On the real test clock (2026-09-20) even 2027-2028 has not opened yet.
+      const september = await make(d, NOW);
+      await expectRule(september.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: TARGET, LineItemName: 'Bank Fees' }), 'BUDGET_WINDOW_NOT_OPEN');
+      // June 30 at 23:59:59 is still open; July 1 at 00:00 is Finalized.
+      const lastMinute = await make(d, new Date(2027, 5, 30, 23, 59, 59));
+      await lastMinute.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: TARGET, LineItemName: 'Bank Fees' });
+      const julyFirst = await make(d, new Date(2027, 6, 1, 0, 0, 0));
+      await expectRule(julyFirst.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: TARGET, LineItemName: 'Bank Fees' }), 'BUDGET_YEAR_FINALIZED');
+    });
+
     it("clones last year's custom lines, and their categories, into the new year at a 0.00 baseline, for that council only", async () => {
-      const db = await d.make();
+      const db = await make(d);
       const maintenance = await categoryId(db, 'Council Maintenance & State/Supreme Programs');
       const override = { superAdminOverride: true };
       await db.budget.addCustomBudgetLine(MEMBER.superAdmin, OWN, { FraternalYear: SOURCE, LineItemName: 'Bank Fees', ApprovedBudgetAmount: 60, Notes: 'Monthly service charge', BudgetCategoryID: maintenance }, override);
@@ -577,7 +625,7 @@ for (const d of drivers) {
     });
 
     it('opens the budget read-only to every member of the council and keeps other councils out (Sprint 5Y-3 transparency)', async () => {
-      const db = await d.make();
+      const db = await make(d);
       const line = await db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: TARGET, LineItemName: 'Office supplies', ApprovedBudgetAmount: 40 });
       const seen = await db.budget.listAnnualForecast(MEMBER.member, OWN, TARGET);
       expect(seen.lines.map((l) => [l.LineItemName, l.ApprovedBudgetAmount])).toEqual([['Office supplies', 40]]);
@@ -598,7 +646,7 @@ for (const d of drivers) {
     });
 
     it('lets an Admin designate a Budget Director, who may then prepare the budget; members cannot designate themselves', async () => {
-      const db = await d.make();
+      const db = await make(d);
       const line = await db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: TARGET, LineItemName: 'Office supplies' });
       await expectPrivilege(db.members.update(MEMBER.member, MEMBER.member, { IsBudgetDirector: 1 }), 'ADMIN_REQUIRED');
       expect((await db.members.get(MEMBER.member))?.IsBudgetDirector).toBe(0);

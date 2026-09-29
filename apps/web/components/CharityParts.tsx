@@ -106,7 +106,7 @@ export function CharityRecordFields({ draft, onChange }: { draft: CharityDraft; 
         <span>
           <span className="font-bold">Is Annual</span>
           <span className="block text-xs text-muted">
-            A budgeting tag only: councils give to this charity every year, so next June&apos;s budget reads what each council paid it.
+            A budgeting tag only: councils give to this charity every year, so next year&apos;s budget (drafted May 1 - June 30) reads what each council paid it.
           </span>
         </span>
       </label>

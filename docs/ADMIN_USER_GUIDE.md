@@ -349,7 +349,12 @@ The **Highlights** text of each of the month's events, in date order. If none ap
 > - It tells the Budget Engine which events and charities recur each year. When the budget is prepared, the engine reads the **prior fraternal year's actual audited spend** on every tagged event and tagged charity and uses it to **pre-populate baseline estimates** for the year ahead.
 > - An untagged event or charity is still counted in the monthly summaries. It simply gets no line of its own in next year's budget.
 >
-> **Budgets are prepared in June and locked automatically as Finalized on July 1st**, the day the new fraternal year begins. From July 1 the data service itself refuses every change to that year's budget (*"The … budget was locked as Finalized on July 1"*). Only a Super Admin override can reopen it.
+> **The budget preparation window runs from May 1st to June 30th, and the budget locks automatically as Finalized on July 1st**, the day the new fraternal year begins.
+>
+> - Changes are accepted from **May 1 at 00:00** until **midnight on June 30** (local time).
+> - **Before May 1** the data service refuses every change (*"The … budget opens for drafting on May 1"*).
+> - **From July 1** it refuses every change (*"The … budget was locked as Finalized on July 1"*).
+> - Only a Super Admin override can change a budget outside the window.
 
 ### 12.1 The budget year and its window
 
@@ -357,8 +362,8 @@ Choose the **Fraternal year** (July 1 – June 30). The picker opens on the next
 
 | Badge | When | What you can do |
 |---|---|---|
-| **Not Yet Open** | Before June 1 of the year's first calendar year | Read only |
-| **Draft** | June 1 – June 30 | Run the rollup, add custom lines, edit approved amounts and notes |
+| **Not Yet Open** | Before May 1 of the year's first calendar year | Read only |
+| **Draft** | May 1 (00:00) – June 30 (midnight) | Run the rollup, add custom lines, edit approved amounts and notes |
 | **Finalized** | From July 1 | Read only |
 
 ### 12.2 Initialize Automated Prior Year Baseline Rollup
@@ -370,7 +375,7 @@ The navy **Initialize Automated Prior Year Baseline Rollup** button, next to the
 - **Council Meetings**: the approved and reimbursed expense reports linked to the council's meetings.
 - **Last year's custom lines** are carried forward under the same names with a baseline of **$0.00**.
 
-New lines start with an **Approved Budget Amount** of $0.00 for your review. You can run the rollup again at any time in June: it refreshes the baselines (and renamed events or charities) but **never changes approved amounts or notes**, and never removes a line.
+New lines start with an **Approved Budget Amount** of $0.00 for your review. You can run the rollup again at any time from May 1 to June 30: it refreshes the baselines (and renamed events or charities) but **never changes approved amounts or notes**, and never removes a line.
 
 ### 12.3 The budget spreadsheet
 
@@ -388,11 +393,11 @@ Each change saves when you leave the box or make the pick. **Saved** appears bes
 
 ### 12.4 Custom council operational lines
 
-Use **+ Add Custom Council Operational Line** at the top of the spreadsheet for running costs that are not an event or a charity, such as **Bank Fees** or **Bulletin Ads**. Enter the **Line item name**, a **Target budget amount** and optionally its **Budget category**. Each name can be used once per council and year (capitals and spacing are ignored). Custom lines are carried into next June's rollup automatically.
+Use **+ Add Custom Council Operational Line** at the top of the spreadsheet for running costs that are not an event or a charity, such as **Bank Fees** or **Bulletin Ads**. Enter the **Line item name**, a **Target budget amount** and optionally its **Budget category**. Each name can be used once per council and year (capitals and spacing are ignored). Custom lines are carried into next year's rollup automatically.
 
 ### 12.5 Demonstrations: Simulate June Drafting Window
 
-On the demonstration build (in-memory data), Super Admins see a **Simulate June Drafting Window** checkbox. Ticking it treats the chosen year as Draft so the inputs unlock outside June. It also sends the Super Admin override with each change, so even a Finalized year can be edited for the demo. It does not appear for other roles or on the production data service.
+On the demonstration build (in-memory data), Super Admins see a **Simulate June Drafting Window** checkbox. Ticking it treats the chosen year as Draft so the inputs unlock outside the May 1 – June 30 window. It also sends the Super Admin override with each change, so even a Finalized year can be edited for the demo. It does not appear for other roles or on the production data service.
 
 ![Image: Annual Budget Projections]
 
@@ -451,7 +456,8 @@ Members send feedback and bug reports from **Online Help Center → Submit Syste
 | Member cannot find their QR code | No **QR code image URL** is on file. | Add it under **Council Lookup Tables → Enabled donation methods**. |
 | *"Your role cannot maintain this council's lookups."* | Finance officer on another council, or no finance role. | A council Admin or Super Admin must make the change. |
 | Audits missing from Executive Summaries | Finance officers see the monthly summary only. | Ask an Admin for the audit figures. |
-| Budget inputs and buttons greyed out | The chosen year is **Not Yet Open** or **Finalized** (§12.1). | Budgets are edited only in June. Pick the year you are preparing. |
+| Budget inputs and buttons greyed out | The chosen year is **Not Yet Open** or **Finalized** (§12.1). | Budgets are edited only from May 1 to June 30. Pick the year you are preparing. |
+| *"The … budget opens for drafting on May 1"* | The drafting window for that year has not started. | Wait for May 1, or ask a Super Admin. |
 | *"The … budget was locked as Finalized on July 1"* | The year has started, so the data service refuses changes. | Only a Super Admin override can change a Finalized budget. |
 | Budget shows **Read only** / **Transparency view** | You are not an Admin, Treasurer, Financial Secretary or Designated Budget Director. | Ask a council Admin to tick **Designated Budget Director** on your roster record, then sign in again. |
 | Every budget line is **Uncategorized** | The council has no budget categories, or the lines were never filed. | Add categories under **Council Lookup Tables → Budget categories**, then pick each line's **Category**. |

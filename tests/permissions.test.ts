@@ -8,6 +8,7 @@ import {
   canDispatchCouncilAlerts,
   canManageFinances,
   canManageBudgetForecast,
+  canEditBudgetYear,
   canViewBudgetForecast,
   canDesignateBudgetDirector,
   portalAreaHref,
@@ -284,6 +285,14 @@ describe('portal permissions', () => {
     expect([superAdmin, admin, treasurer, director].map((u) => canManageBudgetForecast(u, 2))).toEqual([true, false, false, false]);
     expect([superAdmin, admin, treasurer, member].map((u) => canDesignateBudgetDirector(u, { CouncilID: 1 }))).toEqual([true, true, false, false]);
     expect(canDesignateBudgetDirector(admin, { CouncilID: 2 })).toBe(false);
+    // Sprint 5Y-3.5: the controls open only May 1 00:00 - June 30 midnight, unless a Super Admin overrides the window.
+    expect(canEditBudgetYear(treasurer, 1, '2027-2028', new Date(2027, 3, 30, 23, 59))).toBe(false);
+    expect(canEditBudgetYear(treasurer, 1, '2027-2028', new Date(2027, 4, 1))).toBe(true);
+    expect(canEditBudgetYear(director, 1, '2027-2028', new Date(2027, 5, 30, 23, 59))).toBe(true);
+    expect(canEditBudgetYear(treasurer, 1, '2027-2028', new Date(2027, 6, 1))).toBe(false);
+    expect(canEditBudgetYear(treasurer, 1, '2027-2028', new Date(2027, 6, 1), true)).toBe(false);
+    expect(canEditBudgetYear(superAdmin, 1, '2027-2028', new Date(2027, 6, 1), true)).toBe(true);
+    expect(canEditBudgetYear(member, 1, '2027-2028', new Date(2027, 4, 15))).toBe(false);
     expect(portalAreaHref('financials/budget')).toBe('/budget');
     expect(portalAreaHref('expenses/queue')).toBe('/expenses/queue');
   });

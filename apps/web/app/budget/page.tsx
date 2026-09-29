@@ -2,18 +2,20 @@
 // Annual Budget Forecast Center (Sprint 5Y). Every member of the council may read its budget (Sprint 5Y-3
 // transparency: canViewBudgetForecast; the drivers: assertMayViewBudgetForecast). Council leadership - its Admins,
 // Financial Secretary and Treasurer, its Designated Budget Director, or a Super Admin (canManageBudgetForecast; the
-// drivers: assertMayManageBudgetForecast) - prepares it each June: "Initialize Automated Prior Year Baseline Rollup" runs
+// drivers: assertMayManageBudgetForecast) - prepares it from May 1 to June 30: "Initialize Automated Prior Year Baseline Rollup" runs
 // budget.prePopulateNextYear, custom lines come from the drawer (budget.addCustomBudgetLine), and each line's approved
 // amount, notes and category save on change (budget.updateLineItemBudget). Everyone else sees the same sheet as
 // read-only text. Lines are grouped under the council's own budget categories (CouncilBudgetCategory, kept on Council
-// Lookup Tables) with an Uncategorized group for the rest. A year locks as Finalized on July 1 and the drivers then
-// refuse writes (BUDGET_YEAR_FINALIZED); a Super Admin on the in-memory mock may tick "Simulate June Drafting Window",
-// which unlocks the inputs and sends superAdminOverride with every write.
+// Lookup Tables) with an Uncategorized group for the rest. Writes are open May 1 through June 30 (canEditBudgetYear);
+// before that the drivers refuse them (BUDGET_WINDOW_NOT_OPEN) and from July 1 the year is Finalized
+// (BUDGET_YEAR_FINALIZED). A Super Admin on the in-memory mock may tick "Simulate June Drafting Window", which unlocks
+// the inputs and sends superAdminOverride with every write.
 import { useEffect, useMemo, useState } from 'react';
 import {
   BUDGET_LINE_NAME_MAX_LENGTH,
   BUDGET_NOTES_MAX_LENGTH,
   budgetWindowOf,
+  canEditBudgetYear,
   canManageBudgetForecast,
   canViewBudgetForecast,
   describeError,
@@ -43,10 +45,10 @@ const WINDOW_TONE: Record<BudgetWindowState, 'gold' | 'navy' | 'outline'> = { Dr
 
 function windowExplanation(state: BudgetWindowState, year: string, simulated: boolean): string {
   const start = year.slice(0, 4);
-  if (simulated) return `Simulated drafting window: inputs are unlocked for this demo. Real budgets for ${year} are drafted in June ${start}.`;
+  if (simulated) return `Simulated drafting window: inputs are unlocked for this demo. Real budgets for ${year} are drafted May 1 - June 30, ${start}.`;
   if (state === 'Draft') return `The ${year} budget is open for drafting until it locks as Finalized on July 1, ${start}.`;
   if (state === 'Finalized') return `The ${year} budget was locked as Finalized on July 1, ${start}. Figures are read-only.`;
-  return `The ${year} budget opens for drafting on June 1, ${start}. Figures are read-only until then.`;
+  return `The ${year} budget opens for drafting on May 1, ${start}. Figures are read-only until then.`;
 }
 
 /** What every budget write sends: the override only while a Super Admin simulates the drafting window. */
@@ -297,7 +299,7 @@ function BudgetCenter() {
   const lines = forecast.data?.lines ?? [];
   const categories = forecast.data?.categories ?? [];
   const windowState: BudgetWindowState = simulated ? 'Draft' : (forecast.data?.window ?? budgetWindowOf(year, today));
-  const editable = canEdit && windowState === 'Draft';
+  const editable = canEditBudgetYear(user, councilId, year, today, simulated);
   const groups = groupBudgetByCategory(lines, categories);
   const baselineTotal = sumBudgetAmounts(lines.map((l) => l.PrePopulatedAmount));
   const approvedTotal = sumBudgetAmounts(lines.map((l) => l.ApprovedBudgetAmount));
@@ -408,7 +410,7 @@ function BudgetCenter() {
               ) : lines.length === 0 ? (
                 <Empty>
                   No budget lines for {year} yet.{' '}
-                  {editable ? 'Run the prior year baseline rollup, or add a custom operational line.' : 'Lines are added while the budget is open in June.'}
+                  {editable ? 'Run the prior year baseline rollup, or add a custom operational line.' : 'Lines are added while the budget is open, May 1 to June 30.'}
                 </Empty>
               ) : (
                 groups.map((group) => (

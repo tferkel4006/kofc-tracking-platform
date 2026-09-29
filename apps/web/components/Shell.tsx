@@ -40,7 +40,7 @@ const NAV: Record<PortalNavItem | 'profile' | 'messages', { href: string; label:
   'charities/propose': { href: '/charities/propose', label: 'Propose Charity Grant', hint: 'Suggest a charity gift and follow it' },
   'charities/registry': { href: '/charities/registry', label: 'Global Charities Registry', hint: 'Search, suggest and add charities' },
   'charities/queue': { href: '/charities/queue', label: 'Charitable Disbursements Ledger', hint: 'Pay charity proposals by check' },
-  'financials/budget': { href: '/budget', label: 'Annual Budget Projections', hint: 'Draft and approve the council budget each June' },
+  'financials/budget': { href: '/budget', label: 'Annual Budget Projections', hint: 'Draft the council budget May 1 - June 30' },
   'council-lookups': { href: '/council-lookups', label: 'Council Lookup Tables', hint: 'Activities, donation types, methods' },
   'elections/appointments': { href: '/elections/appointments', label: 'Appointed Leadership Matrix', hint: "The Grand Knight's appointments and vacant seats" },
   'supreme-sync': { href: '/supreme-sync', label: 'Supreme Council Sync', hint: 'Audit and file Forms 1728 and 1295' },

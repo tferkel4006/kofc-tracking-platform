@@ -178,7 +178,7 @@ function EventForm({
           <span>
             <span className="font-bold">Is Annual</span>
             <span className="block text-xs text-muted">
-              A budgeting tag only: next June the Annual Budget Projections read this event&apos;s actual spend. It does not copy the event or add future dates.
+              A budgeting tag only: when next year's budget is drafted (May 1 - June 30), the Annual Budget Projections read this event&apos;s actual spend. It does not copy the event or add future dates.
             </span>
           </span>
         </label>
