@@ -246,10 +246,11 @@ export function portalAreas(u: Actor): PortalArea[] {
 }
 
 /**
- * A sidebar link: a portal area, except the profile, which the header's member menu opens. The help center is the
- * header's Help shortcut, not a sidebar link (Sprint 5W).
+ * A sidebar link: a portal area, except the profile, which the header's member menu opens, and the Communications Hub,
+ * which the header's Messaging shortcut opens (Sprint 5X). The help center is the header's Help shortcut, not a sidebar
+ * link (Sprint 5W).
  */
-export type PortalNavItem = Exclude<PortalArea, 'profile'>;
+export type PortalNavItem = Exclude<PortalArea, 'profile' | 'messages'>;
 
 export interface PortalNavGroup {
   id: 'self-service' | 'volunteer' | 'finance' | 'admin';
@@ -259,9 +260,9 @@ export interface PortalNavGroup {
   items: PortalNavItem[];
 }
 
-/** Every sidebar link in its group, in display order (Sprint 5S). Each PortalArea but 'profile' appears exactly once. */
+/** Every sidebar link in its group, in display order (Sprint 5S). Each PortalArea but 'profile' and 'messages' appears exactly once. */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
-  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, items: ['member-actions', 'charities/propose', 'messages'] },
+  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, items: ['member-actions', 'charities/propose'] },
   {
     id: 'volunteer',
     label: 'Volunteer Operations',
