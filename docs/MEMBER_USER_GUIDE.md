@@ -97,7 +97,7 @@ The first entry in the navy sidebar, under **Self-Service Hub**, is **Member Act
 | **Fraternal roster** | Look up a Brother Knight's phone and email. |
 | **Hour ledger** | Report time and review your shift and activity history. |
 
-The **Self-Service Hub** group also holds **Communications Hub** and **Online Help Center**. The other groups fold open when you select their heading: **Volunteer Operations** has the calendar, meetings, photo gallery and **Post-event Ledger** (for event owners), and **Financial Ledgers** has **My Expense Reports**. **My Profile** is not in the sidebar: select your name and photo at the top right, then **My Profile**.
+The **Self-Service Hub** group also holds **Communications Hub**. **Online Help Center** is the **Help** link (question-mark icon) at the top right of every page, just left of the alert bell. The other groups fold open when you select their heading: **Volunteer Operations** has the calendar, meetings, photo gallery and **Post-event Ledger** (for event owners), and **Financial Ledgers** has **My Expense Reports**. **My Profile** is not in the sidebar: select your name and photo at the top right, then **My Profile**.
 
 ![Image: Member Actions Hub]
 
@@ -361,7 +361,7 @@ Open it from the member menu: select your name and photo at the top right of the
 | Portal sign-in fails | Wrong email or password, or no password set yet. | Do the phone onboarding first (§2.1). |
 | Reported an absence by mistake | Members cannot remove a no-show. | Ask your council Admin to clear it. |
 
-Still stuck? Open **Online Help Center** in the portal sidebar, or message your council's Admin through the Communications Hub.
+Still stuck? Select **Help** (the question-mark link at the top right of the portal) to open the **Online Help Center**, or message your council's Admin through the Communications Hub.
 
 ### Sending feedback or reporting a bug
 

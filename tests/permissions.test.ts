@@ -156,12 +156,12 @@ describe('portal permissions', () => {
   describe('sidebar accordion groups (Sprint 5S, election desks Sprint 5U)', () => {
     const shape = (u: Parameters<typeof portalNavGroups>[0]) => portalNavGroups(u).map((g) => [g.label, g.items]);
 
-    it('files every area but the profile into exactly one group, and adds the help center', () => {
+    it('files every area but the profile into exactly one group; the help center moved to the header (Sprint 5W)', () => {
       const filed = PORTAL_NAV_GROUPS.flatMap((g) => g.items);
       expect(new Set(filed).size).toBe(filed.length);
-      expect(filed).toContain('help');
+      expect(filed as string[]).not.toContain('help');
       const everyArea = portalAreas(superAdmin).filter((a) => a !== 'profile');
-      expect([...everyArea].sort()).toEqual(filed.filter((i) => i !== 'help').sort());
+      expect([...everyArea].sort()).toEqual([...filed].sort());
       expect(PORTAL_NAV_GROUPS.map((g) => [g.label, g.collapsible])).toEqual([
         ['Self-Service Hub', false],
         ['Volunteer Operations', true],
@@ -179,7 +179,7 @@ describe('portal permissions', () => {
 
     it('shows a Super Admin every group in full', () => {
       expect(shape(superAdmin)).toEqual([
-        ['Self-Service Hub', ['member-actions', 'charities/propose', 'messages', 'help']],
+        ['Self-Service Hub', ['member-actions', 'charities/propose', 'messages']],
         ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
         ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/queue']],
         ['Administrative Lookups', ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils']],
@@ -188,7 +188,7 @@ describe('portal permissions', () => {
 
     it('shows a council Admin everything but the global tables, councils and the check ledger', () => {
       expect(shape(admin)).toEqual([
-        ['Self-Service Hub', ['member-actions', 'charities/propose', 'messages', 'help']],
+        ['Self-Service Hub', ['member-actions', 'charities/propose', 'messages']],
         ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
         ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue']],
         ['Administrative Lookups', ['council-lookups', 'charities/registry', 'supreme-sync', 'parishes']],
@@ -197,7 +197,7 @@ describe('portal permissions', () => {
 
     it('shows a Treasurer the full financial ledgers and the donation lookups', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Treasurer'] }))).toEqual([
-        ['Self-Service Hub', ['member-actions', 'charities/propose', 'messages', 'help']],
+        ['Self-Service Hub', ['member-actions', 'charities/propose', 'messages']],
         ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
         ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/queue']],
         ['Administrative Lookups', ['council-lookups', 'supreme-sync']],
@@ -206,7 +206,7 @@ describe('portal permissions', () => {
 
     it('files the Appointed Leadership Matrix under Administrative Lookups for a Grand Knight who is a plain Member', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual([
-        ['Self-Service Hub', ['member-actions', 'charities/propose', 'messages', 'help']],
+        ['Self-Service Hub', ['member-actions', 'charities/propose', 'messages']],
         ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
         ['Financial Ledgers', ['expenses']],
         ['Administrative Lookups', ['elections/appointments']],
@@ -216,7 +216,7 @@ describe('portal permissions', () => {
     it('drops the Administrative Lookups group for plain members and other officers', () => {
       for (const u of [member, officer]) {
         expect(shape(u)).toEqual([
-          ['Self-Service Hub', ['member-actions', 'charities/propose', 'messages', 'help']],
+          ['Self-Service Hub', ['member-actions', 'charities/propose', 'messages']],
           ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
           ['Financial Ledgers', ['expenses']],
         ]);

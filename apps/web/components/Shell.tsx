@@ -1,5 +1,5 @@
 'use client';
-// The portal frame: navy header (logo, the calling council's number and name, the alert bell, and the member menu with
+// The portal frame: navy header (logo, the calling council's number and name, the Help shortcut, the alert bell, and the member menu with
 // the avatar that opens My Profile), a navy side navigation folded into accordion groups (portalNavGroups) with a gold marker
 // on the current section, and a white content area. Nothing renders behind the sign-in gate.
 import Image from 'next/image';
@@ -15,11 +15,13 @@ import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 import emblem from './kofc-logo.png';
 
-/** Every link's route, label and tooltip. 'profile' is reached from the header's member menu, not the sidebar. */
+/**
+ * Every sidebar link's route, label and tooltip. 'profile' is reached from the header's member menu, and the help
+ * center from the header's Help shortcut, not the sidebar.
+ */
 const NAV: Record<PortalNavItem | 'profile', { href: string; label: string; hint: string }> = {
   'member-actions': { href: '/member-actions', label: 'Member Actions Hub', hint: 'My shifts, sign-ups, roster, hours' },
   messages: { href: '/messages', label: 'Communications Hub', hint: 'Message threads and replies' },
-  help: { href: '/help', label: 'Online Help Center', hint: 'Answers from the user manuals' },
   calendar: { href: '/calendar', label: 'Visual Master Calendar', hint: 'Events, shifts and meetings by date' },
   activities: { href: '/activities', label: 'Standalone Activities', hint: 'Standing council activities' },
   members: { href: '/members', label: 'Affiliated Roster', hint: 'Members, types and skills' },
@@ -79,7 +81,7 @@ export function BrandMark({ size = 44 }: { size?: number }) {
   return <Image src={emblem} alt="" width={size} height={size} quality={90} preload className="shrink-0" />;
 }
 
-/** Question mark in a circle, drawn in currentColor so it follows the link's navy or white text. */
+/** Question mark in a circle, drawn in currentColor so it follows the header's white text. */
 function HelpIcon() {
   return (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
@@ -87,6 +89,24 @@ function HelpIcon() {
       <path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3" />
       <line x1="12" y1="17" x2="12.01" y2="17" />
     </svg>
+  );
+}
+
+/** The header's Help shortcut to the searchable help center, just left of the alert bell (Sprint 5W). */
+function HelpLink({ current }: { current: boolean }) {
+  return (
+    <Link
+      href="/help"
+      title="Online Help Center: answers from the user manuals"
+      aria-current={current ? 'page' : undefined}
+      className={cx(
+        'flex items-center gap-1.5 rounded px-2 py-2 text-sm font-bold text-white hover:bg-white/10',
+        current && 'bg-white/10 underline decoration-gold decoration-2 underline-offset-4',
+      )}
+    >
+      <HelpIcon />
+      Help
+    </Link>
   );
 }
 
@@ -101,7 +121,6 @@ function NavLink({ item, current }: { item: PortalNavItem; current: boolean }) {
         aria-current={current ? 'page' : undefined}
         className={cx('flex items-center gap-2 border-l-8 py-1.5 pl-6 pr-3 text-sm', current ? 'border-gold bg-white font-bold text-navy' : 'border-transparent hover:underline')}
       >
-        {item === 'help' ? <HelpIcon /> : null}
         {label}
       </Link>
     </li>
@@ -287,6 +306,7 @@ function Frame({ children }: { children: ReactNode }) {
           <p className="font-serif text-xl font-bold leading-tight">Knights of Columbus</p>
           <p className="text-sm">{council.data ? councilLabel(council.data) : ' '}</p>
         </div>
+        <HelpLink current={pathname === '/help'} />
         <AlertBell />
         <MemberMenu />
       </header>

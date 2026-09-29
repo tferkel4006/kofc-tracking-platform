@@ -245,8 +245,11 @@ export function portalAreas(u: Actor): PortalArea[] {
   return areas;
 }
 
-/** A sidebar link: a portal area (except the profile, which the header's member menu opens) or the help center. */
-export type PortalNavItem = Exclude<PortalArea, 'profile'> | 'help';
+/**
+ * A sidebar link: a portal area, except the profile, which the header's member menu opens. The help center is the
+ * header's Help shortcut, not a sidebar link (Sprint 5W).
+ */
+export type PortalNavItem = Exclude<PortalArea, 'profile'>;
 
 export interface PortalNavGroup {
   id: 'self-service' | 'volunteer' | 'finance' | 'admin';
@@ -258,7 +261,7 @@ export interface PortalNavGroup {
 
 /** Every sidebar link in its group, in display order (Sprint 5S). Each PortalArea but 'profile' appears exactly once. */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
-  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, items: ['member-actions', 'charities/propose', 'messages', 'help'] },
+  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, items: ['member-actions', 'charities/propose', 'messages'] },
   {
     id: 'volunteer',
     label: 'Volunteer Operations',
@@ -269,8 +272,8 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
   { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'] },
 ];
 
-/** The sidebar for `u`: each group holding only the links portalAreas allows (help is for everyone); empty groups are dropped. */
+/** The sidebar for `u`: each group holding only the links portalAreas allows; empty groups are dropped. */
 export function portalNavGroups(u: Actor): PortalNavGroup[] {
-  const allowed = new Set<string>([...portalAreas(u), 'help']);
+  const allowed = new Set<string>(portalAreas(u));
   return PORTAL_NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((item) => allowed.has(item)) })).filter((g) => g.items.length > 0);
 }
