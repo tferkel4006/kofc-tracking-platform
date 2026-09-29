@@ -202,6 +202,11 @@ describe('feed filtering', () => {
     expect(visibleFeed(feed, { councilId: 2, showLocked: true }).map((f) => f.shift.id)).toEqual([3, 4]);
     expect(visibleFeed(feed, { councilId: 1, showLocked: false }).map((f) => f.shift.id)).toEqual([1, 4]);
   });
+
+  it('leaves out the member’s own shifts when asked (mobile Signup Desk)', () => {
+    expect(visibleFeed(feed, { councilId: 'all', showLocked: true, hideSignedUp: true }).map((f) => f.shift.id)).toEqual([1, 2, 3]);
+    expect(visibleFeed(feed, { councilId: 2, showLocked: false, hideSignedUp: true }).map((f) => f.shift.id)).toEqual([3]);
+  });
 });
 
 const msg = (id: number, parent: number | null, at: string, receipt: ThreadMessage['receipt'] = null): ThreadMessage => ({

@@ -1,6 +1,7 @@
-// Shift Signup Feed: the next six months of shifts for my council and its affiliated councils.
+// Signup Desk: the next six months of shifts for my council and its affiliated councils.
 // Shifts that still need volunteers to reach MinNumberVolunteers are highlighted in gold; a shift that
 // has reached its cap is locked, and hidden until "Show full shifts" is switched on.
+// Shifts I already hold are left out; they live under "My shifts" on Home.
 import { useState } from 'react';
 import { FlatList, RefreshControl, Switch, View } from 'react-native';
 import { councilLabel, feedWindow, shiftStatus, sortCouncils, visibleFeed, type ShiftFeedItem } from '@kofc/shared';
@@ -34,14 +35,14 @@ export default function ShiftsScreen() {
     { value: 'all', label: 'All councils' },
     ...(data?.councils ?? []).map((c) => ({ value: c.id, label: councilLabel(c) })),
   ];
-  const items = data ? visibleFeed(data.feed, { councilId, showLocked: showFull }) : [];
+  const items = data ? visibleFeed(data.feed, { councilId, showLocked: showFull, hideSignedUp: true }) : [];
 
   const signUp = async (item: ShiftFeedItem) => {
     setSigningUp(item.shift.id);
     setMessage(null);
     try {
       await db.events.signupForShift(user.memberId, item.shift.id);
-      setMessage({ tone: 'info', text: `You are signed up for ${item.shift.ShiftName} (${item.event.EventName}).` });
+      setMessage({ tone: 'info', text: `You are signed up for ${item.shift.ShiftName} (${item.event.EventName}). It is now under My shifts on Home.` });
     } catch (err) {
       setMessage({ tone: 'error', text: describeError(err) });
     } finally {
@@ -99,7 +100,7 @@ export default function ShiftsScreen() {
       ListHeaderComponent={
         <View style={{ gap: space.md, marginBottom: space.sm }}>
           <AppText variant="heading" accessibilityRole="header">
-            Volunteer shifts
+            Signup Desk
           </AppText>
           <Dropdown title="Council" value={councilId} options={options} onChange={setCouncilId} accessibilityLabel="Filter by council" />
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 44 }}>

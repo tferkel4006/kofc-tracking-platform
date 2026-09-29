@@ -112,7 +112,7 @@ export default function LogScreen() {
   return (
     <Screen refreshing={state.refreshing} onRefresh={() => void state.reload()}>
       <AppText variant="heading" accessibilityRole="header">
-        Log your time
+        Report Hours
       </AppText>
       <Segmented value={mode} onChange={(m) => { setMode(m); setMessage(null); }} />
 

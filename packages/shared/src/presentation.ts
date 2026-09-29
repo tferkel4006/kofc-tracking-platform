@@ -91,13 +91,15 @@ export function shiftStatus(
 
 /**
  * Applies the council dropdown and the "show full shifts" switch. Full shifts the member already
- * holds stay visible either way, because they belong to the member.
+ * holds stay visible either way, because they belong to the member, unless `hideSignedUp` leaves out
+ * every shift the member holds (the mobile Signup Desk, which shows them on Home instead).
  */
 export function visibleFeed(
   items: readonly ShiftFeedItem[],
-  filter: { councilId: number | 'all'; showLocked: boolean },
+  filter: { councilId: number | 'all'; showLocked: boolean; hideSignedUp?: boolean },
 ): ShiftFeedItem[] {
   return items.filter((item) => {
+    if (filter.hideSignedUp && item.isSignedUp) return false;
     if (filter.councilId !== 'all' && !item.councilIds.includes(filter.councilId)) return false;
     const full = item.shift.NumberVolunteersSignedUp >= item.shift.MinNumberVolunteers;
     return filter.showLocked || !full || item.isSignedUp;

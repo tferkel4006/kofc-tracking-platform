@@ -1,5 +1,6 @@
 // The signed-in shell: navy header with the council banner, and five bottom tabs.
-// The selected tab is marked with a gold bar. Messages is no longer a tab (Sprint 5X-Mobile): the header's
+// The selected tab is a navy block with a gold bar and a bold gold label (gold on navy ~6.4:1; gold is never
+// text on white, see the shared theme), so the active choice reads at a glance. Messages is no longer a tab (Sprint 5X-Mobile): the header's
 // envelope opens it and carries the unread badge.
 import { View } from 'react-native';
 import { Tabs } from 'expo-router/js-tabs';
@@ -8,9 +9,17 @@ import { AppText } from '@/components/ui';
 import { color, fontFamily, space } from '@/lib/theme';
 
 const TabLabel = ({ label, focused }: { label: string; focused: boolean }) => (
-  <View style={{ alignItems: 'center', justifyContent: 'center', flex: 1, paddingHorizontal: space.sm }}>
+  <View
+    style={{
+      alignItems: 'center',
+      alignSelf: 'stretch',
+      flex: 1,
+      paddingHorizontal: space.sm,
+      backgroundColor: focused ? color.navy : 'transparent',
+    }}
+  >
     <View style={{ height: 4, alignSelf: 'stretch', backgroundColor: focused ? color.gold : 'transparent', marginBottom: space.sm }} />
-    <AppText variant="label" tone={focused ? 'navy' : 'muted'} style={{ fontSize: 14 }}>
+    <AppText variant="label" tone="muted" style={{ fontSize: 14, fontWeight: focused ? '700' : '400', color: focused ? color.gold : color.muted }}>
       {label}
     </AppText>
   </View>

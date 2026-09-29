@@ -178,7 +178,7 @@ export default function DashboardScreen() {
 
           <Section title="My shifts">
             {data.shifts.length === 0 ? (
-              <EmptyState message="You are not signed up for any upcoming shifts. Open the Signup tab to volunteer." />
+              <EmptyState message="You are not signed up for any upcoming shifts. Open the Signup Desk to volunteer." />
             ) : (
               data.shifts.map(({ shift, event, signup }) => {
                 const urgent = isUrgent(shift.ShiftDate, data.today);
