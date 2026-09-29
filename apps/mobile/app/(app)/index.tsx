@@ -12,7 +12,6 @@ import {
   canAttachEventMedia,
   canManageMeeting,
   formatDate,
-  formatTimeRange,
   isUrgent,
   noShowWindowStart,
   parsePhotoGallery,
@@ -21,11 +20,11 @@ import {
   toIsoDate,
   type Event,
   type EventSignup,
-  type Meeting,
   type NoShowReason,
 } from '@kofc/shared';
 import { CapturePhotoButton } from '@/components/CapturePhotoButton';
 import { Dropdown } from '@/components/Dropdown';
+import { MeetingCard } from '@/components/MeetingCard';
 import { NoShowBadge } from '@/components/NoShowBadge';
 import { ShiftCard, UrgentTag } from '@/components/ShiftCard';
 import { AppText, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section } from '@/components/ui';
@@ -132,24 +131,6 @@ function CompletedEventCard({ event, canAddPhotos, onPhoto }: { event: Event; ca
   );
 }
 
-const MeetingCard = ({ meeting, onAttendance }: { meeting: Meeting; onAttendance?: () => void }) => (
-  <Card accent={color.navy}>
-    <AppText variant="title">{meeting['Meeting Name']}</AppText>
-    <AppText>
-      {formatDate(meeting.Date)} · {formatTimeRange(meeting['Time Start'], meeting['Time End'])}
-    </AppText>
-    <AppText variant="small" tone="muted">
-      {meeting.Location}
-    </AppText>
-    {meeting.Agenda ? (
-      <AppText variant="small" tone="muted" numberOfLines={3}>
-        {meeting.Agenda}
-      </AppText>
-    ) : null}
-    {onAttendance ? <Button title="Take attendance" variant="secondary" onPress={onAttendance} /> : null}
-  </Card>
-);
-
 export default function DashboardScreen() {
   const user = useUser();
   const router = useRouter();
@@ -197,7 +178,7 @@ export default function DashboardScreen() {
 
           <Section title="My shifts">
             {data.shifts.length === 0 ? (
-              <EmptyState message="You are not signed up for any upcoming shifts. Open the Shifts tab to volunteer." />
+              <EmptyState message="You are not signed up for any upcoming shifts. Open the Signup tab to volunteer." />
             ) : (
               data.shifts.map(({ shift, event, signup }) => {
                 const urgent = isUrgent(shift.ShiftDate, data.today);

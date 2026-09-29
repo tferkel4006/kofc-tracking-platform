@@ -1,10 +1,10 @@
 // The signed-in shell: navy header with the council banner, and five bottom tabs.
-// The selected tab is marked with a gold bar; unread messages show as a gold badge on Messages.
+// The selected tab is marked with a gold bar. Messages is no longer a tab (Sprint 5X-Mobile): the header's
+// envelope opens it and carries the unread badge.
 import { View } from 'react-native';
 import { Tabs } from 'expo-router/js-tabs';
 import { BrandHeader } from '@/components/BrandHeader';
 import { AppText } from '@/components/ui';
-import { useApp } from '@/lib/app-context';
 import { color, fontFamily, space } from '@/lib/theme';
 
 const TabLabel = ({ label, focused }: { label: string; focused: boolean }) => (
@@ -17,7 +17,6 @@ const TabLabel = ({ label, focused }: { label: string; focused: boolean }) => (
 );
 
 export default function AppLayout() {
-  const { unread } = useApp();
   const tab = (title: string) => ({
     title,
     tabBarLabel: ({ focused }: { focused: boolean }) => <TabLabel label={title} focused={focused} />,
@@ -34,10 +33,12 @@ export default function AppLayout() {
       }}
     >
       <Tabs.Screen name="index" options={tab('Home')} />
-      <Tabs.Screen name="shifts" options={tab('Shifts')} />
-      <Tabs.Screen name="log" options={tab('Log time')} />
+      <Tabs.Screen name="shifts" options={tab('Signup')} />
+      <Tabs.Screen name="log" options={tab('Report')} />
+      <Tabs.Screen name="meetings" options={tab('Mtgs')} />
       <Tabs.Screen name="donate" options={tab('Donate')} />
-      <Tabs.Screen name="messages" options={{ ...tab('Messages'), tabBarBadge: unread > 0 ? unread : undefined }} />
+      {/* Opened from the header envelope; not a tab of its own. */}
+      <Tabs.Screen name="messages" options={{ ...tab('Messages'), href: null }} />
       {/* Opened from a meeting card on Home; not a tab of its own. */}
       <Tabs.Screen name="meeting/[meetingId]" options={{ ...tab('Attendance'), href: null }} />
       {/* Opened from the expense card on Home. */}

@@ -381,6 +381,14 @@ export interface MemberMeetingHours {
   meetings: MeetingHoursEntry[];
 }
 
+/** The mobile Meetings tab (Sprint 5X-Mobile): upcoming council meetings split by the member's invitations. */
+export interface MeetingSchedules {
+  /** Meetings the member is on the MeetingInvites list for. */
+  myInvites: Meeting[];
+  /** Every meeting of the council, invited or not, so members can see what leadership has scheduled. */
+  allSchedules: Meeting[];
+}
+
 // 9. COUNCIL-LEVEL MAINTENANCE (Sprint 5G)
 /** A council row without its generated id. */
 export type NewCouncil = Omit<Council, 'id'>;
@@ -1436,9 +1444,11 @@ export interface DataService {
      * The council's calendar between the dates inclusive (YYYY-MM-DD): every event linked to the council whose
      * StartDate-EndDate overlaps the range, and every meeting of the council dated inside it. Ordered by start
      * date, then all-day events before timed meetings, then start time, title and id (buildCalendarEntries).
+     * With `options.hideEnded` (standard members, see calendarHidesEnded), events that ended before today and
+     * meetings dated before today are left out.
      * Rejects INVALID_DATE for a malformed date and INVALID_INPUT for an unknown council or an end before the start.
      */
-    listCalendarRange(councilId: number, startDate: string, endDate: string): Promise<CalendarEntry[]>;
+    listCalendarRange(councilId: number, startDate: string, endDate: string, options?: { hideEnded?: boolean }): Promise<CalendarEntry[]>;
     /**
      * Appends local photo reference paths to the event's PhotoGalleryURL (comma-separated), skipping paths it
      * already holds, and resolves to the updated event. `actorId` is the signed-in member: the event's Active owner,
@@ -1555,6 +1565,11 @@ export interface DataService {
       councilId: number,
       options?: { memberId?: number; fromDate?: string },
     ): Promise<Meeting[]>;
+    /**
+     * The council's meetings on or after `fromDate` (default: today), soonest first, split into the ones `memberId`
+     * is invited to and all of them. Rejects MEMBER_NOT_FOUND for an unknown member.
+     */
+    listSchedules(councilId: number, memberId: number, options?: { fromDate?: string }): Promise<MeetingSchedules>;
     /** OwnerID, when given, must name a member (INVALID_INPUT). */
     create(meeting: NewMeeting, invite?: MeetingInviteMode): Promise<Meeting>;
     listInvites(meetingId: number): Promise<MeetingInvites[]>;

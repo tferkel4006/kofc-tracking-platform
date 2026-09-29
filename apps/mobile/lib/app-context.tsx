@@ -17,7 +17,7 @@ interface AppContextValue {
   /** Set when the local database could not be opened. */
   startupError: string | null;
   onboarding: OnboardingState;
-  /** Unread messages addressed to the member, across all threads (Messages tab badge). */
+  /** Unread messages addressed to the member, across all threads (the header envelope badge). */
   unread: number;
   refreshUnread(): Promise<void>;
   submitEmail(email: string): Promise<void>;

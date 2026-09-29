@@ -2145,20 +2145,22 @@ export class SqliteDataService implements DataService {
       return (await db.getFirstAsync<EventSignup>('SELECT * FROM [EventSignup] WHERE [id] = ?', [signupId]))!;
     },
 
-    listCalendarRange: async (councilId, startDate, endDate) => {
+    listCalendarRange: async (councilId, startDate, endDate, options) => {
       const range = cleanCalendarRange(startDate, endDate);
       const db = await this.ready();
       await this.assertCouncilsExist(db, [councilId]);
+      // A standard member's calendar drops what has already happened: WHERE EndDate >= today (local).
+      const today = toIsoDate(this.now());
+      const hideEnded = options?.hideEnded === true;
       const events = await db.getAllAsync<CouncilEvent>(
         `SELECT * FROM [Event] WHERE [id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)
-            AND [StartDate] <= ? AND [EndDate] >= ?`,
-        [councilId, range.endDate, range.startDate],
+            AND [StartDate] <= ? AND [EndDate] >= ?${hideEnded ? ' AND [EndDate] >= ?' : ''}`,
+        hideEnded ? [councilId, range.endDate, range.startDate, today] : [councilId, range.endDate, range.startDate],
       );
-      const meetings = await db.getAllAsync<Meeting>('SELECT * FROM [Meeting] WHERE [CouncilID] = ? AND [Date] BETWEEN ? AND ?', [
-        councilId,
-        range.startDate,
-        range.endDate,
-      ]);
+      const meetings = await db.getAllAsync<Meeting>(
+        `SELECT * FROM [Meeting] WHERE [CouncilID] = ? AND [Date] BETWEEN ? AND ?${hideEnded ? ' AND [Date] >= ?' : ''}`,
+        hideEnded ? [councilId, range.startDate, range.endDate, today] : [councilId, range.startDate, range.endDate],
+      );
       return buildCalendarEntries(range, events, meetings);
     },
 
@@ -2700,6 +2702,23 @@ export class SqliteDataService implements DataService {
           ORDER BY [Date], [Time Start], [id]`,
         params,
       );
+    },
+
+    listSchedules: async (councilId, memberId, options) => {
+      const db = await this.ready();
+      await this.requireMember(db, memberId);
+      const from = options?.fromDate ?? toIsoDate(this.now());
+      const allSchedules = await db.getAllAsync<Meeting & { invited: number }>(
+        `SELECT m.*, EXISTS (SELECT 1 FROM [MeetingInvites] i WHERE i.[MeetingID] = m.[id] AND i.[MemberID] = ?) AS invited
+           FROM [Meeting] m WHERE m.[CouncilID] = ? AND m.[Date] >= ?
+          ORDER BY m.[Date], m.[Time Start], m.[id]`,
+        [memberId, councilId, from],
+      );
+      const strip = ({ invited: _invited, ...meeting }: Meeting & { invited: number }): Meeting => meeting;
+      return {
+        myInvites: allSchedules.filter((m) => m.invited === 1).map(strip),
+        allSchedules: allSchedules.map(strip),
+      };
     },
 
     create: async (meeting, invite = 'none') => {

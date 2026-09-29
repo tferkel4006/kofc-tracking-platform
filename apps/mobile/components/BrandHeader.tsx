@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Image, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { councilLabel, type Council } from '@kofc/shared';
 import { AppText } from '@/components/ui';
 import { useApp } from '@/lib/app-context';
@@ -21,9 +22,55 @@ export function BrandMark({ size = 40 }: { size?: number }) {
   );
 }
 
-/** Navy app bar: logo, then the calling council's number and name directly under the title, then the member. */
+/** A line-drawn envelope (outline plus flap) in white, with the unread count as a gold badge. */
+function EnvelopeIcon({ unread }: { unread: number }) {
+  return (
+    <View style={{ width: 34, height: 28, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ width: 26, height: 18, borderWidth: 2, borderColor: color.white, borderRadius: 2, alignItems: 'center', overflow: 'hidden' }}>
+        <View
+          style={{
+            width: 0,
+            height: 0,
+            borderLeftWidth: 11,
+            borderRightWidth: 11,
+            borderTopWidth: 9,
+            borderLeftColor: 'transparent',
+            borderRightColor: 'transparent',
+            borderTopColor: color.white,
+          }}
+        />
+      </View>
+      {unread > 0 ? (
+        <View
+          style={{
+            position: 'absolute',
+            top: -4,
+            right: -4,
+            minWidth: 18,
+            height: 18,
+            borderRadius: 9,
+            paddingHorizontal: 4,
+            backgroundColor: color.gold,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <AppText variant="small" tone="navy" style={{ fontSize: 11, lineHeight: 14, fontWeight: '700' }}>
+            {unread > 99 ? '99+' : unread}
+          </AppText>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Navy app bar: logo, then the calling council's number and name directly under the title, then the Messaging
+ * envelope (Messages left the bottom tabs in Sprint 5X-Mobile), then the member.
+ */
 export function BrandHeader() {
-  const { user, signOut } = useApp();
+  const { user, signOut, unread } = useApp();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [council, setCouncil] = useState<Council | null>(null);
 
@@ -58,6 +105,16 @@ export function BrandHeader() {
           {council ? councilLabel(council) : ' '}
         </AppText>
       </View>
+      {user ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={unread > 0 ? `Messaging, ${unread} unread` : 'Messaging'}
+          onPress={() => router.push('/messages')}
+          hitSlop={10}
+        >
+          <EnvelopeIcon unread={unread} />
+        </Pressable>
+      ) : null}
       {user ? (
         <Pressable accessibilityRole="button" accessibilityLabel="Sign out" onPress={() => void signOut()} hitSlop={10}>
           <AppText variant="small" tone="white" style={{ textAlign: 'right' }}>

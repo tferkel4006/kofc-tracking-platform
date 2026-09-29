@@ -113,6 +113,12 @@ export const canManageMeetings = (u: Actor, councilId: number): boolean =>
 export const canManageMeeting = (u: Actor, meeting: Pick<Meeting, 'CouncilID' | 'OwnerID'>): boolean =>
   meeting.OwnerID === u.memberId || canManageMeetings(u, meeting.CouncilID);
 
+/**
+ * Standard members' calendars show only what is still ahead (events.listCalendarRange `hideEnded`, Sprint 5X-Mobile);
+ * Admins, Super Admins and officers keep past entries for their records.
+ */
+export const calendarHidesEnded = (u: Actor): boolean => !isAdmin(u) && !u.isOfficer;
+
 /** Admins record post-event results for their councils' events, and the event's owner may too. */
 export const canRecordLedger = (u: Actor, event: Pick<Event, 'OwnerID'>, eventCouncilIds: readonly number[]): boolean =>
   event.OwnerID === u.memberId || eventCouncilIds.some((id) => canAdministerCouncil(u, id));

@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   appendPhotoPaths,
+  calendarHidesEnded,
   canAttachEventMedia,
   canLinkMeetingDrive,
   cleanGoogleDriveUrl,
@@ -146,6 +147,14 @@ describe('media helpers (pure)', () => {
     expect(canLinkMeetingDrive(user(), { CouncilID: OTHER, OwnerID: 10 })).toBe(true);
     expect(canLinkMeetingDrive(user({ memberType: 'Super Admin', councilId: OTHER }), { CouncilID: OWN })).toBe(true);
   });
+
+  it('hides ended calendar entries only for standard members', () => {
+    const user = (over = {}) => ({ memberId: 10, councilId: OWN, memberType: 'Member' as const, isOfficer: false, ...over });
+    expect(calendarHidesEnded(user())).toBe(true);
+    expect(calendarHidesEnded(user({ isOfficer: true }))).toBe(false);
+    expect(calendarHidesEnded(user({ memberType: 'Admin' }))).toBe(false);
+    expect(calendarHidesEnded(user({ memberType: 'Super Admin' }))).toBe(false);
+  });
 });
 
 describe.each(drivers)('$name driver: media and calendar', (d) => {
@@ -268,11 +277,61 @@ describe.each(drivers)('$name driver: media and calendar', (d) => {
       expect(await db.events.listCalendarRange(OWN, '2027-06-02', '2027-06-02')).toHaveLength(1);
     });
 
+    it('drops ended events and past meetings with hideEnded (Sprint 5X-Mobile), keeping ones still running', async () => {
+      const db = await d.make();
+      // Test "today" is 2026-09-20.
+      const ended = await makeEvent(db, 'Summer Fish Fry', '2026-08-01', '2026-08-02');
+      const running = await makeEvent(db, 'Harvest Novena', '2026-09-15', '2026-09-23');
+      const endsToday = await makeEvent(db, 'Sunday Pancakes', '2026-09-20', '2026-09-20');
+      const later = await makeEvent(db, 'Fall Festival', '2026-10-10', '2026-10-10');
+      const past = await makeMeeting(db, 'August Meeting', '2026-08-12');
+      const upcoming = await makeMeeting(db, 'October Meeting', '2026-10-14');
+      // The dev seed has its own events and meetings; look only at this test's rows.
+      const mine = new Set([`event-${ended.id}`, `event-${running.id}`, `event-${endsToday.id}`, `event-${later.id}`, `meeting-${past.id}`, `meeting-${upcoming.id}`]);
+      const list = async (options?: { hideEnded?: boolean }) =>
+        (await db.events.listCalendarRange(OWN, '2026-08-01', '2026-10-31', options)).filter((e) => mine.has(`${e.kind}-${e.id}`));
+
+      expect(await list()).toHaveLength(6);
+      expect(await list({ hideEnded: false })).toHaveLength(6);
+      const trimmed = await list({ hideEnded: true });
+      expect(trimmed.map((e) => [e.kind, e.id])).toEqual([
+        ['event', running.id],
+        ['event', endsToday.id],
+        ['event', later.id],
+        ['meeting', upcoming.id],
+      ]);
+    });
+
     it('rejects bad dates, a reversed range and an unknown council', async () => {
       const db = await d.make();
       await expectRule(db.events.listCalendarRange(OWN, '2027-06-31', '2027-07-01'), 'INVALID_DATE');
       await expectRule(db.events.listCalendarRange(OWN, '2027-06-30', '2027-06-01'), 'INVALID_INPUT');
       await expectRule(db.events.listCalendarRange(999_999, '2027-06-01', '2027-06-30'), 'INVALID_INPUT');
+    });
+  });
+
+  describe('meetings.listSchedules', () => {
+    it('splits upcoming council meetings into my invites and all schedules, soonest first', async () => {
+      const db = await d.make();
+      const from = '2027-06-01';
+      const invited = await makeMeeting(db, 'Invited Meeting', '2027-06-20');
+      const open = await makeMeeting(db, 'Officers Only', '2027-06-10');
+      await makeMeeting(db, 'Past Meeting', '2027-05-01');
+      await makeMeeting(db, 'Other Council Meeting', '2027-06-12', OTHER);
+      await db.meetings.invite(invited.id, [MEMBER.member]);
+
+      const schedules = await db.meetings.listSchedules(OWN, MEMBER.member, { fromDate: from });
+      expect(schedules.myInvites.map((m) => m.id)).toEqual([invited.id]);
+      const all = schedules.allSchedules.map((m) => m.id);
+      expect(all).toEqual(expect.arrayContaining([open.id, invited.id]));
+      expect(all.indexOf(open.id)).toBeLessThan(all.indexOf(invited.id));
+      expect(schedules.allSchedules.every((m) => m.CouncilID === OWN && m.Date >= from)).toBe(true);
+      expect(Object.keys(schedules.myInvites[0])).not.toContain('invited');
+    });
+
+    it('rejects an unknown member', async () => {
+      const db = await d.make();
+      await expectRule(db.meetings.listSchedules(OWN, 999_999), 'MEMBER_NOT_FOUND');
     });
   });
 });

@@ -138,6 +138,7 @@ export function createRemoteDataService(): DataService {
     meetings: {
       get: notImplemented('meetings.get'),
       listUpcoming: notImplemented('meetings.listUpcoming'),
+      listSchedules: notImplemented('meetings.listSchedules'),
       create: notImplemented('meetings.create'),
       listInvites: notImplemented('meetings.listInvites'),
       invite: notImplemented('meetings.invite'),

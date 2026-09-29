@@ -1870,15 +1870,20 @@ export class MemoryDataService implements DataService {
       });
     },
 
-    listCalendarRange: async (councilId, startDate, endDate) => {
+    listCalendarRange: async (councilId, startDate, endDate, options) => {
       const range = cleanCalendarRange(startDate, endDate);
       const s = await this.ready();
       this.assertCouncilsExist(s, [councilId]);
+      // A standard member's calendar drops what has already happened (EndDate / Date before today).
+      const floor = options?.hideEnded === true ? toIsoDate(this.now()) : '';
       const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
-      const events = s.rows('Event').filter((e) => linked.has(e.id)).map((e) => ({ ...e })) as unknown as CouncilEvent[];
+      const events = s
+        .rows('Event')
+        .filter((e) => linked.has(e.id) && (e.EndDate as string) >= floor)
+        .map((e) => ({ ...e })) as unknown as CouncilEvent[];
       const meetings = s
         .rows('Meeting')
-        .filter((m) => m.CouncilID === councilId)
+        .filter((m) => m.CouncilID === councilId && (m.Date as string) >= floor)
         .map((m) => ({ ...m })) as unknown as Meeting[];
       return buildCalendarEntries(range, events, meetings);
     },
@@ -2316,6 +2321,15 @@ export class MemoryDataService implements DataService {
       return rows.sort(
         (a, b) => a.Date.localeCompare(b.Date) || a['Time Start'].localeCompare(b['Time Start']) || a.id - b.id,
       );
+    },
+
+    listSchedules: async (councilId, memberId, options) => {
+      const s = await this.ready();
+      this.requireMember(s, memberId);
+      const fromDate = options?.fromDate ?? toIsoDate(this.now());
+      const invitedTo = new Set(s.rows('MeetingInvites').filter((i) => i.MemberID === memberId).map((i) => i.MeetingID));
+      const allSchedules = await this.meetings.listUpcoming(councilId, { fromDate });
+      return { myInvites: allSchedules.filter((m) => invitedTo.has(m.id)), allSchedules };
     },
 
     create: async (meeting, invite = 'none') => {
