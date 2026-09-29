@@ -7,7 +7,7 @@
 // =========================================================================
 import type { ThreadMessage, ThreadSummary } from './contract';
 import { BusinessRuleError } from './rules';
-import type { ChatThread, Message, MessageAttachment, ReadReceipt } from './types';
+import type { ChatThread, Message, MessageAttachment, ReadReceipt, Role } from './types';
 
 /** Matches SQLite's CURRENT_TIMESTAMP format ('YYYY-MM-DD HH:MM:SS', UTC), which Messages.CreatedAt uses. */
 export const toTimestamp = (d: Date): string => d.toISOString().slice(0, 19).replace('T', ' ');
@@ -103,4 +103,48 @@ export function assertThreadParticipant(
       memberId,
     });
   }
+}
+
+// =========================================================================
+// DISTRIBUTION GROUPS (Sprint 5Y-Mobile)
+// A new conversation can go to a built-in group of the sender's council as well
+// as to people picked one by one. Groups are resolved when the message is sent,
+// so they always follow the current roster and officer roles.
+// =========================================================================
+
+/** The built-in groups, in the order the compose screen offers them. */
+export const DISTRIBUTION_GROUPS = [
+  { value: 'all_members', label: 'All Members' },
+  { value: 'active_officers', label: 'Active Officers' },
+  { value: 'board_of_trustees', label: 'Board of Trustees' },
+] as const;
+
+export type DistributionGroup = (typeof DISTRIBUTION_GROUPS)[number]['value'];
+
+/**
+ * A council's board of trustees: the Grand Knight, who chairs it, and the three trustee seats (the names match
+ * TRUSTEE_ROLE_NAMES in elections.ts, which imports this module, so they are spelled out here).
+ */
+export const BOARD_OF_TRUSTEES_ROLE_NAMES: readonly string[] = ['Grand Knight', 'Trustee 1', 'Trustee 2', 'Trustee 3'];
+
+export const distributionGroupLabel = (group: DistributionGroup): string =>
+  DISTRIBUTION_GROUPS.find((g) => g.value === group)?.label ?? group;
+
+/** One Active member of the council with the roles they hold. */
+export interface DistributionRosterEntry {
+  memberId: number;
+  roles: readonly Pick<Role, 'Role' | 'Officer'>[];
+}
+
+/**
+ * The members `group` reaches in a roster of the council's Active members, ascending by id. Rejects INVALID_INPUT
+ * for a group that is not one of DISTRIBUTION_GROUPS.
+ */
+export function distributionGroupMemberIds(group: DistributionGroup, roster: readonly DistributionRosterEntry[]): number[] {
+  let matches: (e: DistributionRosterEntry) => boolean;
+  if (group === 'all_members') matches = () => true;
+  else if (group === 'active_officers') matches = (e) => e.roles.some((r) => r.Officer === 1);
+  else if (group === 'board_of_trustees') matches = (e) => e.roles.some((r) => BOARD_OF_TRUSTEES_ROLE_NAMES.includes(r.Role));
+  else throw new BusinessRuleError('INVALID_INPUT', `Unknown distribution list "${String(group)}".`, { group });
+  return [...new Set(roster.filter(matches).map((e) => e.memberId))].sort((a, b) => a - b);
 }

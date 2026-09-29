@@ -1,5 +1,6 @@
 // Member Dashboard: the shifts I am signed up for (anything within two days in red), the rolling
 // one-year no-show badge, and the meetings I am invited to (officers and admins can take attendance from them).
+// For a standard member, shifts and meetings that have already ended by the device clock drop off (Sprint 5Y-Mobile).
 // Each of my shifts can report my own absence with a reason (events.setNoShow); only an Admin can clear one.
 // Events I worked that have ended are listed too, where the event's owner and council officers can capture
 // verification photos with the phone camera (events.uploadPhotos). A meeting's owner can open it like an officer.
@@ -9,6 +10,7 @@ import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   addDays,
+  calendarHidesEnded,
   canAttachEventMedia,
   canManageMeeting,
   formatDate,
@@ -18,6 +20,8 @@ import {
   SHIFT_HISTORY_MONTHS,
   subtractMonths,
   toIsoDate,
+  withoutEndedMeetings,
+  withoutEndedShifts,
   type Event,
   type EventSignup,
   type NoShowReason,
@@ -160,6 +164,12 @@ export default function DashboardScreen() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const { data } = state;
+  // A standard member's upcoming lists drop anything that has finished by the device clock, even earlier today.
+  // Officers and admins keep today's ended meetings so they can still take attendance.
+  const now = new Date();
+  const hideEnded = calendarHidesEnded(user);
+  const myShifts = data ? (hideEnded ? withoutEndedShifts(data.shifts, now) : data.shifts) : [];
+  const meetings = data ? (hideEnded ? withoutEndedMeetings(data.meetings, now) : data.meetings) : [];
   return (
     <Screen refreshing={state.refreshing} onRefresh={() => void state.reload()}>
       <View>
@@ -177,10 +187,10 @@ export default function DashboardScreen() {
           <NoShowBadge count={data.noShows} />
 
           <Section title="My shifts">
-            {data.shifts.length === 0 ? (
+            {myShifts.length === 0 ? (
               <EmptyState message="You are not signed up for any upcoming shifts. Open the Signup Desk to volunteer." />
             ) : (
-              data.shifts.map(({ shift, event, signup }) => {
+              myShifts.map(({ shift, event, signup }) => {
                 const urgent = isUrgent(shift.ShiftDate, data.today);
                 return (
                   <ShiftCard
@@ -241,10 +251,10 @@ export default function DashboardScreen() {
           </Section>
 
           <Section title="Upcoming meetings">
-            {data.meetings.length === 0 ? (
+            {meetings.length === 0 ? (
               <EmptyState message="You have no meeting invitations." />
             ) : (
-              data.meetings.map((m) => (
+              meetings.map((m) => (
                 <MeetingCard
                   key={m.id}
                   meeting={m}

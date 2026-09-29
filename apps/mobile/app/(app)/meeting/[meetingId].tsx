@@ -4,9 +4,10 @@
 // puts the row back and says why. Members who may not manage the meeting see the list read-only.
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { canManageMeeting, formatDate, formatTimeRange } from '@kofc/shared';
-import { AppText, Button, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
+import { NavStrip } from '@/components/NavStrip';
+import { AppText, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
 import { color, radius, space, touchTarget } from '@/lib/theme';
 import { describeError, useLoad } from '@/lib/use-async';
@@ -14,7 +15,6 @@ import { db } from '@/services/db';
 
 export default function MeetingAttendanceScreen() {
   const user = useUser();
-  const router = useRouter();
   const meetingId = Number(useLocalSearchParams<{ meetingId: string }>().meetingId);
   // Taps not yet confirmed by the database, keyed by member; they win over the loaded value until it reloads.
   const [pending, setPending] = useState(new Map<number, boolean>());
@@ -55,7 +55,7 @@ export default function MeetingAttendanceScreen() {
 
   return (
     <Screen refreshing={state.refreshing} onRefresh={() => void state.reload()}>
-      <Button title="‹ Back" variant="secondary" style={{ alignSelf: 'flex-start' }} onPress={() => router.back()} />
+      <NavStrip closeLabel="Close attendance" />
       {state.error ? <Notice tone="error" message={state.error} /> : null}
       {error ? <Notice tone="error" message={error} onDismiss={() => setError(null)} /> : null}
       {data === undefined && state.loading ? <Loading /> : null}

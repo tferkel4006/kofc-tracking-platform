@@ -2,6 +2,7 @@
 // the hour and minute pickers and the member picker. The selected row carries a gold marker.
 import { useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { NavStripLayout } from '@/components/NavStrip';
 import { AppText } from '@/components/ui';
 import { color, radius, space, touchTarget } from '@/lib/theme';
 
@@ -49,14 +50,17 @@ export function Dropdown<T extends string | number>({
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)} accessibilityLabel="Close">
           <Pressable style={styles.sheet} onPress={() => undefined}>
             <View style={styles.sheetHeader}>
-              <AppText variant="heading" tone="white" style={{ fontSize: 18, lineHeight: 24 }}>
-                {title}
-              </AppText>
-              <Pressable accessibilityRole="button" onPress={() => setOpen(false)} hitSlop={12}>
-                <AppText variant="title" tone="white">
-                  Done
-                </AppText>
-              </Pressable>
+              <NavStripLayout
+                surface="navy"
+                onBack={() => setOpen(false)}
+                onClose={() => setOpen(false)}
+                closeLabel={`Close ${title}`}
+                title={
+                  <AppText variant="heading" tone="white" numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 18, lineHeight: 24 }}>
+                    {title}
+                  </AppText>
+                }
+              />
             </View>
             <FlatList
               data={options}
@@ -101,10 +105,8 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 40, 85, 0.45)' },
   sheet: { maxHeight: '70%', backgroundColor: color.white, borderTopLeftRadius: radius.md, borderTopRightRadius: radius.md, overflow: 'hidden' },
   sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: space.lg,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm,
     backgroundColor: color.navy,
   },
   row: {

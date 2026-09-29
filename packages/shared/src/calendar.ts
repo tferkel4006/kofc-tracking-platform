@@ -11,7 +11,7 @@
 import type { CalendarEntry } from './contract';
 import { addDays, daysBetween } from './planning';
 import { assertIsoDate, toIsoDate } from './rules';
-import type { Shift } from './types';
+import type { Meeting, Shift } from './types';
 
 export type CalendarView = 'month' | 'week' | 'day';
 export type CalendarTone = 'meeting' | 'urgent' | 'needs' | 'normal';
@@ -75,6 +75,35 @@ export function shiftStart(shift: Pick<Shift, 'ShiftDate' | 'StartTime'>): Date 
   const [hh = 0, mm = 0] = shift.StartTime.split(':').map(Number);
   return new Date(y, m - 1, d, hh, mm);
 }
+
+/**
+ * The local date-time a block of time on `date` ends. An end at or before the start runs past midnight, so it
+ * ends on the next day. Times are 'HH:MM' or 'HH:MM:SS' on the device clock.
+ */
+function localEnd(date: string, start: string, end: string): Date {
+  const [y, m, d] = parts(date);
+  const [sh = 0, sm = 0] = start.split(':').map(Number);
+  const [eh = 0, em = 0] = end.split(':').map(Number);
+  const overnight = eh * 60 + em <= sh * 60 + sm;
+  return new Date(y, m - 1, d + (overnight ? 1 : 0), eh, em);
+}
+
+/** The local date-time a shift ends. */
+export const shiftEnd = (shift: Pick<Shift, 'ShiftDate' | 'StartTime' | 'EndTime'>): Date => localEnd(shift.ShiftDate, shift.StartTime, shift.EndTime);
+
+/** The local date-time a meeting ends. */
+export const meetingEnd = (meeting: Pick<Meeting, 'Date' | 'Time Start' | 'Time End'>): Date =>
+  localEnd(meeting.Date, meeting['Time Start'], meeting['Time End']);
+
+/**
+ * The Home feed's upcoming lists without anything that has already finished by `now` (the device clock), for
+ * members whose calendar hides ended items (calendarHidesEnded). A shift or meeting that ended earlier today is gone.
+ */
+export const withoutEndedShifts = <T extends { shift: Pick<Shift, 'ShiftDate' | 'StartTime' | 'EndTime'> }>(items: readonly T[], now: Date): T[] =>
+  items.filter((i) => shiftEnd(i.shift).getTime() > now.getTime());
+
+export const withoutEndedMeetings = <T extends Pick<Meeting, 'Date' | 'Time Start' | 'Time End'>>(meetings: readonly T[], now: Date): T[] =>
+  meetings.filter((m) => meetingEnd(m).getTime() > now.getTime());
 
 /** True for a shift starting between now and URGENT_WITHIN_HOURS from now. */
 export function isShiftUrgent(shift: Pick<Shift, 'ShiftDate' | 'StartTime'>, now: Date): boolean {

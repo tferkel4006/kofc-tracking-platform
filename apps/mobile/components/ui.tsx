@@ -196,7 +196,7 @@ export function Screen({
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: color.white }}
-      contentContainerStyle={[{ padding: space.lg, gap: space.xl }, contentStyle]}
+      contentContainerStyle={[{ padding: space.lg, paddingTop: space.md, gap: space.xl }, contentStyle]}
       keyboardShouldPersistTaps="handled"
       refreshControl={
         onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={color.navy} colors={[color.navy]} /> : undefined

@@ -1,10 +1,14 @@
-// New message: pick one or more people from my council and its affiliated councils, write, send.
+// New message: pick one or more people from my council and its affiliated councils, and/or a Distribution List
+// of my own council (All Members, Active Officers, Board of Trustees; Sprint 5Y-Mobile), write, send.
 // The person list follows the spec: "Last, First – Council name", sorted by council name then last name.
+// A Distribution List is resolved to its Active members when the message is sent, and each of them gets an
+// unread receipt (the envelope badge), just like a person picked one by one.
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { memberDropdownOptions, sortCouncils } from '@kofc/shared';
+import { DISTRIBUTION_GROUPS, distributionGroupLabel, memberDropdownOptions, sortCouncils, type DistributionGroup } from '@kofc/shared';
 import { Dropdown } from '@/components/Dropdown';
+import { NavStrip } from '@/components/NavStrip';
 import { AppInput, AppText, Button, Field, Loading, Notice, Pill } from '@/components/ui';
 import { useApp, useUser } from '@/lib/app-context';
 import { color, space } from '@/lib/theme';
@@ -16,6 +20,7 @@ export default function NewMessageScreen() {
   const router = useRouter();
   const { refreshUnread } = useApp();
   const [recipients, setRecipients] = useState<number[]>([]);
+  const [groups, setGroups] = useState<DistributionGroup[]>([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -30,12 +35,19 @@ export default function NewMessageScreen() {
 
   const options = state.data?.options ?? [];
   const labelOf = (id: number) => options.find((o) => o.value === id)?.label ?? `Member ${id}`;
+  const groupOptions = DISTRIBUTION_GROUPS.filter((g) => !groups.includes(g.value)).map((g) => ({ value: g.value, label: g.label }));
 
   const send = async () => {
     setBusy(true);
     setFailure(null);
     try {
-      const sent = await db.messages.send({ senderId: user.memberId, councilId: user.councilId, recipientIds: recipients, text });
+      const sent = await db.messages.send({
+        senderId: user.memberId,
+        councilId: user.councilId,
+        recipientIds: recipients,
+        distributionGroups: groups,
+        text,
+      });
       await refreshUnread();
       router.replace(`/messages/${sent.ThreadID}`);
     } catch (err) {
@@ -48,11 +60,7 @@ export default function NewMessageScreen() {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: color.white }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.lg }} keyboardShouldPersistTaps="handled">
-        <Pressable accessibilityRole="button" onPress={() => router.back()} style={{ minHeight: 44, justifyContent: 'center' }}>
-          <AppText variant="label" style={{ textDecorationLine: 'underline' }}>
-            ‹ Messages
-          </AppText>
-        </Pressable>
+        <NavStrip closeLabel="Close messaging" />
         <AppText variant="heading" accessibilityRole="header">
           New message
         </AppText>
@@ -61,15 +69,34 @@ export default function NewMessageScreen() {
         {!state.data && state.loading ? <Loading /> : null}
 
         <Field label="TO">
-          <Dropdown
-            title="Add a person"
-            placeholder="Add a person…"
-            value={null}
-            options={options.filter((o) => !recipients.includes(o.value))}
-            onChange={(id) => setRecipients((r) => [...r, id])}
-          />
+          <View style={{ gap: space.sm }}>
+            <Dropdown
+              title="Distribution List"
+              placeholder="Distribution List…"
+              value={null}
+              options={groupOptions}
+              onChange={(g) => setGroups((current) => [...current, g])}
+            />
+            <Dropdown
+              title="Add a person"
+              placeholder="Add a person…"
+              value={null}
+              options={options.filter((o) => !recipients.includes(o.value))}
+              onChange={(id) => setRecipients((r) => [...r, id])}
+            />
+          </View>
         </Field>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+          {groups.map((g) => (
+            <Pressable
+              key={g}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${distributionGroupLabel(g)}`}
+              onPress={() => setGroups((current) => current.filter((x) => x !== g))}
+            >
+              <Pill label={`${distributionGroupLabel(g)}  ×`} tone="navy" />
+            </Pressable>
+          ))}
           {recipients.map((id) => (
             <Pressable key={id} accessibilityRole="button" accessibilityLabel={`Remove ${labelOf(id)}`} onPress={() => setRecipients((r) => r.filter((x) => x !== id))}>
               <Pill label={`${labelOf(id)}  ×`} tone="outline" />
@@ -80,7 +107,12 @@ export default function NewMessageScreen() {
         <Field label="MESSAGE">
           <AppInput value={text} onChangeText={setText} multiline style={{ minHeight: 120, textAlignVertical: 'top', paddingTop: space.md }} />
         </Field>
-        <Button title="Send" busy={busy} disabled={recipients.length === 0 || !text.trim()} onPress={() => void send()} />
+        <Button
+          title="Send"
+          busy={busy}
+          disabled={(recipients.length === 0 && groups.length === 0) || !text.trim()}
+          onPress={() => void send()}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -125,6 +125,7 @@ import {
   MEMBER_COLUMNS,
   PARISH_COLUMNS,
   participantIds,
+  distributionGroupMemberIds,
   PASTOR_COLUMNS,
   planEventCopy,
   RECORD_REFERENCES,
@@ -227,6 +228,7 @@ import {
   type SignupContextRow,
 } from '@kofc/shared';
 import type {
+  DistributionGroup,
   AnnualBudgetForecast,
   BudgetYearPerformance,
   CharitableDisbursementLedger,
@@ -1596,6 +1598,17 @@ export class MemoryDataService implements DataService {
 
   private activeStatusId(s: MemoryStore): number | undefined {
     return s.rows('MemberStatus').find((st) => st.Status === 'Active')?.id as number | undefined;
+  }
+
+  /** The council's Active members that `groups` reach (message distribution lists, Sprint 5Y-Mobile). */
+  private distributionRecipients(s: MemoryStore, councilId: number | undefined, groups: readonly DistributionGroup[] | undefined): number[] {
+    if (councilId === undefined || !groups?.length) return [];
+    const activeId = this.activeStatusId(s);
+    const roster = s
+      .rows('Member')
+      .filter((m) => m.CouncilID === councilId && m.StatusID === activeId)
+      .map((m) => ({ memberId: m.id as number, roles: this.rolesFor(s, m.id as number) }));
+    return groups.flatMap((g) => distributionGroupMemberIds(g, roster));
   }
 
   private rolesFor(s: MemoryStore, memberId: number): Role[] {
@@ -3326,7 +3339,14 @@ export class MemoryDataService implements DataService {
           assertThreadParticipant(rows, input.threadId, input.senderId);
           recipients = participantIds(input.threadId, rows.messages, rows.receipts).filter((id) => id !== input.senderId);
         } else {
-          recipients = [...new Set(input.recipientIds ?? [])].filter((id) => id !== input.senderId);
+          const grouped = this.distributionRecipients(s, input.councilId, input.distributionGroups);
+          recipients = [...new Set([...(input.recipientIds ?? []), ...grouped])].filter((id) => id !== input.senderId);
+          if (input.councilId !== undefined && recipients.length === 0 && input.distributionGroups?.length) {
+            throw new BusinessRuleError('NO_RECIPIENTS', 'The chosen distribution list has nobody in it but you.', {
+              councilId: input.councilId,
+              distributionGroups: input.distributionGroups,
+            });
+          }
           if (input.councilId === undefined || recipients.length === 0) {
             throw new BusinessRuleError(
               'INVALID_INPUT',

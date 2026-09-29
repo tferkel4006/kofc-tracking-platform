@@ -92,7 +92,7 @@ export default function ShiftsScreen() {
   return (
     <FlatList
       style={{ flex: 1, backgroundColor: color.white }}
-      contentContainerStyle={{ padding: space.lg, gap: space.md }}
+      contentContainerStyle={{ padding: space.lg, paddingTop: space.md, gap: space.md }}
       data={items}
       keyExtractor={(item) => String(item.shift.id)}
       renderItem={renderItem}

@@ -124,6 +124,7 @@ import {
   MEMBER_COLUMNS,
   PARISH_COLUMNS,
   participantIds,
+  distributionGroupMemberIds,
   PASTOR_COLUMNS,
   planEventCopy,
   RECORD_REFERENCES,
@@ -230,6 +231,7 @@ import {
   type SignupContextRow,
 } from '@kofc/shared';
 import type {
+  DistributionGroup,
   Activities,
   AlchemerRequest,
   AlchemerResponse,
@@ -1787,6 +1789,29 @@ export class SqliteDataService implements DataService {
         ]);
       }
     }
+  }
+
+  /** The council's Active members that `groups` reach (message distribution lists, Sprint 5Y-Mobile). */
+  private async distributionRecipients(
+    db: SQLite.SQLiteDatabase,
+    councilId: number | undefined,
+    groups: readonly DistributionGroup[] | undefined,
+  ): Promise<number[]> {
+    if (councilId === undefined || !groups?.length) return [];
+    const rows = await db.getAllAsync<{ MemberID: number; Role: string | null; Officer: 0 | 1 | null }>(
+      `SELECT m.[id] AS MemberID, r.[Role], r.[Officer] FROM [Member] m
+         LEFT JOIN [MemberRoles] mr ON mr.[MemberID] = m.[id]
+         LEFT JOIN [Role] r ON r.[id] = mr.[RoleID]
+        WHERE m.[CouncilID] = ? AND m.[StatusID] = (SELECT [id] FROM [MemberStatus] WHERE [Status] = 'Active')`,
+      [councilId],
+    );
+    const roster = new Map<number, { memberId: number; roles: { Role: string; Officer: 0 | 1 }[] }>();
+    for (const row of rows) {
+      const entry = roster.get(row.MemberID) ?? { memberId: row.MemberID, roles: [] };
+      if (row.Role !== null) entry.roles.push({ Role: row.Role, Officer: row.Officer ?? 0 });
+      roster.set(row.MemberID, entry);
+    }
+    return groups.flatMap((g) => distributionGroupMemberIds(g, [...roster.values()]));
   }
 
   private rolesFor(db: SQLite.SQLiteDatabase, memberId: number): Promise<Role[]> {
@@ -3916,7 +3941,14 @@ export class SqliteDataService implements DataService {
           threadId = input.threadId;
           recipients = participantIds(threadId, rows.messages, rows.receipts).filter((id) => id !== input.senderId);
         } else {
-          recipients = [...new Set(input.recipientIds ?? [])].filter((id) => id !== input.senderId);
+          const grouped = await this.distributionRecipients(db, input.councilId, input.distributionGroups);
+          recipients = [...new Set([...(input.recipientIds ?? []), ...grouped])].filter((id) => id !== input.senderId);
+          if (input.councilId !== undefined && recipients.length === 0 && input.distributionGroups?.length) {
+            throw new BusinessRuleError('NO_RECIPIENTS', 'The chosen distribution list has nobody in it but you.', {
+              councilId: input.councilId,
+              distributionGroups: input.distributionGroups,
+            });
+          }
           if (input.councilId === undefined || recipients.length === 0) {
             throw new BusinessRuleError(
               'INVALID_INPUT',

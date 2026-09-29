@@ -6,9 +6,10 @@
 // so pressing Send can never race a save that is still in flight and leave a duplicate draft behind.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { flattenReplies, isUnread, preview, type MessageAttachment, type ThreadMessage } from '@kofc/shared';
 import { MessageNode } from '@/components/MessageNode';
+import { NavStrip } from '@/components/NavStrip';
 import { AppInput, AppText, Button, EmptyState, Loading, Notice } from '@/components/ui';
 import { useApp, useUser } from '@/lib/app-context';
 import { color, space } from '@/lib/theme';
@@ -32,7 +33,6 @@ export default function ThreadScreen() {
   const { threadId } = useLocalSearchParams<{ threadId: string }>();
   const id = Number(threadId);
   const user = useUser();
-  const router = useRouter();
   const { refreshUnread } = useApp();
 
   const state = useLoad(() => db.messages.listThread(id, user.memberId), [id, user.memberId]);
@@ -216,11 +216,7 @@ export default function ThreadScreen() {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={{ gap: space.md }}>
-            <Pressable accessibilityRole="button" onPress={() => router.back()} style={{ minHeight: 44, justifyContent: 'center' }}>
-              <AppText variant="label" style={{ textDecorationLine: 'underline' }}>
-                ‹ Messages
-              </AppText>
-            </Pressable>
+            <NavStrip closeLabel="Close messaging" />
             {notice ? <Notice tone={notice.tone} message={notice.text} onDismiss={() => setNotice(null)} /> : null}
             {state.error ? <Notice tone="error" message={state.error} /> : null}
           </View>

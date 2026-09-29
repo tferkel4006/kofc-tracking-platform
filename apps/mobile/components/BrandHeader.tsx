@@ -87,7 +87,7 @@ export function BrandHeader() {
       style={{
         backgroundColor: color.navy,
         paddingTop: insets.top + space.sm,
-        paddingBottom: space.md,
+        paddingBottom: space.sm,
         paddingHorizontal: space.lg,
         flexDirection: 'row',
         alignItems: 'center',
@@ -97,11 +97,21 @@ export function BrandHeader() {
       }}
     >
       <BrandMark />
-      <View style={{ flex: 1 }}>
-        <AppText variant="heading" tone="white" style={{ fontSize: 18, lineHeight: 22 }} accessibilityRole="header">
+      {/* Flexible title box: it takes the room left between the emblem and the controls, and a long council
+          name shrinks to fit on one line (numberOfLines + adjustsFontSizeToFit) instead of wrapping. */}
+      <View style={{ flex: 1, minWidth: 0, flexShrink: 1 }}>
+        <AppText
+          variant="heading"
+          tone="white"
+          style={{ fontSize: 18, lineHeight: 22 }}
+          accessibilityRole="header"
+          numberOfLines={1}
+          adjustsFontSizeToFit={true}
+          minimumFontScale={0.7}
+        >
           Knights of Columbus
         </AppText>
-        <AppText variant="small" tone="white" numberOfLines={1}>
+        <AppText variant="small" tone="white" numberOfLines={1} adjustsFontSizeToFit={true} minimumFontScale={0.6}>
           {council ? councilLabel(council) : ' '}
         </AppText>
       </View>

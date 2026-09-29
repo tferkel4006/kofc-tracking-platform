@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { FlatList, Pressable, RefreshControl, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { formatTimestamp, preview, type ThreadSummary } from '@kofc/shared';
+import { NavStrip } from '@/components/NavStrip';
 import { AppText, Button, Card, EmptyState, Loading, Notice, Pill } from '@/components/ui';
 import { useApp, useUser } from '@/lib/app-context';
 import { color, space } from '@/lib/theme';
@@ -34,6 +35,7 @@ export default function ThreadsScreen() {
       refreshControl={<RefreshControl refreshing={state.refreshing} onRefresh={() => void state.reload()} tintColor={color.navy} colors={[color.navy]} />}
       ListHeaderComponent={
         <View style={{ gap: space.md, marginBottom: space.sm }}>
+          <NavStrip closeLabel="Close messaging" />
           <AppText variant="heading" accessibilityRole="header">
             Messages
           </AppText>

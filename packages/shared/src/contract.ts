@@ -68,6 +68,7 @@ import type {
   WorkingStatus,
 } from './types';
 import type { BudgetAlert, BudgetWindowState } from './budget';
+import type { DistributionGroup } from './messaging';
 
 // 1. LOOKUPS
 /** The global lookup tables a Super Admin maintains (Blueprint: "System Lookup Manager"). */
@@ -233,6 +234,12 @@ export interface SendMessageInput {
   threadId?: number;
   councilId?: number;
   recipientIds?: number[];
+  /**
+   * Built-in groups of `councilId` (its Active members only) sent to alongside `recipientIds` when starting a
+   * new thread; ignored for a reply. Rejects NO_RECIPIENTS when groups were chosen but, with the people picked,
+   * reach nobody other than the sender.
+   */
+  distributionGroups?: DistributionGroup[];
   /** Nests the message under another message of the same thread. */
   parentMessageId?: number | null;
   /** Send this saved draft instead of creating a new message. */

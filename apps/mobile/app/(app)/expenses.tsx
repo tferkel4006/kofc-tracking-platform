@@ -26,6 +26,7 @@ import {
   type ExpenseReportDetail,
 } from '@kofc/shared';
 import { Dropdown } from '@/components/Dropdown';
+import { NavStrip } from '@/components/NavStrip';
 import { ReceiptScanTile, SCAN_RECEIPT_TITLE } from '@/components/ReceiptScanTile';
 import { AppInput, AppText, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
@@ -205,6 +206,7 @@ export default function ExpensesScreen() {
 
   return (
     <Screen refreshing={state.refreshing} onRefresh={() => void state.reload()}>
+      <NavStrip closeLabel="Close expense reports" />
       <AppText variant="heading" accessibilityRole="header">
         My expense reports
       </AppText>
