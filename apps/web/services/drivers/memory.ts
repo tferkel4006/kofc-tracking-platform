@@ -191,6 +191,18 @@ import {
   normalizeStateCode,
   searchCharityRegistry,
   suggestLocalCharities,
+  assertFraternalYear,
+  assertMayManageBudgetForecast,
+  budgetLineExists,
+  budgetLineNotFound,
+  cleanBudgetLineUpdate,
+  cleanCustomBudgetLine,
+  findOperationalBudgetLine,
+  fraternalYearBounds,
+  mergeBudgetSeeds,
+  planBudgetPrePopulation,
+  previousFraternalYear,
+  sortBudgetLines,
   type CleanDonation,
   type ElectionRows,
   type EventFunds,
@@ -202,6 +214,7 @@ import {
 } from '@kofc/shared';
 import type {
   CharitableDisbursementLedger,
+  CouncilBudgetForecast,
   CharityProposalDetail,
   CharityDonationProposal,
   CouncilCharityLink,
@@ -2954,6 +2967,110 @@ export class MemoryDataService implements DataService {
       return this.charityProposalDetails(s, (p) => p.id === proposalId, 'newest')[0];
     },
   };
+
+  budget: DataService['budget'] = {
+    listAnnualForecast: async (actorId, councilId, fraternalYear) => {
+      const year = assertFraternalYear(fraternalYear);
+      const s = await this.ready();
+      assertMayManageBudgetForecast(this.memberWriteActor(s, actorId), councilId, `read the budget forecast of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return sortBudgetLines(this.budgetLines(s, councilId, year)).map((l) => ({ ...l }));
+    },
+
+    updateLineItemBudget: async (actorId, budgetLineItemId, approvedAmount, notes) => {
+      const changes = cleanBudgetLineUpdate(approvedAmount, notes);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const line = s.rows('CouncilBudgetForecast').find((l) => l.id === budgetLineItemId);
+        if (!line) throw budgetLineNotFound(budgetLineItemId);
+        assertMayManageBudgetForecast(actor, line.CouncilID as number, `change budget line ${budgetLineItemId}`);
+        Object.assign(line, changes);
+        return { ...line } as unknown as CouncilBudgetForecast;
+      });
+    },
+
+    addCustomBudgetLine: async (actorId, councilId, data) => {
+      const clean = cleanCustomBudgetLine(data);
+      const s = await this.ready();
+      const row = s.transaction(() => {
+        assertMayManageBudgetForecast(this.memberWriteActor(s, actorId), councilId, `add budget lines for council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const existing = findOperationalBudgetLine(this.budgetLines(s, councilId, clean.FraternalYear), clean.LineItemName);
+        if (existing) throw budgetLineExists(existing);
+        return s.insert('CouncilBudgetForecast', {
+          CouncilID: councilId,
+          FraternalYear: clean.FraternalYear,
+          CategoryType: 'Operational',
+          ReferenceSourceID: null,
+          LineItemName: clean.LineItemName,
+          PrePopulatedAmount: 0,
+          ApprovedBudgetAmount: clean.ApprovedBudgetAmount,
+          Notes: clean.Notes,
+        });
+      });
+      return { ...row } as unknown as CouncilBudgetForecast;
+    },
+
+    prePopulateNextYear: async (actorId, councilId, targetFraternalYear) => {
+      const target = assertFraternalYear(targetFraternalYear, 'Target fraternal year');
+      const source = previousFraternalYear(target);
+      const { fromDate, toDate } = fraternalYearBounds(source);
+      const inYear = (date: unknown) => (date as string) >= fromDate && (date as string) <= toDate;
+      const s = await this.ready();
+      const { created, refreshed } = s.transaction(() => {
+        assertMayManageBudgetForecast(this.memberWriteActor(s, actorId), councilId, `pre-populate the budget of council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+        const annualEvents = s.rows('Event').filter((e) => linked.has(e.id) && e.IsAnnual === 1 && inYear(e.StartDate));
+        const annualEventIds = new Set(annualEvents.map((e) => e.id));
+        const meetingIds = new Set(s.rows('Meeting').filter((m) => m.CouncilID === councilId && inYear(m.Date)).map((m) => m.id));
+        const spendingReports = new Map(
+          s
+            .rows('ExpenseReport')
+            .filter((r) => r.CouncilID === councilId && EXPENSE_SPEND_STATUSES.includes(r.Status as ExpenseReportStatus))
+            .map((r) => [r.id, r]),
+        );
+        const expenseLines = s.rows('ExpenseLineItem').flatMap((li) => {
+          const report = spendingReports.get(li.ExpenseReportID);
+          return report ? [{ report, Amount: li.Amount as number }] : [];
+        });
+        const annualCharities = new Map(s.rows('GlobalCharityRegistry').filter((c) => c.IsAnnual === 1).map((c) => [c.id, c.Name as string]));
+        const seeds = planBudgetPrePopulation({
+          annualEvents: annualEvents.map((e) => ({ id: e.id as number, EventName: e.EventName as string, Spend: e.Spend as number | null })),
+          eventExpenses: expenseLines
+            .filter((x) => annualEventIds.has(x.report.LinkedEventID))
+            .map((x) => ({ EventID: x.report.LinkedEventID as number, Amount: x.Amount })),
+          annualCharityChecks: s
+            .rows('CharitableDisbursementLedger')
+            .filter((d) => d.CouncilID === councilId && inYear(d.PayoutDate) && annualCharities.has(d.CharityID))
+            .map((d) => ({ CharityID: d.CharityID as number, Name: annualCharities.get(d.CharityID)!, Amount: d.Amount as number })),
+          meetingCount: meetingIds.size,
+          meetingExpenses: expenseLines.filter((x) => meetingIds.has(x.report.LinkedMeetingID)).map((x) => ({ Amount: x.Amount })),
+        });
+        const plan = mergeBudgetSeeds(this.budgetLines(s, councilId, target), seeds);
+        for (const { id, ...refresh } of plan.updates) Object.assign(s.rows('CouncilBudgetForecast').find((l) => l.id === id)!, refresh);
+        for (const seed of plan.inserts) {
+          s.insert('CouncilBudgetForecast', { CouncilID: councilId, FraternalYear: target, ...seed, ApprovedBudgetAmount: 0, Notes: null });
+        }
+        return { created: plan.inserts.length, refreshed: plan.updates.length };
+      });
+      return {
+        fraternalYear: target,
+        sourceFraternalYear: source,
+        created,
+        refreshed,
+        lines: sortBudgetLines(this.budgetLines(s, councilId, target)).map((l) => ({ ...l })),
+      };
+    },
+  };
+
+  /** The council's forecast lines for one fraternal year, as stored (not copied). */
+  private budgetLines(s: MemoryStore, councilId: number, fraternalYear: string): CouncilBudgetForecast[] {
+    return s
+      .rows('CouncilBudgetForecast')
+      .filter((l) => l.CouncilID === councilId && l.FraternalYear === fraternalYear) as unknown as CouncilBudgetForecast[];
+  }
 
   private charityProposalDetails(s: MemoryStore, keep: (p: Row) => boolean, order: 'queue' | 'newest'): CharityProposalDetail[] {
     return buildCharityProposalDetails(

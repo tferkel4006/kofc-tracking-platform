@@ -135,6 +135,8 @@ export interface Event {
   ActualNumberAttendees?: number;
   /** Comma-separated local photo reference paths (VARCHAR(2000)); written only by events.uploadPhotos. */
   PhotoGalleryURL?: string | null;
+  /** BIT: the event recurs every fraternal year, so budget.prePopulateNextYear forecasts it (Sprint 5Y). Default 0. */
+  IsAnnual?: number;
 }
 
 
@@ -479,6 +481,7 @@ export interface GlobalCharityRegistry {
   ZipCode?: string | null;
   IsCatholic: number; // BIT
   CharityType: string;
+  IsAnnual: number; // BIT (Sprint 5Y): councils give every fraternal year, so budget.prePopulateNextYear forecasts it
 }
 
 /** A council's connection to a registry charity; one row per council and charity. */
@@ -515,4 +518,21 @@ export interface CharitableDisbursementLedger {
   PayoutDate: string; // YYYY-MM-DD
   Notes?: string | null;
   ProposalID?: number | null; // the proposal the check paid
+}
+
+// 12. ANNUAL BUDGET FORECASTING (Sprint 5Y)
+/** What a budget line forecasts: an annual event, gifts to an annual charity, or the council's running costs. */
+export type BudgetCategoryType = 'Event' | 'Donation' | 'Operational';
+
+/** One line of a council's budget for one fraternal year. */
+export interface CouncilBudgetForecast {
+  id: number;
+  CouncilID: number;
+  FraternalYear: string; // 'YYYY-YYYY', July 1 - June 30
+  CategoryType: BudgetCategoryType;
+  ReferenceSourceID?: number | null; // Event.id (Event), GlobalCharityRegistry.id (Donation); NULL for Operational
+  LineItemName: string;
+  PrePopulatedAmount: number; // DECIMAL(18,2): the previous fraternal year's actual spend
+  ApprovedBudgetAmount: number; // DECIMAL(18,2): set by council leadership
+  Notes?: string | null;
 }

@@ -174,6 +174,12 @@ export function createRemoteDataService(): DataService {
       listCouncilLedger: notImplemented('charities.listCouncilLedger'),
       rejectProposal: notImplemented('charities.rejectProposal'),
     },
+    budget: {
+      listAnnualForecast: notImplemented('budget.listAnnualForecast'),
+      updateLineItemBudget: notImplemented('budget.updateLineItemBudget'),
+      addCustomBudgetLine: notImplemented('budget.addCustomBudgetLine'),
+      prePopulateNextYear: notImplemented('budget.prePopulateNextYear'),
+    },
     supreme: {
       previewReport: notImplemented('supreme.previewReport'),
       syncAlchemerReport: notImplemented('supreme.syncAlchemerReport'),

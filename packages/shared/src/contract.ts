@@ -18,6 +18,7 @@ import type {
   CharityDonationProposal,
   ChatThread,
   Council,
+  CouncilBudgetForecast,
   CouncilCharityLink,
   CouncilDonationMethod,
   CouncilElectionBallot,
@@ -855,7 +856,7 @@ export interface CharitySearchFilters {
  * A registry entry for charities.addGlobalCharity and hydrateAndDisburse. State is folded to upper case and EIN to
  * 'NN-NNNNNNN'; blank optional text is stored as NULL.
  */
-export type NewGlobalCharity = Omit<GlobalCharityRegistry, 'id' | 'IsCatholic'> & { IsCatholic?: boolean };
+export type NewGlobalCharity = Omit<GlobalCharityRegistry, 'id' | 'IsCatholic' | 'IsAnnual'> & { IsCatholic?: boolean; IsAnnual?: boolean };
 
 /**
  * A member's gift proposal for charities.proposeDonation. Name a registry entry with ExistingCharityID, a charity not
@@ -919,7 +920,34 @@ export interface CharityDisbursementResult {
   disbursement: CharitableDisbursementLedger;
 }
 
-// 18. THE SERVICE
+// 18. ANNUAL BUDGET FORECASTING (Sprint 5Y)
+/**
+ * A council-specific line for budget.addCustomBudgetLine: a running cost that is neither an annual event nor an annual
+ * charity (insurance, supplies, dues). It is always CategoryType 'Operational' with no ReferenceSourceID and a
+ * PrePopulatedAmount of 0. ApprovedBudgetAmount defaults to 0; blank Notes are stored as NULL.
+ */
+export interface NewCustomBudgetLine {
+  FraternalYear: string;
+  LineItemName: string;
+  ApprovedBudgetAmount?: number | null;
+  Notes?: string | null;
+}
+
+/** What budget.prePopulateNextYear seeded. */
+export interface BudgetPrePopulationResult {
+  /** The year the forecast is for, e.g. '2027-2028'. */
+  fraternalYear: string;
+  /** The year whose actual spend was read, e.g. '2026-2027'. */
+  sourceFraternalYear: string;
+  /** Lines this call added. */
+  created: number;
+  /** Lines that already existed and had their PrePopulatedAmount (and a renamed source's name) refreshed. */
+  refreshed: number;
+  /** The council's whole forecast for the year afterwards, in listAnnualForecast order. */
+  lines: CouncilBudgetForecast[];
+}
+
+// 19. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -1625,6 +1653,49 @@ export interface DataService {
      * no longer 'Pending'.
      */
     rejectProposal(actorId: number, proposalId: number, reason: string): Promise<CharityProposalDetail>;
+  };
+
+  /**
+   * Annual budget forecasting (Sprint 5Y): one CouncilBudgetForecast row per budget line of a council's fraternal year
+   * ('YYYY-YYYY', July 1 - June 30). Every method is for council leadership only: an Active Admin, Financial Secretary
+   * or Treasurer of the council, or an Active Super Admin for any council (assertMayManageBudgetForecast:
+   * ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rows are always read and written for one council; nothing crosses
+   * councils. Writes are all or nothing; an unknown actor rejects MEMBER_NOT_FOUND, an unknown council INVALID_INPUT, a
+   * fraternal year that is not 'YYYY-YYYY' with consecutive years INVALID_INPUT.
+   */
+  budget: {
+    /**
+     * The council's lines for the year: Event, then Donation, then Operational lines, each LineItemName A-Z ignoring
+     * case, then id. Empty before the year is pre-populated or given custom lines.
+     */
+    listAnnualForecast(actorId: number, councilId: number, fraternalYear: string): Promise<CouncilBudgetForecast[]>;
+    /**
+     * Sets a line's ApprovedBudgetAmount and, unless `notes` is undefined, its Notes (blank or null clears them), and
+     * resolves to the stored line. Leadership of the line's council. Rejects RECORD_NOT_FOUND for an unknown line and
+     * INVALID_INPUT for a negative amount, one with fractions of a cent, or notes over BUDGET_NOTES_MAX_LENGTH characters.
+     */
+    updateLineItemBudget(actorId: number, budgetLineItemId: number, approvedAmount: number, notes?: string | null): Promise<CouncilBudgetForecast>;
+    /**
+     * Adds a council-specific 'Operational' line (NewCustomBudgetLine) and resolves to it. Rejects BUDGET_LINE_EXISTS
+     * (details.lineId names it) when the council's year already has an Operational line of that name ignoring case and
+     * spacing, and INVALID_INPUT for a bad field.
+     */
+    addCustomBudgetLine(actorId: number, councilId: number, data: NewCustomBudgetLine): Promise<CouncilBudgetForecast>;
+    /**
+     * Seeds the council's forecast for `targetFraternalYear` from the previous fraternal year's actual spend, in one
+     * transaction (planBudgetPrePopulation). Spend counts as in reports.monthlySummary: an event's Spend plus the line
+     * items of the council's 'Approved' and 'Reimbursed' expense sheets, and the council's charity checks.
+     * - Event: one line per IsAnnual event linked to the council that started in the previous year - its Spend plus
+     *   the council's expenses linked to it. ReferenceSourceID is the event.
+     * - Donation: one line per IsAnnual charity the council paid in the previous year (by PayoutDate) - the sum of those
+     *   checks. ReferenceSourceID is the charity.
+     * - Operational: one 'Council Meetings' line (BUDGET_MEETINGS_LINE_NAME) when the council met in the previous
+     *   year - the council's expenses linked to those meetings.
+     * Re-running is safe: a line that already exists keeps its ApprovedBudgetAmount and Notes and only has its
+     * PrePopulatedAmount (and a renamed source's LineItemName) refreshed. New lines start with ApprovedBudgetAmount 0
+     * for review. Nothing is deleted.
+     */
+    prePopulateNextYear(actorId: number, councilId: number, targetFraternalYear: string): Promise<BudgetPrePopulationResult>;
   };
 
   feedback: {

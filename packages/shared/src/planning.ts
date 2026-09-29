@@ -31,6 +31,7 @@ export const EVENT_COLUMNS = [
   'Highlights',
   'PlannedNumberAttendees',
   'ActualNumberAttendees',
+  'IsAnnual',
 ] as const satisfies readonly (keyof NewEvent)[];
 
 export const SHIFT_COLUMNS = [
@@ -107,7 +108,15 @@ export function cleanEventFields(input: EventChanges): EventChanges {
     if (has(key)) out[key] = input[key] === null ? null : assertInteger(input[key], FIELD_LABELS[key], 0);
   }
   if (has('Highlights')) out.Highlights = input.Highlights === null ? null : assertText(input.Highlights, 'Highlights', 10_000, false);
+  if (has('IsAnnual')) out.IsAnnual = annualFlag(input.IsAnnual);
   return out;
+}
+
+/** Event.IsAnnual (Sprint 5Y, BIT NOT NULL): 0, 1, false or true, stored as 0 or 1. It cannot be cleared. */
+function annualFlag(value: unknown): number {
+  if (value === 0 || value === 1) return value;
+  if (typeof value === 'boolean') return value ? 1 : 0;
+  throw new BusinessRuleError('INVALID_INPUT', `IsAnnual must be 0, 1, true or false; received ${JSON.stringify(value)}.`, { field: 'IsAnnual' });
 }
 
 /** A complete new event: every required field present and valid, End on or after Start. */
@@ -179,6 +188,8 @@ export function planEventCopy(
   };
   if (event.Budget != null) copy.Budget = event.Budget;
   if (event.PlannedNumberAttendees != null) copy.PlannedNumberAttendees = event.PlannedNumberAttendees;
+  // A twin of an annual event is next year's edition, so it recurs too.
+  if (event.IsAnnual === 1) copy.IsAnnual = 1;
   return {
     event: copy,
     shifts: shifts.map((s) => ({

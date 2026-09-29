@@ -197,6 +197,7 @@ Multi-day calendar activities managed by councils.
 •	PlannedNumberAttendees (INTEGER, NULL) — Initial attendance estimate.
 •	ActualNumberAttendees (INTEGER, NULL) — Verified post-event foot-traffic count.
 •	PhotoGalleryURL (VARCHAR(2000), NULL) — Comma-separated local photo reference paths, appended to (never overwritten) through events.uploadPhotos by the event's owner, an Admin, Financial Secretary or Treasurer of a linked council, or a Super Admin.
+•	IsAnnual (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y: the event recurs every fraternal year. budget.prePopulateNextYear gives each annual event of the council a budget line; a copied (twin) annual event stays annual.
 [EventCouncils]
 Bridge table mapping event participation and cross-visibility among affiliated councils.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -408,6 +409,7 @@ One charity in the registry every council shares. Any member may search it; only
 •	ZipCode (VARCHAR(20), NULL) — Mailing ZIP code.
 •	IsCatholic (BIT, NOT NULL, DEFAULT 0) — Whether the charity is a Catholic ministry; Catholic charities are suggested first.
 •	CharityType (VARCHAR(100), NOT NULL) — The charity's cause, one of the six core types (Sprint 5V-2): Food Security, Women and Children, Faith, Protecting Life, Homelessness or Parish.
+•	IsAnnual (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y: councils give to the charity every fraternal year. budget.prePopulateNextYear gives each annual charity a council paid last year a Donation budget line.
 [CouncilCharityLink]
 A council's connection to a registry charity. Made by council leadership (charities.connectCouncilToCharity) or automatically when a charity check is paid.
 •	CouncilID (INTEGER, NOT NULL) — Composite Primary Key; Foreign Key references Council(id).
@@ -437,3 +439,17 @@ One check a council paid to a charity, written by charities.hydrateAndDisburse (
 •	ProposalID (INTEGER, NULL) — Foreign Key references CharityDonationProposal(id). The proposal the check paid (Sprint 5V-2), for the audit trail.
 ________________________________________
 
+# 11. Annual Budget Forecasting (Sprint 5Y)
+[CouncilBudgetForecast]
+One line of a council's budget for one fraternal year (July 1 - June 30). Only council leadership - an Active Admin, Financial Secretary or Treasurer of the council, or an Active Super Admin - may read or change it (assertMayManageBudgetForecast); standard members never see it, and every read and write is scoped to one council. budget.prePopulateNextYear seeds a year from the previous year's actual spend, counted as in reports.monthlySummary (an event's Spend plus the line items of the council's Approved and Reimbursed expense sheets, and the council's charity checks), and can be re-run: existing lines only have PrePopulatedAmount refreshed. Custom lines come from budget.addCustomBudgetLine.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). A council cannot be deleted while it has budget lines.
+•	FraternalYear (VARCHAR(9), NOT NULL) — The budget year as 'YYYY-YYYY' with consecutive years, e.g. 2027-2028.
+•	CategoryType (VARCHAR(50), NOT NULL) — Event (an annual event), Donation (an annual charity) or Operational (council meetings and custom running costs). Enforced by the shared rules layer.
+•	ReferenceSourceID (INTEGER, NULL) — The source of an Event line (Event.id) or a Donation line (GlobalCharityRegistry.id); NULL for Operational lines. No foreign key, because the table it points at depends on CategoryType.
+•	LineItemName (VARCHAR(255), NOT NULL) — The line's name: the event or charity name for sourced lines (kept current on re-seeding), 'Council Meetings' for the meetings line, or the name given to a custom line. Operational names are unique per council and year ignoring case (BUDGET_LINE_EXISTS).
+•	PrePopulatedAmount (DECIMAL(18,2), NOT NULL, DEFAULT 0.00) — Last fraternal year's actual spend on the line: an event's Spend plus its linked expenses, the sum of the charity's checks, or the expenses linked to the council's meetings. 0 for custom lines.
+•	ApprovedBudgetAmount (DECIMAL(18,2), NOT NULL, DEFAULT 0.00) — The figure council leadership approves (budget.updateLineItemBudget), 0 or more. Pre-population never changes it.
+•	Notes (TEXT, NULL) — Optional reviewer notes; at most 2,000 characters.
+A unique index on (CouncilID, FraternalYear, CategoryType, ReferenceSourceID, LineItemName) keeps lines from repeating. SQLite lets NULL ReferenceSourceIDs repeat in it, so the drivers also refuse a duplicate Operational name.
+________________________________________

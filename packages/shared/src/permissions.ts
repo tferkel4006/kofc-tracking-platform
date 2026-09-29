@@ -216,6 +216,12 @@ export const canReviewCharityProposals = (u: Actor, councilId: number): boolean 
 export const canDisburseCharity = (u: Actor, councilId: number): boolean => canDisburseCouncilExpenses(u, councilId);
 
 /**
+ * The annual budget forecast, mirroring assertMayManageBudgetForecast (Sprint 5Y; activity status is checked there): the
+ * council's Admins, its Financial Secretary and Treasurer, and any Super Admin.
+ */
+export const canManageBudgetForecast = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
+
+/**
  * Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it, and the
  * meeting center because a meeting's owner may be any member (it is read-only for everyone else without rights).
  */

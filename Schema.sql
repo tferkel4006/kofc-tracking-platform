@@ -198,6 +198,7 @@ CREATE TABLE [Event] (
 	[PlannedNumberAttendees] INTEGER,
 	[ActualNumberAttendees] INTEGER,
 	[PhotoGalleryURL] VARCHAR(2000) NULL, -- Sprint 5Q: comma-separated local photo reference paths
+	[IsAnnual] BIT NOT NULL DEFAULT 0, -- Sprint 5Y: recurs every fraternal year; seeds the next year's budget forecast
 	PRIMARY KEY([id])
 );
 GO
@@ -1128,6 +1129,7 @@ CREATE TABLE [GlobalCharityRegistry] (
 	[ZipCode] VARCHAR(20) NULL,
 	[IsCatholic] BIT NOT NULL DEFAULT 0,
 	[CharityType] VARCHAR(100) NOT NULL,
+	[IsAnnual] BIT NOT NULL DEFAULT 0, -- Sprint 5Y: councils give to it every fraternal year; seeds the next year's budget forecast
 	PRIMARY KEY([id])
 );
 GO
@@ -1230,4 +1232,40 @@ ON UPDATE NO ACTION ON DELETE NO ACTION;
 GO
 
 CREATE INDEX [CharitableDisbursementLedger_Council_Payout_Idx] ON [CharitableDisbursementLedger] ([CouncilID], [PayoutDate]);
+GO
+
+
+-- =========================================================================
+-- 14. ANNUAL BUDGET FORECASTING (Sprint 5Y)
+-- One row per budget line of a council's fraternal year ('YYYY-YYYY', July 1 - June 30). budget.prePopulateNextYear
+-- seeds PrePopulatedAmount from the previous year's actual spend: 'Event' rows from annual events (ReferenceSourceID =
+-- Event.id), 'Donation' rows from checks paid to annual charities (ReferenceSourceID = GlobalCharityRegistry.id) and
+-- the 'Operational' meetings row from expenses linked to council meetings. Council leadership sets
+-- ApprovedBudgetAmount. Custom 'Operational' lines carry no ReferenceSourceID. ReferenceSourceID has no foreign key
+-- because it points at a different table per CategoryType; CategoryType is enforced by the shared rules layer as
+-- elsewhere (no CHECK).
+-- =========================================================================
+CREATE TABLE [CouncilBudgetForecast] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[FraternalYear] VARCHAR(9) NOT NULL, -- e.g. '2027-2028'
+	[CategoryType] VARCHAR(50) NOT NULL, -- Event, Donation, Operational
+	[ReferenceSourceID] INTEGER NULL, -- Event.id or GlobalCharityRegistry.id; NULL for Operational lines
+	[LineItemName] VARCHAR(255) NOT NULL,
+	[PrePopulatedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00, -- the previous fraternal year's actual spend
+	[ApprovedBudgetAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00, -- set by council leadership after review
+	[Notes] TEXT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CouncilBudgetForecast]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+-- SQL Server treats NULL ReferenceSourceIDs as equal in this index and SQLite does not, so the drivers also refuse a
+-- duplicate Operational line by name (BUDGET_LINE_EXISTS).
+CREATE UNIQUE INDEX [CouncilBudgetForecast_Line_Idx] ON [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName]);
 GO

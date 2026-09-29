@@ -86,7 +86,8 @@ export type BusinessRuleCode =
   | 'GRAND_KNIGHT_TERM_CONTINUES'
   | 'GRAND_KNIGHT_REQUIRED'
   | 'CHARITY_ALREADY_REGISTERED'
-  | 'PROPOSAL_STATUS_CONFLICT';
+  | 'PROPOSAL_STATUS_CONFLICT'
+  | 'BUDGET_LINE_EXISTS';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -1184,6 +1185,20 @@ export function assertMayProposeCharityGift(actor: MemberWriteActor, councilId: 
     { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
   );
 }
+
+/**
+ * budget.* (Sprint 5Y): reading, pre-populating and adjusting a council's budget forecast belongs to its leadership - an
+ * Active Admin, Financial Secretary or Treasurer of the council - or any Active Super Admin. Standard members never
+ * see it. `action` completes "cannot ...".
+ */
+export function assertMayManageBudgetForecast(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = councilLeadershipDenial(actor, councilId, action, "a council's budget is kept only by its own leadership");
+  if (denial) throw denial;
+}
+
+/** assertMayManageBudgetForecast as a yes/no. */
+export const mayManageBudgetForecast = (actor: MemberWriteActor, councilId: number): boolean =>
+  councilLeadershipDenial(actor, councilId, 'manage the budget forecast', '') === null;
 
 /**
  * Council leadership: an Active Super Admin anywhere, or an Active Admin, Financial Secretary or Treasurer in their own

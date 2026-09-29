@@ -72,6 +72,7 @@ export const CHARITY_COLUMNS = [
   'ZipCode',
   'IsCatholic',
   'CharityType',
+  'IsAnnual',
 ] as const satisfies readonly (keyof GlobalCharityRegistry)[];
 
 /** The optional registry columns hydrateAndDisburse may fill in on an existing entry, never overwrite. */
@@ -133,6 +134,9 @@ export function cleanGlobalCharity(input: NewGlobalCharity): CleanGlobalCharity 
   if (input.IsCatholic !== undefined && input.IsCatholic !== null && typeof input.IsCatholic !== 'boolean') {
     throw invalid(`IsCatholic must be true or false; received ${JSON.stringify(input.IsCatholic)}.`);
   }
+  if (input.IsAnnual !== undefined && input.IsAnnual !== null && typeof input.IsAnnual !== 'boolean') {
+    throw invalid(`IsAnnual must be true or false; received ${JSON.stringify(input.IsAnnual)}.`);
+  }
   return {
     Name: assertText(input.Name, 'Charity name', CHARITY_NAME_MAX_LENGTH),
     Description: assertText(input.Description, 'Description', CHARITY_DESCRIPTION_MAX_LENGTH),
@@ -145,6 +149,7 @@ export function cleanGlobalCharity(input: NewGlobalCharity): CleanGlobalCharity 
     ZipCode: optionalText(input.ZipCode, 'Zip code', CHARITY_ZIP_MAX_LENGTH),
     IsCatholic: input.IsCatholic ? 1 : 0,
     CharityType: assertCharityType(input.CharityType),
+    IsAnnual: input.IsAnnual ? 1 : 0,
   };
 }
 
