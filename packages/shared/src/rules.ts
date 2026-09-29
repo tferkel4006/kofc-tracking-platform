@@ -87,7 +87,8 @@ export type BusinessRuleCode =
   | 'GRAND_KNIGHT_REQUIRED'
   | 'CHARITY_ALREADY_REGISTERED'
   | 'PROPOSAL_STATUS_CONFLICT'
-  | 'BUDGET_LINE_EXISTS';
+  | 'BUDGET_LINE_EXISTS'
+  | 'BUDGET_YEAR_FINALIZED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -548,6 +549,7 @@ export const MEMBER_COLUMNS = [
   'WorkingStatusID',
   'ProfilePhotoURL',
   'Biography',
+  'IsBudgetDirector',
 ] as const satisfies readonly (keyof NewMember)[];
 
 /** Longest Member.ProfilePhotoURL (VARCHAR(2000)). */
@@ -567,6 +569,8 @@ export interface MemberWriteActor {
   active: boolean;
   /** Names of the Roles the caller holds; only the donation rules read them. */
   roles?: readonly string[];
+  /** Member.IsBudgetDirector (Sprint 5Y-3): may prepare their own council's budget. */
+  budgetDirector?: boolean;
 }
 
 /** Officer roles that keep the council's books: they maintain its donations and read its monthly summaries. */
@@ -604,7 +608,7 @@ export function assertMayMaintainLookups(actor: MemberWriteActor, table: string,
 }
 
 /** Council-specific lookups the council's finance officers (FINANCE_ROLE_NAMES) also maintain. */
-export const FINANCE_LOOKUP_TABLES: readonly string[] = ['DonationType', 'CouncilDonationMethod'];
+export const FINANCE_LOOKUP_TABLES: readonly string[] = ['DonationType', 'CouncilDonationMethod', 'CouncilBudgetCategory'];
 
 /**
  * lookups.listCouncilSpecific/saveCouncilSpecific/removeCouncilSpecific: an Active Super Admin for any council;
@@ -1187,18 +1191,37 @@ export function assertMayProposeCharityGift(actor: MemberWriteActor, councilId: 
 }
 
 /**
- * budget.* (Sprint 5Y): reading, pre-populating and adjusting a council's budget forecast belongs to its leadership - an
- * Active Admin, Financial Secretary or Treasurer of the council - or any Active Super Admin. Standard members never
- * see it. `action` completes "cannot ...".
+ * budget.* writes (Sprint 5Y): pre-populating and adjusting a council's budget forecast belongs to its leadership - an
+ * Active Admin, Financial Secretary or Treasurer of the council - its Active Designated Budget Director
+ * (Member.IsBudgetDirector, Sprint 5Y-3), or any Active Super Admin. `action` completes "cannot ...".
  */
 export function assertMayManageBudgetForecast(actor: MemberWriteActor, councilId: number, action: string): void {
-  const denial = councilLeadershipDenial(actor, councilId, action, "a council's budget is kept only by its own leadership");
+  const denial = budgetWriteDenial(actor, councilId, action);
   if (denial) throw denial;
 }
 
 /** assertMayManageBudgetForecast as a yes/no. */
 export const mayManageBudgetForecast = (actor: MemberWriteActor, councilId: number): boolean =>
-  councilLeadershipDenial(actor, councilId, 'manage the budget forecast', '') === null;
+  budgetWriteDenial(actor, councilId, 'manage the budget forecast') === null;
+
+function budgetWriteDenial(actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null {
+  if (actor.active && actor.budgetDirector && actor.councilId === councilId) return null;
+  return councilLeadershipDenial(actor, councilId, action, "a council's budget is kept only by its own leadership");
+}
+
+/**
+ * budget.listAnnualForecast (Sprint 5Y-3 transparency): every Active member of the council may read its budget, and an
+ * Active Super Admin any council's. `action` completes "cannot ...".
+ */
+export function assertMayViewBudgetForecast(actor: MemberWriteActor, councilId: number, action: string): void {
+  if (hasSuperAdminRights(actor)) return;
+  if (actor.active && actor.councilId === councilId) return;
+  throw new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Only active members of council ${councilId} can ${action}; member ${actor.memberId} is ${describeActor(actor)} of council ${actor.councilId}.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
+  );
+}
 
 /**
  * Council leadership: an Active Super Admin anywhere, or an Active Admin, Financial Secretary or Treasurer in their own
@@ -1256,5 +1279,13 @@ export function cleanNewMember(input: NewMember, now: Date): NewMember {
     WorkingStatusID: input.WorkingStatusID == null ? null : assertInteger(input.WorkingStatusID, 'Working status', 1),
     ProfilePhotoURL: optionalText(input.ProfilePhotoURL, 'Profile photo', MEMBER_PHOTO_URL_MAX_LENGTH),
     Biography: optionalText(input.Biography, 'Biography', MEMBER_BIOGRAPHY_MAX_LENGTH),
+    IsBudgetDirector: bitFlag(input.IsBudgetDirector, 'IsBudgetDirector'),
   };
+}
+
+/** A BIT NOT NULL DEFAULT 0 flag: 0, 1, false or true, stored as 0 or 1; omitted or null is 0. */
+function bitFlag(value: unknown, label: string): number {
+  if (value === undefined || value === null || value === 0 || value === false) return 0;
+  if (value === 1 || value === true) return 1;
+  throw invalid(`${label} must be 0, 1, true or false; received ${JSON.stringify(value)}.`, { field: label });
 }

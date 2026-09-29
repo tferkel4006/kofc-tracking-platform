@@ -18,6 +18,7 @@ import type {
   CharityDonationProposal,
   ChatThread,
   Council,
+  CouncilBudgetCategory,
   CouncilBudgetForecast,
   CouncilCharityLink,
   CouncilDonationMethod,
@@ -65,6 +66,7 @@ import type {
   SystemFeedback,
   WorkingStatus,
 } from './types';
+import type { BudgetWindowState } from './budget';
 
 // 1. LOOKUPS
 /** The global lookup tables a Super Admin maintains (Blueprint: "System Lookup Manager"). */
@@ -96,12 +98,14 @@ export type LookupValues = Record<string, string | number>;
  * Lookup tables each council keeps for itself (Sprint 5L); every row carries its CouncilID. Validated per
  * table by COUNCIL_LOOKUP_META.
  */
-export type CouncilLookupTableName = 'Activities' | 'DonationType' | 'CouncilDonationMethod';
+export type CouncilLookupTableName = 'Activities' | 'DonationType' | 'CouncilDonationMethod' | 'CouncilBudgetCategory';
 
 export interface CouncilLookupRowMap {
   Activities: Activities;
   DonationType: DonationType;
   CouncilDonationMethod: CouncilDonationMethod;
+  /** Sprint 5Y-3: the council's budget categories (funds). */
+  CouncilBudgetCategory: CouncilBudgetCategory;
 }
 
 /**
@@ -127,6 +131,8 @@ export interface SessionUser {
   roles: string[];
   /** True when any held Role is an officer role (officers may schedule meetings). */
   isOfficer: boolean;
+  /** Member.IsBudgetDirector (Sprint 5Y-3): an Admin delegated the council's budget preparation to this member. */
+  isBudgetDirector: boolean;
 }
 
 // 3. MEETINGS
@@ -931,6 +937,34 @@ export interface NewCustomBudgetLine {
   LineItemName: string;
   ApprovedBudgetAmount?: number | null;
   Notes?: string | null;
+  /** Sprint 5Y-3: one of the council's CouncilBudgetCategory ids; omitted or null leaves the line uncategorized. */
+  BudgetCategoryID?: number | null;
+}
+
+/**
+ * Options of the budget writes (Sprint 5Y-3). A fraternal year's budget is Finalized from July 1 of its first year
+ * (budgetWindowOf) and then refuses writes with BUDGET_YEAR_FINALIZED; `superAdminOverride` lifts that lock, and only
+ * for an Active Super Admin (anyone else passing it is still refused).
+ */
+export interface BudgetWriteOptions {
+  superAdminOverride?: boolean;
+}
+
+/** budget.updateLineItemBudget's options: also files the line under a category (null: uncategorized; undefined: unchanged). */
+export interface BudgetLineUpdateOptions extends BudgetWriteOptions {
+  budgetCategoryId?: number | null;
+}
+
+/** budget.listAnnualForecast: a council's year with its own budget categories. */
+export interface AnnualBudgetForecast {
+  councilId: number;
+  fraternalYear: string;
+  /** Where the year stands today by the data service's clock: 'Not Yet Open', 'Draft' (June) or 'Finalized' (July 1 on). */
+  window: BudgetWindowState;
+  /** The council's CouncilBudgetCategory rows in id order (the order the council created them). */
+  categories: CouncilBudgetCategory[];
+  /** Event, then Donation, then Operational lines, each LineItemName A-Z ignoring case, then id. */
+  lines: CouncilBudgetForecast[];
 }
 
 /** What budget.prePopulateNextYear seeded. */
@@ -1657,30 +1691,40 @@ export interface DataService {
 
   /**
    * Annual budget forecasting (Sprint 5Y): one CouncilBudgetForecast row per budget line of a council's fraternal year
-   * ('YYYY-YYYY', July 1 - June 30). Every method is for council leadership only: an Active Admin, Financial Secretary
-   * or Treasurer of the council, or an Active Super Admin for any council (assertMayManageBudgetForecast:
-   * ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rows are always read and written for one council; nothing crosses
-   * councils. Writes are all or nothing; an unknown actor rejects MEMBER_NOT_FOUND, an unknown council INVALID_INPUT, a
-   * fraternal year that is not 'YYYY-YYYY' with consecutive years INVALID_INPUT.
+   * ('YYYY-YYYY', July 1 - June 30). Every Active member of the council may read it (Sprint 5Y-3 transparency;
+   * assertMayViewBudgetForecast: COUNCIL_ACCESS_DENIED). Writes are for council leadership - an Active Admin, Financial
+   * Secretary or Treasurer of the council, or its Active Designated Budget Director (Member.IsBudgetDirector) - or an
+   * Active Super Admin for any council (assertMayManageBudgetForecast: ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Writes to
+   * a Finalized year (July 1 on) reject BUDGET_YEAR_FINALIZED unless an Active Super Admin passes superAdminOverride.
+   * Rows are always read and written for one council; nothing crosses councils. Writes are all or nothing; an unknown
+   * actor rejects MEMBER_NOT_FOUND, an unknown council INVALID_INPUT, a fraternal year that is not 'YYYY-YYYY' with
+   * consecutive years INVALID_INPUT, a BudgetCategoryID that is not one of the council's categories INVALID_INPUT.
    */
   budget: {
     /**
-     * The council's lines for the year: Event, then Donation, then Operational lines, each LineItemName A-Z ignoring
-     * case, then id. Empty before the year is pre-populated or given custom lines.
+     * The council's year: its budget categories and its lines (AnnualBudgetForecast). The lines are empty before the
+     * year is pre-populated or given custom lines. Any Active member of the council, or an Active Super Admin.
      */
-    listAnnualForecast(actorId: number, councilId: number, fraternalYear: string): Promise<CouncilBudgetForecast[]>;
+    listAnnualForecast(actorId: number, councilId: number, fraternalYear: string): Promise<AnnualBudgetForecast>;
     /**
      * Sets a line's ApprovedBudgetAmount and, unless `notes` is undefined, its Notes (blank or null clears them), and
-     * resolves to the stored line. Leadership of the line's council. Rejects RECORD_NOT_FOUND for an unknown line and
-     * INVALID_INPUT for a negative amount, one with fractions of a cent, or notes over BUDGET_NOTES_MAX_LENGTH characters.
+     * with options.budgetCategoryId its category; resolves to the stored line. Writers of the line's council. Rejects
+     * RECORD_NOT_FOUND for an unknown line, BUDGET_YEAR_FINALIZED for a Finalized year, and INVALID_INPUT for a negative
+     * amount, one with fractions of a cent, notes over BUDGET_NOTES_MAX_LENGTH characters or another council's category.
      */
-    updateLineItemBudget(actorId: number, budgetLineItemId: number, approvedAmount: number, notes?: string | null): Promise<CouncilBudgetForecast>;
+    updateLineItemBudget(
+      actorId: number,
+      budgetLineItemId: number,
+      approvedAmount: number,
+      notes?: string | null,
+      options?: BudgetLineUpdateOptions,
+    ): Promise<CouncilBudgetForecast>;
     /**
      * Adds a council-specific 'Operational' line (NewCustomBudgetLine) and resolves to it. Rejects BUDGET_LINE_EXISTS
      * (details.lineId names it) when the council's year already has an Operational line of that name ignoring case and
-     * spacing, and INVALID_INPUT for a bad field.
+     * spacing, BUDGET_YEAR_FINALIZED for a Finalized year, and INVALID_INPUT for a bad field.
      */
-    addCustomBudgetLine(actorId: number, councilId: number, data: NewCustomBudgetLine): Promise<CouncilBudgetForecast>;
+    addCustomBudgetLine(actorId: number, councilId: number, data: NewCustomBudgetLine, options?: BudgetWriteOptions): Promise<CouncilBudgetForecast>;
     /**
      * Seeds the council's forecast for `targetFraternalYear` from the previous fraternal year's actual spend, in one
      * transaction (planBudgetPrePopulation). Spend counts as in reports.monthlySummary: an event's Spend plus the line
@@ -1695,9 +1739,11 @@ export interface DataService {
      *   name with a PrePopulatedAmount of 0.
      * Re-running is safe: a line that already exists keeps its ApprovedBudgetAmount and Notes and only has its
      * PrePopulatedAmount (and a renamed source's LineItemName) refreshed. New lines start with ApprovedBudgetAmount 0
-     * for review. Nothing is deleted.
+     * for review. Nothing is deleted. A new line takes the BudgetCategoryID of the previous year's line it continues (same
+     * source, or for an unsourced line the same name), so the council files each line once. Rejects BUDGET_YEAR_FINALIZED
+     * for a Finalized target year.
      */
-    prePopulateNextYear(actorId: number, councilId: number, targetFraternalYear: string): Promise<BudgetPrePopulationResult>;
+    prePopulateNextYear(actorId: number, councilId: number, targetFraternalYear: string, options?: BudgetWriteOptions): Promise<BudgetPrePopulationResult>;
   };
 
   feedback: {

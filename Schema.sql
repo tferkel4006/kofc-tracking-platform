@@ -167,6 +167,7 @@ CREATE TABLE [Member] (
 	[ProfilePhotoURL] VARCHAR(2000) NULL, -- Sprint 5S: the member's avatar (a local file path while there is no file store)
 	[Biography] TEXT NULL, -- Sprint 5S: a short personal fraternal biography, written by the member
 	[ExpoPushToken] VARCHAR(512) NULL, -- Sprint 5T: the phone's push address (ExponentPushToken[...]); never returned by member reads
+	[IsBudgetDirector] BIT NOT NULL DEFAULT 0, -- Sprint 5Y-3: delegated by an Admin; may prepare the council's budget
 	PRIMARY KEY([id])
 );
 GO
@@ -1244,7 +1245,17 @@ GO
 -- ApprovedBudgetAmount. Custom 'Operational' lines carry no ReferenceSourceID. ReferenceSourceID has no foreign key
 -- because it points at a different table per CategoryType; CategoryType is enforced by the shared rules layer as
 -- elsewhere (no CHECK).
+-- Sprint 5Y-3: each council keeps its own budget categories (funds) in CouncilBudgetCategory, a council lookup table,
+-- and a line is filed under one through BudgetCategoryID (NULL while uncategorized).
 -- =========================================================================
+CREATE TABLE [CouncilBudgetCategory] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[CategoryName] VARCHAR(255) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
 CREATE TABLE [CouncilBudgetForecast] (
 	[id] INTEGER NOT NULL IDENTITY,
 	[CouncilID] INTEGER NOT NULL,
@@ -1255,14 +1266,28 @@ CREATE TABLE [CouncilBudgetForecast] (
 	[PrePopulatedAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00, -- the previous fraternal year's actual spend
 	[ApprovedBudgetAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00, -- set by council leadership after review
 	[Notes] TEXT NULL,
+	[BudgetCategoryID] INTEGER NULL, -- Sprint 5Y-3: the council budget category (fund) the line is filed under
 	PRIMARY KEY([id])
 );
 GO
 
+ALTER TABLE [CouncilBudgetCategory]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
 ALTER TABLE [CouncilBudgetForecast]
 ADD FOREIGN KEY([CouncilID])
 REFERENCES [Council]([id])
 ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilBudgetForecast]
+ADD FOREIGN KEY([BudgetCategoryID])
+REFERENCES [CouncilBudgetCategory]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [CouncilBudgetCategory_Council_Name_Idx] ON [CouncilBudgetCategory] ([CouncilID], [CategoryName]);
 GO
 
 -- SQL Server treats NULL ReferenceSourceIDs as equal in this index and SQLite does not, so the drivers also refuse a

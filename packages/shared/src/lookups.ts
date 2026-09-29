@@ -7,6 +7,7 @@
 // =========================================================================
 import type { CouncilLookupTableName, LookupTableName, LookupValues } from './contract';
 import { OFFICE_ROLE_NAMES } from './elections';
+import { cleanBudgetCategory } from './budget';
 import { cleanActivity, cleanCouncilDonationMethod, cleanDonationType, RECORD_LABELS } from './maintenance';
 import { assertInteger, assertText, BusinessRuleError } from './rules';
 
@@ -210,7 +211,7 @@ export function assertLookupUnused(
 
 // =========================================================================
 // COUNCIL-SPECIFIC LOOKUPS (Sprint 5L)
-// Activities, DonationType and CouncilDonationMethod rows belong to one council each. Who may read and write
+// Activities, DonationType, CouncilDonationMethod and CouncilBudgetCategory (Sprint 5Y-3) rows belong to one council each. Who may read and write
 // them is decided in rules.ts (assertMayManageCouncilLookups); deletes and their RECORD_IN_USE guard use the
 // maintenance tables (RECORD_REFERENCES). Column names here are the only ones a driver may interpolate into SQL.
 // =========================================================================
@@ -247,6 +248,12 @@ export const COUNCIL_LOOKUP_META: Record<CouncilLookupTableName, CouncilLookupTa
     keyField: 'DonationMethodID',
     foreignKeys: [{ column: 'DonationMethodID', table: 'DonationMethod', label: 'donation method' }],
     clean: (record) => cleanCouncilDonationMethod(record),
+  },
+  CouncilBudgetCategory: {
+    columns: ['CategoryName'],
+    keyField: 'CategoryName',
+    foreignKeys: [],
+    clean: (record) => cleanBudgetCategory(record),
   },
 };
 

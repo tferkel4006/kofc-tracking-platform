@@ -810,6 +810,16 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "IsBudgetDirector",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
       }
     ],
     "foreignKeys": [
@@ -3166,6 +3176,47 @@ export const TABLES: Record<string, TableMeta> = {
     ],
     "uniqueKeys": []
   },
+  "CouncilBudgetCategory": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "CategoryName",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "CouncilID",
+        "CategoryName"
+      ]
+    ]
+  },
   "CouncilBudgetForecast": {
     "primaryKey": [
       "id"
@@ -3239,12 +3290,24 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "BudgetCategoryID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
       {
         "column": "CouncilID",
         "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "BudgetCategoryID",
+        "refTable": "CouncilBudgetCategory",
         "refColumn": "id"
       }
     ],
@@ -3733,6 +3796,35 @@ export const SEED_DATA: readonly SeedTable[] = [
       },
       {
         "ClassName": "Preventing Abuse and Protecting Those We Serve"
+      }
+    ]
+  },
+  {
+    "table": "CouncilBudgetCategory",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "CategoryName": "Father George Wolf Memorial Fund"
+      },
+      {
+        "CouncilID": 1,
+        "CategoryName": "Sister Rita Rose Vistica Parish Community Fund"
+      },
+      {
+        "CouncilID": 1,
+        "CategoryName": "Cathedral School & Student Support"
+      },
+      {
+        "CouncilID": 1,
+        "CategoryName": "Other Donations & Projects"
+      },
+      {
+        "CouncilID": 1,
+        "CategoryName": "Council Maintenance & State/Supreme Programs"
+      },
+      {
+        "CouncilID": 1,
+        "CategoryName": "Blessed Michael McGivney Fraternal Activities Fund"
       }
     ]
   }

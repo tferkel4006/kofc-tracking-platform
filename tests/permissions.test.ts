@@ -8,6 +8,8 @@ import {
   canDispatchCouncilAlerts,
   canManageFinances,
   canManageBudgetForecast,
+  canViewBudgetForecast,
+  canDesignateBudgetDirector,
   portalAreaHref,
   canSyncSupremeReports,
   isFinanceOfficer,
@@ -140,8 +142,8 @@ describe('portal permissions', () => {
       'messages',
       'profile',
     ]);
-    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'messages', 'profile']);
-    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'messages', 'profile']);
+    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'financials/budget', 'messages', 'profile']);
+    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'financials/budget', 'messages', 'profile']);
   });
 
   it('gives every member their own expense reports, leadership the audit queue, and only finance officers and Super Admins the check ledger', () => {
@@ -220,7 +222,7 @@ describe('portal permissions', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose']],
         ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
-        ['Financial Ledgers', ['expenses']],
+        ['Financial Ledgers', ['expenses', 'financials/budget']],
         ['Administrative Lookups', ['elections/appointments']],
       ]);
     });
@@ -230,7 +232,7 @@ describe('portal permissions', () => {
         expect(shape(u)).toEqual([
           ['Self-Service Hub', ['member-actions', 'charities/propose']],
           ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
-          ['Financial Ledgers', ['expenses']],
+          ['Financial Ledgers', ['expenses', 'financials/budget']],
         ]);
       }
     });
@@ -272,13 +274,16 @@ describe('portal permissions', () => {
     expect([superAdmin, admin, treasurer, member].map((u) => canConnectCouncilCharity(u, 1))).toEqual([true, true, true, false]);
   });
 
-  it('opens the Annual Budget Projections to council leadership only, served from /budget (Sprint 5Y)', () => {
+  it('opens the Annual Budget Projections to every member to read, and to leadership and the Budget Director to edit, served from /budget (Sprint 5Y-3)', () => {
     const treasurer = actor({ isOfficer: true, roles: ['Treasurer'] });
     const secretary = actor({ isOfficer: true, roles: ['Financial Secretary'] });
-    for (const u of [superAdmin, admin, treasurer, secretary]) expect(portalAreas(u)).toContain('financials/budget');
-    for (const u of [officer, member, actor({ isOfficer: true, roles: ['Grand Knight'] })]) expect(portalAreas(u)).not.toContain('financials/budget');
-    expect([superAdmin, admin, treasurer, secretary, member].map((u) => canManageBudgetForecast(u, 1))).toEqual([true, true, true, true, false]);
-    expect([superAdmin, admin, treasurer].map((u) => canManageBudgetForecast(u, 2))).toEqual([true, false, false]);
+    const director = actor({ isBudgetDirector: true });
+    for (const u of [superAdmin, admin, treasurer, secretary, officer, member, director]) expect(portalAreas(u)).toContain('financials/budget');
+    expect([superAdmin, admin, treasurer, member, actor({ councilId: 2 })].map((u) => canViewBudgetForecast(u, 1))).toEqual([true, true, true, true, false]);
+    expect([superAdmin, admin, treasurer, secretary, director, officer, member].map((u) => canManageBudgetForecast(u, 1))).toEqual([true, true, true, true, true, false, false]);
+    expect([superAdmin, admin, treasurer, director].map((u) => canManageBudgetForecast(u, 2))).toEqual([true, false, false, false]);
+    expect([superAdmin, admin, treasurer, member].map((u) => canDesignateBudgetDirector(u, { CouncilID: 1 }))).toEqual([true, true, false, false]);
+    expect(canDesignateBudgetDirector(admin, { CouncilID: 2 })).toBe(false);
     expect(portalAreaHref('financials/budget')).toBe('/budget');
     expect(portalAreaHref('expenses/queue')).toBe('/expenses/queue');
   });
@@ -290,10 +295,10 @@ describe('portal permissions', () => {
   it('opens council lookups to Admins, Super Admins and finance officers, with finance officers on the donation tables only', () => {
     const treasurer = actor({ isOfficer: true, roles: ['Treasurer'] });
     expect([superAdmin, admin, treasurer, officer, member].map(canOpenCouncilLookups)).toEqual([true, true, true, false, false]);
-    expect(councilLookupTablesFor(admin, 1)).toEqual(['Activities', 'DonationType', 'CouncilDonationMethod']);
+    expect(councilLookupTablesFor(admin, 1)).toEqual(['Activities', 'DonationType', 'CouncilDonationMethod', 'CouncilBudgetCategory']);
     expect(councilLookupTablesFor(admin, 2)).toEqual([]);
-    expect(councilLookupTablesFor(superAdmin, 2)).toEqual(['Activities', 'DonationType', 'CouncilDonationMethod']);
-    expect(councilLookupTablesFor(treasurer, 1)).toEqual(['DonationType', 'CouncilDonationMethod']);
+    expect(councilLookupTablesFor(superAdmin, 2)).toEqual(['Activities', 'DonationType', 'CouncilDonationMethod', 'CouncilBudgetCategory']);
+    expect(councilLookupTablesFor(treasurer, 1)).toEqual(['DonationType', 'CouncilDonationMethod', 'CouncilBudgetCategory']);
     expect(councilLookupTablesFor(treasurer, 2)).toEqual([]);
     expect(councilLookupTablesFor(officer, 1)).toEqual([]);
   });
@@ -329,7 +334,7 @@ describe('portal permissions', () => {
         'profile',
       ]);
     }
-    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'messages', 'profile']);
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'financials/budget', 'messages', 'profile']);
   });
 
   it('gives council leadership the Supreme sync and the alert dispatch, each for their own council (Sprint 5T)', () => {

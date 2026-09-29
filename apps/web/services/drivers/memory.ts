@@ -191,8 +191,12 @@ import {
   normalizeStateCode,
   searchCharityRegistry,
   suggestLocalCharities,
+  assertBudgetYearWritable,
+  assertCouncilBudgetCategory,
   assertFraternalYear,
   assertMayManageBudgetForecast,
+  assertMayViewBudgetForecast,
+  budgetWindowOf,
   budgetLineExists,
   budgetLineNotFound,
   cleanBudgetLineUpdate,
@@ -214,6 +218,7 @@ import {
 } from '@kofc/shared';
 import type {
   CharitableDisbursementLedger,
+  CouncilBudgetCategory,
   CouncilBudgetForecast,
   CharityProposalDetail,
   CharityDonationProposal,
@@ -686,6 +691,7 @@ export class MemoryDataService implements DataService {
       memberType: type?.Type as SessionUser['memberType'],
       roles: roles.map((r) => r.Role),
       isOfficer: roles.some((r) => r.Officer === 1),
+      isBudgetDirector: member.IsBudgetDirector === 1,
     };
   }
 
@@ -1228,6 +1234,7 @@ export class MemoryDataService implements DataService {
       memberType: this.memberTypeName(s, actor.MemberTypeID as number),
       active: actor.StatusID === this.activeStatusId(s),
       roles: this.rolesFor(s, actorId).map((r) => r.Role),
+      budgetDirector: actor.IsBudgetDirector === 1,
     };
   }
 
@@ -2972,30 +2979,42 @@ export class MemoryDataService implements DataService {
     listAnnualForecast: async (actorId, councilId, fraternalYear) => {
       const year = assertFraternalYear(fraternalYear);
       const s = await this.ready();
-      assertMayManageBudgetForecast(this.memberWriteActor(s, actorId), councilId, `read the budget forecast of council ${councilId}`);
+      assertMayViewBudgetForecast(this.memberWriteActor(s, actorId), councilId, `read the budget forecast of council ${councilId}`);
       this.assertCouncilsExist(s, [councilId]);
-      return sortBudgetLines(this.budgetLines(s, councilId, year)).map((l) => ({ ...l }));
+      return {
+        councilId,
+        fraternalYear: year,
+        window: budgetWindowOf(year, this.now()),
+        categories: this.budgetCategories(s, councilId).map((c) => ({ ...c })),
+        lines: sortBudgetLines(this.budgetLines(s, councilId, year)).map((l) => ({ ...l })),
+      };
     },
 
-    updateLineItemBudget: async (actorId, budgetLineItemId, approvedAmount, notes) => {
+    updateLineItemBudget: async (actorId, budgetLineItemId, approvedAmount, notes, options = {}) => {
       const changes = cleanBudgetLineUpdate(approvedAmount, notes);
       const s = await this.ready();
       return s.transaction(() => {
         const actor = this.memberWriteActor(s, actorId);
         const line = s.rows('CouncilBudgetForecast').find((l) => l.id === budgetLineItemId);
         if (!line) throw budgetLineNotFound(budgetLineItemId);
-        assertMayManageBudgetForecast(actor, line.CouncilID as number, `change budget line ${budgetLineItemId}`);
-        Object.assign(line, changes);
+        const councilId = line.CouncilID as number;
+        assertMayManageBudgetForecast(actor, councilId, `change budget line ${budgetLineItemId}`);
+        assertBudgetYearWritable(line.FraternalYear as string, this.now(), actor, options);
+        const category = assertCouncilBudgetCategory(options.budgetCategoryId, this.budgetCategories(s, councilId), councilId);
+        Object.assign(line, changes, category === undefined ? {} : { BudgetCategoryID: category });
         return { ...line } as unknown as CouncilBudgetForecast;
       });
     },
 
-    addCustomBudgetLine: async (actorId, councilId, data) => {
+    addCustomBudgetLine: async (actorId, councilId, data, options = {}) => {
       const clean = cleanCustomBudgetLine(data);
       const s = await this.ready();
       const row = s.transaction(() => {
-        assertMayManageBudgetForecast(this.memberWriteActor(s, actorId), councilId, `add budget lines for council ${councilId}`);
+        const actor = this.memberWriteActor(s, actorId);
+        assertMayManageBudgetForecast(actor, councilId, `add budget lines for council ${councilId}`);
         this.assertCouncilsExist(s, [councilId]);
+        assertBudgetYearWritable(clean.FraternalYear, this.now(), actor, options);
+        assertCouncilBudgetCategory(clean.BudgetCategoryID, this.budgetCategories(s, councilId), councilId);
         const existing = findOperationalBudgetLine(this.budgetLines(s, councilId, clean.FraternalYear), clean.LineItemName);
         if (existing) throw budgetLineExists(existing);
         return s.insert('CouncilBudgetForecast', {
@@ -3007,20 +3026,23 @@ export class MemoryDataService implements DataService {
           PrePopulatedAmount: 0,
           ApprovedBudgetAmount: clean.ApprovedBudgetAmount,
           Notes: clean.Notes,
+          BudgetCategoryID: clean.BudgetCategoryID,
         });
       });
       return { ...row } as unknown as CouncilBudgetForecast;
     },
 
-    prePopulateNextYear: async (actorId, councilId, targetFraternalYear) => {
+    prePopulateNextYear: async (actorId, councilId, targetFraternalYear, options = {}) => {
       const target = assertFraternalYear(targetFraternalYear, 'Target fraternal year');
       const source = previousFraternalYear(target);
       const { fromDate, toDate } = fraternalYearBounds(source);
       const inYear = (date: unknown) => (date as string) >= fromDate && (date as string) <= toDate;
       const s = await this.ready();
       const { created, refreshed } = s.transaction(() => {
-        assertMayManageBudgetForecast(this.memberWriteActor(s, actorId), councilId, `pre-populate the budget of council ${councilId}`);
+        const actor = this.memberWriteActor(s, actorId);
+        assertMayManageBudgetForecast(actor, councilId, `pre-populate the budget of council ${councilId}`);
         this.assertCouncilsExist(s, [councilId]);
+        assertBudgetYearWritable(target, this.now(), actor, options);
         const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
         const annualEvents = s.rows('Event').filter((e) => linked.has(e.id) && e.IsAnnual === 1 && inYear(e.StartDate));
         const annualEventIds = new Set(annualEvents.map((e) => e.id));
@@ -3047,7 +3069,7 @@ export class MemoryDataService implements DataService {
             .map((d) => ({ CharityID: d.CharityID as number, Name: annualCharities.get(d.CharityID)!, Amount: d.Amount as number })),
           meetingCount: meetingIds.size,
           meetingExpenses: expenseLines.filter((x) => meetingIds.has(x.report.LinkedMeetingID)).map((x) => ({ Amount: x.Amount })),
-          priorCustomLines: this.budgetLines(s, councilId, source).filter((l) => l.CategoryType === 'Operational' && l.ReferenceSourceID == null),
+          priorLines: [...this.budgetLines(s, councilId, source)].sort((a, b) => a.id - b.id),
         });
         const plan = mergeBudgetSeeds(this.budgetLines(s, councilId, target), seeds);
         for (const { id, ...refresh } of plan.updates) Object.assign(s.rows('CouncilBudgetForecast').find((l) => l.id === id)!, refresh);
@@ -3065,6 +3087,11 @@ export class MemoryDataService implements DataService {
       };
     },
   };
+
+  /** The council's budget categories in id order, as stored (not copied). */
+  private budgetCategories(s: MemoryStore, councilId: number): CouncilBudgetCategory[] {
+    return (s.rows('CouncilBudgetCategory').filter((c) => c.CouncilID === councilId) as unknown as CouncilBudgetCategory[]).sort((a, b) => a.id - b.id);
+  }
 
   /** The council's forecast lines for one fraternal year, as stored (not copied). */
   private budgetLines(s: MemoryStore, councilId: number, fraternalYear: string): CouncilBudgetForecast[] {

@@ -4,11 +4,11 @@
 // bounds, line validation, the forecast order, and the pre-population plan
 // that turns last year's actual spend into next year's lines. Drivers load
 // rows already scoped to one council, call these, then only store. Who may
-// act is decided in rules.ts (assertMayManageBudgetForecast).
+// act is decided in rules.ts (assertMayViewBudgetForecast, assertMayManageBudgetForecast).
 // =========================================================================
-import type { NewCustomBudgetLine } from './contract';
-import { assertMoney, assertText, BusinessRuleError } from './rules';
-import type { BudgetCategoryType, CouncilBudgetForecast } from './types';
+import type { BudgetWriteOptions, NewCustomBudgetLine } from './contract';
+import { assertMoney, assertText, BusinessRuleError, hasSuperAdminRights, type MemberWriteActor } from './rules';
+import type { BudgetCategoryType, CouncilBudgetCategory, CouncilBudgetForecast } from './types';
 
 /** CouncilBudgetForecast.CategoryType values, in the order a forecast lists them. */
 export const BUDGET_CATEGORY_TYPES: readonly BudgetCategoryType[] = ['Event', 'Donation', 'Operational'];
@@ -62,17 +62,22 @@ function optionalNotes(value: unknown): string | null {
 export function cleanCustomBudgetLine(input: NewCustomBudgetLine): Pick<
   CouncilBudgetForecast,
   'FraternalYear' | 'LineItemName' | 'ApprovedBudgetAmount'
-> & { Notes: string | null } {
+> & { Notes: string | null; BudgetCategoryID: number | null } {
   if (typeof input !== 'object' || input === null) throw invalid('Budget line details are required.');
-  const allowed = ['FraternalYear', 'LineItemName', 'ApprovedBudgetAmount', 'Notes'];
+  const allowed = ['FraternalYear', 'LineItemName', 'ApprovedBudgetAmount', 'Notes', 'BudgetCategoryID'];
   for (const key of Object.keys(input)) {
     if (!allowed.includes(key)) throw invalid(`A custom budget line has no field "${key}"; its fields are ${allowed.join(', ')}.`, { field: key });
+  }
+  const category = input.BudgetCategoryID;
+  if (category != null && !(typeof category === 'number' && Number.isInteger(category) && category > 0)) {
+    throw invalid(`Budget category must be a record id; received ${JSON.stringify(category)}.`, { field: 'BudgetCategoryID' });
   }
   return {
     FraternalYear: assertFraternalYear(input.FraternalYear),
     LineItemName: assertText(input.LineItemName, 'Line item name', BUDGET_LINE_NAME_MAX_LENGTH).replace(/\s+/g, ' '),
     ApprovedBudgetAmount: input.ApprovedBudgetAmount == null ? 0 : assertMoney(input.ApprovedBudgetAmount, 'Approved budget amount'),
     Notes: optionalNotes(input.Notes),
+    BudgetCategoryID: category ?? null,
   };
 }
 
@@ -136,22 +141,37 @@ export interface BudgetActuals {
   meetingCount: number;
   /** Expense lines on sheets linked to those meetings. */
   meetingExpenses: readonly { Amount: number }[];
-  /** The council's unsourced Operational lines of that year's own forecast, carried forward by name (Sprint 5Y-2). */
-  priorCustomLines: readonly Pick<CouncilBudgetForecast, 'LineItemName'>[];
+  /**
+   * That year's own forecast lines, in id order: its custom Operational lines are carried forward by name (Sprint
+   * 5Y-2), and every line passes its BudgetCategoryID on to the line that continues it (Sprint 5Y-3).
+   */
+  priorLines: readonly Pick<CouncilBudgetForecast, 'CategoryType' | 'ReferenceSourceID' | 'LineItemName' | 'BudgetCategoryID'>[];
 }
 
 /** One line prePopulateNextYear wants in the new year. */
 export type BudgetSeed = Pick<CouncilBudgetForecast, 'CategoryType' | 'LineItemName' | 'PrePopulatedAmount'> & {
   ReferenceSourceID: number | null;
+  /** The category of the previous year's line this one continues, or null. */
+  BudgetCategoryID: number | null;
 };
+
+/**
+ * The previous year's line a seed continues: the same charity for a Donation line (charities keep their id from year
+ * to year), otherwise the same category type and name ignoring case (each year's event is a new Event row).
+ */
+function priorLineOf(seed: Omit<BudgetSeed, 'BudgetCategoryID'>, priorLines: BudgetActuals['priorLines']) {
+  if (seed.CategoryType === 'Donation') return priorLines.find((l) => l.CategoryType === 'Donation' && l.ReferenceSourceID === seed.ReferenceSourceID);
+  return priorLines.find((l) => l.CategoryType === seed.CategoryType && lineKey(l.LineItemName) === lineKey(seed.LineItemName));
+}
 
 /**
  * The lines last year's actuals call for: one per annual event (its Spend plus its expenses), one per annual charity
  * (the sum of its checks), the meetings line when the council met, and each of last year's custom Operational lines
- * again under the same name with a baseline of 0 (custom lines have no spend to read). In listAnnualForecast order.
+ * again under the same name with a baseline of 0 (custom lines have no spend to read). Each keeps the category of the
+ * previous year's line it continues. In listAnnualForecast order.
  */
 export function planBudgetPrePopulation(actuals: BudgetActuals): BudgetSeed[] {
-  const seeds: BudgetSeed[] = actuals.annualEvents.map((e) => ({
+  const seeds: Omit<BudgetSeed, 'BudgetCategoryID'>[] = actuals.annualEvents.map((e) => ({
     CategoryType: 'Event',
     ReferenceSourceID: e.id,
     LineItemName: e.EventName,
@@ -176,12 +196,12 @@ export function planBudgetPrePopulation(actuals: BudgetActuals): BudgetSeed[] {
   }
   // The meetings line is re-read from actuals above, so only the officers' own lines are carried, once per name.
   const carried = new Set([lineKey(BUDGET_MEETINGS_LINE_NAME)]);
-  for (const { LineItemName } of actuals.priorCustomLines) {
-    if (carried.has(lineKey(LineItemName))) continue;
+  for (const { CategoryType, ReferenceSourceID, LineItemName } of actuals.priorLines) {
+    if (CategoryType !== 'Operational' || ReferenceSourceID != null || carried.has(lineKey(LineItemName))) continue;
     carried.add(lineKey(LineItemName));
     seeds.push({ CategoryType: 'Operational', ReferenceSourceID: null, LineItemName, PrePopulatedAmount: 0 });
   }
-  return sortBudgetLines(seeds);
+  return sortBudgetLines(seeds.map((seed) => ({ ...seed, BudgetCategoryID: priorLineOf(seed, actuals.priorLines)?.BudgetCategoryID ?? null })));
 }
 
 /** A line prePopulateNextYear refreshes in place. */
@@ -190,7 +210,8 @@ export type BudgetLineRefresh = Pick<CouncilBudgetForecast, 'id' | 'LineItemName
 /**
  * How `seeds` land on the council year's `existing` lines: a seed matching a line (same category and source, or for an
  * unsourced line the same name ignoring case) refreshes that line's PrePopulatedAmount and LineItemName; the others are
- * inserted. ApprovedBudgetAmount and Notes are never part of the plan, and no line is removed.
+ * inserted. ApprovedBudgetAmount, Notes and BudgetCategoryID of existing lines are never part of the plan, and no line
+ * is removed.
  */
 export function mergeBudgetSeeds(
   existing: readonly CouncilBudgetForecast[],
@@ -214,7 +235,7 @@ export function mergeBudgetSeeds(
   return { inserts, updates };
 }
 
-// ---- the June drafting window (Sprint 5Y-2) -----------------------------------------
+// ---- the June drafting window (Sprint 5Y-2) and the July 1 lock (Sprint 5Y-3) ----------
 
 /**
  * Where a fraternal year's budget stands on a given day: prepared in the June before the year starts ('Draft'), locked
@@ -240,66 +261,80 @@ export function upcomingFraternalYear(today: Date): string {
   return `${start}-${start + 1}`;
 }
 
-// ---- council funds ------------------------------------------------------------------
+/**
+ * The data layer's July 1 lock (Sprint 5Y-3): a write to a Finalized year rejects BUDGET_YEAR_FINALIZED unless an Active
+ * Super Admin passes superAdminOverride. Anyone else's override is ignored.
+ */
+export function assertBudgetYearWritable(fraternalYear: string, today: Date, actor: MemberWriteActor, options: BudgetWriteOptions = {}): void {
+  if (budgetWindowOf(fraternalYear, today) !== 'Finalized') return;
+  if (options.superAdminOverride === true && hasSuperAdminRights(actor)) return;
+  const start = fraternalYear.slice(0, 4);
+  throw new BusinessRuleError(
+    'BUDGET_YEAR_FINALIZED',
+    `The ${fraternalYear} budget was locked as Finalized on July 1, ${start}; it can no longer be changed.`,
+    { fraternalYear },
+  );
+}
 
-/** The council's funds, in the order the budget presents them. */
-export const BUDGET_FUNDS = [
-  'Father George Wolf Memorial Fund',
-  'Sister Rita Rose Vistica Parish Community Fund',
-  'Cathedral School & Student Support',
-  'Other Donations & Projects',
-  'Council Maintenance & State/Supreme Programs',
-  'Blessed Michael McGivney Fraternal Activities Fund',
-] as const;
-export type BudgetFund = (typeof BUDGET_FUNDS)[number];
+// ---- council budget categories (Sprint 5Y-3) ----------------------------------------
 
-/** What budgetFundOf knows about a line's source: the charity's CharityType, or the event's category name. */
-export interface BudgetLineSource {
-  charityType?: string | null;
-  eventCategory?: string | null;
+/** Longest CouncilBudgetCategory.CategoryName (VARCHAR(255)). */
+export const BUDGET_CATEGORY_NAME_MAX_LENGTH = 255;
+
+/** A council lookup record of CouncilBudgetCategory, validated. */
+export function cleanBudgetCategory(input: { CategoryName?: unknown }): { CategoryName: string } {
+  for (const key of Object.keys(input)) {
+    if (key !== 'CategoryName') throw invalid(`A budget category has no field "${key}"; its field is CategoryName.`, { field: key });
+  }
+  return { CategoryName: assertText(input.CategoryName ?? '', 'Budget category', BUDGET_CATEGORY_NAME_MAX_LENGTH).replace(/\s+/g, ' ') };
 }
 
 /**
- * The fund a line is budgeted under. CouncilBudgetForecast has no fund column, so the fund follows from the line:
- * 1. a name that names a fund or its purpose ('Wolf', 'Vistica', 'McGivney', school, student, scholarship);
- * 2. Operational lines - Council Maintenance & State/Supreme Programs;
- * 3. Donation lines - the Parish Community fund for a 'Parish' charity, else Other Donations & Projects;
- * 4. Event lines - the Parish Community fund for a 'Parish Community' event, else the McGivney Fraternal Activities Fund.
+ * A BudgetCategoryID a write names: undefined (leave it) and null (uncategorized) pass through; an id must be one of
+ * `categories`, the council's own.
  */
-export function budgetFundOf(line: Pick<CouncilBudgetForecast, 'CategoryType' | 'LineItemName'>, source: BudgetLineSource = {}): BudgetFund {
-  const name = line.LineItemName.toLowerCase();
-  if (name.includes('wolf')) return 'Father George Wolf Memorial Fund';
-  if (name.includes('vistica')) return 'Sister Rita Rose Vistica Parish Community Fund';
-  if (name.includes('mcgivney')) return 'Blessed Michael McGivney Fraternal Activities Fund';
-  if (/\b(school|student|students|scholarship|scholarships)\b/.test(name)) return 'Cathedral School & Student Support';
-  if (line.CategoryType === 'Operational') return 'Council Maintenance & State/Supreme Programs';
-  if (line.CategoryType === 'Donation') {
-    return source.charityType?.toLowerCase() === 'parish' ? 'Sister Rita Rose Vistica Parish Community Fund' : 'Other Donations & Projects';
-  }
-  return source.eventCategory?.toLowerCase() === 'parish community'
-    ? 'Sister Rita Rose Vistica Parish Community Fund'
-    : 'Blessed Michael McGivney Fraternal Activities Fund';
+export function assertCouncilBudgetCategory(
+  categoryId: unknown,
+  categories: readonly Pick<CouncilBudgetCategory, 'id'>[],
+  councilId: number,
+): number | null | undefined {
+  if (categoryId === undefined || categoryId === null) return categoryId;
+  if (typeof categoryId === 'number' && categories.some((c) => c.id === categoryId)) return categoryId;
+  throw invalid(`Budget category ${JSON.stringify(categoryId)} is not one of council ${councilId}'s budget categories.`, { categoryId, councilId });
 }
 
-/** One fund's lines with their subtotals, to the cent. */
-export interface BudgetFundGroup<T extends CouncilBudgetForecast = CouncilBudgetForecast> {
-  fund: BudgetFund;
+/** One category's lines with their subtotals, to the cent; `category` null holds the uncategorized lines. */
+export interface BudgetCategoryGroup<T extends CouncilBudgetForecast = CouncilBudgetForecast> {
+  category: CouncilBudgetCategory | null;
+  label: string;
   lines: T[];
   prePopulatedTotal: number;
   approvedTotal: number;
 }
 
-/** Every fund in BUDGET_FUNDS order (empty funds included), each holding its lines in listAnnualForecast order. */
-export function groupBudgetByFund<T extends CouncilBudgetForecast>(lines: readonly T[], sourceOf: (line: T) => BudgetLineSource): BudgetFundGroup<T>[] {
-  return BUDGET_FUNDS.map((fund) => {
-    const mine = sortBudgetLines(lines.filter((l) => budgetFundOf(l, sourceOf(l)) === fund));
-    return {
-      fund,
-      lines: mine,
-      prePopulatedTotal: sumCents(mine.map((l) => l.PrePopulatedAmount)),
-      approvedTotal: sumCents(mine.map((l) => l.ApprovedBudgetAmount)),
-    };
+/** The heading of the group for lines no category claims. */
+export const UNCATEGORIZED_BUDGET_LABEL = 'Uncategorized';
+
+/**
+ * Every one of the council's categories in the order given (empty ones included), each holding its lines in
+ * listAnnualForecast order, then an 'Uncategorized' group when any line has no category (or one not in `categories`).
+ */
+export function groupBudgetByCategory<T extends CouncilBudgetForecast>(
+  lines: readonly T[],
+  categories: readonly CouncilBudgetCategory[],
+): BudgetCategoryGroup<T>[] {
+  const group = (category: CouncilBudgetCategory | null, label: string, mine: readonly T[]): BudgetCategoryGroup<T> => ({
+    category,
+    label,
+    lines: sortBudgetLines(mine),
+    prePopulatedTotal: sumCents(mine.map((l) => l.PrePopulatedAmount)),
+    approvedTotal: sumCents(mine.map((l) => l.ApprovedBudgetAmount)),
   });
+  const known = new Set(categories.map((c) => c.id));
+  const groups = categories.map((c) => group(c, c.CategoryName, lines.filter((l) => l.BudgetCategoryID === c.id)));
+  const loose = lines.filter((l) => l.BudgetCategoryID == null || !known.has(l.BudgetCategoryID));
+  if (loose.length > 0) groups.push(group(null, UNCATEGORIZED_BUDGET_LABEL, loose));
+  return groups;
 }
 
 /** Adds budget amounts to the cent. */

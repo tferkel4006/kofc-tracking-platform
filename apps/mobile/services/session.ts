@@ -71,6 +71,7 @@ export class SessionStore {
       lastName: member.MemberLastName,
       roles: roles.map((r) => r.Role),
       isOfficer: roles.some((r) => r.Officer === 1),
+      isBudgetDirector: member.IsBudgetDirector === 1,
     };
   }
 

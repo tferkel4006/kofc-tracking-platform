@@ -160,6 +160,7 @@ The master roster directory storing personal and membership data.
 •	ProfilePhotoURL (VARCHAR(2000), NULL) — The member's avatar photo, set on My Profile (Sprint 5S). A local file path (browser blob or phone file://) until a file store exists.
 •	Biography (TEXT, NULL) — A short personal fraternal biography the member writes on My Profile, at most 2,000 characters (Sprint 5S).
 •	ExpoPushToken (VARCHAR(512), NULL) — The member's phone push address (ExponentPushToken[...]), set by notifications.registerDeviceToken (Sprint 5T). A device credential: member reads never return it, and a token moves to whichever member registered the phone last.
+•	IsBudgetDirector (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y-3: the member is the council's Designated Budget Director and may prepare its annual budget alongside its Admins, Financial Secretary and Treasurer. Set only by an Admin of the member's council or a Super Admin (members.update); a member cannot set it on their own record.
 [MemberRoles]
 Bridge table enabling members to hold multiple concurrent roles or chairmanships.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -441,7 +442,7 @@ ________________________________________
 
 # 11. Annual Budget Forecasting (Sprint 5Y)
 [CouncilBudgetForecast]
-One line of a council's budget for one fraternal year (July 1 - June 30). Only council leadership - an Active Admin, Financial Secretary or Treasurer of the council, or an Active Super Admin - may read or change it (assertMayManageBudgetForecast); standard members never see it, and every read and write is scoped to one council. budget.prePopulateNextYear seeds a year from the previous year's actual spend, counted as in reports.monthlySummary (an event's Spend plus the line items of the council's Approved and Reimbursed expense sheets, and the council's charity checks), and can be re-run: existing lines only have PrePopulatedAmount refreshed. Custom lines come from budget.addCustomBudgetLine.
+One line of a council's budget for one fraternal year (July 1 - June 30). Every Active member of the council may read it (Sprint 5Y-3 transparency; assertMayViewBudgetForecast), and an Active Super Admin any council's. Only council leadership - an Active Admin, Financial Secretary or Treasurer of the council, or its Designated Budget Director (Member.IsBudgetDirector) - or an Active Super Admin may change it (assertMayManageBudgetForecast). A year is prepared in June and locks as Finalized on July 1: from then every write (budget.updateLineItemBudget, budget.addCustomBudgetLine, budget.prePopulateNextYear) is refused with BUDGET_YEAR_FINALIZED unless an Active Super Admin passes superAdminOverride. Every read and write is scoped to one council. budget.prePopulateNextYear seeds a year from the previous year's actual spend, counted as in reports.monthlySummary (an event's Spend plus the line items of the council's Approved and Reimbursed expense sheets, and the council's charity checks), carries the previous year's custom lines forward at a baseline of 0, and can be re-run: existing lines only have PrePopulatedAmount refreshed. Custom lines come from budget.addCustomBudgetLine.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). A council cannot be deleted while it has budget lines.
 •	FraternalYear (VARCHAR(9), NOT NULL) — The budget year as 'YYYY-YYYY' with consecutive years, e.g. 2027-2028.
@@ -451,5 +452,11 @@ One line of a council's budget for one fraternal year (July 1 - June 30). Only c
 •	PrePopulatedAmount (DECIMAL(18,2), NOT NULL, DEFAULT 0.00) — Last fraternal year's actual spend on the line: an event's Spend plus its linked expenses, the sum of the charity's checks, or the expenses linked to the council's meetings. 0 for custom lines.
 •	ApprovedBudgetAmount (DECIMAL(18,2), NOT NULL, DEFAULT 0.00) — The figure council leadership approves (budget.updateLineItemBudget), 0 or more. Pre-population never changes it.
 •	Notes (TEXT, NULL) — Optional reviewer notes; at most 2,000 characters.
+•	BudgetCategoryID (INTEGER, NULL) — Sprint 5Y-3: Foreign Key references CouncilBudgetCategory(id). The council budget category (fund) the line is filed under; it must be one of the line's own council's categories. NULL while uncategorized. A new pre-populated line takes the category of the previous year's line it continues.
 A unique index on (CouncilID, FraternalYear, CategoryType, ReferenceSourceID, LineItemName) keeps lines from repeating. SQLite lets NULL ReferenceSourceIDs repeat in it, so the drivers also refuse a duplicate Operational name.
+[CouncilBudgetCategory]
+Sprint 5Y-3: one of a council's own budget categories (funds), under which the Annual Budget Projections group its lines and subtotal them. A council lookup table (lookups.listCouncilSpecific / saveCouncilSpecific / removeCouncilSpecific) kept by the council's Admins, Financial Secretary and Treasurer, or a Super Admin. Seed.sql gives Council 15295 its six funds; every other council defines its own. A category cannot be deleted while budget lines are filed under it (RECORD_IN_USE).
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). A council cannot be deleted while it has budget categories.
+•	CategoryName (VARCHAR(255), NOT NULL) — The category's name, e.g. Blessed Michael McGivney Fraternal Activities Fund. Unique per council (a unique index on CouncilID, CategoryName; the drivers also ignore case and spacing).
 ________________________________________

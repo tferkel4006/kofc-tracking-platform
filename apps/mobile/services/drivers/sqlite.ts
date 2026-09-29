@@ -194,8 +194,12 @@ import {
   normalizeStateCode,
   searchCharityRegistry,
   suggestLocalCharities,
+  assertBudgetYearWritable,
+  assertCouncilBudgetCategory,
   assertFraternalYear,
   assertMayManageBudgetForecast,
+  assertMayViewBudgetForecast,
+  budgetWindowOf,
   budgetLineExists,
   budgetLineNotFound,
   cleanBudgetLineUpdate,
@@ -283,6 +287,7 @@ import type {
   ReadReceipt,
   Role,
   CouncilElectionBallot,
+  CouncilBudgetCategory,
   CouncilBudgetForecast,
   CharitableDisbursementLedger,
   CharityDonationProposal,
@@ -331,8 +336,9 @@ const DB_NAME = 'kofc.db';
  * 13: GlobalCharityRegistry, CouncilCharityLink, CharityDonationProposal and CharitableDisbursementLedger (Sprint 5V).
  * 14: CharitableDisbursementLedger.ProposalID and CharityDonationProposal.RejectionReason (Sprint 5V-2).
  * 15: Event.IsAnnual, GlobalCharityRegistry.IsAnnual and CouncilBudgetForecast (Sprint 5Y).
+ * 16: CouncilBudgetCategory, CouncilBudgetForecast.BudgetCategoryID and Member.IsBudgetDirector (Sprint 5Y-3).
  */
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -354,7 +360,7 @@ const SIGN_IN_SELECT = `
   SELECT c.[id] AS credentialId, c.[Password] AS password, c.[Username] AS username,
          m.[id] AS memberId, m.[CouncilID] AS councilId,
          m.[MemberFirstName] AS firstName, m.[MemberLastName] AS lastName,
-         t.[Type] AS memberType
+         t.[Type] AS memberType, m.[IsBudgetDirector] AS isBudgetDirector
     FROM [Credentials] c
     JOIN [Member] m ON m.[CredentialID] = c.[id]
     JOIN [MemberType] t ON t.[id] = m.[MemberTypeID]`;
@@ -372,6 +378,7 @@ interface SignInRow {
   firstName: string;
   lastName: string;
   memberType: SessionUser['memberType'];
+  isBudgetDirector: number;
 }
 
 /** Longest `IN (...)` list sent in one statement; SQLite caps the number of bound variables. */
@@ -654,6 +661,7 @@ export class SqliteDataService implements DataService {
       memberType: row.memberType,
       roles: roles.map((r) => r.Role),
       isOfficer: roles.some((r) => r.Officer === 1),
+      isBudgetDirector: row.isBudgetDirector === 1,
     };
   }
 
@@ -1329,8 +1337,8 @@ export class SqliteDataService implements DataService {
 
   /** The caller of a member write, read from the database so the client cannot claim a type it does not hold. */
   private async memberWriteActor(db: SQLite.SQLiteDatabase, actorId: number): Promise<MemberWriteActor> {
-    const actor = await db.getFirstAsync<{ councilId: number; type: string | null; active: number }>(
-      `SELECT m.[CouncilID] AS councilId, t.[Type] AS type, (st.[Status] = 'Active') AS active FROM [Member] m
+    const actor = await db.getFirstAsync<{ councilId: number; type: string | null; active: number; budgetDirector: number }>(
+      `SELECT m.[CouncilID] AS councilId, t.[Type] AS type, (st.[Status] = 'Active') AS active, m.[IsBudgetDirector] AS budgetDirector FROM [Member] m
          LEFT JOIN [MemberType] t ON t.[id] = m.[MemberTypeID]
          LEFT JOIN [MemberStatus] st ON st.[id] = m.[StatusID]
         WHERE m.[id] = ?`,
@@ -1347,6 +1355,7 @@ export class SqliteDataService implements DataService {
       memberType: actor.type ?? undefined,
       active: actor.active === 1,
       roles: roles.map((r) => r.Role),
+      budgetDirector: actor.budgetDirector === 1,
     };
   }
 
@@ -3472,51 +3481,61 @@ export class SqliteDataService implements DataService {
     listAnnualForecast: async (actorId, councilId, fraternalYear) => {
       const year = assertFraternalYear(fraternalYear);
       const db = await this.ready();
-      assertMayManageBudgetForecast(await this.memberWriteActor(db, actorId), councilId, `read the budget forecast of council ${councilId}`);
+      assertMayViewBudgetForecast(await this.memberWriteActor(db, actorId), councilId, `read the budget forecast of council ${councilId}`);
       await this.assertCouncilsExist(db, [councilId]);
-      return sortBudgetLines(await this.budgetLines(db, councilId, year));
+      return {
+        councilId,
+        fraternalYear: year,
+        window: budgetWindowOf(year, this.now()),
+        categories: await this.budgetCategories(db, councilId),
+        lines: sortBudgetLines(await this.budgetLines(db, councilId, year)),
+      };
     },
 
-    updateLineItemBudget: async (actorId, budgetLineItemId, approvedAmount, notes) => {
+    updateLineItemBudget: async (actorId, budgetLineItemId, approvedAmount, notes, options = {}) => {
       const changes = cleanBudgetLineUpdate(approvedAmount, notes);
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
         const actor = await this.memberWriteActor(db, actorId);
         const line = await this.requireBudgetLine(db, budgetLineItemId);
         assertMayManageBudgetForecast(actor, line.CouncilID, `change budget line ${budgetLineItemId}`);
-        if (changes.Notes === undefined) {
-          await db.runAsync('UPDATE [CouncilBudgetForecast] SET [ApprovedBudgetAmount] = ? WHERE [id] = ?', [changes.ApprovedBudgetAmount, budgetLineItemId]);
-        } else {
-          await db.runAsync('UPDATE [CouncilBudgetForecast] SET [ApprovedBudgetAmount] = ?, [Notes] = ? WHERE [id] = ?', [
-            changes.ApprovedBudgetAmount,
-            changes.Notes,
-            budgetLineItemId,
-          ]);
-        }
+        assertBudgetYearWritable(line.FraternalYear, this.now(), actor, options);
+        const category = assertCouncilBudgetCategory(options.budgetCategoryId, await this.budgetCategories(db, line.CouncilID), line.CouncilID);
+        // Only these fixed column names are ever interpolated.
+        const sets: [string, Bind][] = [['ApprovedBudgetAmount', changes.ApprovedBudgetAmount]];
+        if (changes.Notes !== undefined) sets.push(['Notes', changes.Notes]);
+        if (category !== undefined) sets.push(['BudgetCategoryID', category]);
+        await db.runAsync(`UPDATE [CouncilBudgetForecast] SET ${sets.map(([c]) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [
+          ...sets.map(([, v]) => v),
+          budgetLineItemId,
+        ]);
       });
       return this.requireBudgetLine(db, budgetLineItemId);
     },
 
-    addCustomBudgetLine: async (actorId, councilId, data) => {
+    addCustomBudgetLine: async (actorId, councilId, data, options = {}) => {
       const clean = cleanCustomBudgetLine(data);
       const db = await this.ready();
       let lineId = 0;
       await db.withTransactionAsync(async () => {
-        assertMayManageBudgetForecast(await this.memberWriteActor(db, actorId), councilId, `add budget lines for council ${councilId}`);
+        const actor = await this.memberWriteActor(db, actorId);
+        assertMayManageBudgetForecast(actor, councilId, `add budget lines for council ${councilId}`);
         await this.assertCouncilsExist(db, [councilId]);
+        assertBudgetYearWritable(clean.FraternalYear, this.now(), actor, options);
+        assertCouncilBudgetCategory(clean.BudgetCategoryID, await this.budgetCategories(db, councilId), councilId);
         const existing = findOperationalBudgetLine(await this.budgetLines(db, councilId, clean.FraternalYear), clean.LineItemName);
         if (existing) throw budgetLineExists(existing);
         const res = await db.runAsync(
-          `INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [PrePopulatedAmount], [ApprovedBudgetAmount], [Notes])
-           VALUES (?, ?, 'Operational', NULL, ?, 0, ?, ?)`,
-          [councilId, clean.FraternalYear, clean.LineItemName, clean.ApprovedBudgetAmount, clean.Notes],
+          `INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [PrePopulatedAmount], [ApprovedBudgetAmount], [Notes], [BudgetCategoryID])
+           VALUES (?, ?, 'Operational', NULL, ?, 0, ?, ?, ?)`,
+          [councilId, clean.FraternalYear, clean.LineItemName, clean.ApprovedBudgetAmount, clean.Notes, clean.BudgetCategoryID],
         );
         lineId = res.lastInsertRowId;
       });
       return this.requireBudgetLine(db, lineId);
     },
 
-    prePopulateNextYear: async (actorId, councilId, targetFraternalYear) => {
+    prePopulateNextYear: async (actorId, councilId, targetFraternalYear, options = {}) => {
       const target = assertFraternalYear(targetFraternalYear, 'Target fraternal year');
       const source = previousFraternalYear(target);
       const { fromDate, toDate } = fraternalYearBounds(source);
@@ -3524,8 +3543,10 @@ export class SqliteDataService implements DataService {
       let created = 0;
       let refreshed = 0;
       await db.withTransactionAsync(async () => {
-        assertMayManageBudgetForecast(await this.memberWriteActor(db, actorId), councilId, `pre-populate the budget of council ${councilId}`);
+        const actor = await this.memberWriteActor(db, actorId);
+        assertMayManageBudgetForecast(actor, councilId, `pre-populate the budget of council ${councilId}`);
         await this.assertCouncilsExist(db, [councilId]);
+        assertBudgetYearWritable(target, this.now(), actor, options);
         const annualEvents = await db.getAllAsync<{ id: number; EventName: string; Spend: number | null }>(
           `SELECT [id], [EventName], [Spend] FROM [Event]
             WHERE [IsAnnual] = 1 AND [StartDate] BETWEEN ? AND ?
@@ -3565,10 +3586,8 @@ export class SqliteDataService implements DataService {
           annualCharityChecks,
           meetingCount: meetings?.n ?? 0,
           meetingExpenses,
-          priorCustomLines: await db.getAllAsync<Pick<CouncilBudgetForecast, 'LineItemName'>>(
-            `SELECT [LineItemName] FROM [CouncilBudgetForecast]
-              WHERE [CouncilID] = ? AND [FraternalYear] = ? AND [CategoryType] = 'Operational' AND [ReferenceSourceID] IS NULL
-              ORDER BY [id]`,
+          priorLines: await db.getAllAsync<CouncilBudgetForecast>(
+            'SELECT * FROM [CouncilBudgetForecast] WHERE [CouncilID] = ? AND [FraternalYear] = ? ORDER BY [id]',
             [councilId, source],
           ),
         });
@@ -3582,9 +3601,9 @@ export class SqliteDataService implements DataService {
         }
         for (const seed of plan.inserts) {
           await db.runAsync(
-            `INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [PrePopulatedAmount], [ApprovedBudgetAmount])
-             VALUES (?, ?, ?, ?, ?, ?, 0)`,
-            [councilId, target, seed.CategoryType, seed.ReferenceSourceID, seed.LineItemName, seed.PrePopulatedAmount],
+            `INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [PrePopulatedAmount], [ApprovedBudgetAmount], [BudgetCategoryID])
+             VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
+            [councilId, target, seed.CategoryType, seed.ReferenceSourceID, seed.LineItemName, seed.PrePopulatedAmount, seed.BudgetCategoryID],
           );
         }
         created = plan.inserts.length;
@@ -3599,6 +3618,11 @@ export class SqliteDataService implements DataService {
       };
     },
   };
+
+  /** The council's budget categories in id order. */
+  private async budgetCategories(db: SQLite.SQLiteDatabase, councilId: number): Promise<CouncilBudgetCategory[]> {
+    return db.getAllAsync<CouncilBudgetCategory>('SELECT * FROM [CouncilBudgetCategory] WHERE [CouncilID] = ? ORDER BY [id]', [councilId]);
+  }
 
   /** The council's forecast lines for one fraternal year, unsorted. */
   private async budgetLines(db: SQLite.SQLiteDatabase, councilId: number, fraternalYear: string): Promise<CouncilBudgetForecast[]> {

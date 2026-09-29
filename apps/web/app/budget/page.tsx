@@ -1,25 +1,29 @@
 'use client';
-// Annual Budget Forecast Center (Sprint 5Y): council leadership - its Admins, Financial Secretary and Treasurer, or a
-// Super Admin (canManageBudgetForecast; the drivers: assertMayManageBudgetForecast) - drafts the next fraternal year's
-// budget each June. "Initialize Automated Prior Year Baseline Rollup" runs budget.prePopulateNextYear, which seeds the
-// year's lines from last year's actual spend on annual events, annual charities and meetings, and carries last year's
-// custom lines forward. The lines are grouped into the council's six funds (budgetFundOf); approved amounts and notes
-// save on blur (budget.updateLineItemBudget). Inputs open only in the June drafting window and lock as Finalized on
-// July 1 (budgetWindowOf). A Super Admin on the in-memory mock may tick "Simulate June Drafting Window" for demos.
+// Annual Budget Forecast Center (Sprint 5Y). Every member of the council may read its budget (Sprint 5Y-3
+// transparency: canViewBudgetForecast; the drivers: assertMayViewBudgetForecast). Council leadership - its Admins,
+// Financial Secretary and Treasurer, its Designated Budget Director, or a Super Admin (canManageBudgetForecast; the
+// drivers: assertMayManageBudgetForecast) - prepares it each June: "Initialize Automated Prior Year Baseline Rollup" runs
+// budget.prePopulateNextYear, custom lines come from the drawer (budget.addCustomBudgetLine), and each line's approved
+// amount, notes and category save on change (budget.updateLineItemBudget). Everyone else sees the same sheet as
+// read-only text. Lines are grouped under the council's own budget categories (CouncilBudgetCategory, kept on Council
+// Lookup Tables) with an Uncategorized group for the rest. A year locks as Finalized on July 1 and the drivers then
+// refuse writes (BUDGET_YEAR_FINALIZED); a Super Admin on the in-memory mock may tick "Simulate June Drafting Window",
+// which unlocks the inputs and sends superAdminOverride with every write.
 import { useEffect, useMemo, useState } from 'react';
 import {
   BUDGET_LINE_NAME_MAX_LENGTH,
   BUDGET_NOTES_MAX_LENGTH,
   budgetWindowOf,
   canManageBudgetForecast,
+  canViewBudgetForecast,
   describeError,
-  groupBudgetByFund,
+  groupBudgetByCategory,
   isSuperAdmin,
   sumBudgetAmounts,
   upcomingFraternalYear,
-  type BudgetLineSource,
   type BudgetPrePopulationResult,
   type BudgetWindowState,
+  type CouncilBudgetCategory,
   type CouncilBudgetForecast,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
@@ -45,6 +49,12 @@ function windowExplanation(state: BudgetWindowState, year: string, simulated: bo
   return `The ${year} budget opens for drafting on June 1, ${start}. Figures are read-only until then.`;
 }
 
+/** What every budget write sends: the override only while a Super Admin simulates the drafting window. */
+interface WriteContext {
+  actorId: number;
+  override: boolean;
+}
+
 /** Scorecard tile. */
 function Scorecard({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
@@ -56,10 +66,39 @@ function Scorecard({ label, value, detail }: { label: string; value: string; det
   );
 }
 
+/** A budget category picker; '' is Uncategorized. */
+function CategorySelect({ id, value, categories, onChange, label }: { id?: string; value: number | null; categories: CouncilBudgetCategory[]; onChange: (id: number | null) => void; label?: string }) {
+  return (
+    <Select id={id} aria-label={label} value={value ?? ''} onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}>
+      <option value="">Uncategorized</option>
+      {categories.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.CategoryName}
+        </option>
+      ))}
+    </Select>
+  );
+}
+
 type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'saved' } | { kind: 'error'; message: string };
 
-/** One spreadsheet row: the approved amount and notes save when their box loses focus, if they changed. */
-function BudgetRow({ line, editable, actorId, onSaved }: { line: CouncilBudgetForecast; editable: boolean; actorId: number; onSaved: (line: CouncilBudgetForecast) => void }) {
+/**
+ * One spreadsheet row. Editors change the approved amount and notes (saved when the box loses focus, if changed) and
+ * the category (saved on pick); everyone else reads the same figures as plain text.
+ */
+function BudgetRow({
+  line,
+  editable,
+  categories,
+  write,
+  onSaved,
+}: {
+  line: CouncilBudgetForecast;
+  editable: boolean;
+  categories: CouncilBudgetCategory[];
+  write: WriteContext;
+  onSaved: () => void;
+}) {
   const [amount, setAmount] = useState(String(line.ApprovedBudgetAmount));
   const [notes, setNotes] = useState(line.Notes ?? '');
   const [state, setState] = useState<SaveState>({ kind: 'idle' });
@@ -68,15 +107,19 @@ function BudgetRow({ line, editable, actorId, onSaved }: { line: CouncilBudgetFo
     setNotes(line.Notes ?? '');
   }, [line.ApprovedBudgetAmount, line.Notes]);
 
-  const save = async () => {
+  const save = async (budgetCategoryId?: number | null) => {
     const trimmedNotes = notes.trim();
     try {
       const value = parseNumberField(amount, 'Approved budget amount') ?? 0;
-      if (value === line.ApprovedBudgetAmount && trimmedNotes === (line.Notes ?? '')) return;
+      const unchanged = value === line.ApprovedBudgetAmount && trimmedNotes === (line.Notes ?? '');
+      if (unchanged && budgetCategoryId === undefined) return;
       setState({ kind: 'saving' });
-      const saved = await db.budget.updateLineItemBudget(actorId, line.id, value, trimmedNotes === '' ? null : trimmedNotes);
+      await db.budget.updateLineItemBudget(write.actorId, line.id, value, trimmedNotes === '' ? null : trimmedNotes, {
+        budgetCategoryId,
+        superAdminOverride: write.override,
+      });
       setState({ kind: 'saved' });
-      onSaved(saved);
+      onSaved();
     } catch (err) {
       setState({ kind: 'error', message: describeError(err) });
     }
@@ -120,6 +163,11 @@ function BudgetRow({ line, editable, actorId, onSaved }: { line: CouncilBudgetFo
           <span className="text-sm">{line.Notes ?? ''}</span>
         )}
       </Td>
+      {editable ? (
+        <Td className="w-56">
+          <CategorySelect label={`Category for ${line.LineItemName}`} value={line.BudgetCategoryID ?? null} categories={categories} onChange={(id) => void save(id)} />
+        </Td>
+      ) : null}
       <Td className="w-24 text-xs">
         {state.kind === 'saving' ? <span className="text-muted">Saving…</span> : null}
         {state.kind === 'saved' ? <span className="font-bold">Saved</span> : null}
@@ -133,11 +181,26 @@ function BudgetRow({ line, editable, actorId, onSaved }: { line: CouncilBudgetFo
   );
 }
 
-/** "Add Custom Council Operational Line": a name and a target figure, added with budget.addCustomBudgetLine. */
-function CustomLineDrawer({ actorId, councilId, year, onClose, onAdded }: { actorId: number; councilId: number; year: string; onClose: () => void; onAdded: (line: CouncilBudgetForecast) => void }) {
+/** "Add Custom Council Operational Line": a name, a target figure and a category, added with budget.addCustomBudgetLine. */
+function CustomLineDrawer({
+  write,
+  councilId,
+  year,
+  categories,
+  onClose,
+  onAdded,
+}: {
+  write: WriteContext;
+  councilId: number;
+  year: string;
+  categories: CouncilBudgetCategory[];
+  onClose: () => void;
+  onAdded: () => void;
+}) {
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
+  const [categoryId, setCategoryId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,13 +208,19 @@ function CustomLineDrawer({ actorId, councilId, year, onClose, onAdded }: { acto
     setBusy(true);
     setError(null);
     try {
-      const line = await db.budget.addCustomBudgetLine(actorId, councilId, {
-        FraternalYear: year,
-        LineItemName: name,
-        ApprovedBudgetAmount: parseNumberField(amount, 'Target budget amount'),
-        Notes: notes.trim() || null,
-      });
-      onAdded(line);
+      await db.budget.addCustomBudgetLine(
+        write.actorId,
+        councilId,
+        {
+          FraternalYear: year,
+          LineItemName: name,
+          ApprovedBudgetAmount: parseNumberField(amount, 'Target budget amount'),
+          Notes: notes.trim() || null,
+          BudgetCategoryID: categoryId,
+        },
+        { superAdminOverride: write.override },
+      );
+      onAdded();
     } catch (err) {
       setError(describeError(err));
     } finally {
@@ -169,8 +238,7 @@ function CustomLineDrawer({ actorId, councilId, year, onClose, onAdded }: { acto
         }}
       >
         <p className="text-sm">
-          A running cost of the council that is not an annual event or charity, such as bank fees or bulletin ads. It is added to the {year} budget under Council Maintenance &amp; State/Supreme Programs,
-          and carried into the next year&apos;s rollup.
+          A running cost of the council that is not an annual event or charity, such as bank fees or bulletin ads. It is added to the {year} budget and carried into the next year&apos;s rollup.
         </p>
         {error ? (
           <Notice tone="error" onDismiss={() => setError(null)}>
@@ -182,6 +250,9 @@ function CustomLineDrawer({ actorId, councilId, year, onClose, onAdded }: { acto
         </Field>
         <Field label="Target budget amount ($)" hint="Recorded as the approved budget; custom lines have no prior-year baseline.">
           {(id) => <Input id={id} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />}
+        </Field>
+        <Field label="Budget category" hint="The council's categories are kept under Council Lookup Tables → Budget categories.">
+          {(id) => <CategorySelect id={id} value={categoryId} categories={categories} onChange={setCategoryId} />}
         </Field>
         <Field label="Notes (optional)">
           {(id) => <Textarea id={id} maxLength={BUDGET_NOTES_MAX_LENGTH} value={notes} onChange={(e) => setNotes(e.target.value)} />}
@@ -207,43 +278,27 @@ function BudgetCenter() {
   const [rollup, setRollup] = useState<BudgetPrePopulationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const canManage = canManageBudgetForecast(user, councilId);
+  const canView = canViewBudgetForecast(user, councilId);
+  const canEdit = canManageBudgetForecast(user, councilId);
   // Demo-only override: a Super Admin on the in-memory mock may force the drafting window open.
   const maySimulate = isSuperAdmin(user) && DATA_DRIVER === 'memory';
   const simulated = maySimulate && simulate;
-  const windowState: BudgetWindowState = simulated ? 'Draft' : budgetWindowOf(year, today);
-  const editable = canManage && windowState === 'Draft';
+  const write: WriteContext = { actorId: user.memberId, override: simulated };
 
   const forecast = useLoad(
-    () => (canManage ? db.budget.listAnnualForecast(user.memberId, councilId, year) : Promise.resolve([])),
-    [user.memberId, councilId, year, canManage],
+    () => (canView ? db.budget.listAnnualForecast(user.memberId, councilId, year) : Promise.resolve(null)),
+    [user.memberId, councilId, year, canView],
   );
-  const sources = useLoad(async () => {
-    if (!canManage) return { events: new Map<number, string>(), charities: new Map<number, string>() };
-    const [events, categories, ledger] = await Promise.all([
-      db.events.listByCouncil(councilId),
-      db.lookups.list('Category'),
-      db.charities.listCouncilLedger(user.memberId, councilId),
-    ]);
-    const categoryName = new Map(categories.map((c) => [c.id, c.Category]));
-    return {
-      events: new Map(events.map((e) => [e.id, categoryName.get(e.CategoryID) ?? ''])),
-      charities: new Map(ledger.map((entry) => [entry.charity.id, entry.charity.CharityType])),
-    };
-  }, [user.memberId, councilId, canManage]);
   useEffect(() => {
     setRollup(null);
     setError(null);
   }, [councilId, year]);
 
-  const lines = forecast.data ?? [];
-  const sourceOf = (line: CouncilBudgetForecast): BudgetLineSource => {
-    const id = line.ReferenceSourceID;
-    if (id == null) return {};
-    if (line.CategoryType === 'Event') return { eventCategory: sources.data?.events.get(id) };
-    return { charityType: sources.data?.charities.get(id) };
-  };
-  const funds = groupBudgetByFund(lines, sourceOf);
+  const lines = forecast.data?.lines ?? [];
+  const categories = forecast.data?.categories ?? [];
+  const windowState: BudgetWindowState = simulated ? 'Draft' : (forecast.data?.window ?? budgetWindowOf(year, today));
+  const editable = canEdit && windowState === 'Draft';
+  const groups = groupBudgetByCategory(lines, categories);
   const baselineTotal = sumBudgetAmounts(lines.map((l) => l.PrePopulatedAmount));
   const approvedTotal = sumBudgetAmounts(lines.map((l) => l.ApprovedBudgetAmount));
   const change = Math.round((approvedTotal - baselineTotal) * 100) / 100;
@@ -252,7 +307,7 @@ function BudgetCenter() {
     setRolling(true);
     setError(null);
     try {
-      const result = await db.budget.prePopulateNextYear(user.memberId, councilId, year);
+      const result = await db.budget.prePopulateNextYear(user.memberId, councilId, year, { superAdminOverride: simulated });
       setRollup(result);
       await forecast.reload();
     } catch (err) {
@@ -263,12 +318,13 @@ function BudgetCenter() {
   };
 
   const yearOptions = [shiftYear(upcoming, 1), upcoming, shiftYear(upcoming, -1), shiftYear(upcoming, -2)];
+  const head = ['Line Item', 'Pre-Populated Baseline', 'Approved Budget Amount', 'Notes', ...(editable ? ['Category'] : []), ''];
 
   return (
     <>
       <PageTitle actions={<CouncilSelect scope={scope} />}>Annual Budget Forecast Center</PageTitle>
-      {!canManage ? (
-        <Notice tone="error">Only this council&apos;s Admins, Financial Secretary and Treasurer, or a Super Admin, may view and prepare its budget.</Notice>
+      {!canView ? (
+        <Notice tone="error">Only members of this council, or a Super Admin, may view its budget.</Notice>
       ) : (
         <div className="flex flex-col gap-4">
           <section aria-label="Budget year" className="flex flex-wrap items-end gap-4 rounded border border-line bg-white p-4">
@@ -284,14 +340,21 @@ function BudgetCenter() {
                 </Select>
               )}
             </Field>
-            <Button
-              className="px-6 py-3 text-base shadow"
-              disabled={!editable || rolling}
-              onClick={() => void runRollup()}
-              title={editable ? `Seed ${year} from ${shiftYear(year, -1)} actual spend` : 'Available only while the budget is open for drafting'}
-            >
-              {rolling ? 'Sweeping prior year actuals…' : 'Initialize Automated Prior Year Baseline Rollup'}
-            </Button>
+            {canEdit ? (
+              <Button
+                className="px-6 py-3 text-base shadow"
+                disabled={!editable || rolling}
+                onClick={() => void runRollup()}
+                title={editable ? `Seed ${year} from ${shiftYear(year, -1)} actual spend` : 'Available only while the budget is open for drafting'}
+              >
+                {rolling ? 'Sweeping prior year actuals…' : 'Initialize Automated Prior Year Baseline Rollup'}
+              </Button>
+            ) : (
+              <div className="rounded border-2 border-navy border-l-8 border-l-gold px-4 py-2">
+                <p className="text-xs font-bold uppercase tracking-wide">Transparency view</p>
+                <p className="text-sm">You can review every line of the council&apos;s budget. Council leadership and the Budget Director prepare it.</p>
+              </div>
+            )}
             <div className="flex flex-col gap-1">
               <span className="text-xs font-bold uppercase tracking-wide">Budget window</span>
               <Pill tone={WINDOW_TONE[windowState]}>{simulated ? 'Draft (simulated)' : windowState}</Pill>
@@ -300,7 +363,7 @@ function BudgetCenter() {
               <label className="ml-auto flex items-center gap-2 rounded border-2 border-dashed border-brand-red px-3 py-2 text-sm font-bold text-brand-red">
                 <input type="checkbox" className="size-4" checked={simulate} onChange={(e) => setSimulate(e.target.checked)} />
                 Simulate June Drafting Window
-                <span className="text-xs font-normal">(demo only · in-memory data)</span>
+                <span className="text-xs font-normal">(demo only · overrides the July 1 lock)</span>
               </label>
             ) : null}
             <p className="basis-full text-sm text-muted">{windowExplanation(windowState, year, simulated)}</p>
@@ -311,7 +374,7 @@ function BudgetCenter() {
               {error}
             </Notice>
           ) : null}
-          {forecast.error ?? sources.error ? <Notice tone="error">{forecast.error ?? sources.error}</Notice> : null}
+          {forecast.error ? <Notice tone="error">{forecast.error}</Notice> : null}
           {rollup ? (
             <Notice tone="info" onDismiss={() => setRollup(null)}>
               Rollup complete from {rollup.sourceFraternalYear} actual spend: {rollup.created} new line{rollup.created === 1 ? '' : 's'}, {rollup.refreshed} refreshed. Approved amounts were left for
@@ -321,40 +384,48 @@ function BudgetCenter() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
             <Scorecard label="Pre-populated baseline" value={formatMoney(baselineTotal)} detail={`${shiftYear(year, -1)} actual spend across ${lines.length} lines`} />
-            <Scorecard label="Approved budget" value={formatMoney(approvedTotal)} detail={`${year} total across the six funds`} />
+            <Scorecard label="Approved budget" value={formatMoney(approvedTotal)} detail={`${year} total across ${categories.length} categor${categories.length === 1 ? 'y' : 'ies'}`} />
             <Scorecard label="Change from baseline" value={`${change > 0 ? '+' : ''}${formatMoney(change)}`} detail={change > 0 ? 'Planned increase over last year' : change < 0 ? 'Planned reduction from last year' : 'Level with last year'} />
           </div>
 
           <section aria-label="Budget spreadsheet" className="rounded border border-line bg-white">
             <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-2">
               <h2 className="font-serif text-lg font-bold">Annual Budget Projections · {year}</h2>
-              <Button variant="secondary" className="border-gold" disabled={!editable} onClick={() => setAdding(true)}>
-                + Add Custom Council Operational Line
-              </Button>
+              {canEdit ? (
+                <Button variant="secondary" className="border-gold" disabled={!editable} onClick={() => setAdding(true)}>
+                  + Add Custom Council Operational Line
+                </Button>
+              ) : (
+                <Pill tone="outline">Read only</Pill>
+              )}
             </header>
             <div className="flex flex-col gap-6 p-4">
+              {categories.length === 0 && canEdit ? (
+                <Notice tone="info">This council has no budget categories yet. Add them under Council Lookup Tables → Budget categories; until then every line is Uncategorized.</Notice>
+              ) : null}
               {forecast.loading && !forecast.data ? (
                 <p className="text-sm text-muted">Loading…</p>
               ) : lines.length === 0 ? (
                 <Empty>
-                  No budget lines for {year} yet. {editable ? 'Run the prior year baseline rollup, or add a custom operational line.' : 'Lines are added while the budget is open in June.'}
+                  No budget lines for {year} yet.{' '}
+                  {editable ? 'Run the prior year baseline rollup, or add a custom operational line.' : 'Lines are added while the budget is open in June.'}
                 </Empty>
               ) : (
-                funds.map((group) => (
-                  <div key={group.fund} className="flex flex-col gap-2">
-                    <h3 className="border-l-8 border-gold pl-2 font-serif text-base font-bold">{group.fund}</h3>
+                groups.map((group) => (
+                  <div key={group.category?.id ?? 'uncategorized'} className="flex flex-col gap-2">
+                    <h3 className="border-l-8 border-gold pl-2 font-serif text-base font-bold">{group.label}</h3>
                     {group.lines.length === 0 ? (
-                      <p className="pl-4 text-xs text-muted">No lines in this fund.</p>
+                      <p className="pl-4 text-xs text-muted">No lines in this category.</p>
                     ) : (
-                      <Table caption={`${group.fund} budget lines for ${year}`} head={['Line Item', 'Pre-Populated Baseline', 'Approved Budget Amount', 'Notes', '']}>
+                      <Table caption={`${group.label} budget lines for ${year}`} head={head}>
                         {group.lines.map((line) => (
-                          <BudgetRow key={line.id} line={line} editable={editable} actorId={user.memberId} onSaved={() => void forecast.reload()} />
+                          <BudgetRow key={line.id} line={line} editable={editable} categories={categories} write={write} onSaved={() => void forecast.reload()} />
                         ))}
                         <tr className="font-bold">
-                          <Td className="border-t-2 border-navy">{group.fund} subtotal</Td>
+                          <Td className="border-t-2 border-navy">{group.label} subtotal</Td>
                           <Td className="border-t-2 border-navy text-right">{formatMoney(group.prePopulatedTotal)}</Td>
                           <Td className="border-t-2 border-navy text-right">{formatMoney(group.approvedTotal)}</Td>
-                          <Td colSpan={2} className="border-t-2 border-navy" />
+                          <Td colSpan={head.length - 3} className="border-t-2 border-navy" />
                         </tr>
                       </Table>
                     )}
@@ -374,9 +445,10 @@ function BudgetCenter() {
       )}
       {adding ? (
         <CustomLineDrawer
-          actorId={user.memberId}
+          write={write}
           councilId={councilId}
           year={year}
+          categories={categories}
           onClose={() => setAdding(false)}
           onAdded={() => {
             setAdding(false);

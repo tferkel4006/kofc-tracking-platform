@@ -14,8 +14,8 @@ import { GRAND_KNIGHT_ROLE } from './elections';
 import { FINANCE_LOOKUP_TABLES, holdsFinanceRole } from './rules';
 import type { Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
 
-/** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. */
-type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'> & { roles?: readonly string[] };
+/** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. `isBudgetDirector` only to the budget. */
+type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'> & { roles?: readonly string[]; isBudgetDirector?: boolean };
 
 /**
  * Each area is also its route: RequireArea links to `/${area}` (so 'expenses/queue' is /expenses/queue), except the
@@ -75,7 +75,7 @@ export const canOpenCouncilLookups = (u: Actor): boolean => isAdmin(u) || isFina
 
 /** The council lookup tables `u` may open for `councilId`, in tab order; a finance officer gets only the donation lookups. */
 export function councilLookupTablesFor(u: Actor, councilId: number): CouncilLookupTableName[] {
-  const all: CouncilLookupTableName[] = ['Activities', 'DonationType', 'CouncilDonationMethod'];
+  const all: CouncilLookupTableName[] = ['Activities', 'DonationType', 'CouncilDonationMethod', 'CouncilBudgetCategory'];
   return all.filter((table) => canManageCouncilLookups(u, councilId, table));
 }
 
@@ -226,10 +226,18 @@ export const canReviewCharityProposals = (u: Actor, councilId: number): boolean 
 export const canDisburseCharity = (u: Actor, councilId: number): boolean => canDisburseCouncilExpenses(u, councilId);
 
 /**
- * The annual budget forecast, mirroring assertMayManageBudgetForecast (Sprint 5Y; activity status is checked there): the
- * council's Admins, its Financial Secretary and Treasurer, and any Super Admin.
+ * Edit controls on the annual budget, mirroring assertMayManageBudgetForecast (Sprint 5Y; activity status is checked
+ * there): the council's Admins, its Financial Secretary and Treasurer, its Designated Budget Director (Sprint 5Y-3), and
+ * any Super Admin.
  */
-export const canManageBudgetForecast = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId);
+export const canManageBudgetForecast = (u: Actor, councilId: number): boolean =>
+  canManageFinances(u, councilId) || (u.isBudgetDirector === true && u.councilId === councilId);
+
+/** Reading the annual budget, mirroring assertMayViewBudgetForecast (Sprint 5Y-3): every member of the council, any Super Admin. */
+export const canViewBudgetForecast = (u: Actor, councilId: number): boolean => isSuperAdmin(u) || u.councilId === councilId;
+
+/** The roster's "Designated Budget Director" control: the member's council Admins and any Super Admin (members.update). */
+export const canDesignateBudgetDirector = (u: Actor, member: Pick<Member, 'CouncilID'>): boolean => canAdministerCouncil(u, member.CouncilID);
 
 /**
  * Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it, and the
@@ -257,8 +265,8 @@ export function portalAreas(u: Actor): PortalArea[] {
   if (canBrowseLessonsRegistry(u)) areas.push('lessons-registry');
   if (canManageCharityRegistry(u)) areas.push('charities/registry');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('dashboard', 'supreme-sync');
-  // The annual budget belongs to council leadership (canManageBudgetForecast, Sprint 5Y).
-  if (isAdmin(u) || isFinanceOfficer(u)) areas.push('financials/budget');
+  // Every member may read the council's annual budget (Sprint 5Y-3 transparency); canManageBudgetForecast decides editing.
+  areas.push('financials/budget');
   areas.push('messages', 'profile');
   return areas;
 }

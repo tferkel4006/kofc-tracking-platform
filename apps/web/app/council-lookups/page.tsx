@@ -1,8 +1,9 @@
 'use client';
-// Council Lookups: the lookup rows each council keeps for itself (Activities, DonationType, CouncilDonationMethod),
+// Council Lookups: the lookup rows each council keeps for itself (Activities, DonationType, CouncilDonationMethod, and
+// CouncilBudgetCategory - the funds its annual budget is grouped under, Sprint 5Y-3),
 // read and written through the actor-checked lookups.listCouncilSpecific/saveCouncilSpecific/removeCouncilSpecific.
 // Council Admins work on their own council and Super Admins pick any; the council's Financial Secretary and Treasurer
-// see only the two donation tables (councilLookupTablesFor). The drivers apply the same rule (ADMIN_REQUIRED,
+// see only the donation tables and budget categories (councilLookupTablesFor). The drivers apply the same rule (ADMIN_REQUIRED,
 // COUNCIL_ACCESS_DENIED), so hiding a tab is not the only gate.
 //
 // Each grid is edited in place and saved as one batch, all or nothing: a clash anywhere (a duplicate name, an
@@ -50,12 +51,14 @@ const TAB_LABELS: Record<CouncilLookupTableName, string> = {
   Activities: 'Activities',
   DonationType: 'Donation types',
   CouncilDonationMethod: 'Enabled donation methods',
+  CouncilBudgetCategory: 'Budget categories',
 };
 
 const NOUNS: Record<CouncilLookupTableName, string> = {
   Activities: 'activity',
   DonationType: 'donation type',
   CouncilDonationMethod: 'donation method',
+  CouncilBudgetCategory: 'budget category',
 };
 
 function useColumns(table: CouncilLookupTableName): { columns: Column[] | null; error: string | null } {
@@ -76,6 +79,7 @@ function useColumns(table: CouncilLookupTableName): { columns: Column[] | null; 
       { key: 'DonationMethodID', label: 'Method', options: options.data },
       { key: 'DonationMethodURL', label: 'QR code image URL', maxLength: 255, optional: true },
     ],
+    CouncilBudgetCategory: [{ key: 'CategoryName', label: 'Budget category (fund)', maxLength: 255 }],
   };
   return { columns: columns[table], error: options.error };
 }

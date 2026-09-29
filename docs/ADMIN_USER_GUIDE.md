@@ -47,7 +47,7 @@ Expense checks are issued only by the council's **Financial Secretary** or **Tre
 | Post-event ledger | Owners of an event | Owners of an event | Owners of an event | ✔ | ✔ |
 | Lessons registry | | | | ✔ (read all councils) | ✔ |
 | Executive Summaries | | | Monthly summary only | ✔ incl. audits | ✔ incl. audits |
-| Annual Budget Projections | | | ✔ own council | ✔ own council | ✔ any council |
+| Annual Budget Projections | Read own council (edit if Budget Director) | Read own council | ✔ own council | ✔ own council | ✔ any council |
 
 Key points:
 - **Admins act only on their own council.** Super Admins act on any council.
@@ -160,6 +160,7 @@ After copying, review the twin's shifts and adjust anything that changed.
 2. Save. You will see *"Added *name*. A welcome email with sign-in instructions was queued."* The member then follows the phone onboarding in the member guide.
 3. **Member type:** Admins may grant *Admin* or *Member*. Only a Super Admin may grant *Super Admin* or change a Super Admin's type or status.
 4. Admins cannot move a member to another council.
+5. **Designated Budget Director:** the gold-bordered checkbox on the member form, shown only to the council's Admins and Super Admins. It lets the member prepare the council's annual budget (§12). Members cannot tick it on their own record.
 
 ### 5.3 The trade skills drawer
 
@@ -274,12 +275,14 @@ Search lessons across **every council**:
 | **Activities** | Admins, Super Admins | Activity name, Description, Category |
 | **Donation types** | Admins, Super Admins, Treasurer, Financial Secretary | Donation type (for example *General Fund*, *Coats for Kids*) |
 | **Enabled donation methods** | Admins, Super Admins, Treasurer, Financial Secretary | Method, **QR code image URL** |
+| **Budget categories** | Admins, Super Admins, Treasurer, Financial Secretary | Budget category (fund) the annual budget is grouped under (§12.3) |
 
 - Edit rows in place. Changed rows are marked **Edited**.
 - **Changes are saved together:** select **Save changes**. If any row is refused, **none** are written, so fix the reported row and save again.
 - **Enable a QR method** (Venmo, Zelle, Zeffy, ParishSoft) by adding it and pasting the link to the council's QR image. Until a link is saved, members see *"Your council has not uploaded this QR code yet."*
 - Activities belong to one council and are **not shared** with sister councils.
-- Finance officers see only the two donation tabs, with the note *"As your council's finance officer you maintain its donation types and enabled donation methods."*
+- Finance officers see only the two donation tabs and **Budget categories**.
+- A budget category cannot be deleted while budget lines are filed under it. Move those lines to another category first.
 
 ![Image: Council Lookups]
 
@@ -332,7 +335,11 @@ The **Highlights** text of each of the month's events, in date order. If none ap
 
 ## 12. Annual budget projections
 
-**Path:** sidebar → **Financial Ledgers** → **Annual Budget Projections** (the council's Admins, Treasurer and Financial Secretary, and Super Admins). Standard members and officers without a finance role never see the budget.
+**Path:** sidebar → **Financial Ledgers** → **Annual Budget Projections**. Every member can open it.
+
+- **Every member of the council can read the budget.** Members without edit rights see the same spreadsheet as plain text, marked **Transparency view** and **Read only**, with no input boxes, rollup button or custom-line form.
+- **The budget is prepared** by the council's Admins, Treasurer and Financial Secretary, its **Designated Budget Director**, and Super Admins.
+- **Designated Budget Director:** a council Admin or a Super Admin ticks **Designated Budget Director** on the member's record in the **Affiliated Roster** (§5.2). That member can then prepare their own council's budget. Untick it to withdraw the delegation. The member must sign in again for the portal to show their new controls.
 
 > **The Annual Forecasting Tag System**
 >
@@ -342,7 +349,7 @@ The **Highlights** text of each of the month's events, in date order. If none ap
 > - It tells the Budget Engine which events and charities recur each year. When the budget is prepared, the engine reads the **prior fraternal year's actual audited spend** on every tagged event and tagged charity and uses it to **pre-populate baseline estimates** for the year ahead.
 > - An untagged event or charity is still counted in the monthly summaries. It simply gets no line of its own in next year's budget.
 >
-> **Budgets are prepared in June and locked automatically as Finalized on July 1st**, the day the new fraternal year begins. Outside June the budget can be read but not changed.
+> **Budgets are prepared in June and locked automatically as Finalized on July 1st**, the day the new fraternal year begins. From July 1 the data service itself refuses every change to that year's budget (*"The … budget was locked as Finalized on July 1"*). Only a Super Admin override can reopen it.
 
 ### 12.1 The budget year and its window
 
@@ -367,26 +374,25 @@ New lines start with an **Approved Budget Amount** of $0.00 for your review. You
 
 ### 12.3 The budget spreadsheet
 
-Lines are grouped under the council's six funds, each with a subtotal, and a council total closes the sheet:
+Lines are grouped under **your council's own budget categories** (funds), each with a subtotal, and a council total closes the sheet. Lines not yet filed under a category appear last, under **Uncategorized**.
 
-| Fund | Lines filed there |
-|---|---|
-| **Father George Wolf Memorial Fund** | Lines whose name mentions *Wolf* |
-| **Sister Rita Rose Vistica Parish Community Fund** | Lines naming *Vistica*, gifts to *Parish* charities, and *Parish Community* events |
-| **Cathedral School & Student Support** | Lines naming a school, students or scholarships |
-| **Other Donations & Projects** | Every other charity gift |
-| **Council Maintenance & State/Supreme Programs** | Council Meetings and custom operational lines |
-| **Blessed Michael McGivney Fraternal Activities Fund** | Every other event, and lines naming *McGivney* |
+- Each council keeps its categories under **Council Lookup Tables → Budget categories** (§9). Council 15295 starts with its six funds: Father George Wolf Memorial Fund, Sister Rita Rose Vistica Parish Community Fund, Cathedral School & Student Support, Other Donations & Projects, Council Maintenance & State/Supreme Programs, and Blessed Michael McGivney Fraternal Activities Fund.
+- Every other council adds its own.
+- A rollup files each new line under the same category as the line it continues from last year. File a line once and it stays filed year after year.
 
-Each row shows the **Line Item**, its **Pre-Populated Baseline** and the **Approved Budget Amount**. While the budget is in Draft, type the approved amount and any **Notes** in the row's boxes; each change saves when you leave the box (**Saved** appears beside the row, or the reason it was refused). The scorecards above the sheet show the baseline total, the approved total and the change between them.
+Each row shows the **Line Item**, its **Pre-Populated Baseline** and the **Approved Budget Amount**. While the budget is in Draft, editors can:
+- type the approved amount and any **Notes** in the row's boxes;
+- pick the row's **Category**.
+
+Each change saves when you leave the box or make the pick. **Saved** appears beside the row, or the reason it was refused. The scorecards above the sheet show the baseline total, the approved total and the change between them.
 
 ### 12.4 Custom council operational lines
 
-Use **+ Add Custom Council Operational Line** at the top of the spreadsheet for running costs that are not an event or a charity, such as **Bank Fees** or **Bulletin Ads**. Enter the **Line item name** and a **Target budget amount**. Each name can be used once per council and year (capitals and spacing are ignored). Custom lines are carried into next June's rollup automatically.
+Use **+ Add Custom Council Operational Line** at the top of the spreadsheet for running costs that are not an event or a charity, such as **Bank Fees** or **Bulletin Ads**. Enter the **Line item name**, a **Target budget amount** and optionally its **Budget category**. Each name can be used once per council and year (capitals and spacing are ignored). Custom lines are carried into next June's rollup automatically.
 
 ### 12.5 Demonstrations: Simulate June Drafting Window
 
-On the demonstration build (in-memory data), Super Admins see a **Simulate June Drafting Window** checkbox. Ticking it treats the chosen year as Draft so the inputs unlock outside June. It does not appear for other roles or on the production data service.
+On the demonstration build (in-memory data), Super Admins see a **Simulate June Drafting Window** checkbox. Ticking it treats the chosen year as Draft so the inputs unlock outside June. It also sends the Super Admin override with each change, so even a Finalized year can be edited for the demo. It does not appear for other roles or on the production data service.
 
 ![Image: Annual Budget Projections]
 
@@ -446,6 +452,9 @@ Members send feedback and bug reports from **Online Help Center → Submit Syste
 | *"Your role cannot maintain this council's lookups."* | Finance officer on another council, or no finance role. | A council Admin or Super Admin must make the change. |
 | Audits missing from Executive Summaries | Finance officers see the monthly summary only. | Ask an Admin for the audit figures. |
 | Budget inputs and buttons greyed out | The chosen year is **Not Yet Open** or **Finalized** (§12.1). | Budgets are edited only in June. Pick the year you are preparing. |
+| *"The … budget was locked as Finalized on July 1"* | The year has started, so the data service refuses changes. | Only a Super Admin override can change a Finalized budget. |
+| Budget shows **Read only** / **Transparency view** | You are not an Admin, Treasurer, Financial Secretary or Designated Budget Director. | Ask a council Admin to tick **Designated Budget Director** on your roster record, then sign in again. |
+| Every budget line is **Uncategorized** | The council has no budget categories, or the lines were never filed. | Add categories under **Council Lookup Tables → Budget categories**, then pick each line's **Category**. |
 | *"…already has a line named…"* | That custom line exists for this council and year. | Edit the existing line's approved amount instead. |
 | An annual event is missing from the budget | It is not tagged **Is Annual**, it is not linked to your council, or it did not start in the prior fraternal year. | Tick **Is Annual** on the event, then run the rollup again. |
 | **Mark no-show** missing on a turnout row | The volunteer has hours logged, or the event is not linked to your council. | Correct the hours first, or ask an Admin of the event's council. |

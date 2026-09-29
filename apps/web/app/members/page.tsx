@@ -8,6 +8,7 @@
 import { useEffect, useState } from 'react';
 import {
   canCreateMembers,
+  canDesignateBudgetDirector,
   canEditMember,
   describeError,
   grantableMemberTypes,
@@ -64,7 +65,7 @@ interface Lookups {
  * Every form field is text; numbers and ids are converted on save and validated again by the driver. The photo and
  * biography are the member's own (My Profile), so the roster form leaves them as stored.
  */
-type Draft = Record<Exclude<keyof NewMember, 'WorkingStatusID' | 'ProfilePhotoURL' | 'Biography'>, string>;
+type Draft = Record<Exclude<keyof NewMember, 'WorkingStatusID' | 'ProfilePhotoURL' | 'Biography' | 'IsBudgetDirector'>, string>;
 
 const TEXT_FIELDS: { key: keyof Draft; label: string; type?: string; maxLength: number; optional?: boolean; wide?: boolean }[] = [
   { key: 'MemberFirstName', label: 'First name', maxLength: 100 },
@@ -122,7 +123,7 @@ function draftFrom(member: Member | null, councilId: number, lookups: Lookups): 
   };
 }
 
-function toNewMember(d: Draft): NewMember {
+function toNewMember(d: Draft, budgetDirector: boolean): NewMember {
   return {
     CouncilID: Number(d.CouncilID),
     MemberNumber: Number(d.MemberNumber),
@@ -139,6 +140,7 @@ function toNewMember(d: Draft): NewMember {
     StatusID: Number(d.StatusID),
     DegreeID: Number(d.DegreeID),
     MemberTypeID: Number(d.MemberTypeID),
+    IsBudgetDirector: budgetDirector ? 1 : 0,
   };
 }
 
@@ -158,7 +160,11 @@ function MemberForm({
   const [draft, setDraft] = useState<Draft>(() => draftFrom(member, councilId, lookups));
   const [busy, setBusy] = useState(false);
   const { message, setMessage, run } = useAction();
+  // Sprint 5Y-3: the Designated Budget Director flag, set only by the council's Admins and Super Admins.
+  const [director, setDirector] = useState(member?.IsBudgetDirector === 1);
   useEffect(() => setDraft(draftFrom(member, councilId, lookups)), [member, councilId, lookups]);
+  useEffect(() => setDirector(member?.IsBudgetDirector === 1), [member]);
+  const mayDesignate = canDesignateBudgetDirector(user, member ?? { CouncilID: councilId });
 
   const typeName = (id: number) => lookups.types.find((t) => t.id === id)?.Type;
   const currentType = member ? typeName(member.MemberTypeID) : undefined;
@@ -173,7 +179,7 @@ function MemberForm({
   const save = async () => {
     setBusy(true);
     const ok = await run(async () => {
-      const values = toNewMember(draft);
+      const values = toNewMember(draft, director);
       if (member) {
         const saved = await db.members.update(user.memberId, member.id, values);
         onSaved(saved.id);
@@ -183,7 +189,10 @@ function MemberForm({
       }
     }, member ? 'Member saved.' : `Added ${draft.MemberFirstName} ${draft.MemberLastName}. A welcome email with sign-in instructions was queued.`);
     setBusy(false);
-    if (ok && !member) setDraft(draftFrom(null, councilId, lookups));
+    if (ok && !member) {
+      setDraft(draftFrom(null, councilId, lookups));
+      setDirector(false);
+    }
   };
 
   const lookupSelect = (key: 'StatusID' | 'DegreeID', label: string, rows: { id: number; name: string }[], locked = false) => (
@@ -245,6 +254,21 @@ function MemberForm({
             }
           </Field>
         </div>
+        {mayDesignate ? (
+          <label className="flex items-start gap-3 rounded border-2 border-gold border-l-8 bg-white p-3 text-sm">
+            <input type="checkbox" className="mt-0.5 size-5" checked={director} onChange={(e) => setDirector(e.target.checked)} />
+            <span>
+              <span className="block font-bold">Designated Budget Director</span>
+              <span className="block text-xs text-muted">
+                Lets this member prepare the council&apos;s annual budget (rollup, custom lines, approved amounts) during the June drafting window, alongside the Admins, Financial Secretary and Treasurer. Saved with the member.
+              </span>
+            </span>
+          </label>
+        ) : member?.IsBudgetDirector === 1 ? (
+          <p className="text-sm">
+            <Pill tone="gold">Designated Budget Director</Pill>
+          </p>
+        ) : null}
         {editable ? (
           <div className="flex gap-2">
             <Button type="submit" disabled={busy}>

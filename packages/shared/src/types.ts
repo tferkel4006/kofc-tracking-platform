@@ -107,6 +107,8 @@ export interface Member {
   WorkingStatusID?: number | null; // Phase 2: null until the member sets it
   ProfilePhotoURL?: string | null; // Sprint 5S: avatar path (VARCHAR(2000)); a blob or file:// path until there is a file store
   Biography?: string | null; // Sprint 5S: short personal fraternal biography (TEXT, capped at MEMBER_BIOGRAPHY_MAX_LENGTH)
+  /** BIT (Sprint 5Y-3): an Admin delegated the council's budget preparation to this member. Default 0. */
+  IsBudgetDirector?: number;
 }
 
 export interface MemberRoles {
@@ -535,4 +537,12 @@ export interface CouncilBudgetForecast {
   PrePopulatedAmount: number; // DECIMAL(18,2): the previous fraternal year's actual spend
   ApprovedBudgetAmount: number; // DECIMAL(18,2): set by council leadership
   Notes?: string | null;
+  BudgetCategoryID?: number | null; // Sprint 5Y-3: the council budget category it is filed under; NULL while uncategorized
+}
+
+/** One of a council's own budget categories (funds), kept as a council lookup table (Sprint 5Y-3). */
+export interface CouncilBudgetCategory {
+  id: number;
+  CouncilID: number;
+  CategoryName: string;
 }

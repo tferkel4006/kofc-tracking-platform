@@ -27,7 +27,8 @@ export type MaintainedTable =
   | 'Activities'
   | 'DistributionLists'
   | 'DonationType'
-  | 'CouncilDonationMethod';
+  | 'CouncilDonationMethod'
+  | 'CouncilBudgetCategory';
 
 /** What a maintained row is called in messages. */
 export const RECORD_LABELS: Record<MaintainedTable, string> = {
@@ -38,6 +39,7 @@ export const RECORD_LABELS: Record<MaintainedTable, string> = {
   DistributionLists: 'Distribution list',
   DonationType: 'Donation type',
   CouncilDonationMethod: 'Donation method',
+  CouncilBudgetCategory: 'Budget category',
 };
 
 export interface RecordReference {
@@ -74,6 +76,7 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
     { table: 'CharityDonationProposal', column: 'CouncilID', noun: ['charity proposal', 'charity proposals'] },
     { table: 'CharitableDisbursementLedger', column: 'CouncilID', noun: ['charity check', 'charity checks'] },
     { table: 'CouncilBudgetForecast', column: 'CouncilID', noun: ['budget line', 'budget lines'] },
+    { table: 'CouncilBudgetCategory', column: 'CouncilID', noun: ['budget category', 'budget categories'] },
     { table: 'AffiliatedCouncils', column: 'PrimaryCouncilID', noun: ['affiliation', 'affiliations'] },
     { table: 'AffiliatedCouncils', column: 'AffiliatedCouncilID', noun: ['affiliation', 'affiliations'] },
   ],
@@ -83,6 +86,7 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
   DistributionLists: [], // DistributionListMembers rows are deleted with their list
   DonationType: [{ table: 'Donation', column: 'DonationTypeID', noun: ['donation', 'donations'] }],
   CouncilDonationMethod: [], // donations point at DonationMethod, so disabling a method keeps their history
+  CouncilBudgetCategory: [{ table: 'CouncilBudgetForecast', column: 'BudgetCategoryID', noun: ['budget line', 'budget lines'] }],
 };
 
 /** Columns each maintained table's create/update writes, besides its id. */

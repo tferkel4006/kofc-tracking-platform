@@ -196,4 +196,15 @@ Values
 ('Background Check'),
 ('Preventing Abuse and Protecting Those We Serve');
 GO
-
+-- ==============================================================================
+-- Sprint 5Y-3: budget categories (funds) of Council 15295 (CouncilID 1) only; every other council defines its own
+-- ==============================================================================
+Insert Into [CouncilBudgetCategory] ([CouncilID], [CategoryName])
+Values 
+(1, 'Father George Wolf Memorial Fund'),
+(1, 'Sister Rita Rose Vistica Parish Community Fund'),
+(1, 'Cathedral School & Student Support'),
+(1, 'Other Donations & Projects'),
+(1, 'Council Maintenance & State/Supreme Programs'),
+(1, 'Blessed Michael McGivney Fraternal Activities Fund');
+GO
