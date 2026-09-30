@@ -1321,14 +1321,15 @@ export function assertMayApproveBudget(actor: MemberWriteActor, councilId: numbe
 
 /**
  * budget.getBudgetProgress and budget.getHistoricalKPIs (Sprint 5Y-4): budget-versus-actual figures sit beside the
- * monthly executive summaries, so they are for the same readers - the council's Active Admins, Financial Secretary and
- * Treasurer, since Sprint 5Z-2.5 its Active Grand Knight and Deputy Grand Knight, and any Active Super Admin. The same
- * guard covers reports.missionAreaFootprint. `action` completes "cannot ...".
+ * monthly executive summaries, so they are for the same readers - the council's Active Admins, and since Sprint 5Z-2.5
+ * every Active officer of the council (any Role with Officer = 1: the Grand Knight, Deputy Grand Knight, Financial
+ * Secretary, Treasurer, Recorder, Trustees and the other seated officers, as on the Pooled Vetting Desk), and any Active
+ * Super Admin. The same guard covers reports.missionAreaFootprint. `action` completes "cannot ...".
  */
 export function assertMayReviewBudgetPerformance(actor: MemberWriteActor, councilId: number, action: string): void {
-  if (isCouncilExecutive(actor, councilId)) return;
-  // A Grand Knight or Deputy Grand Knight of another council is refused for the council, not for lacking a seat.
-  if (actor.active && holdsExecutiveRole(actor.roles) && !hasAdminRights(actor) && !holdsFinanceRole(actor.roles)) {
+  if (isCouncilExecutive(actor, councilId) || (actor.active && actor.officer && actor.councilId === councilId)) return;
+  // An officer of another council is refused for the council, not for lacking a seat.
+  if (actor.active && (actor.officer || holdsExecutiveRole(actor.roles)) && !hasAdminRights(actor) && !holdsFinanceRole(actor.roles)) {
     throw new SecurityPrivilegeError(
       'COUNCIL_ACCESS_DENIED',
       `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; a council's budget performance is reviewed only by its own leadership.`,

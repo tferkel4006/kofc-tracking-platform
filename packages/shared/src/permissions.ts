@@ -99,11 +99,19 @@ export const isExecutiveOfficer = (u: Actor): boolean => holdsExecutiveRole(u.ro
 const isCouncilExecutive = (u: Actor, councilId: number): boolean => isExecutiveOfficer(u) && u.councilId === councilId;
 
 /**
- * The dashboard's personnel audits (no-shows, shifts awaiting hours) name members and their reasons, so they are
- * for the council's Admins, its Grand Knight and Deputy Grand Knight (Sprint 5Z-2.5), and any Super Admin; finance
- * officers see only the monthly summary.
+ * The Executive Summary Dashboard (Sprint 5Z-2.5): the council's Admins, its finance officers, every officer of the
+ * council (any Role with Officer = 1: Grand Knight, Deputy Grand Knight, Financial Secretary, Treasurer, Recorder,
+ * Trustees and the other seated officers - the same audience as the Pooled Vetting Desk), and any Super Admin. It is
+ * read-only; budget approval and Supreme filing stay with their own gates.
  */
-export const canViewExecutiveAudits = (u: Actor, councilId: number): boolean => canAdministerCouncil(u, councilId) || isCouncilExecutive(u, councilId);
+export const canViewExecutiveDashboard = (u: Actor, councilId: number): boolean =>
+  canManageFinances(u, councilId) || isCouncilExecutive(u, councilId) || (u.isOfficer && u.councilId === councilId);
+
+/**
+ * The dashboard's personnel audits (no-shows, shifts awaiting hours), part of the dashboard's full view: every reader of
+ * the dashboard (canViewExecutiveDashboard, Sprint 5Z-2.5).
+ */
+export const canViewExecutiveAudits = (u: Actor, councilId: number): boolean => canViewExecutiveDashboard(u, councilId);
 
 /** Every council's lessons learned are open to Admins and Super Admins; changing one follows canRecordLedger. */
 export const canBrowseLessonsRegistry = (u: Actor): boolean => isAdmin(u);
@@ -319,10 +327,10 @@ export const canFinalizeBudgetYear = (
 
 /**
  * The dashboard's budget gauges and the budget page's Historical Performance Review (Sprint 5Y-4), mirroring
- * assertMayReviewBudgetPerformance: the same readers as the executive summaries, the Grand Knight and Deputy Grand Knight
- * included (Sprint 5Z-2.5).
+ * assertMayReviewBudgetPerformance: the same readers as the executive summaries, every officer of the council included
+ * (Sprint 5Z-2.5).
  */
-export const canReviewBudgetPerformance = (u: Actor, councilId: number): boolean => canManageFinances(u, councilId) || isCouncilExecutive(u, councilId);
+export const canReviewBudgetPerformance = (u: Actor, councilId: number): boolean => canViewExecutiveDashboard(u, councilId);
 
 /** Reading the annual budget, mirroring assertMayViewBudgetForecast (Sprint 5Y-3): every member of the council, any Super Admin. */
 export const canViewBudgetForecast = (u: Actor, councilId: number): boolean => isSuperAdmin(u) || u.councilId === councilId;
@@ -357,8 +365,8 @@ export function portalAreas(u: Actor): PortalArea[] {
   if (canVetCharitableRequests(u, u.councilId)) areas.push('charities/vetting');
   if (canBrowseLessonsRegistry(u)) areas.push('lessons-registry');
   if (canManageCharityRegistry(u)) areas.push('charities/registry');
-  // Sprint 5Z-2.5: the Grand Knight and Deputy Grand Knight read the executive summaries without an Admin member type.
-  if (isAdmin(u) || isFinanceOfficer(u) || isExecutiveOfficer(u)) areas.push('dashboard');
+  // Sprint 5Z-2.5: every officer of the council reads the executive summaries, as on the Pooled Vetting Desk.
+  if (isAdmin(u) || canViewExecutiveDashboard(u, u.councilId)) areas.push('dashboard');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('supreme-sync');
   // Every member may read the council's annual budget (Sprint 5Y-3 transparency); canManageBudgetForecast decides editing.
   areas.push('financials/budget');

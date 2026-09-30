@@ -101,10 +101,10 @@ The built-in groups are All Members and Active Officers (`DISTRIBUTION_GROUPS`).
 | Mark or clear anyone's no-show | — | — | — | — | ✅ | — |
 | Take meeting attendance and attach minutes | 👤 ⁵ | 👤 ⁵ | ✅ | ✅ | ✅ | ✅ |
 | Edit Meeting Agenda Templates (Council Lookups) | — | — | — | — | ✅ | ✅ |
-| No-show and awaiting-hours audits (dashboard) | — | — | — | — | ✅ | ✅ ⁷ |
+| No-show and awaiting-hours audits (dashboard) | — | — | ✅ ⁷ | ✅ ⁷ | ✅ | ✅ ⁷ |
 | Monthly executive summary and Faith-in-Action mission tracking (dashboard) | — | — | ✅ | ✅ | ✅ | ✅ ⁷ |
 
 6. A member may flag their own no-show but never clear one (`assertMayMarkNoShow`).
-7. Sprint 5Z-2.5: the **Grand Knight and Deputy Grand Knight** open the executive dashboard in full (summary, mission tracking, budget gauges and personnel audits) for their own council, without an Admin account type. They also run the Pooled Vetting Desk with Admin-level reach: they may annotate, advance or decline a request another officer claimed (`mayOverrideVettingClaim`), though never one they shepherd themselves (Sponsor Restriction). Approving the budget stays with Admins and finance officers. Rules: `EXECUTIVE_ROLE_NAMES`, `assertMayReviewBudgetPerformance`, `assertMayVetCharitableRequests`.
+7. Sprint 5Z-2.5: **every seated officer** of the council (any role with Officer = 1: Grand Knight, Deputy Grand Knight, Chancellor, Recorder, Financial Secretary, Treasurer, Warden, Advocate, the Guards and the three Trustees, the same audience as the Pooled Vetting Desk) opens the executive dashboard in full, read-only (summary, mission tracking, budget gauges and personnel audits), for their own council, without an Admin account type. Directors, the Lecturer and the Chaplain hold no officer seat and do not. The **Grand Knight and Deputy Grand Knight** also run the Pooled Vetting Desk with Admin-level reach. They may annotate, advance or decline a request another officer claimed (`mayOverrideVettingClaim`), though never one they shepherd themselves (Sponsor Restriction). Approving the budget stays with Admins and finance officers. Rules: `EXECUTIVE_ROLE_NAMES`, `assertMayReviewBudgetPerformance`, `assertMayVetCharitableRequests`.
 
 Meeting attendance, minutes and invitations are gated by the screens today (`canManageMeeting`). The data service does not yet take the caller's identity for those three actions. Agenda templates are enforced by the data service (`assertMayManageAgendaTemplates`).

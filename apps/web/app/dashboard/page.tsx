@@ -1,11 +1,11 @@
 'use client';
 // Executive Summaries: one council's month at a glance from reports.monthlySummary. Four stat tiles (labor
 // hours, unique Knights, net balance, outreach), the ledger figures behind the balance as a table, and the
-// month's event highlights as a scrollable feed. Open to the council's Admins, Financial Secretary and Treasurer,
-// its Grand Knight and Deputy Grand Knight (Sprint 5Z-2.5), and any Super Admin (who may pick the council).
+// month's event highlights as a scrollable feed. Open to the council's Admins, every officer of the council - Grand
+// Knight, Deputy Grand Knight, Financial Secretary, Treasurer, Recorder, Trustees and the other seated officers
+// (canViewExecutiveDashboard, Sprint 5Z-2.5) - and any Super Admin (who may pick the council).
 //
-// Under the month, the council's Admins, Grand Knight, Deputy Grand Knight and Super Admins (canViewExecutiveAudits) also
-// get two personnel audits:
+// Under the month, the same readers (canViewExecutiveAudits) also get two personnel audits:
 // every no-show of the trailing NO_SHOW_AUDIT_MONTHS (reports.listNoShowsAudit, with or without a reason), and every
 // past signup still waiting for hours (reports.listShiftsAwaitingHours), flagged once the day-5 reminder is due.
 //

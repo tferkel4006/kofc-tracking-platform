@@ -32,6 +32,7 @@ import {
   canOverrideVettingClaim,
   canReviewBudgetPerformance,
   canVetCharitableRequests,
+  canViewExecutiveDashboard,
   portalAreas,
   portalNavGroups,
   PORTAL_NAV_GROUPS,
@@ -153,7 +154,7 @@ describe('portal permissions', () => {
       'messages',
       'profile',
     ]);
-    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'charities/vetting', 'financials/budget', 'messages', 'profile']);
+    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'charities/vetting', 'dashboard', 'financials/budget', 'messages', 'profile']);
     expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'financials/budget', 'messages', 'profile']);
   });
 
@@ -244,7 +245,8 @@ describe('portal permissions', () => {
           ['Self-Service Hub', ['member-actions', 'charities/propose', 'charities/intake']],
           ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
           // Sprint 5Z-2: officers (Trustees included) vet charitable requests on the Pooled Vetting Desk.
-          ['Financial Ledgers', u === officer ? ['expenses', 'charities/vetting', 'financials/budget'] : ['expenses', 'financials/budget']],
+          // Sprint 5Z-2.5: officers also read the Executive Summary Dashboard.
+          ['Financial Ledgers', u === officer ? ['dashboard', 'expenses', 'charities/vetting', 'financials/budget'] : ['expenses', 'financials/budget']],
         ]);
       }
     });
@@ -329,7 +331,8 @@ describe('portal permissions', () => {
     expect(canFinalizeBudgetYear(treasurer, 1, '2027-2028', april, 'Proposed', 3, true)).toBe(false);
     expect(canFinalizeBudgetYear(superAdmin, 1, '2027-2028', april, 'Proposed', 3, true)).toBe(true);
     expect(canFinalizeBudgetYear(director, 1, '2027-2028', june, 'Proposed', 3)).toBe(false);
-    expect([superAdmin, admin, treasurer, director, officer, member].map((u) => canReviewBudgetPerformance(u, 1))).toEqual([true, true, true, false, false, false]);
+    // Sprint 5Z-2.5: every seated officer reads it with the executive summaries.
+    expect([superAdmin, admin, treasurer, director, officer, member].map((u) => canReviewBudgetPerformance(u, 1))).toEqual([true, true, true, false, true, false]);
     expect([superAdmin, admin, treasurer].map((u) => canReviewBudgetPerformance(u, 2))).toEqual([true, false, false]);
   });
 
@@ -348,11 +351,12 @@ describe('portal permissions', () => {
     expect(councilLookupTablesFor(officer, 1)).toEqual([]);
   });
 
-  it('keeps the personnel audits to the council Admins and Super Admins', () => {
+  it("keeps the personnel audits to the dashboard's readers: Admins, Super Admins and, since Sprint 5Z-2.5, the council's officers", () => {
     expect(canViewExecutiveAudits(admin, 1)).toBe(true);
     expect(canViewExecutiveAudits(admin, 2)).toBe(false);
     expect(canViewExecutiveAudits(superAdmin, 2)).toBe(true);
-    expect(canViewExecutiveAudits(actor({ isOfficer: true, roles: ['Financial Secretary'] }), 1)).toBe(false);
+    expect(canViewExecutiveAudits(actor({ isOfficer: true, roles: ['Financial Secretary'] }), 1)).toBe(true);
+    expect(canViewExecutiveAudits(actor({ isOfficer: true, roles: ['Financial Secretary'] }), 2)).toBe(false);
     expect(canViewExecutiveAudits(member, 1)).toBe(false);
   });
 
@@ -381,7 +385,7 @@ describe('portal permissions', () => {
         'profile',
       ]);
     }
-    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'charities/vetting', 'financials/budget', 'messages', 'profile']);
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'charities/vetting', 'dashboard', 'financials/budget', 'messages', 'profile']);
   });
 
   it('gives council leadership the Supreme sync and the alert dispatch, each for their own council (Sprint 5T)', () => {
@@ -434,12 +438,21 @@ describe('executive access for the Grand Knight and Deputy Grand Knight (Sprint 
     expect(portalAreas(actor({ roles: ['Deputy Grand Knight'] }))).toEqual(expect.arrayContaining(['dashboard', 'charities/vetting']));
   });
 
-  it('leaves other officers on the desk without the dashboard or the claim override', () => {
-    const recorder = actor({ isOfficer: true, roles: ['Recorder'] });
-    expect(portalAreas(recorder)).not.toContain('dashboard');
-    expect(canViewExecutiveAudits(recorder, 1)).toBe(false);
-    expect(canOverrideVettingClaim(recorder, 1)).toBe(false);
-    expect(canVetCharitableRequests(recorder, 1)).toBe(true);
+  it('opens the dashboard to every officer, as on the vetting desk, but keeps the claim override with Admins and executives', () => {
+    for (const role of ['Recorder', 'Trustee 1', 'Warden', 'Treasurer', 'Financial Secretary']) {
+      const o = actor({ isOfficer: true, roles: [role] });
+      expect(portalAreas(o)).toContain('dashboard');
+      expect(canViewExecutiveDashboard(o, 1)).toBe(true);
+      expect(canViewExecutiveAudits(o, 1)).toBe(true);
+      expect(canReviewBudgetPerformance(o, 1)).toBe(true);
+      expect(canViewExecutiveDashboard(o, 2)).toBe(false);
+      expect(canVetCharitableRequests(o, 1)).toBe(canViewExecutiveDashboard(o, 1));
+    }
+    expect(canOverrideVettingClaim(actor({ isOfficer: true, roles: ['Recorder'] }), 1)).toBe(false);
     expect(canOverrideVettingClaim(admin, 1)).toBe(true);
+    // A director or Lecturer holds no officer seat (Role.Officer = 0): neither screen.
+    const director = actor({ roles: ['Program Director'] });
+    expect(portalAreas(director)).not.toContain('dashboard');
+    expect(portalAreas(director)).not.toContain('charities/vetting');
   });
 });

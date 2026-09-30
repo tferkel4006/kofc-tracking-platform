@@ -469,6 +469,10 @@ describe('budget helpers (pure)', () => {
       expect(review(actor({ roles: [role] }), OTHER)).toBe(false);
       expect(review(actor({ roles: [role], active: false }))).toBe(false);
     }
+    // Every seated officer (Role.Officer = 1) reads it too, still without approving.
+    expect(review(actor({ roles: ['Recorder'], officer: true }))).toBe(true);
+    expect(review(actor({ roles: ['Trustee 1'], officer: true }), OTHER)).toBe(false);
+    expect(approve(actor({ roles: ['Recorder'], officer: true }))).toBe(false);
     for (const check of [approve, review]) {
       expect(check(actor())).toBe(false);
       expect(check(actor({ budgetDirector: true }))).toBe(false);
