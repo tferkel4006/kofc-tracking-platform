@@ -8,20 +8,29 @@
 // assertMayProposeCharityGift, assertMayDisburseCharity).
 // =========================================================================
 import type {
+  CharitableRequestDetail,
+  CharitableTriageAction,
+  CharitableTriageInput,
   CharityCheckDetails,
   CharityProposalDetail,
   CharityProposalInput,
   CharitySearchFilters,
   CouncilCharityLedgerEntry,
+  NewCharitableRequest,
   NewGlobalCharity,
 } from './contract';
 import { cleanDisbursementCheck, sumAmounts } from './expenses';
-import { assertMoney, assertText, BusinessRuleError, optionalText } from './rules';
+import { toTimestamp } from './messaging';
+import { assertIsoDate, assertMoney, assertText, BusinessRuleError, optionalText } from './rules';
 import type {
   CharitableDisbursementLedger,
+  CharitableRequest,
+  CharitableRequestStatus,
+  CharitableRequestVoteStatus,
   CharityDonationProposal,
   CharityProposalStatus,
   CouncilCharityLink,
+  CouncilRelationshipType,
   GlobalCharityRegistry,
   Meeting,
   Member,
@@ -456,4 +465,174 @@ export function charitySearchFromText(text: string): Pick<CharitySearchFilters, 
   const trimmed = text.trim();
   if (trimmed === '') return {};
   return /^\d{2}[\s-]?\d{7}$/.test(trimmed) ? { ein: trimmed } : { name: trimmed };
+}
+
+// ---- normalized charitable intake and the vetting desk (Sprint 5Z-1) -----------
+
+/** The vetting pipeline in order; the queue lists requests stage by stage. */
+export const CHARITABLE_REQUEST_STATUSES: readonly CharitableRequestStatus[] = ['Submitted', 'Claimed by Trustee', 'Advanced'];
+export const CHARITABLE_VOTE_STATUSES: readonly CharitableRequestVoteStatus[] = ['Pending', 'Approved', 'Rejected'];
+export const CHARITABLE_TRIAGE_ACTIONS: readonly CharitableTriageAction[] = ['claim', 'note', 'advance'];
+/** Highest CharitableRequest.RequestTier; tiers run 1 (small, routine) to this. */
+export const CHARITABLE_REQUEST_MAX_TIER = 3;
+/** Longest CharitableRequest.VettingNotes; the column is TEXT, the cap keeps notes readable. */
+export const CHARITABLE_VETTING_NOTES_MAX_LENGTH = 2000;
+/** Longest free-text answer on the intake form (the TEXT columns). */
+export const CHARITABLE_FORM_TEXT_MAX_LENGTH = 2000;
+
+/** The intake form's fields; the only CharitableRequest columns submitCharitableRequest writes from the caller. */
+export const CHARITABLE_REQUEST_FORM_COLUMNS = [
+  'OrganizationName',
+  'AmountRequested',
+  'ContactName',
+  'ContactPhone',
+  'ContactEmail',
+  'MailingAddress',
+  'RelationshipTypeID',
+  'Is501c3',
+  'EIN',
+  'Website',
+  'OrgMission',
+  'IsRecurring',
+  'FundsNeededBy',
+  'SpecificUse',
+  'TargetBeneficiary',
+  'AccountabilityPlan',
+  'RequestTier',
+] as const satisfies readonly (keyof NewCharitableRequest & keyof CharitableRequest)[];
+
+export type CleanCharitableRequest = Pick<CharitableRequest, (typeof CHARITABLE_REQUEST_FORM_COLUMNS)[number]>;
+
+function assertRequestTier(value: unknown): number {
+  if (!isId(value) || value > CHARITABLE_REQUEST_MAX_TIER) {
+    throw invalid(`Request tier must be a whole number from 1 to ${CHARITABLE_REQUEST_MAX_TIER}; received ${JSON.stringify(value)}.`, { value });
+  }
+  return value;
+}
+
+function optionalFlag(value: unknown, label: string): number {
+  if (value === undefined || value === null) return 0;
+  if (typeof value !== 'boolean') throw invalid(`${label} must be true or false; received ${JSON.stringify(value)}.`, { label });
+  return value ? 1 : 0;
+}
+
+/** A Knight Shepherd's intake form, validated and normalized; the driver checks RelationshipTypeID against the council. */
+export function cleanCharitableRequest(input: NewCharitableRequest): CleanCharitableRequest {
+  if (typeof input !== 'object' || input === null) throw invalid('Request details are required.');
+  for (const key of Object.keys(input)) {
+    if (!(CHARITABLE_REQUEST_FORM_COLUMNS as readonly string[]).includes(key)) {
+      throw invalid(`A charitable request has no field "${key}"; its fields are ${CHARITABLE_REQUEST_FORM_COLUMNS.join(', ')}.`, { field: key });
+    }
+  }
+  const email = optionalText(input.ContactEmail, 'Contact email', CHARITY_CONTACT_MAX_LENGTH);
+  if (email !== null && !EMAIL.test(email)) throw invalid(`Contact email must be an email address; received ${JSON.stringify(email)}.`);
+  const ein = optionalText(input.EIN, 'EIN', 50);
+  const neededBy = optionalText(input.FundsNeededBy, 'Funds needed by', 10);
+  const text = (value: unknown, label: string) => optionalText(value, label, CHARITABLE_FORM_TEXT_MAX_LENGTH);
+  return {
+    OrganizationName: assertText(input.OrganizationName, 'Organization name', CHARITY_NAME_MAX_LENGTH),
+    AmountRequested: positiveAmount(input.AmountRequested, 'Amount requested'),
+    ContactName: optionalText(input.ContactName, 'Contact name', CHARITY_CONTACT_MAX_LENGTH),
+    ContactPhone: optionalText(input.ContactPhone, 'Contact phone', CHARITY_PHONE_MAX_LENGTH),
+    ContactEmail: email,
+    MailingAddress: text(input.MailingAddress, 'Mailing address'),
+    RelationshipTypeID: optionalId(input.RelationshipTypeID, 'Relationship type'),
+    Is501c3: optionalFlag(input.Is501c3, 'Is501c3'),
+    EIN: ein === null ? null : normalizeEin(ein),
+    Website: optionalText(input.Website, 'Website', 255),
+    OrgMission: text(input.OrgMission, 'Organization mission'),
+    IsRecurring: optionalFlag(input.IsRecurring, 'IsRecurring'),
+    FundsNeededBy: neededBy === null ? null : `${assertIsoDate(neededBy, 'Funds needed by')} 00:00:00`,
+    SpecificUse: text(input.SpecificUse, 'Specific use'),
+    TargetBeneficiary: text(input.TargetBeneficiary, 'Target beneficiary'),
+    AccountabilityPlan: text(input.AccountabilityPlan, 'Accountability plan'),
+    RequestTier: input.RequestTier === undefined || input.RequestTier === null ? 1 : assertRequestTier(input.RequestTier),
+  };
+}
+
+/** The form's RelationshipTypeID must be one of the council's own relationship types. */
+export function assertCouncilRelationshipType(
+  relationshipTypeId: number | null | undefined,
+  types: readonly Pick<CouncilRelationshipType, 'id' | 'CouncilID'>[],
+  councilId: number,
+): void {
+  if (relationshipTypeId == null || types.some((t) => t.id === relationshipTypeId && t.CouncilID === councilId)) return;
+  throw invalid(`Relationship type ${relationshipTypeId} is not one of council ${councilId}'s relationship types.`, { relationshipTypeId, councilId });
+}
+
+export const charitableRequestNotFound = (requestId: number): BusinessRuleError =>
+  new BusinessRuleError('RECORD_NOT_FOUND', `Charitable request ${requestId} does not exist.`, { table: 'CharitableRequest', id: requestId });
+
+/** The columns triageRequestStatus changes; the only ones a driver may interpolate into its UPDATE. */
+export const CHARITABLE_TRIAGE_COLUMNS = ['RequestStatus', 'VetterMemberID', 'VettingNotes', 'RequestTier', 'VettedDate'] as const satisfies readonly (keyof CharitableRequest)[];
+
+export type CharitableTriageChanges = Partial<Pick<CharitableRequest, (typeof CHARITABLE_TRIAGE_COLUMNS)[number]>>;
+
+const statusConflict = (request: Pick<CharitableRequest, 'id' | 'RequestStatus'>, message: string, details: Record<string, unknown> = {}) =>
+  new BusinessRuleError('REQUEST_STATUS_CONFLICT', message, { requestId: request.id, status: request.RequestStatus, ...details });
+
+/**
+ * What charities.triageRequestStatus writes, once the driver has checked vetting authority and independence. 'claim'
+ * takes a 'Submitted' request; 'note' and 'advance' need a claimed one held by the caller, unless `overridesClaim`
+ * (an Admin of the council or a Super Admin). `now` stamps VettedDate on 'advance'.
+ */
+export function planCharitableTriage(
+  request: Pick<CharitableRequest, 'id' | 'RequestStatus' | 'VetterMemberID'>,
+  actorId: number,
+  overridesClaim: boolean,
+  input: CharitableTriageInput,
+  now: Date,
+): CharitableTriageChanges {
+  if (typeof input !== 'object' || input === null) throw invalid('Vetting details are required.');
+  if (!(CHARITABLE_TRIAGE_ACTIONS as readonly unknown[]).includes(input.action)) {
+    throw invalid(`Action must be one of ${CHARITABLE_TRIAGE_ACTIONS.join(', ')}; received ${JSON.stringify(input.action)}.`, { action: input.action });
+  }
+  const changes: CharitableTriageChanges = {};
+  if (input.VettingNotes !== undefined) changes.VettingNotes = optionalText(input.VettingNotes, 'Vetting notes', CHARITABLE_VETTING_NOTES_MAX_LENGTH);
+  if (input.RequestTier !== undefined && input.RequestTier !== null) changes.RequestTier = assertRequestTier(input.RequestTier);
+
+  if (input.action === 'claim') {
+    if (request.RequestStatus !== 'Submitted') {
+      throw statusConflict(request, `Charitable request ${request.id} is ${request.RequestStatus}, so it cannot be claimed; only a Submitted request can.`);
+    }
+    return { ...changes, RequestStatus: 'Claimed by Trustee', VetterMemberID: actorId };
+  }
+  if (request.RequestStatus !== 'Claimed by Trustee') {
+    const why = request.RequestStatus === 'Submitted' ? 'claim it first' : 'it has already been advanced to the vote';
+    throw statusConflict(request, `Charitable request ${request.id} is ${request.RequestStatus}; ${why}.`);
+  }
+  if (request.VetterMemberID !== actorId && !overridesClaim) {
+    throw statusConflict(
+      request,
+      `Charitable request ${request.id} is claimed by member ${request.VetterMemberID}; only its vetter, an Admin or a Super Admin can change it.`,
+      { vetterMemberId: request.VetterMemberID ?? null },
+    );
+  }
+  return input.action === 'advance' ? { ...changes, RequestStatus: 'Advanced', VettedDate: toTimestamp(now) } : changes;
+}
+
+/** Pipeline stage, then oldest SubmittedAt, then id. */
+const compareCharitableRequests = (a: CharitableRequest, b: CharitableRequest) =>
+  CHARITABLE_REQUEST_STATUSES.indexOf(a.RequestStatus) - CHARITABLE_REQUEST_STATUSES.indexOf(b.RequestStatus) ||
+  a.SubmittedAt.localeCompare(b.SubmittedAt) ||
+  a.id - b.id;
+
+/** Joins requests with their Shepherds, vetters and relationship types, in queue order. */
+export function buildCharitableRequestDetails(
+  requests: readonly CharitableRequest[],
+  members: readonly Pick<Member, 'id' | 'MemberFirstName' | 'MemberLastName'>[],
+  relationshipTypes: readonly CouncilRelationshipType[],
+): CharitableRequestDetail[] {
+  return [...requests].sort(compareCharitableRequests).map((request) => {
+    const shepherd = members.find((m) => m.id === request.ShepherdMemberID);
+    const vetter = request.VetterMemberID == null ? undefined : members.find((m) => m.id === request.VetterMemberID);
+    return {
+      request,
+      shepherdFirstName: shepherd?.MemberFirstName ?? '',
+      shepherdLastName: shepherd?.MemberLastName ?? '',
+      vetterFirstName: vetter?.MemberFirstName ?? null,
+      vetterLastName: vetter?.MemberLastName ?? null,
+      relationshipName: relationshipTypes.find((t) => t.id === request.RelationshipTypeID)?.RelationshipName ?? null,
+    };
+  });
 }

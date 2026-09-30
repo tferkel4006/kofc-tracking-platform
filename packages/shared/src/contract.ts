@@ -15,6 +15,7 @@ import type {
   ActivityTime,
   Category,
   CharitableDisbursementLedger,
+  CharitableRequest,
   CharityDonationProposal,
   ChatThread,
   Council,
@@ -44,6 +45,8 @@ import type {
   MeetingResponseStatus,
   CouncilMeetingType,
   CouncilAgendaTemplate,
+  CouncilMissionArea,
+  CouncilRelationshipType,
   KOCTrainingClasses,
   MeetingType,
   Member,
@@ -948,6 +951,63 @@ export interface CharityDisbursementResult {
   /** The proposal, now 'Approved' with ExistingCharityID set. */
   proposal: CharityDonationProposal;
   disbursement: CharitableDisbursementLedger;
+}
+
+// 17b. NORMALIZED CHARITABLE INTAKE (Sprint 5Z-1)
+/**
+ * A Knight Shepherd's intake form for charities.submitCharitableRequest. The council is the Shepherd's own, the
+ * Shepherd is the caller, RequestStatus starts 'Submitted' and VoteStatus 'Pending'. Blank optional text is stored as
+ * NULL. RelationshipTypeID must be one of the council's CouncilRelationshipType rows; EIN is folded to 'NN-NNNNNNN';
+ * FundsNeededBy is a YYYY-MM-DD date; RequestTier is 1 to CHARITABLE_REQUEST_MAX_TIER (default 1).
+ */
+export interface NewCharitableRequest {
+  OrganizationName: string;
+  AmountRequested: number;
+  ContactName?: string | null;
+  ContactPhone?: string | null;
+  ContactEmail?: string | null;
+  MailingAddress?: string | null;
+  RelationshipTypeID?: number | null;
+  Is501c3?: boolean | null;
+  EIN?: string | null;
+  Website?: string | null;
+  OrgMission?: string | null;
+  IsRecurring?: boolean | null;
+  FundsNeededBy?: string | null;
+  SpecificUse?: string | null;
+  TargetBeneficiary?: string | null;
+  AccountabilityPlan?: string | null;
+  RequestTier?: number | null;
+}
+
+/**
+ * What charities.triageRequestStatus does to a request:
+ * - 'claim' takes a 'Submitted' request: it becomes 'Claimed by Trustee' with the caller as its vetter.
+ * - 'note' updates the vetting notes (and tier) of a claimed request without moving it.
+ * - 'advance' sends a claimed request on to the council's vote: 'Advanced', with VettedDate stamped.
+ */
+export type CharitableTriageAction = 'claim' | 'note' | 'advance';
+
+/**
+ * The vetting desk's change for charities.triageRequestStatus. VettingNotes and RequestTier, when given, replace the
+ * stored values (a blank note clears it); left out, they are kept.
+ */
+export interface CharitableTriageInput {
+  action: CharitableTriageAction;
+  VettingNotes?: string | null;
+  RequestTier?: number | null;
+}
+
+/** One intake request with the names the vetting desk shows beside it. */
+export interface CharitableRequestDetail {
+  request: CharitableRequest;
+  shepherdFirstName: string;
+  shepherdLastName: string;
+  /** Null until an officer or Trustee claims the request. */
+  vetterFirstName: string | null;
+  vetterLastName: string | null;
+  /** The CouncilRelationshipType name; null when the form named none. */
+  relationshipName: string | null;
 }
 
 // 18. ANNUAL BUDGET FORECASTING (Sprint 5Y)
@@ -1865,6 +1925,41 @@ export interface DataService {
      * no longer 'Pending'.
      */
     rejectProposal(actorId: number, proposalId: number, reason: string): Promise<CharityProposalDetail>;
+    // ---- normalized charitable intake and the shared vetting desk (Sprint 5Z-1) ----
+    /**
+     * The relationship types the council defines for itself (CouncilRelationshipType), by RelationshipName then id.
+     * Rejects INVALID_INPUT for an unknown council.
+     */
+    listCouncilRelationshipTypes(councilId: number): Promise<CouncilRelationshipType[]>;
+    /**
+     * The council's mission areas (CouncilMissionArea), by MissionAreaName then id. Rejects INVALID_INPUT for an
+     * unknown council.
+     */
+    listCouncilMissionAreas(councilId: number): Promise<CouncilMissionArea[]>;
+    /**
+     * The council's shared vetting queue: every intake request in pipeline order - 'Submitted', then 'Claimed by
+     * Trustee', then 'Advanced' - oldest SubmittedAt first within each stage, then id. For anyone with vetting
+     * authority: an Active officer (a Role with Officer = 1, Trustees included) or Admin of the council, or an Active
+     * Super Admin (VETTING_AUTHORITY_REQUIRED, COUNCIL_ACCESS_DENIED).
+     */
+    listCharitableRequestsQueue(actorId: number, councilId: number): Promise<CharitableRequestDetail[]>;
+    /**
+     * A Knight Shepherd files a completed intake form into the shared queue of their own council: RequestStatus
+     * 'Submitted', ShepherdMemberID = actorId, VoteStatus 'Pending', AmountApproved 0.00, SubmittedAt now. Any Active
+     * member (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for a missing organization name, an amount of 0 or with
+     * fractions of a cent, a bad EIN, email or tier, an unknown field or a RelationshipTypeID outside the council;
+     * INVALID_DATE for a malformed FundsNeededBy.
+     */
+    submitCharitableRequest(actorId: number, requestData: NewCharitableRequest): Promise<CharitableRequestDetail>;
+    /**
+     * Claims, annotates or advances a request (CharitableTriageInput). Vetting authority of the request's council, as
+     * for listCharitableRequestsQueue, and independent of the request: its Shepherd may never vet it
+     * (SELF_VETTING_BLOCKED, Super Admins included). Only the claiming vetter, or an Active Admin of the council or
+     * Super Admin, may annotate or advance a claimed request. Rejects RECORD_NOT_FOUND for an unknown request,
+     * REQUEST_STATUS_CONFLICT when the action does not fit the request's stage or another officer holds the claim,
+     * INVALID_INPUT for an unknown action, notes over CHARITABLE_VETTING_NOTES_MAX_LENGTH characters or a bad tier.
+     */
+    triageRequestStatus(actorId: number, requestId: number, vettingData: CharitableTriageInput): Promise<CharitableRequestDetail>;
   };
 
   /**

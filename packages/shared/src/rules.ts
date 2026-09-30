@@ -91,7 +91,10 @@ export type BusinessRuleCode =
   | 'BUDGET_LINE_EXISTS'
   | 'BUDGET_YEAR_FINALIZED'
   | 'BUDGET_WINDOW_NOT_OPEN'
-  | 'BUDGET_YEAR_APPROVED';
+  | 'BUDGET_YEAR_APPROVED'
+  | 'VETTING_AUTHORITY_REQUIRED'
+  | 'SELF_VETTING_BLOCKED'
+  | 'REQUEST_STATUS_CONFLICT';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -111,7 +114,13 @@ export class BusinessRuleError extends Error {
  */
 export class SecurityPrivilegeError extends BusinessRuleError {
   constructor(
-    code: 'ADMIN_REQUIRED' | 'SUPER_ADMIN_REQUIRED' | 'COUNCIL_ACCESS_DENIED' | 'FINANCE_OFFICER_REQUIRED' | 'GRAND_KNIGHT_REQUIRED',
+    code:
+      | 'ADMIN_REQUIRED'
+      | 'SUPER_ADMIN_REQUIRED'
+      | 'COUNCIL_ACCESS_DENIED'
+      | 'FINANCE_OFFICER_REQUIRED'
+      | 'GRAND_KNIGHT_REQUIRED'
+      | 'VETTING_AUTHORITY_REQUIRED',
     message: string,
     details: Record<string, unknown> = {},
   ) {
@@ -595,6 +604,8 @@ export interface MemberWriteActor {
   roles?: readonly string[];
   /** Member.IsBudgetDirector (Sprint 5Y-3): may prepare their own council's budget. */
   budgetDirector?: boolean;
+  /** Holds at least one Role with Officer = 1 (Sprint 5Z-1: officers and Trustees vet charitable requests). */
+  officer?: boolean;
 }
 
 /** Officer roles that keep the council's books: they maintain its donations and read its monthly summaries. */
@@ -1212,6 +1223,49 @@ export function assertMayProposeCharityGift(actor: MemberWriteActor, councilId: 
     `Only active members of council ${councilId} can ${action}; member ${actor.memberId} is ${describeActor(actor)} of council ${actor.councilId}.`,
     { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
   );
+}
+
+/**
+ * The charitable-request vetting desk (Sprint 5Z-1): charities.listCharitableRequestsQueue and triageRequestStatus.
+ * Vetting authority belongs to the council's Active officers (any Role with Officer = 1, Trustees included) and
+ * Admins, and to any Active Super Admin. `action` completes "cannot ...".
+ */
+export function assertMayVetCharitableRequests(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = vettingDenial(actor, councilId, action);
+  if (denial) throw denial;
+}
+
+/** assertMayVetCharitableRequests as a yes/no. */
+export const mayVetCharitableRequests = (actor: MemberWriteActor, councilId: number): boolean =>
+  vettingDenial(actor, councilId, 'vet charitable requests') === null;
+
+function vettingDenial(actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null {
+  if (hasSuperAdminRights(actor)) return null;
+  if (!hasAdminRights(actor) && !(actor.active && actor.officer)) {
+    return new SecurityPrivilegeError(
+      'VETTING_AUTHORITY_REQUIRED',
+      `Only an active officer, Trustee, Admin or Super Admin can ${action}; member ${actor.memberId} is ${describeActor(actor)} without an officer seat.`,
+      { actorId: actor.memberId, actorType: actor.memberType ?? null, councilId },
+    );
+  }
+  if (actor.councilId === councilId) return null;
+  return new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; a council's requests are vetted only by its own officers.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
+  );
+}
+
+/**
+ * charities.triageRequestStatus: vetting must be independent, so the Knight Shepherd who carries a request may never
+ * claim, annotate or advance it - Super Admins included. Call after assertMayVetCharitableRequests.
+ */
+export function assertIndependentVetter(actor: MemberWriteActor, request: { id: number; ShepherdMemberID: number }): void {
+  if (request.ShepherdMemberID !== actor.memberId) return;
+  throw new BusinessRuleError('SELF_VETTING_BLOCKED', 'For independent vetting, the Knight Shepherd of a request cannot vet it.', {
+    actorId: actor.memberId,
+    requestId: request.id,
+  });
 }
 
 /**

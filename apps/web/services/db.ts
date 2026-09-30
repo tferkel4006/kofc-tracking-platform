@@ -21,8 +21,9 @@ function createDataService(): DataService {
   const driver = DATA_DRIVER;
   switch (driver) {
     case 'memory':
-      // Supreme reports go through the server route, which holds the Alchemer credentials.
-      return new MemoryDataService({ postAlchemer: postAlchemerViaServer });
+      // Supreme reports go through the server route, which holds the Alchemer credentials. The demo council is loaded
+      // with Seed.sql's presentation data (Sprint 5Z-1) so no screen or chart starts blank.
+      return new MemoryDataService({ postAlchemer: postAlchemerViaServer, presentationData: true });
     case 'remote':
       return createRemoteDataService();
     default:

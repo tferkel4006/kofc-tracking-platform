@@ -179,6 +179,11 @@ export function createRemoteDataService(): DataService {
       listCouncilProposals: notImplemented('charities.listCouncilProposals'),
       listCouncilLedger: notImplemented('charities.listCouncilLedger'),
       rejectProposal: notImplemented('charities.rejectProposal'),
+      listCouncilRelationshipTypes: notImplemented('charities.listCouncilRelationshipTypes'),
+      listCouncilMissionAreas: notImplemented('charities.listCouncilMissionAreas'),
+      listCharitableRequestsQueue: notImplemented('charities.listCharitableRequestsQueue'),
+      submitCharitableRequest: notImplemented('charities.submitCharitableRequest'),
+      triageRequestStatus: notImplemented('charities.triageRequestStatus'),
     },
     budget: {
       listAnnualForecast: notImplemented('budget.listAnnualForecast'),

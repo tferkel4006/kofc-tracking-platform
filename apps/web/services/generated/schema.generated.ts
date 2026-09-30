@@ -611,6 +611,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "MissionAreaID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -632,6 +639,11 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "MeetingTypeID",
         "refTable": "CouncilMeetingType",
+        "refColumn": "id"
+      },
+      {
+        "column": "MissionAreaID",
+        "refTable": "CouncilMissionArea",
         "refColumn": "id"
       }
     ],
@@ -1072,6 +1084,13 @@ export const TABLES: Record<string, TableMeta> = {
           "kind": "literal",
           "value": 0
         }
+      },
+      {
+        "name": "MissionAreaID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -1083,6 +1102,11 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "OwnerID",
         "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "MissionAreaID",
+        "refTable": "CouncilMissionArea",
         "refColumn": "id"
       }
     ],
@@ -3480,6 +3504,366 @@ export const TABLES: Record<string, TableMeta> = {
         "MeetingTypeID"
       ]
     ]
+  },
+  "CouncilRelationshipType": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "RelationshipName",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "CouncilID",
+        "RelationshipName"
+      ]
+    ]
+  },
+  "CouncilMissionArea": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "MissionAreaName",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "CouncilID",
+        "MissionAreaName"
+      ]
+    ]
+  },
+  "CharitableRequest": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "OrganizationName",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ContactName",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ContactPhone",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ContactEmail",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "AmountRequested",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "RequestStatus",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": "Submitted"
+        }
+      },
+      {
+        "name": "SubmittedAt",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      },
+      {
+        "name": "ShepherdMemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "MailingAddress",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "RelationshipTypeID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "Is501c3",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "EIN",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "Website",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "OrgMission",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "IsRecurring",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "FundsNeededBy",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "SpecificUse",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "TargetBeneficiary",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "AccountabilityPlan",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "RequestTier",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 1
+        }
+      },
+      {
+        "name": "VetterMemberID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "VettingNotes",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "VettedDate",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "MoverMemberID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "SeconderMemberID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "VoteStatus",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": "Pending"
+        }
+      },
+      {
+        "name": "AmountApproved",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "PaymentOrderId",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "ShepherdMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "RelationshipTypeID",
+        "refTable": "CouncilRelationshipType",
+        "refColumn": "id"
+      },
+      {
+        "column": "VetterMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "MoverMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "SeconderMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "PaymentOrderId",
+        "refTable": "CharitableDisbursementLedger",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": []
   }
 };
 
@@ -4001,7 +4385,1028 @@ export const SEED_DATA: readonly SeedTable[] = [
       },
       {
         "CouncilID": 1,
-        "TypeName": "Community"
+        "TypeName": "Committee"
+      }
+    ]
+  },
+  {
+    "table": "CouncilRelationshipType",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "RelationshipName": "Parish Ministry"
+      },
+      {
+        "CouncilID": 1,
+        "RelationshipName": "Catholic School"
+      },
+      {
+        "CouncilID": 1,
+        "RelationshipName": "Local Nonprofit"
+      },
+      {
+        "CouncilID": 1,
+        "RelationshipName": "Member or Family in Need"
+      },
+      {
+        "CouncilID": 1,
+        "RelationshipName": "Community Partner"
+      },
+      {
+        "CouncilID": 1,
+        "RelationshipName": "State or Supreme Program"
+      }
+    ]
+  },
+  {
+    "table": "CouncilMissionArea",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "MissionAreaName": "Faith"
+      },
+      {
+        "CouncilID": 1,
+        "MissionAreaName": "Family"
+      },
+      {
+        "CouncilID": 1,
+        "MissionAreaName": "Community"
+      },
+      {
+        "CouncilID": 1,
+        "MissionAreaName": "Life"
+      }
+    ]
+  }
+];
+
+/** Presentation rows from below Seed.sql's @presentation-data marker, loaded right after SEED_DATA when requested. */
+export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
+  {
+    "table": "Credentials",
+    "rows": [
+      {
+        "Username": "michael.oconnor@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "james.delgado@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "patrick.nguyen@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "thomas.kowalski@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "robert.fitzgerald@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "anthony.russo@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "daniel.mbeki@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "joseph.hernandez@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "francis.byrne@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "william.schmidt@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "george.alvarez@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "peter.lindqvist@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "matthew.okafor@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "stephen.tran@kofc15295.org",
+        "Password": "koc15295"
+      },
+      {
+        "Username": "christopher.walsh@kofc15295.org",
+        "Password": "koc15295"
+      }
+    ]
+  },
+  {
+    "table": "Member",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "MemberNumber": 4817263,
+        "MemberFirstName": "Michael",
+        "MemberLastName": "O'Connor",
+        "Phone": "503-555-0142",
+        "StreetAddress1": "2215 NE Klickitat St",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97212",
+        "Email": "michael.oconnor@kofc15295.org",
+        "DateOfBirth": "1968-03-14",
+        "StatusID": 1,
+        "DegreeID": 4,
+        "MemberTypeID": 3,
+        "CredentialID": 4
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 5120938,
+        "MemberFirstName": "James",
+        "MemberLastName": "Delgado",
+        "Phone": "503-555-0187",
+        "StreetAddress1": "4410 SE Woodstock Blvd",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97206",
+        "Email": "james.delgado@kofc15295.org",
+        "DateOfBirth": "1975-07-22",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 5
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 5388201,
+        "MemberFirstName": "Patrick",
+        "MemberLastName": "Nguyen",
+        "Phone": "503-555-0123",
+        "StreetAddress1": "918 SW Vista Ave",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97205",
+        "Email": "patrick.nguyen@kofc15295.org",
+        "DateOfBirth": "1982-11-02",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 6
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 4290115,
+        "MemberFirstName": "Thomas",
+        "MemberLastName": "Kowalski",
+        "Phone": "503-555-0164",
+        "StreetAddress1": "7336 N Lombard St",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97203",
+        "Email": "thomas.kowalski@kofc15295.org",
+        "DateOfBirth": "1961-05-09",
+        "StatusID": 1,
+        "DegreeID": 4,
+        "MemberTypeID": 3,
+        "CredentialID": 7
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 5602774,
+        "MemberFirstName": "Robert",
+        "MemberLastName": "Fitzgerald",
+        "Phone": "503-555-0118",
+        "StreetAddress1": "1507 NE Tillamook St",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97212",
+        "Email": "robert.fitzgerald@kofc15295.org",
+        "DateOfBirth": "1979-01-27",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 8
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 5741390,
+        "MemberFirstName": "Anthony",
+        "MemberLastName": "Russo",
+        "Phone": "503-555-0171",
+        "StreetAddress1": "3620 SE Belmont St",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97214",
+        "Email": "anthony.russo@kofc15295.org",
+        "DateOfBirth": "1987-09-18",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 9
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 6013456,
+        "MemberFirstName": "Daniel",
+        "MemberLastName": "Mbeki",
+        "Phone": "503-555-0139",
+        "StreetAddress1": "5104 NE Sandy Blvd",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97213",
+        "Email": "daniel.mbeki@kofc15295.org",
+        "DateOfBirth": "1991-04-05",
+        "StatusID": 1,
+        "DegreeID": 2,
+        "MemberTypeID": 3,
+        "CredentialID": 10
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 6128873,
+        "MemberFirstName": "Joseph",
+        "MemberLastName": "Hernandez",
+        "Phone": "503-555-0156",
+        "StreetAddress1": "8825 SE Powell Blvd",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97266",
+        "Email": "joseph.hernandez@kofc15295.org",
+        "DateOfBirth": "1994-12-11",
+        "StatusID": 1,
+        "DegreeID": 1,
+        "MemberTypeID": 3,
+        "CredentialID": 11
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 3987412,
+        "MemberFirstName": "Francis",
+        "MemberLastName": "Byrne",
+        "Phone": "503-555-0102",
+        "StreetAddress1": "2830 SW Patton Rd",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97201",
+        "Email": "francis.byrne@kofc15295.org",
+        "DateOfBirth": "1955-08-30",
+        "StatusID": 1,
+        "DegreeID": 4,
+        "MemberTypeID": 3,
+        "CredentialID": 12
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 4105629,
+        "MemberFirstName": "William",
+        "MemberLastName": "Schmidt",
+        "Phone": "503-555-0195",
+        "StreetAddress1": "6419 SW Capitol Hwy",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97239",
+        "Email": "william.schmidt@kofc15295.org",
+        "DateOfBirth": "1958-02-16",
+        "StatusID": 1,
+        "DegreeID": 4,
+        "MemberTypeID": 3,
+        "CredentialID": 13
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 4632087,
+        "MemberFirstName": "George",
+        "MemberLastName": "Alvarez",
+        "Phone": "503-555-0148",
+        "StreetAddress1": "1122 NE 64th Ave",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97213",
+        "Email": "george.alvarez@kofc15295.org",
+        "DateOfBirth": "1964-10-04",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 14
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 5519024,
+        "MemberFirstName": "Peter",
+        "MemberLastName": "Lindqvist",
+        "Phone": "503-555-0177",
+        "StreetAddress1": "4027 N Williams Ave",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97227",
+        "Email": "peter.lindqvist@kofc15295.org",
+        "DateOfBirth": "1983-06-21",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 15
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 5876310,
+        "MemberFirstName": "Matthew",
+        "MemberLastName": "Okafor",
+        "Phone": "503-555-0131",
+        "StreetAddress1": "2718 SE Division St",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97202",
+        "Email": "matthew.okafor@kofc15295.org",
+        "DateOfBirth": "1989-03-08",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 16
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 5933847,
+        "MemberFirstName": "Stephen",
+        "MemberLastName": "Tran",
+        "Phone": "503-555-0184",
+        "StreetAddress1": "9310 SW Barbur Blvd",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97219",
+        "Email": "stephen.tran@kofc15295.org",
+        "DateOfBirth": "1986-12-29",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 17
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 6245501,
+        "MemberFirstName": "Christopher",
+        "MemberLastName": "Walsh",
+        "Phone": "503-555-0169",
+        "StreetAddress1": "1645 NW Kearney St",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97209",
+        "Email": "christopher.walsh@kofc15295.org",
+        "DateOfBirth": "1998-07-15",
+        "StatusID": 1,
+        "DegreeID": 2,
+        "MemberTypeID": 3,
+        "CredentialID": 18
+      }
+    ]
+  },
+  {
+    "table": "MemberRoles",
+    "rows": [
+      {
+        "RoleID": 2,
+        "MemberID": 4
+      },
+      {
+        "RoleID": 3,
+        "MemberID": 5
+      },
+      {
+        "RoleID": 4,
+        "MemberID": 6
+      },
+      {
+        "RoleID": 6,
+        "MemberID": 7
+      },
+      {
+        "RoleID": 7,
+        "MemberID": 8
+      },
+      {
+        "RoleID": 8,
+        "MemberID": 9
+      },
+      {
+        "RoleID": 9,
+        "MemberID": 10
+      },
+      {
+        "RoleID": 10,
+        "MemberID": 11
+      },
+      {
+        "RoleID": 12,
+        "MemberID": 12
+      },
+      {
+        "RoleID": 13,
+        "MemberID": 13
+      },
+      {
+        "RoleID": 14,
+        "MemberID": 14
+      },
+      {
+        "RoleID": 17,
+        "MemberID": 15
+      },
+      {
+        "RoleID": 18,
+        "MemberID": 16
+      },
+      {
+        "RoleID": 15,
+        "MemberID": 17
+      },
+      {
+        "RoleID": 16,
+        "MemberID": 18
+      }
+    ]
+  },
+  {
+    "table": "ExpenseDisbursement",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "CheckNumber": "1101",
+        "PayoutDate": "2025-10-08",
+        "TotalAmount": 186.42,
+        "Notes": "Columbus Day pancake breakfast supplies"
+      },
+      {
+        "CouncilID": 1,
+        "CheckNumber": "1102",
+        "PayoutDate": "2025-11-12",
+        "TotalAmount": 312.75,
+        "Notes": "Coats for Kids distribution"
+      },
+      {
+        "CouncilID": 1,
+        "CheckNumber": "1103",
+        "PayoutDate": "2025-12-10",
+        "TotalAmount": 245.18,
+        "Notes": "Advent family night"
+      },
+      {
+        "CouncilID": 1,
+        "CheckNumber": "1104",
+        "PayoutDate": "2026-01-14",
+        "TotalAmount": 94.6,
+        "Notes": "Officer installation printing"
+      },
+      {
+        "CouncilID": 1,
+        "CheckNumber": "1105",
+        "PayoutDate": "2026-02-11",
+        "TotalAmount": 428.33,
+        "Notes": "Lenten fish fry supplies"
+      },
+      {
+        "CouncilID": 1,
+        "CheckNumber": "1106",
+        "PayoutDate": "2026-03-11",
+        "TotalAmount": 157.9,
+        "Notes": "Free Throw Championship awards"
+      },
+      {
+        "CouncilID": 1,
+        "CheckNumber": "1107",
+        "PayoutDate": "2026-04-08",
+        "TotalAmount": 212.46,
+        "Notes": "Easter egg hunt"
+      },
+      {
+        "CouncilID": 1,
+        "CheckNumber": "1108",
+        "PayoutDate": "2026-05-13",
+        "TotalAmount": 138.25,
+        "Notes": "Rosary rally sound rental"
+      },
+      {
+        "CouncilID": 1,
+        "CheckNumber": "1109",
+        "PayoutDate": "2026-07-08",
+        "TotalAmount": 364.8,
+        "Notes": "Parish picnic grill supplies"
+      },
+      {
+        "CouncilID": 1,
+        "CheckNumber": "1110",
+        "PayoutDate": "2026-08-12",
+        "TotalAmount": 119.99,
+        "Notes": "Back-to-school backpack drive"
+      }
+    ]
+  },
+  {
+    "table": "ExpenseReport",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 4,
+        "Status": "Reimbursed",
+        "DisbursementID": 1
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 15,
+        "Status": "Reimbursed",
+        "DisbursementID": 2
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 16,
+        "Status": "Reimbursed",
+        "DisbursementID": 3
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 6,
+        "Status": "Reimbursed",
+        "DisbursementID": 4
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 15,
+        "Status": "Reimbursed",
+        "DisbursementID": 5
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 17,
+        "Status": "Reimbursed",
+        "DisbursementID": 6
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 16,
+        "Status": "Reimbursed",
+        "DisbursementID": 7
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 5,
+        "Status": "Reimbursed",
+        "DisbursementID": 8
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 18,
+        "Status": "Reimbursed",
+        "DisbursementID": 9
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 16,
+        "Status": "Reimbursed",
+        "DisbursementID": 10
+      }
+    ]
+  },
+  {
+    "table": "ExpenseLineItem",
+    "rows": [
+      {
+        "ExpenseReportID": 1,
+        "DateOfExpense": "2025-10-04",
+        "Amount": 142.17,
+        "VendorName": "Cash & Carry",
+        "ExpenseDescription": "Pancake mix, syrup, sausage and coffee"
+      },
+      {
+        "ExpenseReportID": 1,
+        "DateOfExpense": "2025-10-04",
+        "Amount": 44.25,
+        "VendorName": "Safeway",
+        "ExpenseDescription": "Orange juice and paper plates"
+      },
+      {
+        "ExpenseReportID": 2,
+        "DateOfExpense": "2025-11-08",
+        "Amount": 312.75,
+        "VendorName": "Fred Meyer",
+        "ExpenseDescription": "Forty children's winter coats (council match)"
+      },
+      {
+        "ExpenseReportID": 3,
+        "DateOfExpense": "2025-12-06",
+        "Amount": 198.43,
+        "VendorName": "WinCo Foods",
+        "ExpenseDescription": "Soup supper ingredients"
+      },
+      {
+        "ExpenseReportID": 3,
+        "DateOfExpense": "2025-12-06",
+        "Amount": 46.75,
+        "VendorName": "Michaels",
+        "ExpenseDescription": "Advent wreath craft kits"
+      },
+      {
+        "ExpenseReportID": 4,
+        "DateOfExpense": "2026-01-09",
+        "Amount": 94.6,
+        "VendorName": "Staples Print Center",
+        "ExpenseDescription": "Installation programs and certificates"
+      },
+      {
+        "ExpenseReportID": 5,
+        "DateOfExpense": "2026-02-06",
+        "Amount": 356.08,
+        "VendorName": "Pacific Seafood",
+        "ExpenseDescription": "Cod fillets for the fish fry"
+      },
+      {
+        "ExpenseReportID": 5,
+        "DateOfExpense": "2026-02-06",
+        "Amount": 72.25,
+        "VendorName": "Restaurant Depot",
+        "ExpenseDescription": "Fryer oil and to-go boxes"
+      },
+      {
+        "ExpenseReportID": 6,
+        "DateOfExpense": "2026-03-07",
+        "Amount": 157.9,
+        "VendorName": "Crown Trophy",
+        "ExpenseDescription": "Free Throw Championship trophies and ribbons"
+      },
+      {
+        "ExpenseReportID": 7,
+        "DateOfExpense": "2026-04-02",
+        "Amount": 168.21,
+        "VendorName": "Costco",
+        "ExpenseDescription": "Candy and plastic eggs"
+      },
+      {
+        "ExpenseReportID": 7,
+        "DateOfExpense": "2026-04-02",
+        "Amount": 44.25,
+        "VendorName": "Party City",
+        "ExpenseDescription": "Prize baskets"
+      },
+      {
+        "ExpenseReportID": 8,
+        "DateOfExpense": "2026-05-09",
+        "Amount": 138.25,
+        "VendorName": "Portland Sound Rentals",
+        "ExpenseDescription": "PA system rental for the rosary rally"
+      },
+      {
+        "ExpenseReportID": 9,
+        "DateOfExpense": "2026-07-02",
+        "Amount": 289.55,
+        "VendorName": "Costco",
+        "ExpenseDescription": "Burgers, hot dogs and buns"
+      },
+      {
+        "ExpenseReportID": 9,
+        "DateOfExpense": "2026-07-02",
+        "Amount": 75.25,
+        "VendorName": "Home Depot",
+        "ExpenseDescription": "Propane refills"
+      },
+      {
+        "ExpenseReportID": 10,
+        "DateOfExpense": "2026-08-07",
+        "Amount": 119.99,
+        "VendorName": "Target",
+        "ExpenseDescription": "Backpacks and school supplies"
+      }
+    ]
+  },
+  {
+    "table": "GlobalCharityRegistry",
+    "rows": [
+      {
+        "Name": "St. Jude Parish Food Pantry",
+        "Description": "Weekly groceries for families in the parish boundaries",
+        "EIN": null,
+        "State": "OR",
+        "Phone": "503-555-0210",
+        "ContactName": "Maria Santos",
+        "ContactEmail": "pantry@stjudeparish.org",
+        "Address": "5200 NE Alameda St, Portland",
+        "ZipCode": "97213",
+        "IsCatholic": 1,
+        "CharityType": "Food Security",
+        "IsAnnual": 1
+      },
+      {
+        "Name": "Holy Family Pregnancy Resource Center",
+        "Description": "Free ultrasounds, diapers and parenting classes for expectant mothers",
+        "EIN": null,
+        "State": "OR",
+        "Phone": "503-555-0233",
+        "ContactName": "Ann Kelly",
+        "ContactEmail": "director@holyfamilyprc.org",
+        "Address": "1820 SE 39th Ave, Portland",
+        "ZipCode": "97214",
+        "IsCatholic": 1,
+        "CharityType": "Protecting Life",
+        "IsAnnual": 1
+      },
+      {
+        "Name": "Rose City Warming Shelter",
+        "Description": "Overnight winter shelter and hot meals",
+        "EIN": null,
+        "State": "OR",
+        "Phone": "503-555-0247",
+        "ContactName": "David Lee",
+        "ContactEmail": "info@rosecitywarming.org",
+        "Address": "640 NW Glisan St, Portland",
+        "ZipCode": "97209",
+        "IsCatholic": 0,
+        "CharityType": "Homelessness",
+        "IsAnnual": 0
+      },
+      {
+        "Name": "Cathedral School Tuition Assistance Fund",
+        "Description": "Need-based tuition aid for Catholic school families",
+        "EIN": null,
+        "State": "OR",
+        "Phone": "503-555-0259",
+        "ContactName": "Sr. Theresa Nolan",
+        "ContactEmail": "aid@cathedralschoolpdx.org",
+        "Address": "110 NW 17th Ave, Portland",
+        "ZipCode": "97209",
+        "IsCatholic": 1,
+        "CharityType": "Faith",
+        "IsAnnual": 1
+      },
+      {
+        "Name": "Mothers of Hope Transitional Housing",
+        "Description": "Transitional housing for single mothers and their children",
+        "EIN": null,
+        "State": "OR",
+        "Phone": "503-555-0266",
+        "ContactName": "Linda Park",
+        "ContactEmail": "office@mothersofhope.org",
+        "Address": "3345 N Vancouver Ave, Portland",
+        "ZipCode": "97227",
+        "IsCatholic": 0,
+        "CharityType": "Women and Children",
+        "IsAnnual": 0
+      }
+    ]
+  },
+  {
+    "table": "CouncilCharityLink",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "CharityID": 1,
+        "ConnectedAt": "2025-09-15 18:00:00"
+      },
+      {
+        "CouncilID": 1,
+        "CharityID": 2,
+        "ConnectedAt": "2025-09-15 18:00:00"
+      },
+      {
+        "CouncilID": 1,
+        "CharityID": 3,
+        "ConnectedAt": "2025-11-03 18:30:00"
+      },
+      {
+        "CouncilID": 1,
+        "CharityID": 4,
+        "ConnectedAt": "2026-01-12 19:00:00"
+      },
+      {
+        "CouncilID": 1,
+        "CharityID": 5,
+        "ConnectedAt": "2026-03-09 19:00:00"
+      }
+    ]
+  },
+  {
+    "table": "CharitableDisbursementLedger",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "CharityID": 1,
+        "Amount": 500,
+        "CheckNumber": "1111",
+        "DisbursedByID": 2,
+        "PayoutDate": "2025-10-20",
+        "Notes": "Fall food drive match"
+      },
+      {
+        "CouncilID": 1,
+        "CharityID": 2,
+        "Amount": 750,
+        "CheckNumber": "1112",
+        "DisbursedByID": 2,
+        "PayoutDate": "2025-11-17",
+        "Notes": "Ultrasound machine fund"
+      },
+      {
+        "CouncilID": 1,
+        "CharityID": 3,
+        "Amount": 400,
+        "CheckNumber": "1113",
+        "DisbursedByID": 7,
+        "PayoutDate": "2025-12-15",
+        "Notes": "Winter blankets"
+      },
+      {
+        "CouncilID": 1,
+        "CharityID": 1,
+        "Amount": 500,
+        "CheckNumber": "1114",
+        "DisbursedByID": 2,
+        "PayoutDate": "2026-01-19",
+        "Notes": "Winter pantry restock"
+      },
+      {
+        "CouncilID": 1,
+        "CharityID": 4,
+        "Amount": 1000,
+        "CheckNumber": "1115",
+        "DisbursedByID": 7,
+        "PayoutDate": "2026-02-16",
+        "Notes": "Spring tuition assistance"
+      },
+      {
+        "CouncilID": 1,
+        "CharityID": 2,
+        "Amount": 600,
+        "CheckNumber": "1116",
+        "DisbursedByID": 2,
+        "PayoutDate": "2026-03-23",
+        "Notes": "Baby bottle campaign proceeds"
+      },
+      {
+        "CouncilID": 1,
+        "CharityID": 5,
+        "Amount": 350,
+        "CheckNumber": "1117",
+        "DisbursedByID": 7,
+        "PayoutDate": "2026-05-18",
+        "Notes": "Mother's Day gift cards"
+      },
+      {
+        "CouncilID": 1,
+        "CharityID": 1,
+        "Amount": 450,
+        "CheckNumber": "1118",
+        "DisbursedByID": 2,
+        "PayoutDate": "2026-08-17",
+        "Notes": "Back-to-school lunch program"
+      }
+    ]
+  },
+  {
+    "table": "CharitableRequest",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "OrganizationName": "St. Jude Youth Ministry",
+        "ContactName": "Kevin Brandt",
+        "ContactPhone": "503-555-0301",
+        "ContactEmail": "youth@stjudeparish.org",
+        "AmountRequested": 800,
+        "RequestStatus": "Submitted",
+        "SubmittedAt": "2026-09-14 19:22:00",
+        "ShepherdMemberID": 15,
+        "MailingAddress": "5200 NE Alameda St, Portland, OR 97213",
+        "RelationshipTypeID": 1,
+        "Is501c3": 0,
+        "EIN": null,
+        "Website": "https://stjudeparish.org/youth",
+        "OrgMission": "Forming high-school students in faith and service",
+        "IsRecurring": 0,
+        "FundsNeededBy": "2026-10-31 00:00:00",
+        "SpecificUse": "Bus rental and registration for the diocesan youth rally",
+        "TargetBeneficiary": "Thirty parish teens",
+        "AccountabilityPlan": "Receipts and a photo report to the council",
+        "RequestTier": 1,
+        "VetterMemberID": null,
+        "VettingNotes": null,
+        "VettedDate": null,
+        "VoteStatus": "Pending",
+        "AmountApproved": 0
+      },
+      {
+        "CouncilID": 1,
+        "OrganizationName": "Portland Refugee Welcome Network",
+        "ContactName": "Amina Yusuf",
+        "ContactPhone": "503-555-0318",
+        "ContactEmail": "amina@prwn.org",
+        "AmountRequested": 1500,
+        "RequestStatus": "Submitted",
+        "SubmittedAt": "2026-09-21 20:05:00",
+        "ShepherdMemberID": 18,
+        "MailingAddress": "2250 SE 82nd Ave, Portland, OR 97216",
+        "RelationshipTypeID": 5,
+        "Is501c3": 1,
+        "EIN": null,
+        "Website": "https://prwn.org",
+        "OrgMission": "Resettling refugee families arriving in Portland",
+        "IsRecurring": 0,
+        "FundsNeededBy": "2026-11-15 00:00:00",
+        "SpecificUse": "Starter kitchen kits for five newly arrived families",
+        "TargetBeneficiary": "Five refugee families",
+        "AccountabilityPlan": "Itemized purchase list and thank-you letters",
+        "RequestTier": 2,
+        "VetterMemberID": null,
+        "VettingNotes": null,
+        "VettedDate": null,
+        "VoteStatus": "Pending",
+        "AmountApproved": 0
+      },
+      {
+        "CouncilID": 1,
+        "OrganizationName": "Cathedral School Robotics Club",
+        "ContactName": "Joan Pratt",
+        "ContactPhone": "503-555-0325",
+        "ContactEmail": "robotics@cathedralschoolpdx.org",
+        "AmountRequested": 650,
+        "RequestStatus": "Claimed by Trustee",
+        "SubmittedAt": "2026-08-26 18:40:00",
+        "ShepherdMemberID": 17,
+        "MailingAddress": "110 NW 17th Ave, Portland, OR 97209",
+        "RelationshipTypeID": 2,
+        "Is501c3": 0,
+        "EIN": null,
+        "Website": "https://cathedralschoolpdx.org",
+        "OrgMission": "STEM enrichment for Catholic middle-schoolers",
+        "IsRecurring": 1,
+        "FundsNeededBy": "2026-10-10 00:00:00",
+        "SpecificUse": "Competition registration and replacement parts",
+        "TargetBeneficiary": "Twelve seventh and eighth graders",
+        "AccountabilityPlan": "Club treasurer reports spending at the November meeting",
+        "RequestTier": 1,
+        "VetterMemberID": 12,
+        "VettingNotes": "Called the principal; the club is school-sponsored. Asked for last year's budget.",
+        "VettedDate": null,
+        "VoteStatus": "Pending",
+        "AmountApproved": 0
+      },
+      {
+        "CouncilID": 1,
+        "OrganizationName": "Gabriel House Maternity Home",
+        "ContactName": "Rebecca Moore",
+        "ContactPhone": "503-555-0337",
+        "ContactEmail": "rmoore@gabrielhouse.org",
+        "AmountRequested": 2500,
+        "RequestStatus": "Claimed by Trustee",
+        "SubmittedAt": "2026-08-18 21:15:00",
+        "ShepherdMemberID": 4,
+        "MailingAddress": "4730 SE Hawthorne Blvd, Portland, OR 97215",
+        "RelationshipTypeID": 3,
+        "Is501c3": 1,
+        "EIN": null,
+        "Website": "https://gabrielhouse.org",
+        "OrgMission": "A home for pregnant women facing homelessness",
+        "IsRecurring": 1,
+        "FundsNeededBy": "2026-12-01 00:00:00",
+        "SpecificUse": "Crib and car-seat replacements for the nursery",
+        "TargetBeneficiary": "Eight mothers and their newborns",
+        "AccountabilityPlan": "Invoices plus a site visit by the vetter",
+        "RequestTier": 2,
+        "VetterMemberID": 13,
+        "VettingNotes": "Confirmed 501(c)(3) status. Site visit booked for October 3.",
+        "VettedDate": null,
+        "VoteStatus": "Pending",
+        "AmountApproved": 0
+      },
+      {
+        "CouncilID": 1,
+        "OrganizationName": "Portland Metro Special Olympics Teams",
+        "ContactName": "Chris Dunn",
+        "ContactPhone": "503-555-0349",
+        "ContactEmail": "coach@pdxmetroathletes.org",
+        "AmountRequested": 1000,
+        "RequestStatus": "Advanced",
+        "SubmittedAt": "2026-07-29 17:55:00",
+        "ShepherdMemberID": 16,
+        "MailingAddress": "6400 SE Lake Rd, Milwaukie, OR 97222",
+        "RelationshipTypeID": 6,
+        "Is501c3": 1,
+        "EIN": null,
+        "Website": "https://pdxmetroathletes.org",
+        "OrgMission": "Year-round sports training for athletes with intellectual disabilities",
+        "IsRecurring": 1,
+        "FundsNeededBy": "2026-10-20 00:00:00",
+        "SpecificUse": "Uniforms for the fall bocce and basketball teams",
+        "TargetBeneficiary": "Forty metro-area athletes",
+        "AccountabilityPlan": "Team photo and roster sent to the council",
+        "RequestTier": 2,
+        "VetterMemberID": 14,
+        "VettingNotes": "Long-standing Knights partner program; financials reviewed. Recommend the full amount.",
+        "VettedDate": "2026-09-02 20:30:00",
+        "VoteStatus": "Pending",
+        "AmountApproved": 0
       }
     ]
   }

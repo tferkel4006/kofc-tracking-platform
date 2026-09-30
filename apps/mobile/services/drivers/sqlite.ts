@@ -173,6 +173,16 @@ import {
   type SeatTransition,
   assertMayAddGlobalCharity,
   assertMayReviewCharityProposals,
+  assertMayVetCharitableRequests,
+  hasAdminRights,
+  assertIndependentVetter,
+  assertCouncilRelationshipType,
+  buildCharitableRequestDetails,
+  CHARITABLE_REQUEST_FORM_COLUMNS,
+  CHARITABLE_TRIAGE_COLUMNS,
+  charitableRequestNotFound,
+  cleanCharitableRequest,
+  planCharitableTriage,
   assertOneCharitySource,
   buildCharityProposalDetails,
   buildCouncilCharityLedger,
@@ -294,6 +304,10 @@ import type {
   MeetingInvites,
   MeetingResponseStatus,
   CouncilMeetingType,
+  CharitableRequest,
+  CharitableRequestDetail,
+  CouncilMissionArea,
+  CouncilRelationshipType,
   CouncilAgendaTemplate,
   MeetingInviteMode,
   Member,
@@ -325,7 +339,7 @@ import type {
   ShiftChanges,
   ShiftFeedItem,
 } from '@kofc/shared';
-import { SCHEMA_STATEMENTS, SEED_STATEMENTS } from '../generated/schema.sqlite';
+import { PRESENTATION_SEED_STATEMENTS, SCHEMA_STATEMENTS, SEED_STATEMENTS } from '../generated/schema.sqlite';
 import { sha256Hex } from '../password';
 import {
   buildDevEvents,
@@ -365,8 +379,10 @@ const DB_NAME = 'kofc.db';
  * 18: CouncilMeetingType, CouncilAgendaTemplate, MeetingInvites.ResponseStatus, Meeting.IsMultiDay and MeetingTypeID,
  *     and Event.IsMultiDay (Sprint 5Y-5).
  * 19: Meeting.EndDate (Sprint 5Y-6).
+ * 21: CouncilRelationshipType, CouncilMissionArea, CharitableRequest, and Event.MissionAreaID and Meeting.MissionAreaID
+ *     (Sprint 5Z-1; the numbering skips 20).
  */
-const SCHEMA_VERSION = 19;
+const SCHEMA_VERSION = 21;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -438,6 +454,12 @@ export interface SqliteDataServiceOptions {
   log?: (...args: unknown[]) => void;
   /** How supreme.syncAlchemerReport posts to Alchemer. Default: print the request with `log` (logAlchemerRequest). */
   postAlchemer?: (request: AlchemerRequest) => Promise<AlchemerResponse>;
+  /**
+   * Also load Seed.sql's presentation data (Sprint 5Z-1: officers, expense sheets, charity checks and intake requests)
+   * right after the baseline rows when the database is first created. The app turns it on; tests keep the minimal
+   * baseline. Default: false.
+   */
+  presentationData?: boolean;
 }
 
 export class SqliteDataService implements DataService {
@@ -445,8 +467,10 @@ export class SqliteDataService implements DataService {
   private readonly now: () => Date;
   private readonly log: (...args: unknown[]) => void;
   private readonly postAlchemer: (request: AlchemerRequest) => Promise<AlchemerResponse>;
+  private readonly presentationData: boolean;
 
   constructor(options: SqliteDataServiceOptions = {}) {
+    this.presentationData = options.presentationData ?? false;
     this.now = options.now ?? (() => new Date());
     this.log = options.log ?? console.log;
     this.postAlchemer = options.postAlchemer ?? logAlchemerRequest((...args) => this.log(...args));
@@ -496,6 +520,7 @@ export class SqliteDataService implements DataService {
     await db.withTransactionAsync(async () => {
       for (const statement of SCHEMA_STATEMENTS) await db.execAsync(statement);
       for (const statement of SEED_STATEMENTS) await db.execAsync(statement);
+      if (this.presentationData) for (const statement of PRESENTATION_SEED_STATEMENTS) await db.execAsync(statement);
       await this.hashSeededPasswords(db);
       await this.seedDevMemberAndActivity(db);
       await this.seedDevMeetings(db);
@@ -1373,8 +1398,8 @@ export class SqliteDataService implements DataService {
       [actorId],
     );
     if (!actor) throw new BusinessRuleError('MEMBER_NOT_FOUND', `No member with id ${actorId}.`, { memberId: actorId });
-    const roles = await db.getAllAsync<{ Role: string }>(
-      'SELECT r.[Role] FROM [MemberRoles] mr JOIN [Role] r ON r.[id] = mr.[RoleID] WHERE mr.[MemberID] = ? ORDER BY r.[id]',
+    const roles = await db.getAllAsync<{ Role: string; Officer: number }>(
+      'SELECT r.[Role], r.[Officer] FROM [MemberRoles] mr JOIN [Role] r ON r.[id] = mr.[RoleID] WHERE mr.[MemberID] = ? ORDER BY r.[id]',
       [actorId],
     );
     return {
@@ -1384,6 +1409,7 @@ export class SqliteDataService implements DataService {
       active: actor.active === 1,
       roles: roles.map((r) => r.Role),
       budgetDirector: actor.budgetDirector === 1,
+      officer: roles.some((r) => r.Officer === 1),
     };
   }
 
@@ -3638,6 +3664,70 @@ export class SqliteDataService implements DataService {
       });
       return (await this.charityProposalDetails(db, '[id] = ?', [proposalId], 'newest'))[0];
     },
+
+    listCouncilRelationshipTypes: async (councilId) => {
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      return this.relationshipTypes(db, councilId);
+    },
+
+    listCouncilMissionAreas: async (councilId) => {
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      return db.getAllAsync<CouncilMissionArea>('SELECT * FROM [CouncilMissionArea] WHERE [CouncilID] = ? ORDER BY [MissionAreaName], [id]', [councilId]);
+    },
+
+    listCharitableRequestsQueue: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayVetCharitableRequests(await this.memberWriteActor(db, actorId), councilId, `read the charitable request queue of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return this.charitableRequestDetails(db, '[CouncilID] = ?', [councilId]);
+    },
+
+    submitCharitableRequest: async (actorId, requestData) => {
+      const clean = cleanCharitableRequest(requestData);
+      const db = await this.ready();
+      let requestId = 0;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        assertMayProposeCharityGift(actor, actor.councilId, 'submit a charitable request');
+        assertCouncilRelationshipType(clean.RelationshipTypeID, await this.relationshipTypes(db, actor.councilId), actor.councilId);
+        const columns = [...CHARITABLE_REQUEST_FORM_COLUMNS, 'CouncilID', 'ShepherdMemberID', 'RequestStatus', 'SubmittedAt', 'VoteStatus', 'AmountApproved'];
+        const result = await db.runAsync(
+          `INSERT INTO [CharitableRequest] (${columns.map((c) => `[${c}]`).join(', ')}) VALUES (${marks(columns.length)})`,
+          [
+            ...CHARITABLE_REQUEST_FORM_COLUMNS.map((c) => (clean[c] ?? null) as Bind),
+            actor.councilId,
+            actorId,
+            'Submitted',
+            toTimestamp(this.now()),
+            'Pending',
+            0,
+          ],
+        );
+        requestId = result.lastInsertRowId;
+      });
+      return (await this.charitableRequestDetails(db, '[id] = ?', [requestId]))[0];
+    },
+
+    triageRequestStatus: async (actorId, requestId, vettingData) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const request = await db.getFirstAsync<CharitableRequest>('SELECT * FROM [CharitableRequest] WHERE [id] = ?', [requestId]);
+        if (!request) throw charitableRequestNotFound(requestId);
+        assertMayVetCharitableRequests(actor, request.CouncilID, `vet charitable request ${requestId}`);
+        assertIndependentVetter(actor, request);
+        const changes = planCharitableTriage(request, actorId, hasAdminRights(actor), vettingData, this.now());
+        const columns = CHARITABLE_TRIAGE_COLUMNS.filter((c) => c in changes);
+        if (columns.length === 0) return;
+        await db.runAsync(`UPDATE [CharitableRequest] SET ${columns.map((c) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [
+          ...columns.map((c) => (changes[c] ?? null) as Bind),
+          requestId,
+        ]);
+      });
+      return (await this.charitableRequestDetails(db, '[id] = ?', [requestId]))[0];
+    },
   };
 
   budget: DataService['budget'] = {
@@ -3908,6 +3998,24 @@ export class SqliteDataService implements DataService {
     const line = await db.getFirstAsync<CouncilBudgetForecast>('SELECT * FROM [CouncilBudgetForecast] WHERE [id] = ?', [budgetLineItemId]);
     if (!line) throw budgetLineNotFound(budgetLineItemId);
     return line;
+  }
+
+  private relationshipTypes(db: SQLite.SQLiteDatabase, councilId: number): Promise<CouncilRelationshipType[]> {
+    return db.getAllAsync<CouncilRelationshipType>('SELECT * FROM [CouncilRelationshipType] WHERE [CouncilID] = ? ORDER BY [RelationshipName], [id]', [
+      councilId,
+    ]);
+  }
+
+  private async charitableRequestDetails(db: SQLite.SQLiteDatabase, where: string, params: number[]): Promise<CharitableRequestDetail[]> {
+    const requests = await db.getAllAsync<CharitableRequest>(`SELECT * FROM [CharitableRequest] WHERE ${where}`, params);
+    if (requests.length === 0) return [];
+    const memberIds = [...new Set(requests.flatMap((r) => [r.ShepherdMemberID, r.VetterMemberID]).filter((id): id is number => id != null))];
+    const typeIds = [...new Set(requests.map((r) => r.RelationshipTypeID).filter((id): id is number => id != null))];
+    return buildCharitableRequestDetails(
+      requests,
+      await selectIn<Member>(db, (m) => `SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member] WHERE [id] IN (${m})`, memberIds),
+      typeIds.length ? await selectIn<CouncilRelationshipType>(db, (m) => `SELECT * FROM [CouncilRelationshipType] WHERE [id] IN (${m})`, typeIds) : [],
+    );
   }
 
   private async charityProposalDetails(

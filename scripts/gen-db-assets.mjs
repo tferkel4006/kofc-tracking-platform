@@ -5,6 +5,9 @@
 //   Schema.sql + Seed.sql  ->  apps/mobile/services/generated/schema.sqlite.ts
 //                              apps/web/services/generated/schema.generated.ts
 //
+// Seed.sql is split at its `-- @presentation-data` marker line: rows above it are the baseline every
+// database gets; rows below it are presentation data, emitted separately so drivers load them only on request.
+//
 // Usage:  node scripts/gen-db-assets.mjs           (write files)
 //         node scripts/gen-db-assets.mjs --check   (exit 1 if files are stale)
 //
@@ -149,6 +152,14 @@ function parseSchema(sql) {
     } else if ((m = stmt.match(/^ALTER TABLE \[([^\]]+)\]\s+ADD FOREIGN KEY\s*\(\[([^\]]+)\]\)\s+REFERENCES\s+\[?([^\s(\]]+)\]?\s*(?:\(\[?([^\])]+)\]?\))?(?:\s+ON\s+(?:UPDATE|DELETE)\s+NO\s+ACTION)*$/i))) {
       // ON UPDATE/DELETE NO ACTION is SQLite's default too, so the clauses need no translation.
       alters.push({ table: m[1], column: m[2], refTable: m[3], refColumn: m[4] ?? null, stmt });
+    } else if ((m = stmt.match(/^ALTER TABLE \[([^\]]+)\]\s+ADD\s+(\[[\s\S]+)$/i))) {
+      // A column added to an earlier CREATE TABLE is folded into that table, so both targets create it in place.
+      const [, name, item] = m;
+      const t = tables.get(name) ?? fail(`ALTER TABLE ADD on unknown table [${name}]`, stmt);
+      const column = parseColumn(item.trim(), name);
+      if (column.identity) fail(`ALTER TABLE ADD may not add an IDENTITY column to [${name}]`, stmt);
+      if (t.columns.some((c) => c.name === column.name)) fail(`Column [${name}].[${column.name}] already exists`, stmt);
+      t.columns.push(column);
     } else if ((m = stmt.match(/^CREATE (UNIQUE )?INDEX \[([^\]]+)\]\s+ON\s+\[([^\]]+)\]\s*\(([^)]*)\)(?:\s*INCLUDE\s*\([^)]*\))?(?:\s+WHERE\s+\[([^\]]+)\]\s+IS\s+NOT\s+NULL)?$/i))) {
       // A filtered index may only skip NULLs: SQLite's partial index keeps the same rule, and the web mock already
       // lets a unique key holding a NULL repeat (SQLite semantics), so the filter needs nothing more there.
@@ -252,6 +263,16 @@ function parseSeed(sql, tables) {
   return seed;
 }
 
+/** Seed.sql's baseline and presentation halves, split at the marker line (the presentation half may be empty). */
+function splitSeed(sql) {
+  const marker = /^--[ \t]*@presentation-data\b.*$/m;
+  const m = sql.match(marker);
+  if (!m) return { baseline: sql, presentation: '' };
+  const rest = sql.slice(m.index + m[0].length);
+  if (marker.test(rest)) throw new Error('Seed.sql has more than one @presentation-data marker');
+  return { baseline: sql.slice(0, m.index), presentation: rest };
+}
+
 const sqlLiteral = (v) => (v === null ? 'NULL' : typeof v === 'number' ? String(v) : `'${v.replace(/'/g, "''")}'`);
 
 function sqliteSeedStatements(seed) {
@@ -274,15 +295,16 @@ const HEADER = `// =============================================================
 const tsArray = (name, doc, items) =>
   `/** ${doc} */\nexport const ${name}: readonly string[] = ${JSON.stringify(items, null, 2)};\n`;
 
-function renderMobile(statements, seedStatements) {
+function renderMobile(statements, seedStatements, presentationStatements) {
   return (
     HEADER + '\n' +
     tsArray('SCHEMA_STATEMENTS', 'SQLite DDL (tables, indexes, views) in dependency-safe order. Foreign keys are inline.', statements) + '\n' +
-    tsArray('SEED_STATEMENTS', 'Lookup + baseline seed rows (Council 15295, credentials, members, roles). Run once on first launch.', seedStatements)
+    tsArray('SEED_STATEMENTS', 'Lookup + baseline seed rows (Council 15295, credentials, members, roles). Run once on first launch.', seedStatements) + '\n' +
+    tsArray('PRESENTATION_SEED_STATEMENTS', "Presentation rows from below Seed.sql's @presentation-data marker. Run right after SEED_STATEMENTS when requested.", presentationStatements)
   );
 }
 
-function renderWeb(tables, seed) {
+function renderWeb(tables, seed, presentation) {
   const meta = Object.fromEntries(
     [...tables].map(([name, t]) => [name, {
       primaryKey: t.pk,
@@ -331,6 +353,9 @@ export const TABLES: Record<string, TableMeta> = ${JSON.stringify(meta, null, 2)
 
 /** Seed rows from Seed.sql, in insertion order. */
 export const SEED_DATA: readonly SeedTable[] = ${JSON.stringify(seed.map(({ table, rows }) => ({ table, rows })), null, 2)};
+
+/** Presentation rows from below Seed.sql's @presentation-data marker, loaded right after SEED_DATA when requested. */
+export const PRESENTATION_SEED_DATA: readonly SeedTable[] = ${JSON.stringify(presentation.map(({ table, rows }) => ({ table, rows })), null, 2)};
 `
   );
 }
@@ -338,11 +363,13 @@ export const SEED_DATA: readonly SeedTable[] = ${JSON.stringify(seed.map(({ tabl
 // ----------------------------------------------------------------- main ----
 
 const schema = parseSchema(readFileSync(join(ROOT, 'Schema.sql'), 'utf8'));
-const seed = parseSeed(readFileSync(join(ROOT, 'Seed.sql'), 'utf8'), schema.tables);
+const seedHalves = splitSeed(readFileSync(join(ROOT, 'Seed.sql'), 'utf8'));
+const seed = parseSeed(seedHalves.baseline, schema.tables);
+const presentation = parseSeed(seedHalves.presentation, schema.tables);
 
 const outputs = [
-  [OUT_MOBILE, renderMobile(sqliteSchemaStatements(schema), sqliteSeedStatements(seed))],
-  [OUT_WEB, renderWeb(schema.tables, seed)],
+  [OUT_MOBILE, renderMobile(sqliteSchemaStatements(schema), sqliteSeedStatements(seed), sqliteSeedStatements(presentation))],
+  [OUT_WEB, renderWeb(schema.tables, seed, presentation)],
 ];
 
 let stale = false;
@@ -359,4 +386,4 @@ for (const [file, content] of outputs) {
   }
 }
 if (CHECK) process.exit(stale ? 1 : 0);
-console.log(`${schema.tables.size} tables, ${schema.indexes.length} indexes, ${schema.views.length} views, ${seed.reduce((n, s) => n + s.rows.length, 0)} seed rows`);
+console.log(`${schema.tables.size} tables, ${schema.indexes.length} indexes, ${schema.views.length} views, ${seed.reduce((n, s) => n + s.rows.length, 0)} seed rows, ${presentation.reduce((n, s) => n + s.rows.length, 0)} presentation rows`);

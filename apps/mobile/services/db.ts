@@ -14,7 +14,8 @@ function createDataService(): DataService {
   const driver = process.env.EXPO_PUBLIC_DATA_DRIVER ?? 'sqlite';
   switch (driver) {
     case 'sqlite':
-      return new SqliteDataService();
+      // A new database is loaded with Seed.sql's presentation data (Sprint 5Z-1) so no screen or chart starts blank.
+      return new SqliteDataService({ presentationData: true });
     case 'remote':
       return createRemoteDataService();
     default:

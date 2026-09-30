@@ -132,6 +132,7 @@ Scheduled fraternal gatherings managed by Council Officers or Administrators.
 •	IsMultiDay (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y-5: the meeting spans more than one day. Sprint 5Y-6: such a meeting (a Multi-Day Assembly) runs from Date through EndDate as whole days with no clock times; its Time Start and Time End are stored as 00:00:00, so it counts no meeting hours (cleanMeetingSpan).
 •	MeetingTypeID (INTEGER, NULL) — Sprint 5Y-5: Foreign Key references CouncilMeetingType(id). The council's own meeting type; NULL while the meeting is not filed under one. MeetingType above still points at the global MeetingType lookup; the schedule form files the meeting under the global type of the same name, or the first one. It must be one of the meeting's own council's types (INVALID_INPUT).
 •	EndDate (DATE, NULL) — Sprint 5Y-6: the last day of a multi-day meeting, after its Date; NULL for a one-day meeting, which may not carry one (INVALID_INPUT). The calendar spans a multi-day meeting across its days, all day, and lists it as upcoming until its EndDate has passed.
+•	MissionAreaID (INTEGER, NULL) — Sprint 5Z-1: Foreign Key references CouncilMissionArea(id). The council mission area (Faith, Family, Community, Life) the meeting is filed under; NULL while unfiled.
 [MeetingInvites]
 Tracks meeting rosters, invitations, and recorded user attendance.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -215,6 +216,7 @@ Multi-day calendar activities managed by councils.
 •	PhotoGalleryURL (VARCHAR(2000), NULL) — Comma-separated local photo reference paths, appended to (never overwritten) through events.uploadPhotos by the event's owner, an Admin, Financial Secretary or Treasurer of a linked council, or a Super Admin.
 •	IsAnnual (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y: the event recurs every fraternal year. budget.prePopulateNextYear gives each annual event of the council a budget line; a copied (twin) annual event stays annual.
 •	IsMultiDay (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y-5: the event spans more than one day. Sprint 5Y-6: set by the event form's Multi-Day Assembly / Extended Event box through events.create and events.update; unticked, the form ends the event the day it starts. A copied (twin) multi-day event stays multi-day.
+•	MissionAreaID (INTEGER, NULL) — Sprint 5Z-1: Foreign Key references CouncilMissionArea(id). The council mission area (Faith, Family, Community, Life) the event is filed under; NULL while unfiled.
 [EventCouncils]
 Bridge table mapping event participation and cross-visibility among affiliated councils.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -478,4 +480,50 @@ Sprint 5Y-3: one of a council's own budget categories (funds), under which the A
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). A council cannot be deleted while it has budget categories.
 •	CategoryName (VARCHAR(255), NOT NULL) — The category's name, e.g. Blessed Michael McGivney Fraternal Activities Fund. Unique per council (a unique index on CouncilID, CategoryName; the drivers also ignore case and spacing).
+________________________________________
+
+# 12. Normalized Charitable Intake and Mission Areas (Sprint 5Z-1)
+[CouncilRelationshipType]
+A council lookup table: how an organization asking the council for money is connected to it. Each council keeps its own; Seed.sql gives Council 15295 its six standard types (Parish Ministry, Catholic School, Local Nonprofit, Member or Family in Need, Community Partner, State or Supreme Program). Read with charities.listCouncilRelationshipTypes, by name. A council cannot be deleted while it has relationship types.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	RelationshipName (VARCHAR(100), NOT NULL) — The type's name. Unique per council (a unique index on CouncilID, RelationshipName).
+[CouncilMissionArea]
+A council lookup table of mission pillars under which events and meetings are filed (Event.MissionAreaID, Meeting.MissionAreaID). Seed.sql gives Council 15295 the four Faith in Action pillars: Faith, Family, Community and Life. Read with charities.listCouncilMissionAreas, by name. A council cannot be deleted while it has mission areas.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	MissionAreaName (VARCHAR(100), NOT NULL) — The pillar's name. Unique per council (a unique index on CouncilID, MissionAreaName).
+[CharitableRequest]
+A Knight Shepherd's intake form for an outside organization asking the council for money. Any Active member (the Shepherd) files it into their own council's shared vetting queue with charities.submitCharitableRequest. Anyone with vetting authority - the council's Active officers (any Role with Officer = 1, the three Trustees included) and Admins, or an Active Super Admin (assertMayVetCharitableRequests) - reads the queue (charities.listCharitableRequestsQueue) and triages requests with charities.triageRequestStatus: 'claim' a Submitted request, add 'note's to a claimed one, or 'advance' it to the council's vote. Vetting is independent: the Shepherd may never vet their own request (SELF_VETTING_BLOCKED), and only the claiming vetter, an Admin or a Super Admin may change a claimed request (REQUEST_STATUS_CONFLICT). The table is created with its core intake columns; the process-form columns from ShepherdMemberID on are appended by explicit ALTER TABLE ... ADD statements. A council cannot be deleted while it has requests.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). Always the Shepherd's own council.
+•	OrganizationName (VARCHAR(255), NOT NULL) — The organization asking for money.
+•	ContactName (VARCHAR(255), NULL) — The organization's contact person.
+•	ContactPhone (VARCHAR(50), NULL) — The contact's phone.
+•	ContactEmail (VARCHAR(255), NULL) — The contact's email address.
+•	AmountRequested (DECIMAL(18,2), NOT NULL) — The sum asked for, more than 0, to the cent.
+•	RequestStatus (VARCHAR(50), NOT NULL, DEFAULT 'Submitted') — Submitted, Claimed by Trustee or Advanced, in that order only. Enforced by the shared rules layer (no CHECK).
+•	SubmittedAt (DATETIME, NOT NULL, DEFAULT getdate()) — When the Shepherd filed the form (UTC). The queue lists requests by stage, then oldest first.
+•	ShepherdMemberID (INTEGER, NOT NULL, DEFAULT 0) — Foreign Key references Member(id). The Knight Shepherd who carries the request; always the member who submitted it.
+•	MailingAddress (TEXT, NULL) — Where a check would be mailed.
+•	RelationshipTypeID (INTEGER, NULL) — Foreign Key references CouncilRelationshipType(id). Must be one of the council's own types (INVALID_INPUT).
+•	Is501c3 (BIT, NOT NULL, DEFAULT 0) — The organization is a registered 501(c)(3) charity.
+•	EIN (VARCHAR(50), NULL) — The organization's IRS Employer Identification Number, stored as 'NN-NNNNNNN'.
+•	Website (VARCHAR(255), NULL) — The organization's website.
+•	OrgMission (TEXT, NULL) — The organization's mission, in the Shepherd's words; at most 2,000 characters.
+•	IsRecurring (BIT, NOT NULL, DEFAULT 0) — The organization expects to ask every year.
+•	FundsNeededBy (DATETIME, NULL) — The date the money is needed by, stored as 'YYYY-MM-DD 00:00:00'.
+•	SpecificUse (TEXT, NULL) — What the money will buy; at most 2,000 characters.
+•	TargetBeneficiary (TEXT, NULL) — Who the gift will help; at most 2,000 characters.
+•	AccountabilityPlan (TEXT, NULL) — How the organization will report back to the council; at most 2,000 characters.
+•	RequestTier (INTEGER, NOT NULL, DEFAULT 1) — The request's review tier, 1 to 3 (CHARITABLE_REQUEST_MAX_TIER); the Shepherd sets it and the vetter may change it.
+•	VetterMemberID (INTEGER, NULL) — Foreign Key references Member(id). The officer or Trustee who claimed the request; NULL while it is Submitted.
+•	VettingNotes (TEXT, NULL) — The vetter's notes; at most 2,000 characters (CHARITABLE_VETTING_NOTES_MAX_LENGTH).
+•	VettedDate (DATETIME, NULL) — When the request was advanced to the vote (UTC).
+•	MoverMemberID (INTEGER, NULL) — Foreign Key references Member(id). The member who moved the gift at the council's vote.
+•	SeconderMemberID (INTEGER, NULL) — Foreign Key references Member(id). The member who seconded the motion.
+•	VoteStatus (VARCHAR(50), NOT NULL, DEFAULT 'Pending') — The council's vote on an advanced request: Pending, Approved or Rejected.
+•	AmountApproved (DECIMAL(18,2), NOT NULL, DEFAULT 0.00) — The sum the council voted; 0.00 until the vote.
+•	PaymentOrderId (INTEGER, NULL) — Foreign Key references CharitableDisbursementLedger(id). The check that paid the request.
+Seed.sql's presentation data (loaded by the apps, not by the automated tests) puts five requests in the pipeline for Council 15295: two Submitted, two Claimed by Trustee and one Advanced.
 ________________________________________

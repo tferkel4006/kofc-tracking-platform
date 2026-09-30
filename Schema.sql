@@ -1358,3 +1358,155 @@ GO
 
 CREATE UNIQUE INDEX [CouncilAgendaTemplate_Council_MeetingType_Idx] ON [CouncilAgendaTemplate] ([CouncilID], [MeetingTypeID]);
 GO
+
+-- =========================================================================
+-- Sprint 5Z-1: NORMALIZED CHARITABLE INTAKE AND COUNCIL MISSION AREAS
+-- CouncilRelationshipType and CouncilMissionArea are council lookup tables, isolated per council by their
+-- (CouncilID, Name) indexes. CharitableRequest is the Knight Shepherd's intake form for an outside organization
+-- asking the council for money: the Shepherd (the member who carries the request) submits it into the council's
+-- shared vetting queue, an independent officer or Trustee claims and vets it, and it is advanced to the council's
+-- vote. RequestStatus runs Submitted -> Claimed by Trustee -> Advanced; VoteStatus records the council's vote
+-- (Pending until voted). Both are enforced by the shared rules layer (no CHECK). Event.MissionAreaID and
+-- Meeting.MissionAreaID file an event or meeting under one of the council's mission areas (NULL while unfiled).
+-- =========================================================================
+CREATE TABLE [CouncilRelationshipType] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[RelationshipName] VARCHAR(100) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [CouncilMissionArea] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[MissionAreaName] VARCHAR(100) NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [CharitableRequest] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[OrganizationName] VARCHAR(255) NOT NULL,
+	[ContactName] VARCHAR(255) NULL,
+	[ContactPhone] VARCHAR(50) NULL,
+	[ContactEmail] VARCHAR(255) NULL,
+	[AmountRequested] DECIMAL(18,2) NOT NULL,
+	[RequestStatus] VARCHAR(50) NOT NULL DEFAULT 'Submitted', -- Submitted, Claimed by Trustee, Advanced
+	[SubmittedAt] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([id])
+);
+GO
+
+-- The intake and vetting form's process variables.
+ALTER TABLE [CharitableRequest] ADD [ShepherdMemberID] INTEGER NOT NULL DEFAULT 0;
+GO
+ALTER TABLE [CharitableRequest] ADD [MailingAddress] TEXT NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [RelationshipTypeID] INTEGER NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [Is501c3] BIT NOT NULL DEFAULT 0;
+GO
+ALTER TABLE [CharitableRequest] ADD [EIN] VARCHAR(50) NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [Website] VARCHAR(255) NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [OrgMission] TEXT NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [IsRecurring] BIT NOT NULL DEFAULT 0;
+GO
+ALTER TABLE [CharitableRequest] ADD [FundsNeededBy] DATETIME NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [SpecificUse] TEXT NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [TargetBeneficiary] TEXT NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [AccountabilityPlan] TEXT NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [RequestTier] INTEGER NOT NULL DEFAULT 1;
+GO
+ALTER TABLE [CharitableRequest] ADD [VetterMemberID] INTEGER NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [VettingNotes] TEXT NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [VettedDate] DATETIME NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [MoverMemberID] INTEGER NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [SeconderMemberID] INTEGER NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [VoteStatus] VARCHAR(50) NOT NULL DEFAULT 'Pending';
+GO
+ALTER TABLE [CharitableRequest] ADD [AmountApproved] DECIMAL(18,2) NOT NULL DEFAULT 0.00;
+GO
+ALTER TABLE [CharitableRequest] ADD [PaymentOrderId] INTEGER NULL;
+GO
+
+ALTER TABLE [Event] ADD [MissionAreaID] INTEGER NULL;
+GO
+ALTER TABLE [Meeting] ADD [MissionAreaID] INTEGER NULL;
+GO
+
+ALTER TABLE [CouncilRelationshipType]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilMissionArea]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequest]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequest]
+ADD FOREIGN KEY([ShepherdMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequest]
+ADD FOREIGN KEY([RelationshipTypeID])
+REFERENCES [CouncilRelationshipType]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequest]
+ADD FOREIGN KEY([VetterMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequest]
+ADD FOREIGN KEY([MoverMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequest]
+ADD FOREIGN KEY([SeconderMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequest]
+ADD FOREIGN KEY([PaymentOrderId])
+REFERENCES [CharitableDisbursementLedger]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [Event]
+ADD FOREIGN KEY([MissionAreaID])
+REFERENCES [CouncilMissionArea]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [Meeting]
+ADD FOREIGN KEY([MissionAreaID])
+REFERENCES [CouncilMissionArea]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [CouncilRelationshipType_Council_Name_Idx] ON [CouncilRelationshipType] ([CouncilID], [RelationshipName]);
+GO
+CREATE UNIQUE INDEX [CouncilMissionArea_Council_Name_Idx] ON [CouncilMissionArea] ([CouncilID], [MissionAreaName]);
+GO
+CREATE INDEX [CharitableRequest_Council_Status_Idx] ON [CharitableRequest] ([CouncilID], [RequestStatus]);
+GO

@@ -69,7 +69,7 @@ describe.each(drivers)('$name driver: council meeting types and agenda templates
   it('lists the seeded standard types for Council 15295 only, by name', async () => {
     const db = await d.make();
     const types = await db.meetings.listCouncilMeetingTypes(OWN);
-    expect(types.map((t) => t.TypeName)).toEqual(['Community', 'Monthly', 'Officer']);
+    expect(types.map((t) => t.TypeName)).toEqual(['Committee', 'Monthly', 'Officer']);
     expect(types.every((t) => t.CouncilID === OWN)).toBe(true);
 
     const other = await db.councils.create(MEMBER.superAdmin, { CouncilNumber: 99003, CouncilName: 'New Council', State: 'OR' });

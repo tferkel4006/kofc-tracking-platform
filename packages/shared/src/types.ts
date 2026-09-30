@@ -141,6 +141,8 @@ export interface Event {
   IsAnnual?: number;
   /** BIT (Sprint 5Y-5): the event spans more than one day. Default 0. */
   IsMultiDay?: number;
+  /** The council mission area (CouncilMissionArea, Sprint 5Z-1) the event is filed under; null while unfiled. */
+  MissionAreaID?: number | null;
 }
 
 
@@ -283,6 +285,8 @@ export interface Meeting {
   MeetingTypeID?: number | null;
   /** DATE (Sprint 5Y-6): the last day of a multi-day meeting (IsMultiDay = 1); null for a one-day meeting. */
   EndDate?: string | null;
+  /** The council mission area (CouncilMissionArea, Sprint 5Z-1) the meeting is filed under; null while unfiled. */
+  MissionAreaID?: number | null;
 }
 
 /** An invitee's RSVP (Sprint 5Y-5); see MEETING_RESPONSE_STATUSES. */
@@ -581,4 +585,63 @@ export interface CouncilBudgetCategory {
   id: number;
   CouncilID: number;
   CategoryName: string;
+}
+
+// 13. NORMALIZED CHARITABLE INTAKE (Sprint 5Z-1)
+/** How an organization asking for money is connected to the council; a council lookup, unique by name per council. */
+export interface CouncilRelationshipType {
+  id: number;
+  CouncilID: number;
+  RelationshipName: string;
+}
+
+/** One of a council's mission pillars (Faith, Family, Community, Life); events and meetings are filed under one. */
+export interface CouncilMissionArea {
+  id: number;
+  CouncilID: number;
+  MissionAreaName: string;
+}
+
+/** Where an intake request stands in the vetting pipeline; see CHARITABLE_REQUEST_STATUSES. */
+export type CharitableRequestStatus = 'Submitted' | 'Claimed by Trustee' | 'Advanced';
+
+/** The council's vote on an advanced request; 'Pending' until the vote is recorded. */
+export type CharitableRequestVoteStatus = 'Pending' | 'Approved' | 'Rejected';
+
+/**
+ * A Knight Shepherd's intake form for an outside organization asking the council for money (Sprint 5Z-1). The Shepherd
+ * submits it into the council's shared vetting queue; an independent officer or Trustee claims it, vets it and
+ * advances it to the council's vote.
+ */
+export interface CharitableRequest {
+  id: number;
+  CouncilID: number;
+  OrganizationName: string;
+  ContactName?: string | null;
+  ContactPhone?: string | null;
+  ContactEmail?: string | null;
+  AmountRequested: number; // DECIMAL(18,2), more than 0
+  RequestStatus: CharitableRequestStatus;
+  SubmittedAt: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+  ShepherdMemberID: number; // the member who carries the request to the council
+  MailingAddress?: string | null;
+  RelationshipTypeID?: number | null; // CouncilRelationshipType of the same council
+  Is501c3: number; // BIT
+  EIN?: string | null; // 'NN-NNNNNNN' when given
+  Website?: string | null;
+  OrgMission?: string | null;
+  IsRecurring: number; // BIT: the organization expects to ask every year
+  FundsNeededBy?: string | null; // DATETIME, 'YYYY-MM-DD 00:00:00'
+  SpecificUse?: string | null;
+  TargetBeneficiary?: string | null;
+  AccountabilityPlan?: string | null;
+  RequestTier: number; // 1 to CHARITABLE_REQUEST_MAX_TIER; default 1
+  VetterMemberID?: number | null; // the officer or Trustee who claimed the request
+  VettingNotes?: string | null;
+  VettedDate?: string | null; // DATETIME, set when the request is advanced
+  MoverMemberID?: number | null; // who moved the gift at the council's vote
+  SeconderMemberID?: number | null; // who seconded it
+  VoteStatus: CharitableRequestVoteStatus;
+  AmountApproved: number; // DECIMAL(18,2); 0.00 until the council votes
+  PaymentOrderId?: number | null; // the CharitableDisbursementLedger check that paid it
 }

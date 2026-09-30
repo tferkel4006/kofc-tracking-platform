@@ -171,6 +171,15 @@ import {
   seatHolderIdByName,
   assertMayAddGlobalCharity,
   assertMayReviewCharityProposals,
+  assertMayVetCharitableRequests,
+  hasAdminRights,
+  assertIndependentVetter,
+  assertCouncilRelationshipType,
+  buildCharitableRequestDetails,
+  CHARITABLE_REQUEST_FORM_COLUMNS,
+  charitableRequestNotFound,
+  cleanCharitableRequest,
+  planCharitableTriage,
   assertOneCharitySource,
   buildCharityProposalDetails,
   buildCouncilCharityLedger,
@@ -305,6 +314,10 @@ import type {
   MeetingInvites,
   MeetingResponseStatus,
   CouncilMeetingType,
+  CharitableRequest,
+  CharitableRequestDetail,
+  CouncilMissionArea,
+  CouncilRelationshipType,
   CouncilAgendaTemplate,
   MeetingInviteMode,
   Member,
@@ -323,7 +336,7 @@ import type {
   ShiftChanges,
   ShiftFeedItem,
 } from '@kofc/shared';
-import { SEED_DATA, TABLES, type SeedValue } from '../generated/schema.generated';
+import { PRESENTATION_SEED_DATA, SEED_DATA, TABLES, type SeedValue } from '../generated/schema.generated';
 import { sha256Hex } from '../password';
 import {
   buildDevEvents,
@@ -471,6 +484,11 @@ export interface MemoryDataServiceOptions {
   log?: (...args: unknown[]) => void;
   /** How supreme.syncAlchemerReport posts to Alchemer. Default: print the request with `log` (logAlchemerRequest). */
   postAlchemer?: (request: AlchemerRequest) => Promise<AlchemerResponse>;
+  /**
+   * Also load Seed.sql's presentation data (Sprint 5Z-1: officers, expense sheets, charity checks and intake requests)
+   * right after the baseline rows. The app turns it on; tests keep the minimal baseline. Default: false.
+   */
+  presentationData?: boolean;
 }
 
 export class MemoryDataService implements DataService {
@@ -479,8 +497,10 @@ export class MemoryDataService implements DataService {
   private readonly now: () => Date;
   private readonly log: (...args: unknown[]) => void;
   private readonly postAlchemer: (request: AlchemerRequest) => Promise<AlchemerResponse>;
+  private readonly presentationData: boolean;
 
   constructor(options: MemoryDataServiceOptions = {}) {
+    this.presentationData = options.presentationData ?? false;
     this.now = options.now ?? (() => new Date());
     this.log = options.log ?? console.log;
     this.postAlchemer = options.postAlchemer ?? logAlchemerRequest((...args) => this.log(...args));
@@ -509,6 +529,7 @@ export class MemoryDataService implements DataService {
 
   private async seed(): Promise<void> {
     for (const { table, rows } of SEED_DATA) for (const row of rows) this.store.insert(table, row);
+    if (this.presentationData) for (const { table, rows } of PRESENTATION_SEED_DATA) for (const row of rows) this.store.insert(table, row);
 
     // Seed.sql stores dev passwords in plaintext; hash them so signIn only ever sees digests.
     for (const cred of this.store.rows('Credentials')) {
@@ -1253,13 +1274,15 @@ export class MemoryDataService implements DataService {
   /** The caller of a member write, read from the store so the client cannot claim a type it does not hold. */
   private memberWriteActor(s: MemoryStore, actorId: number): MemberWriteActor {
     const actor = this.requireMember(s, actorId);
+    const roles = this.rolesFor(s, actorId);
     return {
       memberId: actorId,
       councilId: actor.CouncilID as number,
       memberType: this.memberTypeName(s, actor.MemberTypeID as number),
       active: actor.StatusID === this.activeStatusId(s),
-      roles: this.rolesFor(s, actorId).map((r) => r.Role),
+      roles: roles.map((r) => r.Role),
       budgetDirector: actor.IsBudgetDirector === 1,
+      officer: roles.some((r) => r.Officer === 1),
     };
   }
 
@@ -3100,6 +3123,62 @@ export class MemoryDataService implements DataService {
       });
       return this.charityProposalDetails(s, (p) => p.id === proposalId, 'newest')[0];
     },
+
+    listCouncilRelationshipTypes: async (councilId) => {
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      return this.relationshipTypes(s, councilId).map((t) => ({ ...t }));
+    },
+
+    listCouncilMissionAreas: async (councilId) => {
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      return (s.rows('CouncilMissionArea').filter((a) => a.CouncilID === councilId).map((a) => ({ ...a })) as unknown as CouncilMissionArea[]).sort(
+        (a, b) => (a.MissionAreaName < b.MissionAreaName ? -1 : a.MissionAreaName > b.MissionAreaName ? 1 : a.id - b.id), // binary order, as SQLite's ORDER BY
+      );
+    },
+
+    listCharitableRequestsQueue: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayVetCharitableRequests(this.memberWriteActor(s, actorId), councilId, `read the charitable request queue of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return this.charitableRequestDetails(s, (r) => r.CouncilID === councilId);
+    },
+
+    submitCharitableRequest: async (actorId, requestData) => {
+      const clean = cleanCharitableRequest(requestData);
+      const s = await this.ready();
+      const row = s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        assertMayProposeCharityGift(actor, actor.councilId, 'submit a charitable request');
+        assertCouncilRelationshipType(clean.RelationshipTypeID, this.relationshipTypes(s, actor.councilId), actor.councilId);
+        return s.insert('CharitableRequest', {
+          ...rowValues(CHARITABLE_REQUEST_FORM_COLUMNS, clean),
+          CouncilID: actor.councilId,
+          ShepherdMemberID: actorId,
+          RequestStatus: 'Submitted',
+          SubmittedAt: toTimestamp(this.now()),
+          VoteStatus: 'Pending',
+          AmountApproved: 0,
+        });
+      });
+      return this.charitableRequestDetails(s, (r) => r.id === row.id)[0];
+    },
+
+    triageRequestStatus: async (actorId, requestId, vettingData) => {
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const request = s.rows('CharitableRequest').find((r) => r.id === requestId);
+        if (!request) throw charitableRequestNotFound(requestId);
+        const councilId = request.CouncilID as number;
+        assertMayVetCharitableRequests(actor, councilId, `vet charitable request ${requestId}`);
+        assertIndependentVetter(actor, request as unknown as CharitableRequest);
+        const changes = planCharitableTriage(request as unknown as CharitableRequest, actorId, hasAdminRights(actor), vettingData, this.now());
+        Object.assign(request, changes);
+      });
+      return this.charitableRequestDetails(s, (r) => r.id === requestId)[0];
+    },
   };
 
   budget: DataService['budget'] = {
@@ -3355,6 +3434,21 @@ export class MemoryDataService implements DataService {
       s.rows('CharitableDisbursementLedger').map((d) => ({ ...d })) as unknown as CharitableDisbursementLedger[],
       order,
     );
+  }
+
+  /** The council's relationship types, by RelationshipName then id (binary order, as SQLite's ORDER BY). */
+  private relationshipTypes(s: MemoryStore, councilId: number): CouncilRelationshipType[] {
+    return (s.rows('CouncilRelationshipType').filter((t) => t.CouncilID === councilId) as unknown as CouncilRelationshipType[]).sort((a, b) =>
+      a.RelationshipName < b.RelationshipName ? -1 : a.RelationshipName > b.RelationshipName ? 1 : a.id - b.id,
+    );
+  }
+
+  private charitableRequestDetails(s: MemoryStore, keep: (r: Row) => boolean): CharitableRequestDetail[] {
+    return buildCharitableRequestDetails(
+      s.rows('CharitableRequest').filter(keep).map((r) => ({ ...r })) as unknown as CharitableRequest[],
+      s.rows('Member') as unknown as Member[],
+      s.rows('CouncilRelationshipType') as unknown as CouncilRelationshipType[],
+    ).map((d) => ({ ...d, request: { ...d.request } }));
   }
 
   private charityRows(s: MemoryStore): readonly GlobalCharityRegistry[] {
