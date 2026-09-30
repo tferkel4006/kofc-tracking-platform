@@ -93,8 +93,8 @@ export function createRemoteDataService(): DataService {
     expenses: {
       listUserReports: notImplemented('expenses.listUserReports'),
       listCouncilQueue: notImplemented('expenses.listCouncilQueue'),
+      listAuthorizationQueue: notImplemented('expenses.listAuthorizationQueue'),
       submitReport: notImplemented('expenses.submitReport'),
-      approveReport: notImplemented('expenses.approveReport'),
       rejectReport: notImplemented('expenses.rejectReport'),
       financialSecretaryAuditOrder: notImplemented('expenses.financialSecretaryAuditOrder'),
       grandKnightAuthorizeOrder: notImplemented('expenses.grandKnightAuthorizeOrder'),

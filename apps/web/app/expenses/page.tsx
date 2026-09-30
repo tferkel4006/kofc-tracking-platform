@@ -208,7 +208,9 @@ function ExpenseSheetView({ detail, refs }: { detail: ExpenseReportDetail; refs:
   const { report, disbursement } = detail;
   const note: Record<typeof report.Status, string> = {
     Draft: '',
-    Submitted: 'Waiting for your council’s leadership to review it.',
+    Submitted: report.FinancialSecretaryMemberID != null
+      ? 'The Financial Secretary issued the written order; waiting for the Grand Knight’s counter-signature.'
+      : 'Waiting for the Financial Secretary’s written order.',
     Approved: 'Approved. The Financial Secretary or Treasurer will include it in the next check run.',
     Reimbursed: 'Paid.',
   };

@@ -6,8 +6,10 @@ import { describe, expect, it } from 'vitest';
 import {
   assertIndependentVetter,
   assertMayVetCharitableRequests,
+  awaitsWrittenOrder,
   buildMissionAreaFootprint,
   cleanCharitableRequest,
+  isPayableExpenseReport,
   planCharitableTriage,
   SecurityPrivilegeError,
   toTimestamp,
@@ -252,7 +254,12 @@ describe.each(drivers)('$name driver: presentation data', (d) => {
   it('loads the officers, expense sheets, charity checks and intake requests of Council 15295', async () => {
     const db = await makePresentation();
     expect(d.count(db, 'Member')).toBeGreaterThanOrEqual(19); // 3 test profiles, 15 officers and directors, the unregistered member
-    expect(d.count(db, 'ExpenseReport')).toBe(10);
+    expect(d.count(db, 'ExpenseReport')).toBe(13);
+    // Sprint 5Z-4: one sheet on each dual-approval desk and one in the Treasurer's vault.
+    const expenseQueue = await db.expenses.listCouncilQueue(MEMBER.admin, OWN);
+    expect(expenseQueue.filter((q) => awaitsWrittenOrder(q.report)).map((q) => q.report.id)).toEqual([11]);
+    expect((await db.expenses.listAuthorizationQueue(MEMBER.superAdmin, OWN)).map((q) => [q.report.id, q.financialSecretaryName])).toEqual([[12, 'Council Admin']]);
+    expect(expenseQueue.filter((q) => isPayableExpenseReport(q.report)).map((q) => q.report.id)).toEqual([13]);
     expect(d.count(db, 'CharitableDisbursementLedger')).toBe(8);
 
     const trustee = await db.auth.signIn('francis.byrne@kofc15295.org', 'koc15295');

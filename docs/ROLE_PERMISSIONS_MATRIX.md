@@ -41,16 +41,20 @@ Every permission also requires an **Active** membership status. Inactive members
 | Action | Standard Member | Budget Director | Financial Secretary | Treasurer | Council Admin | Grand Knight |
 | --- | :-: | :-: | :-: | :-: | :-: | :-: |
 | File an expense report and read their own | 👤 | 👤 | 👤 | 👤 | 👤 | 👤 |
-| Open the council's audit queue | — | — | ✅ | ✅ | ✅ | — |
-| Approve or return a report | — | — | ✅ ¹ | ✅ ¹ | ✅ ¹ | — |
+| Open the council's audit queue and return a report | — | — | ✅ | ✅ | ✅ | — |
+| Open the FS Audit Desk | — | — | ✅ | — | 👁️ | — |
+| Issue the written order (first signature) | — | — | ✅ ¹ | — | — | — |
+| Open the GK Authorization Desk | — | — | — | — | 👁️ | ✅ |
+| Counter-sign the voucher (second signature, approves) | — | — | — | — | — | ✅ ¹ ³ |
 | Issue a check (disbursement ledger) | — | — | ✅ ¹ | ✅ ¹ | — | — |
 | Record a donation (phone donation desk) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Change or delete a donation | 👤 ² | 👤 ² | ✅ | ✅ | ✅ | 👤 ² |
 | Pay a charity check | — | — | ✅ | ✅ | — | — |
 | Propose a charity gift | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
-1. **Nobody** approves or pays a report they submitted (`SELF_APPROVAL_BLOCKED`, `SELF_PAYOUT_BLOCKED`), including a Super Admin. Rules: `assertMayAuditCouncilExpenses`, `assertMayDisburseCouncilExpenses`.
+1. **Nobody** signs or pays a report they submitted (`SELF_APPROVAL_BLOCKED`, `SELF_PAYOUT_BLOCKED`), including a Super Admin. Checks pay only reports carrying both signatures (Sprint 5Z-4). Rules: `assertMayIssueExpenseOrder`, `assertMayAuthorizeExpenseOrder`, `assertMayAuditCouncilExpenses`, `assertMayDisburseCouncilExpenses`, `assertDualSigned`.
 2. A member may change a donation they recorded, or one on an event they own (`canChangeDonation`).
+3. **Collusion Guard:** the officer who issued a report's written order may not also counter-sign it (`DUAL_SIGNATURE_CONFLICT`). This matters for a Super Admin, who may sign either line. 👁️ means the Admin can open the desk to follow the work but cannot sign.
 
 ## 2. Annual Budgets
 

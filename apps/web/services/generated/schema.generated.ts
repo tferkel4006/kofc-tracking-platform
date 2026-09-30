@@ -4977,61 +4977,131 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "CouncilID": 1,
         "SubmitterMemberID": 4,
         "Status": "Reimbursed",
-        "DisbursementID": 1
+        "DisbursementID": 1,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2025-10-06 16:10:00",
+        "GrandKnightMemberID": 1,
+        "GrandKnightApprovedAt": "2025-10-07 18:45:00"
       },
       {
         "CouncilID": 1,
         "SubmitterMemberID": 15,
         "Status": "Reimbursed",
-        "DisbursementID": 2
+        "DisbursementID": 2,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2025-11-10 15:30:00",
+        "GrandKnightMemberID": 1,
+        "GrandKnightApprovedAt": "2025-11-11 19:05:00"
       },
       {
         "CouncilID": 1,
         "SubmitterMemberID": 16,
         "Status": "Reimbursed",
-        "DisbursementID": 3
+        "DisbursementID": 3,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2025-12-08 16:20:00",
+        "GrandKnightMemberID": 1,
+        "GrandKnightApprovedAt": "2025-12-09 18:15:00"
       },
       {
         "CouncilID": 1,
         "SubmitterMemberID": 6,
         "Status": "Reimbursed",
-        "DisbursementID": 4
+        "DisbursementID": 4,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2026-01-12 17:00:00",
+        "GrandKnightMemberID": 1,
+        "GrandKnightApprovedAt": "2026-01-13 18:30:00"
       },
       {
         "CouncilID": 1,
         "SubmitterMemberID": 15,
         "Status": "Reimbursed",
-        "DisbursementID": 5
+        "DisbursementID": 5,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2026-02-09 16:40:00",
+        "GrandKnightMemberID": 1,
+        "GrandKnightApprovedAt": "2026-02-10 19:20:00"
       },
       {
         "CouncilID": 1,
         "SubmitterMemberID": 17,
         "Status": "Reimbursed",
-        "DisbursementID": 6
+        "DisbursementID": 6,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2026-03-09 15:55:00",
+        "GrandKnightMemberID": 1,
+        "GrandKnightApprovedAt": "2026-03-10 18:00:00"
       },
       {
         "CouncilID": 1,
         "SubmitterMemberID": 16,
         "Status": "Reimbursed",
-        "DisbursementID": 7
+        "DisbursementID": 7,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2026-04-06 16:25:00",
+        "GrandKnightMemberID": 1,
+        "GrandKnightApprovedAt": "2026-04-07 18:50:00"
       },
       {
         "CouncilID": 1,
         "SubmitterMemberID": 5,
         "Status": "Reimbursed",
-        "DisbursementID": 8
+        "DisbursementID": 8,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2026-05-11 17:10:00",
+        "GrandKnightMemberID": 1,
+        "GrandKnightApprovedAt": "2026-05-12 18:35:00"
       },
       {
         "CouncilID": 1,
         "SubmitterMemberID": 18,
         "Status": "Reimbursed",
-        "DisbursementID": 9
+        "DisbursementID": 9,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2026-07-06 16:05:00",
+        "GrandKnightMemberID": 1,
+        "GrandKnightApprovedAt": "2026-07-07 19:10:00"
       },
       {
         "CouncilID": 1,
         "SubmitterMemberID": 16,
         "Status": "Reimbursed",
-        "DisbursementID": 10
+        "DisbursementID": 10,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2026-08-10 15:45:00",
+        "GrandKnightMemberID": 1,
+        "GrandKnightApprovedAt": "2026-08-11 18:25:00"
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 9,
+        "Status": "Submitted",
+        "DisbursementID": null,
+        "FinancialSecretaryMemberID": null,
+        "FinancialSecretaryApprovedAt": null,
+        "GrandKnightMemberID": null,
+        "GrandKnightApprovedAt": null
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 11,
+        "Status": "Submitted",
+        "DisbursementID": null,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2026-09-16 17:30:00",
+        "GrandKnightMemberID": null,
+        "GrandKnightApprovedAt": null
+      },
+      {
+        "CouncilID": 1,
+        "SubmitterMemberID": 14,
+        "Status": "Approved",
+        "DisbursementID": null,
+        "FinancialSecretaryMemberID": 2,
+        "FinancialSecretaryApprovedAt": "2026-09-08 16:15:00",
+        "GrandKnightMemberID": 1,
+        "GrandKnightApprovedAt": "2026-09-09 18:40:00"
       }
     ]
   },
@@ -5142,6 +5212,34 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "Amount": 119.99,
         "VendorName": "Target",
         "ExpenseDescription": "Backpacks and school supplies"
+      },
+      {
+        "ExpenseReportID": 11,
+        "DateOfExpense": "2026-09-12",
+        "Amount": 86.4,
+        "VendorName": "Safeway",
+        "ExpenseDescription": "Coffee and donuts for the Knights breakfast"
+      },
+      {
+        "ExpenseReportID": 12,
+        "DateOfExpense": "2026-09-10",
+        "Amount": 64.99,
+        "VendorName": "Office Depot",
+        "ExpenseDescription": "Membership drive flyers and table signage"
+      },
+      {
+        "ExpenseReportID": 12,
+        "DateOfExpense": "2026-09-10",
+        "Amount": 23.5,
+        "VendorName": "FedEx Office",
+        "ExpenseDescription": "Laminated sign-up sheets"
+      },
+      {
+        "ExpenseReportID": 13,
+        "DateOfExpense": "2026-09-05",
+        "Amount": 142.75,
+        "VendorName": "Cash & Carry",
+        "ExpenseDescription": "Ice, water and paper goods for the parish festival booth"
       }
     ]
   },

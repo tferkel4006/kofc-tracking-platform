@@ -322,18 +322,24 @@ VALUES
 (1, '1109', '2026-07-08', 364.80, 'Parish picnic grill supplies'),
 (1, '1110', '2026-08-12', 119.99, 'Back-to-school backpack drive');
 GO
-INSERT INTO [ExpenseReport] ([CouncilID], [SubmitterMemberID], [Status], [DisbursementID])
+-- Sprint 5Z-4: every paid sheet carries both dual-approval signatures, the Financial Secretary's written order
+-- (member 2) and the Grand Knight's counter-signature (member 1). Sheets 11-13 are in the pipeline: one awaiting the
+-- written order, one awaiting the counter-signature, and one dual-signed in the Treasurer's disbursement vault.
+INSERT INTO [ExpenseReport] ([CouncilID], [SubmitterMemberID], [Status], [DisbursementID], [FinancialSecretaryMemberID], [FinancialSecretaryApprovedAt], [GrandKnightMemberID], [GrandKnightApprovedAt])
 VALUES
-(1, 4, 'Reimbursed', 1),
-(1, 15, 'Reimbursed', 2),
-(1, 16, 'Reimbursed', 3),
-(1, 6, 'Reimbursed', 4),
-(1, 15, 'Reimbursed', 5),
-(1, 17, 'Reimbursed', 6),
-(1, 16, 'Reimbursed', 7),
-(1, 5, 'Reimbursed', 8),
-(1, 18, 'Reimbursed', 9),
-(1, 16, 'Reimbursed', 10);
+(1, 4, 'Reimbursed', 1, 2, '2025-10-06 16:10:00', 1, '2025-10-07 18:45:00'),
+(1, 15, 'Reimbursed', 2, 2, '2025-11-10 15:30:00', 1, '2025-11-11 19:05:00'),
+(1, 16, 'Reimbursed', 3, 2, '2025-12-08 16:20:00', 1, '2025-12-09 18:15:00'),
+(1, 6, 'Reimbursed', 4, 2, '2026-01-12 17:00:00', 1, '2026-01-13 18:30:00'),
+(1, 15, 'Reimbursed', 5, 2, '2026-02-09 16:40:00', 1, '2026-02-10 19:20:00'),
+(1, 17, 'Reimbursed', 6, 2, '2026-03-09 15:55:00', 1, '2026-03-10 18:00:00'),
+(1, 16, 'Reimbursed', 7, 2, '2026-04-06 16:25:00', 1, '2026-04-07 18:50:00'),
+(1, 5, 'Reimbursed', 8, 2, '2026-05-11 17:10:00', 1, '2026-05-12 18:35:00'),
+(1, 18, 'Reimbursed', 9, 2, '2026-07-06 16:05:00', 1, '2026-07-07 19:10:00'),
+(1, 16, 'Reimbursed', 10, 2, '2026-08-10 15:45:00', 1, '2026-08-11 18:25:00'),
+(1, 9, 'Submitted', NULL, NULL, NULL, NULL, NULL),
+(1, 11, 'Submitted', NULL, 2, '2026-09-16 17:30:00', NULL, NULL),
+(1, 14, 'Approved', NULL, 2, '2026-09-08 16:15:00', 1, '2026-09-09 18:40:00');
 GO
 INSERT INTO [ExpenseLineItem] ([ExpenseReportID], [DateOfExpense], [Amount], [VendorName], [ExpenseDescription])
 VALUES
@@ -351,7 +357,11 @@ VALUES
 (8, '2026-05-09', 138.25, 'Portland Sound Rentals', 'PA system rental for the rosary rally'),
 (9, '2026-07-02', 289.55, 'Costco', 'Burgers, hot dogs and buns'),
 (9, '2026-07-02', 75.25, 'Home Depot', 'Propane refills'),
-(10, '2026-08-07', 119.99, 'Target', 'Backpacks and school supplies');
+(10, '2026-08-07', 119.99, 'Target', 'Backpacks and school supplies'),
+(11, '2026-09-12', 86.40, 'Safeway', 'Coffee and donuts for the Knights breakfast'),
+(12, '2026-09-10', 64.99, 'Office Depot', 'Membership drive flyers and table signage'),
+(12, '2026-09-10', 23.50, 'FedEx Office', 'Laminated sign-up sheets'),
+(13, '2026-09-05', 142.75, 'Cash & Carry', 'Ice, water and paper goods for the parish festival booth');
 GO
 
 -- Five local charities the council gives to, with the eight checks it paid them (1111-1118).

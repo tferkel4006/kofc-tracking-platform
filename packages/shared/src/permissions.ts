@@ -12,7 +12,7 @@
 import type { CouncilLookupTableName, SessionUser } from './contract';
 import { budgetWindowOf } from './budget';
 import { GRAND_KNIGHT_ROLE } from './elections';
-import { FINANCE_LOOKUP_TABLES, holdsExecutiveRole, holdsFinanceRole } from './rules';
+import { FINANCE_LOOKUP_TABLES, FINANCIAL_SECRETARY_ROLE_NAME, holdsExecutiveRole, holdsFinanceRole } from './rules';
 import type { BudgetLineStatus, Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
 
 /** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. `isBudgetDirector` only to the budget. */
@@ -40,6 +40,8 @@ export type PortalArea =
   | 'ledger'
   | 'expenses'
   | 'expenses/queue'
+  | 'expenses/audit'
+  | 'expenses/authorize'
   | 'expenses/disbursements'
   | 'charities/propose'
   | 'charities/registry'
@@ -185,7 +187,7 @@ export const canChangeDonation = (u: Actor, donation: Pick<Donation, 'CouncilID'
   donation.RecordedBy === u.memberId || eventOwnerId === u.memberId || canManageFinances(u, donation.CouncilID);
 
 /**
- * The council's expense queue, approvals and returns, mirroring the drivers' assertMayAuditCouncilExpenses (activity
+ * The council's expense queue and returns, mirroring the drivers' assertMayAuditCouncilExpenses (activity
  * status is checked there): its Admins, its Financial Secretary and Treasurer, and any Super Admin. Every member
  * files and reads their own expense reports.
  */
@@ -198,12 +200,58 @@ export const canAuditCouncilExpenses = (u: Actor, councilId: number): boolean =>
 export const canDisburseCouncilExpenses = (u: Actor, councilId: number): boolean =>
   isSuperAdmin(u) || (isFinanceOfficer(u) && u.councilId === councilId);
 
+/** Holds the council's Financial Secretary seat (Sprint 5Z-4: the seat that issues expense written orders). */
+export const isFinancialSecretary = (u: Actor): boolean => (u.roles ?? []).includes(FINANCIAL_SECRETARY_ROLE_NAME);
+/** Holds the council's Grand Knight seat (Sprint 5Z-4: the seat that counter-signs expense orders). */
+export const isGrandKnight = (u: Actor): boolean => (u.roles ?? []).includes(GRAND_KNIGHT_ROLE);
+
 /**
- * The approve control on one expense sheet (drivers: assertMayAuditCouncilExpenses, then assertNotSelfApproval):
- * council leadership, and never on their own sheet, whatever their role.
+ * The Financial Secretary Audit Desk of a council (Sprint 5Z-4): its Financial Secretary, its Admins and any Super Admin
+ * may open it. Only the Financial Secretary or a Super Admin signs there (canIssueExpenseOrder); an Admin reads it.
  */
-export const canApproveExpenseReport = (u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID'>): boolean =>
-  canAuditCouncilExpenses(u, report.CouncilID) && report.SubmitterMemberID !== u.memberId;
+export const canOpenExpenseAuditDesk = (u: Actor, councilId: number): boolean =>
+  canAdministerCouncil(u, councilId) || (isFinancialSecretary(u) && u.councilId === councilId);
+
+/**
+ * The Grand Knight Authorization Desk of a council (Sprint 5Z-4): its Grand Knight, its Admins and any Super Admin may
+ * open it. Only the Grand Knight or a Super Admin counter-signs there (canCounterSignExpenseOrder); an Admin reads it.
+ */
+export const canOpenExpenseAuthorizeDesk = (u: Actor, councilId: number): boolean =>
+  canAdministerCouncil(u, councilId) || (isGrandKnight(u) && u.councilId === councilId);
+
+/** Why the signed-in officer may not sign a line on a sheet (Sprint 5Z-4), or null when they may. */
+export type ExpenseSignatureBlock = 'seat' | 'own-report' | 'collusion';
+
+/**
+ * The '📜 Issue Written Order' control on one sheet, mirroring assertMayIssueExpenseOrder then assertNotSelfApproval
+ * (activity status is checked there): the council's Financial Secretary or any Super Admin, never on their own sheet.
+ */
+export function expenseOrderBlock(u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID'>): ExpenseSignatureBlock | null {
+  if (!(isSuperAdmin(u) || (isFinancialSecretary(u) && u.councilId === report.CouncilID))) return 'seat';
+  if (report.SubmitterMemberID === u.memberId) return 'own-report';
+  return null;
+}
+
+export const canIssueExpenseOrder = (u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID'>): boolean =>
+  expenseOrderBlock(u, report) === null;
+
+/**
+ * The '✍️ Counter-Sign Voucher' control on one sheet, mirroring assertMayAuthorizeExpenseOrder, assertNotSelfApproval and
+ * assertDistinctExpenseSigners: the council's Grand Knight or any Super Admin, never on their own sheet, and never by
+ * the officer who issued its written order ('collusion', the Collusion Guard).
+ */
+export function expenseCounterSignBlock(
+  u: Actor,
+  report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID' | 'FinancialSecretaryMemberID'>,
+): ExpenseSignatureBlock | null {
+  if (!(isSuperAdmin(u) || (isGrandKnight(u) && u.councilId === report.CouncilID))) return 'seat';
+  if (report.SubmitterMemberID === u.memberId) return 'own-report';
+  if (report.FinancialSecretaryMemberID === u.memberId) return 'collusion';
+  return null;
+}
+
+export const canCounterSignExpenseOrder = (u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID' | 'FinancialSecretaryMemberID'>): boolean =>
+  expenseCounterSignBlock(u, report) === null;
 
 /**
  * The pay checkbox on one approved expense sheet (drivers: assertMayDisburseCouncilExpenses, then
@@ -355,12 +403,15 @@ export function portalAreas(u: Actor): PortalArea[] {
   areas.push('meetings', 'elections');
   if (isAdmin(u)) areas.push('distribution-lists');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('donations');
-  // Every member files their own expense reports; the council's leadership audits them; only its finance officers
-  // (or a Super Admin) pay them.
+  // Every member files their own expense reports; the council's leadership reviews and returns them; the Financial
+  // Secretary issues the written order and the Grand Knight counter-signs (Sprint 5Z-4; Admins read both desks); only
+  // its finance officers (or a Super Admin) pay them.
   // Every member may propose a charity grant (Sprint 5V).
   // Every member may carry an outside organization's request to the council as its Knight Shepherd (Sprint 5Z-2).
   areas.push('ledger', 'expenses', 'charities/propose', 'charities/intake');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/queue');
+  if (isAdmin(u) || isFinancialSecretary(u)) areas.push('expenses/audit');
+  if (isAdmin(u) || isGrandKnight(u)) areas.push('expenses/authorize');
   if (isSuperAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/disbursements', 'charities/queue');
   if (canVetCharitableRequests(u, u.councilId)) areas.push('charities/vetting');
   if (canBrowseLessonsRegistry(u)) areas.push('lessons-registry');
@@ -398,7 +449,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
     collapsible: true,
     items: ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
   },
-  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/vetting', 'charities/queue', 'financials/budget'] },
+  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'expenses/disbursements', 'charities/vetting', 'charities/queue', 'financials/budget'] },
   { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'] },
 ];
 

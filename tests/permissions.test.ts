@@ -116,6 +116,8 @@ describe('portal permissions', () => {
       'charities/propose',
       'charities/intake',
       'expenses/queue',
+      'expenses/audit',
+      'expenses/authorize',
       'expenses/disbursements',
       'charities/queue',
       'charities/vetting',
@@ -145,6 +147,8 @@ describe('portal permissions', () => {
       'charities/propose',
       'charities/intake',
       'expenses/queue',
+      'expenses/audit',
+      'expenses/authorize',
       'charities/vetting',
       'lessons-registry',
       'charities/registry',
@@ -166,9 +170,11 @@ describe('portal permissions', () => {
     for (const u of [superAdmin, ...financeOfficers, actor({ memberType: 'Admin', roles: ['Treasurer'] })]) expect(portalAreas(u)).toContain('expenses/disbursements');
     // Sprint 5S: a council Admin without a finance role audits but does not pay.
     expect(portalAreas(admin)).not.toContain('expenses/disbursements');
-    for (const u of [officer, member, actor({ isOfficer: true, roles: ['Grand Knight'] })]) {
+    for (const u of [officer, member]) {
       expect(portalAreas(u).filter((a) => a.startsWith('expenses/'))).toEqual([]);
     }
+    // Sprint 5Z-4: the Grand Knight counter-signs on the authorization desk, and sees no other expense desk.
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Grand Knight'] })).filter((a) => a.startsWith('expenses/'))).toEqual(['expenses/authorize']);
   });
 
   describe('sidebar accordion groups (Sprint 5S, election desks Sprint 5U)', () => {
@@ -207,7 +213,7 @@ describe('portal permissions', () => {
       expect(shape(superAdmin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose', 'charities/intake']],
         ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
-        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/vetting', 'charities/queue', 'financials/budget']],
+        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'expenses/disbursements', 'charities/vetting', 'charities/queue', 'financials/budget']],
         ['Administrative Lookups', ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils']],
       ]);
     });
@@ -216,7 +222,7 @@ describe('portal permissions', () => {
       expect(shape(admin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose', 'charities/intake']],
         ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
-        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'charities/vetting', 'financials/budget']],
+        ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'charities/vetting', 'financials/budget']],
         ['Administrative Lookups', ['council-lookups', 'charities/registry', 'supreme-sync', 'parishes']],
       ]);
     });
@@ -234,7 +240,7 @@ describe('portal permissions', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose', 'charities/intake']],
         ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
-        ['Financial Ledgers', ['dashboard', 'expenses', 'charities/vetting', 'financials/budget']],
+        ['Financial Ledgers', ['dashboard', 'expenses', 'expenses/authorize', 'charities/vetting', 'financials/budget']],
         ['Administrative Lookups', ['council-lookups', 'elections/appointments']],
       ]);
     });
@@ -375,6 +381,8 @@ describe('portal permissions', () => {
         'charities/propose',
         'charities/intake',
         'expenses/queue',
+        // Sprint 5Z-4: the Financial Secretary alone issues written orders on the audit desk.
+        ...(role === 'Financial Secretary' ? ['expenses/audit'] : []),
         'expenses/disbursements',
         'charities/queue',
         'charities/vetting',

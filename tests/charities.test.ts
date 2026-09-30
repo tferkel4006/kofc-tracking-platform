@@ -536,7 +536,8 @@ describe.each(drivers)('$name driver: charitable giving', (d) => {
       { Status: 'Submitted' },
       [{ DateOfExpense: '2026-09-12', Amount: 40, VendorName: 'Costco', ReceiptPhotoURL: null, ExpenseDescription: 'Supplies' }],
     );
-    await db.expenses.approveReport(MEMBER.superAdmin, report.id);
+    await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, report.id);
+    await db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, report.id);
     await db.expenses.recordDisbursement(MEMBER.admin, OWN, [report.id], { CheckNumber: '3001', PayoutDate: '2026-09-15' });
 
     const first = await db.charities.proposeDonation(MEMBER.member, OWN, { ProposedCharityName: 'Mercy House', ProposedAmount: 150 });
@@ -548,7 +549,8 @@ describe.each(drivers)('$name driver: charitable giving', (d) => {
       { Status: 'Submitted' },
       [{ DateOfExpense: '2026-09-13', Amount: 12, VendorName: 'Safeway', ReceiptPhotoURL: null, ExpenseDescription: 'Ice' }],
     );
-    await db.expenses.approveReport(MEMBER.superAdmin, second.id);
+    await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, second.id);
+    await db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, second.id);
     await expectRule(db.expenses.recordDisbursement(MEMBER.admin, OWN, [second.id], { CheckNumber: '2001', PayoutDate: '2026-09-20' }), 'INVALID_INPUT');
   });
 

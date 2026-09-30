@@ -654,6 +654,10 @@ export interface ExpenseReportDetail {
   submitterFirstName: string;
   submitterLastName: string;
   disbursement: ExpenseDisbursement | null;
+  /** 'First Last' of the officer who issued the written order (FinancialSecretaryMemberID); '' until then (Sprint 5Z-4). */
+  financialSecretaryName: string;
+  /** 'First Last' of the officer who counter-signed (GrandKnightMemberID); '' until then (Sprint 5Z-4). */
+  grandKnightName: string;
 }
 
 export interface ExpenseDisbursementResult {
@@ -1479,10 +1483,12 @@ export interface DataService {
   /**
    * Expense reporting (Sprint 5R). A member files, edits (while a draft) and reads only their own sheets. Council
    * leadership, meaning an Active Admin, Financial Secretary or Treasurer of the council or any Active Super Admin,
-   * reads the council's queue and approves or returns sheets (SecurityPrivilegeError ADMIN_REQUIRED,
-   * COUNCIL_ACCESS_DENIED). Only the council's Financial Secretary or Treasurer, or an Active Super Admin, records
-   * the checks that pay them (FINANCE_OFFICER_REQUIRED, Sprint 5S). Nobody approves or pays a sheet they submitted,
-   * whatever their role. An unknown actor rejects MEMBER_NOT_FOUND. Every write is all or nothing: a rejected call
+   * reads the council's queue and returns sheets (SecurityPrivilegeError ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). A
+   * sheet is approved only by dual approval (Sprint 5Z-3; the single-step approveReport was retired in Sprint 5Z-4):
+   * the Financial Secretary's written order, then the Grand Knight's counter-signature. Only the council's Financial
+   * Secretary or Treasurer, or an Active Super Admin, records the checks that pay them (FINANCE_OFFICER_REQUIRED,
+   * Sprint 5S), and only for sheets carrying both signatures. Nobody signs or pays a sheet they submitted, whatever
+   * their role. An unknown actor rejects MEMBER_NOT_FOUND. Every write is all or nothing: a rejected call
    * changes no row.
    */
   expenses: {
@@ -1494,6 +1500,13 @@ export interface DataService {
      */
     listCouncilQueue(actorId: number, councilId: number): Promise<ExpenseReportDetail[]>;
     /**
+     * The Grand Knight Authorization Desk (Sprint 5Z-4): the council's 'Submitted' sheets that carry the Financial
+     * Secretary's written order and await the counter-signature, oldest (lowest id) first. Read by the council's Active
+     * Grand Knight or Admins, or an Active Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for
+     * an unknown council.
+     */
+    listAuthorizationQueue(actorId: number, councilId: number): Promise<ExpenseReportDetail[]>;
+    /**
      * Saves a sheet and its complete list of line items in one transaction: without `report.id` it creates a sheet
      * in the actor's council; with one it replaces the links and line items of the actor's own 'Draft' sheet. Saving
      * as 'Submitted' clears any RejectionReason; saving as 'Draft' keeps it.
@@ -1504,12 +1517,6 @@ export interface DataService {
      * malformed date.
      */
     submitReport(actorId: number, report: ExpenseReportInput, lineItems: readonly ExpenseLineItemInput[]): Promise<ExpenseReportDetail>;
-    /**
-     * Moves a 'Submitted' sheet to 'Approved' (council leadership only). Nobody may approve their own sheet, a
-     * Super Admin included (SELF_APPROVAL_BLOCKED, no override since Sprint 5S). Rejects RECORD_NOT_FOUND for an unknown sheet
-     * and EXPENSE_STATUS_CONFLICT for one in another status.
-     */
-    approveReport(actorId: number, reportId: number): Promise<ExpenseReportDetail>;
     /**
      * Returns a 'Submitted' sheet to its submitter (council leadership only): Status goes back to 'Draft' and
      * RejectionReason keeps the trimmed `rejectionReason`, so the member can edit and submit again (which clears it).
@@ -1542,7 +1549,8 @@ export interface DataService {
      * ExpenseDisbursement with TotalAmount set to the sheets' total, then stamps every sheet 'Reimbursed' with its
      * DisbursementID, all in one transaction. Rejects INVALID_INPUT for an empty or repeated id list, a sheet of
      * another council, a blank or over-long check number, or a check number the council already used; INVALID_DATE for a
-     * malformed payout date; RECORD_NOT_FOUND for an unknown sheet; EXPENSE_STATUS_CONFLICT for a sheet not 'Approved';
+     * malformed payout date; RECORD_NOT_FOUND for an unknown sheet; EXPENSE_STATUS_CONFLICT for a sheet not 'Approved' or
+     * missing either dual-approval signature (Sprint 5Z-4);
      * SELF_PAYOUT_BLOCKED for a sheet the actor submitted, whatever their role (Sprint 5R-2; no override since 5S).
      */
     recordDisbursement(

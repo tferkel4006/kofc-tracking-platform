@@ -1,8 +1,9 @@
-// Sprint 5R: expense reporting (expenses.listUserReports, listCouncilQueue, submitReport, approveReport and
-// recordDisbursement), its role gates and its tenant isolation. Sprint 5R-1.5: no self-approval, rejectReport, and
+// Sprint 5R: expense reporting (expenses.listUserReports, listCouncilQueue, submitReport and recordDisbursement), its role gates and its tenant isolation. Sprint 5R-1.5: no self-approval, rejectReport, and
 // approved expenses in reports.monthlySummary. Sprint 5R-2: no self-payout and the shared expense form helpers.
 // Sprint 5S: no Super Admin override on either control, and only finance officers (or a Super Admin) issue checks.
 // Sprint 5Z-3: dual approval, the Financial Secretary written order then the Grand Knight counter-signature.
+// Sprint 5Z-4: approveReport retired, the Grand Knight Authorization Desk read, the dual-signed checkbook vault and the
+// desk permission gates.
 import { describe, expect, it } from 'vitest';
 import {
   assertMayDisburseCouncilExpenses,
@@ -10,10 +11,19 @@ import {
   assertNotSelfApproval,
   blankExpenseLine,
   BusinessRuleError,
-  canApproveExpenseReport,
+  awaitsCounterSignature,
+  awaitsWrittenOrder,
   canAuditCouncilExpenses,
+  canCounterSignExpenseOrder,
   canDisburseCouncilExpenses,
+  canIssueExpenseOrder,
+  canOpenExpenseAuditDesk,
+  canOpenExpenseAuthorizeDesk,
   canPayExpenseReport,
+  expenseCounterSignBlock,
+  expenseOrderBlock,
+  isPayableExpenseReport,
+  portalAreas,
   cleanExpenseLineItems,
   expenseDraftTotal,
   expenseLineDraftFrom,
@@ -92,10 +102,50 @@ async function addMember(db: DataService, councilId: number, type: 'Admin' | 'Me
   return member.id;
 }
 
-/** Submits a sheet for `memberId` and has the seeded Super Admin approve it; resolves to its id. */
+/** A second Active Super Admin per service, created on first use, for sheets the seeded signers may not both sign. */
+const extraSuperAdmins = new WeakMap<DataService, number>();
+async function secondSuperAdmin(db: DataService): Promise<number> {
+  const known = extraSuperAdmins.get(db);
+  if (known !== undefined) return known;
+  const types = await db.lookups.list('MemberType');
+  const statuses = await db.lookups.list('MemberStatus');
+  const member = await db.members.create(MEMBER.superAdmin, {
+    CouncilID: OWN,
+    MemberNumber: 7799999,
+    MemberFirstName: 'Second',
+    MemberLastName: 'Signer',
+    Phone: '503-555-0199',
+    StreetAddress1: '2 Charity Way',
+    City: 'Salem',
+    State: 'OR',
+    ZipCode: '97301',
+    Email: 'second.signer@example.org',
+    DateOfBirth: '1968-03-03',
+    StatusID: statuses.find((s) => s.Status === 'Active')!.id,
+    DegreeID: 3,
+    MemberTypeID: types.find((t) => t.Type === 'Super Admin')!.id,
+  });
+  extraSuperAdmins.set(db, member.id);
+  return member.id;
+}
+
+/**
+ * Signs a submitted sheet through dual approval (Sprint 5Z-3), choosing two different officers who may sign it: the
+ * seeded Financial Secretary (Admin 2) or Super Admin for the order, the seeded Grand Knight (Super Admin 1) or a second
+ * Super Admin for the counter-signature. Approval has no other path since Sprint 5Z-4.
+ */
+async function dualApprove(db: DataService, report: { id: number; CouncilID: number; SubmitterMemberID: number }): Promise<void> {
+  const orderSigners = report.CouncilID === OWN ? [MEMBER.admin, MEMBER.superAdmin] : [MEMBER.superAdmin];
+  const fs = orderSigners.find((id) => id !== report.SubmitterMemberID) ?? (await secondSuperAdmin(db));
+  const gk = [MEMBER.superAdmin].find((id) => id !== report.SubmitterMemberID && id !== fs) ?? (await secondSuperAdmin(db));
+  await db.expenses.financialSecretaryAuditOrder(fs, report.id);
+  await db.expenses.grandKnightAuthorizeOrder(gk, report.id);
+}
+
+/** Submits a sheet for `memberId` and signs it through dual approval; resolves to its id. */
 async function approvedReport(db: DataService, memberId: number, items = [receipt()]): Promise<number> {
   const { report } = await db.expenses.submitReport(memberId, { Status: 'Submitted' }, items);
-  await db.expenses.approveReport(MEMBER.superAdmin, report.id);
+  await dualApprove(db, report);
   return report.id;
 }
 
@@ -254,7 +304,7 @@ describe.each(drivers)('expense reporting ($name driver)', (d) => {
     });
   });
 
-  describe('listCouncilQueue and approveReport', () => {
+  describe('listCouncilQueue', () => {
     it('shows leadership the council’s submitted and approved sheets, oldest first, never drafts or other councils', async () => {
       const db = await d.make();
       const otherMember = await addMember(db, OTHER, 'Member', 'other.expense.member@example.org');
@@ -282,29 +332,12 @@ describe.each(drivers)('expense reporting ($name driver)', (d) => {
       await expectRule(db.expenses.listCouncilQueue(MEMBER.superAdmin, 9999), 'INVALID_INPUT');
     });
 
-    it('lets leadership approve a submitted sheet, only once, and only in their council', async () => {
+    it('offers no single-step approval: a sheet is approved only by its two signatures (Sprint 5Z-4)', async () => {
       const db = await d.make();
+      expect('approveReport' in db.expenses).toBe(false);
       const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
-      await expectPrivilege(db.expenses.approveReport(MEMBER.member, report.id), 'ADMIN_REQUIRED');
-      const otherAdmin = await addMember(db, OTHER, 'Admin', 'other.expense.admin@example.org');
-      await expectPrivilege(db.expenses.approveReport(otherAdmin, report.id), 'COUNCIL_ACCESS_DENIED');
-      const approved = await db.expenses.approveReport(MEMBER.admin, report.id);
-      expect(approved.report.Status).toBe('Approved');
-      await expectRule(db.expenses.approveReport(MEMBER.admin, report.id), 'EXPENSE_STATUS_CONFLICT');
-      await expectRule(db.expenses.approveReport(MEMBER.admin, 9999), 'RECORD_NOT_FOUND');
-    });
-
-    it('refuses to approve a draft', async () => {
-      const db = await d.make();
-      const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Draft' }, [receipt()]);
-      await expectRule(db.expenses.approveReport(MEMBER.superAdmin, report.id), 'EXPENSE_STATUS_CONFLICT');
-    });
-
-    it('refuses an inactive Admin', async () => {
-      const db = await d.make();
-      const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
-      const inactiveAdmin = await addMember(db, OWN, 'Admin', 'inactive.expense.admin@example.org', 'Inactive');
-      await expectPrivilege(db.expenses.approveReport(inactiveAdmin, report.id), 'ADMIN_REQUIRED');
+      expect((await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, report.id)).report.Status).toBe('Submitted');
+      expect((await db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, report.id)).report.Status).toBe('Approved');
     });
   });
 
@@ -402,14 +435,6 @@ describe('financial controls (pure, Sprint 5R-1.5)', () => {
     expect(() => assertNotSelfApproval(actor(), { id: 7, SubmitterMemberID: 11 })).not.toThrow();
   });
 
-  it('mirrors the rule in the approve control', () => {
-    const user = (over = {}) => ({ memberId: 10, councilId: OWN, memberType: 'Admin' as const, isOfficer: false, ...over });
-    expect(canApproveExpenseReport(user(), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(true);
-    expect(canApproveExpenseReport(user(), { CouncilID: OWN, SubmitterMemberID: 10 })).toBe(false);
-    expect(canApproveExpenseReport(user({ memberType: 'Super Admin' }), { CouncilID: OTHER, SubmitterMemberID: 11 })).toBe(true);
-    expect(canApproveExpenseReport(user({ memberType: 'Super Admin' }), { CouncilID: OTHER, SubmitterMemberID: 10 })).toBe(false);
-    expect(canApproveExpenseReport(user({ memberType: 'Member' }), { CouncilID: OWN, SubmitterMemberID: 11 })).toBe(false);
-  });
 
   it('adds approved expenses to the month’s spend and nets them against funds raised', () => {
     const summary = summarizeMonth(OWN, 2026, 9, {
@@ -425,38 +450,32 @@ describe('financial controls (pure, Sprint 5R-1.5)', () => {
 
 describe.each(drivers)('financial controls ($name driver, Sprint 5R-1.5)', (d) => {
   describe('self-approval', () => {
-    it('stops an Admin approving their own sheet and leaves it Submitted', async () => {
+    it('stops the Financial Secretary ordering their own sheet and leaves it unsigned', async () => {
       const db = await d.make();
       const { report } = await db.expenses.submitReport(MEMBER.admin, { Status: 'Submitted' }, [receipt()]);
-      const err = await expectRule(db.expenses.approveReport(MEMBER.admin, report.id), 'SELF_APPROVAL_BLOCKED');
+      const err = await expectRule(db.expenses.financialSecretaryAuditOrder(MEMBER.admin, report.id), 'SELF_APPROVAL_BLOCKED');
       expect(err.message).toBe('For accounting controls, an officer cannot approve their own expense report.');
       const [mine] = await db.expenses.listUserReports(MEMBER.admin);
-      expect(mine.report.Status).toBe('Submitted');
+      expect(mine.report).toMatchObject({ Status: 'Submitted', FinancialSecretaryMemberID: null });
     });
 
-    it('stops a Treasurer approving their own sheet, but not a colleague’s', async () => {
-      const db = await d.make();
-      grantRole(d, db, MEMBER.member, 'Treasurer');
-      const own = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
-      const colleague = await db.expenses.submitReport(MEMBER.admin, { Status: 'Submitted' }, [receipt()]);
-      await expectRule(db.expenses.approveReport(MEMBER.member, own.report.id), 'SELF_APPROVAL_BLOCKED');
-      expect((await db.expenses.approveReport(MEMBER.member, colleague.report.id)).report.Status).toBe('Approved');
-    });
-
-    it('stops a Super Admin approving their own sheet too: there is no override (Sprint 5S)', async () => {
+    it('stops a Super Admin signing either line of their own sheet too: there is no override (Sprint 5S)', async () => {
       const db = await d.make();
       const { report } = await db.expenses.submitReport(MEMBER.superAdmin, { Status: 'Submitted' }, [receipt()]);
-      await expectRule(db.expenses.approveReport(MEMBER.superAdmin, report.id), 'SELF_APPROVAL_BLOCKED');
+      await expectRule(db.expenses.financialSecretaryAuditOrder(MEMBER.superAdmin, report.id), 'SELF_APPROVAL_BLOCKED');
+      await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, report.id);
+      await expectRule(db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, report.id), 'SELF_APPROVAL_BLOCKED');
       const [mine] = await db.expenses.listUserReports(MEMBER.superAdmin);
       expect(mine.report.Status).toBe('Submitted');
-      // Another officer of the council approves it.
-      expect((await db.expenses.approveReport(MEMBER.admin, report.id)).report.Status).toBe('Approved');
+      // Another officer counter-signs it.
+      await db.expenses.grandKnightAuthorizeOrder(await secondSuperAdmin(db), report.id);
+      expect((await db.expenses.listUserReports(MEMBER.superAdmin))[0].report.Status).toBe('Approved');
     });
 
     it('still refuses a plain member before looking at who submitted', async () => {
       const db = await d.make();
       const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
-      await expectPrivilege(db.expenses.approveReport(MEMBER.member, report.id), 'ADMIN_REQUIRED');
+      await expectRule(db.expenses.financialSecretaryAuditOrder(MEMBER.member, report.id), 'FINANCIAL_SECRETARY_REQUIRED');
     });
   });
 
@@ -476,7 +495,8 @@ describe.each(drivers)('financial controls ($name driver, Sprint 5R-1.5)', (d) =
       expect(edited.report.RejectionReason).toBe('Please attach the Costco receipt.');
       const resubmitted = await db.expenses.submitReport(MEMBER.member, { id: report.id, Status: 'Submitted' }, fixed);
       expect(resubmitted.report).toMatchObject({ Status: 'Submitted', RejectionReason: null });
-      expect((await db.expenses.approveReport(MEMBER.admin, report.id)).report.Status).toBe('Approved');
+      await dualApprove(db, resubmitted.report);
+      expect((await db.expenses.listUserReports(MEMBER.member))[0].report.Status).toBe('Approved');
     });
 
     it('is for the council’s leadership only', async () => {
@@ -679,7 +699,7 @@ describe.each(drivers)('self-payout ($name driver, Sprint 5R-2)', (d) => {
   it('stops a Super Admin paying their own sheet too: there is no override (Sprint 5S)', async () => {
     const db = await d.make();
     const { report } = await db.expenses.submitReport(MEMBER.superAdmin, { Status: 'Submitted' }, [receipt()]);
-    await db.expenses.approveReport(MEMBER.admin, report.id);
+    await dualApprove(db, report);
     await expectRule(db.expenses.recordDisbursement(MEMBER.superAdmin, OWN, [report.id], CHECK), 'SELF_PAYOUT_BLOCKED');
     expect(d.count(db, 'ExpenseDisbursement')).toBe(0);
     // The council's Financial Secretary (the seeded Admin) pays it instead.
@@ -700,7 +720,7 @@ describe.each(drivers)('finance-officer disbursements ($name driver, Sprint 5S)'
     const plainAdmin = await addMember(db, OWN, 'Admin', 'plain.expense.admin@example.org');
     const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
     expect((await db.expenses.listCouncilQueue(plainAdmin, OWN)).map((q) => q.report.id)).toEqual([report.id]);
-    expect((await db.expenses.approveReport(plainAdmin, report.id)).report.Status).toBe('Approved');
+    await dualApprove(db, report);
     const err = await expectRule(db.expenses.recordDisbursement(plainAdmin, OWN, [report.id], CHECK), 'FINANCE_OFFICER_REQUIRED');
     expect(err).toBeInstanceOf(SecurityPrivilegeError);
     expect(d.count(db, 'ExpenseDisbursement')).toBe(0);
@@ -851,5 +871,121 @@ describe.each(drivers)('dual approval ($name driver, Sprint 5Z-3)', (d) => {
     await expectRule(db.expenses.grandKnightAuthorizeOrder(GK, id), 'EXPENSE_STATUS_CONFLICT');
     await db.expenses.financialSecretaryAuditOrder(FS, id);
     expect((await db.expenses.grandKnightAuthorizeOrder(GK, id)).report.Status).toBe('Approved');
+  });
+});
+
+describe('dual-approval desks and vault (pure, Sprint 5Z-4)', () => {
+  const report = (over = {}) => ({ Status: 'Submitted' as const, FinancialSecretaryMemberID: null, GrandKnightMemberID: null, ...over });
+
+  it('sorts a sheet onto its desk, and only a dual-signed approved sheet into the vault', () => {
+    expect(awaitsWrittenOrder(report())).toBe(true);
+    expect(awaitsCounterSignature(report())).toBe(false);
+    expect(awaitsWrittenOrder(report({ FinancialSecretaryMemberID: 2 }))).toBe(false);
+    expect(awaitsCounterSignature(report({ FinancialSecretaryMemberID: 2 }))).toBe(true);
+    expect(awaitsWrittenOrder(report({ Status: 'Draft' }))).toBe(false);
+    expect(isPayableExpenseReport(report({ Status: 'Approved', FinancialSecretaryMemberID: 2, GrandKnightMemberID: 1 }))).toBe(true);
+    // A sheet approved without both signatures (such as one approved before Sprint 5Z-3) never reaches the checkbook.
+    expect(isPayableExpenseReport(report({ Status: 'Approved' }))).toBe(false);
+    expect(isPayableExpenseReport(report({ Status: 'Approved', FinancialSecretaryMemberID: 2 }))).toBe(false);
+    expect(isPayableExpenseReport(report({ Status: 'Reimbursed', FinancialSecretaryMemberID: 2, GrandKnightMemberID: 1 }))).toBe(false);
+    expect(expenseStatusBadge({ Status: 'Submitted', RejectionReason: null, FinancialSecretaryMemberID: 2 })).toEqual({ label: 'Order Issued', tone: 'gold' });
+    expect(expenseStatusBadge({ Status: 'Submitted', RejectionReason: null })).toEqual({ label: 'Submitted', tone: 'gold' });
+  });
+
+  const user = (over = {}) => ({ memberId: 10, councilId: OWN, memberType: 'Member' as const, isOfficer: true, roles: [] as string[], ...over });
+  const sheet = (over = {}) => ({ CouncilID: OWN, SubmitterMemberID: 11, FinancialSecretaryMemberID: 12, ...over });
+
+  it('opens the audit desk to the Financial Secretary, Admins and Super Admins', () => {
+    expect(canOpenExpenseAuditDesk(user({ roles: ['Financial Secretary'] }), OWN)).toBe(true);
+    expect(canOpenExpenseAuditDesk(user({ roles: ['Financial Secretary'] }), OTHER)).toBe(false);
+    expect(canOpenExpenseAuditDesk(user({ memberType: 'Admin' }), OWN)).toBe(true);
+    expect(canOpenExpenseAuditDesk(user({ memberType: 'Super Admin' }), OTHER)).toBe(true);
+    expect(canOpenExpenseAuditDesk(user({ roles: ['Treasurer'] }), OWN)).toBe(false);
+    expect(canOpenExpenseAuditDesk(user({ roles: ['Grand Knight'] }), OWN)).toBe(false);
+  });
+
+  it('opens the authorization desk to the Grand Knight, Admins and Super Admins', () => {
+    expect(canOpenExpenseAuthorizeDesk(user({ roles: ['Grand Knight'] }), OWN)).toBe(true);
+    expect(canOpenExpenseAuthorizeDesk(user({ roles: ['Grand Knight'] }), OTHER)).toBe(false);
+    expect(canOpenExpenseAuthorizeDesk(user({ memberType: 'Admin' }), OWN)).toBe(true);
+    expect(canOpenExpenseAuthorizeDesk(user({ memberType: 'Super Admin' }), OTHER)).toBe(true);
+    expect(canOpenExpenseAuthorizeDesk(user({ roles: ['Deputy Grand Knight'] }), OWN)).toBe(false);
+    expect(canOpenExpenseAuthorizeDesk(user({ roles: ['Financial Secretary'] }), OWN)).toBe(false);
+  });
+
+  it('lets only the seat or a Super Admin sign, never their own sheet, and locks the order-giver with the Collusion Guard', () => {
+    expect(expenseOrderBlock(user({ roles: ['Financial Secretary'] }), sheet())).toBeNull();
+    expect(canIssueExpenseOrder(user({ memberType: 'Super Admin' }), sheet({ CouncilID: OTHER }))).toBe(true);
+    expect(expenseOrderBlock(user({ memberType: 'Admin' }), sheet())).toBe('seat');
+    expect(expenseOrderBlock(user({ roles: ['Financial Secretary'] }), sheet({ CouncilID: OTHER }))).toBe('seat');
+    expect(expenseOrderBlock(user({ roles: ['Financial Secretary'] }), sheet({ SubmitterMemberID: 10 }))).toBe('own-report');
+
+    expect(expenseCounterSignBlock(user({ roles: ['Grand Knight'] }), sheet())).toBeNull();
+    expect(canCounterSignExpenseOrder(user({ memberType: 'Super Admin' }), sheet({ CouncilID: OTHER }))).toBe(true);
+    expect(expenseCounterSignBlock(user({ memberType: 'Admin' }), sheet())).toBe('seat');
+    expect(expenseCounterSignBlock(user({ roles: ['Grand Knight'] }), sheet({ SubmitterMemberID: 10 }))).toBe('own-report');
+    expect(expenseCounterSignBlock(user({ memberType: 'Super Admin' }), sheet({ FinancialSecretaryMemberID: 10 }))).toBe('collusion');
+  });
+
+  it('puts each desk in the navigation of those who open it', () => {
+    const areas = (over = {}) => portalAreas(user(over));
+    expect(areas({ roles: ['Financial Secretary'] })).toEqual(expect.arrayContaining(['expenses/audit']));
+    expect(areas({ roles: ['Financial Secretary'] })).not.toContain('expenses/authorize');
+    expect(areas({ roles: ['Grand Knight'] })).toEqual(expect.arrayContaining(['expenses/authorize']));
+    expect(areas({ roles: ['Grand Knight'] })).not.toContain('expenses/audit');
+    expect(areas({ memberType: 'Admin' })).toEqual(expect.arrayContaining(['expenses/audit', 'expenses/authorize']));
+    expect(areas({ roles: ['Treasurer'] })).not.toContain('expenses/audit');
+    expect(areas()).not.toContain('expenses/audit');
+  });
+});
+
+describe.each(drivers)('dual-approval desks and vault ($name driver, Sprint 5Z-4)', (d) => {
+  const submitted = async (db: DataService, memberId: number = MEMBER.member) =>
+    (await db.expenses.submitReport(memberId, { Status: 'Submitted' }, [receipt()])).report;
+
+  it('lists only ordered, uncountersigned sheets on the authorization desk, with the signer named', async () => {
+    const db = await d.make();
+    const waiting = await submitted(db);
+    const ordered = await submitted(db);
+    const done = await submitted(db);
+    await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, ordered.id);
+    await dualApprove(db, done);
+    const desk = await db.expenses.listAuthorizationQueue(MEMBER.superAdmin, OWN);
+    expect(desk.map((q) => q.report.id)).toEqual([ordered.id]);
+    expect(desk[0]).toMatchObject({ financialSecretaryName: 'Council Admin', grandKnightName: '' });
+    expect(desk.map((q) => q.report.id)).not.toContain(waiting.id);
+    const [paid] = (await db.expenses.listCouncilQueue(MEMBER.admin, OWN)).filter((q) => q.report.id === done.id);
+    expect(paid.grandKnightName).not.toBe('');
+  });
+
+  it('opens the authorization desk to the Grand Knight and Admins of the council only', async () => {
+    const db = await d.make();
+    const gk = await addMember(db, OWN, 'Member', 'desk.gk@example.org');
+    grantRole(d, db, gk, 'Grand Knight');
+    expect(await db.expenses.listAuthorizationQueue(gk, OWN)).toEqual([]);
+    expect(await db.expenses.listAuthorizationQueue(MEMBER.admin, OWN)).toEqual([]);
+    await expectPrivilege(db.expenses.listAuthorizationQueue(MEMBER.member, OWN), 'ADMIN_REQUIRED');
+    const dgk = await addMember(db, OWN, 'Member', 'desk.dgk@example.org');
+    grantRole(d, db, dgk, 'Deputy Grand Knight');
+    await expectPrivilege(db.expenses.listAuthorizationQueue(dgk, OWN), 'ADMIN_REQUIRED');
+    await expectPrivilege(db.expenses.listAuthorizationQueue(gk, OTHER), 'COUNCIL_ACCESS_DENIED');
+    await expectRule(db.expenses.listAuthorizationQueue(MEMBER.superAdmin, 9999), 'INVALID_INPUT');
+  });
+
+  it('refuses to pay an approved sheet missing either signature, and writes nothing', async () => {
+    const db = await d.make();
+    const legacy = await submitted(db);
+    // An 'Approved' sheet without signatures, as approveReport left them before Sprint 5Z-4.
+    if (d.name === 'memory') {
+      (db as MemoryDataService).debugStore.rows('ExpenseReport').find((r) => r.id === legacy.id)!.Status = 'Approved';
+    } else {
+      openDatabases.at(-1)!.prepare("UPDATE [ExpenseReport] SET [Status] = 'Approved' WHERE [id] = ?").run(legacy.id);
+    }
+    const signed = await approvedReport(db, MEMBER.member);
+    await expectRule(db.expenses.recordDisbursement(MEMBER.admin, OWN, [signed, legacy.id], CHECK), 'EXPENSE_STATUS_CONFLICT');
+    expect(d.count(db, 'ExpenseDisbursement')).toBe(0);
+    const queue = await db.expenses.listCouncilQueue(MEMBER.admin, OWN);
+    expect(queue.filter((q) => isPayableExpenseReport(q.report)).map((q) => q.report.id)).toEqual([signed]);
+    expect((await db.expenses.recordDisbursement(MEMBER.admin, OWN, [signed], CHECK)).reports[0].report.Status).toBe('Reimbursed');
   });
 });

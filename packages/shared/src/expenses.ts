@@ -208,6 +208,36 @@ export function assertExpenseSignatureStage(
   );
 }
 
+type SignatureFields = Pick<ExpenseReport, 'FinancialSecretaryMemberID' | 'GrandKnightMemberID'>;
+
+/** The sheet carries both the Financial Secretary's written order and the Grand Knight's counter-signature. */
+export const isDualSigned = (report: SignatureFields): boolean => report.FinancialSecretaryMemberID != null && report.GrandKnightMemberID != null;
+
+/** A 'Submitted' sheet on the Financial Secretary Audit Desk: no written order yet (Sprint 5Z-4). */
+export const awaitsWrittenOrder = (report: Pick<ExpenseReport, 'Status'> & SignatureFields): boolean =>
+  report.Status === 'Submitted' && report.FinancialSecretaryMemberID == null;
+
+/** A 'Submitted' sheet on the Grand Knight Authorization Desk: ordered, not yet counter-signed (Sprint 5Z-4). */
+export const awaitsCounterSignature = (report: Pick<ExpenseReport, 'Status'> & SignatureFields): boolean =>
+  report.Status === 'Submitted' && report.FinancialSecretaryMemberID != null && report.GrandKnightMemberID == null;
+
+/** A sheet the checkbook may pay: 'Approved' with both signatures (the disbursement vault shows nothing else). */
+export const isPayableExpenseReport = (report: Pick<ExpenseReport, 'Status'> & SignatureFields): boolean =>
+  report.Status === 'Approved' && isDualSigned(report);
+
+/**
+ * expenses.recordDisbursement (Sprint 5Z-4): no check pays a sheet missing either signature, whatever its Status
+ * (EXPENSE_STATUS_CONFLICT). Call after assertExpenseStatus(report, 'Approved', ...).
+ */
+export function assertDualSigned(report: Pick<ExpenseReport, 'id'> & SignatureFields): void {
+  if (isDualSigned(report)) return;
+  throw new BusinessRuleError(
+    'EXPENSE_STATUS_CONFLICT',
+    `Expense report ${report.id} lacks the Financial Secretary's written order or the Grand Knight's counter-signature, so no check can pay it.`,
+    { reportId: report.id, financialSecretaryMemberId: report.FinancialSecretaryMemberID ?? null, grandKnightMemberId: report.GrandKnightMemberID ?? null },
+  );
+}
+
 /** What expenses.rejectReport writes over the signature lines: a returned sheet starts its approvals again. */
 export const CLEARED_EXPENSE_SIGNATURES = {
   FinancialSecretaryMemberID: null,
@@ -236,6 +266,10 @@ export function buildExpenseReportDetails(
       .map((li) => ({ ...li }))
       .sort((a, b) => a.DateOfExpense.localeCompare(b.DateOfExpense) || a.id - b.id);
     const submitter = members.find((m) => m.id === report.SubmitterMemberID);
+    const fullName = (id: number | null | undefined) => {
+      const m = id == null ? undefined : members.find((x) => x.id === id);
+      return m ? `${m.MemberFirstName} ${m.MemberLastName}`.trim() : '';
+    };
     const disbursement = disbursements.find((d) => d.id === report.DisbursementID);
     return {
       report: { ...report },
@@ -244,6 +278,8 @@ export function buildExpenseReportDetails(
       submitterFirstName: submitter?.MemberFirstName ?? '',
       submitterLastName: submitter?.MemberLastName ?? '',
       disbursement: disbursement ? { ...disbursement } : null,
+      financialSecretaryName: fullName(report.FinancialSecretaryMemberID),
+      grandKnightName: fullName(report.GrandKnightMemberID),
     };
   });
 }
@@ -303,12 +339,16 @@ export function expenseReferenceLabel(report: Pick<ExpenseReport, 'LinkedEventID
   return 'General council expense';
 }
 
-/** Status chip on both platforms. A draft leadership sent back reads 'Returned' in red until it is resubmitted. */
-export function expenseStatusBadge(report: Pick<ExpenseReport, 'Status' | 'RejectionReason'>): {
+/**
+ * Status chip on both platforms. A draft leadership sent back reads 'Returned' in red until it is resubmitted; a
+ * submitted sheet carrying the Financial Secretary's written order reads 'Order Issued' (Sprint 5Z-4).
+ */
+export function expenseStatusBadge(report: Pick<ExpenseReport, 'Status' | 'RejectionReason' | 'FinancialSecretaryMemberID'>): {
   label: string;
   tone: 'outline' | 'gold' | 'navy' | 'redOutline';
 } {
   if (report.Status === 'Draft' && report.RejectionReason) return { label: 'Returned', tone: 'redOutline' };
+  if (report.Status === 'Submitted' && report.FinancialSecretaryMemberID != null) return { label: 'Order Issued', tone: 'gold' };
   const tone = { Draft: 'outline', Submitted: 'gold', Approved: 'navy', Reimbursed: 'navy' } as const;
   return { label: report.Status, tone: tone[report.Status] };
 }

@@ -57,7 +57,7 @@ export function Field({
   );
 }
 
-type ButtonVariant = 'primary' | 'secondary' | 'danger';
+type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'gold';
 
 export function Button({
   variant = 'primary',
@@ -69,6 +69,8 @@ export function Button({
     primary: 'border-navy bg-navy text-white',
     secondary: 'border-navy bg-white text-navy',
     danger: 'border-brand-red bg-brand-red text-white',
+    // Gold is a fill carrying navy text (6.4:1), never gold text on white: the high-visibility signature command.
+    gold: 'border-navy bg-gold text-navy',
   };
   return (
     <button

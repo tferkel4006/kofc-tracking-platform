@@ -1,12 +1,28 @@
 'use client';
-// Pieces shared by the three expense screens (My Expense Reports, the audit queue and check disbursements):
-// the status chip, the receipt link and the read-only receipt grid.
-import { expenseStatusBadge, type ExpenseLineItem, type ExpenseReport } from '@kofc/shared';
-import { Pill, Table, Td } from '@/components/ui';
-import { formatFullDate, formatMoney, minutesFileName } from '@/lib/format';
+// Pieces shared by the expense screens (My Expense Reports, the audit queue, the two dual-approval desks and check
+// disbursements): the status chip, the receipt link, the read-only receipt grid, the signature trail, the return form
+// and the signature desk grid (Sprint 5Z-4).
+import { Fragment, useState, type ReactNode } from 'react';
+import {
+  describeError,
+  expenseReferenceLabel,
+  expenseStatusBadge,
+  REJECTION_REASON_MAX_LENGTH,
+  type ExpenseLineItem,
+  type ExpenseReferenceOptions,
+  type ExpenseReport,
+  type ExpenseReportDetail,
+} from '@kofc/shared';
+import { Button, Empty, Field, Notice, Pill, Table, Td, Textarea } from '@/components/ui';
+import { formatFullDate, formatMoney, formatPersonName, minutesFileName } from '@/lib/format';
 import { photoName, photoSrc } from '@/lib/media';
+import { useUser } from '@/lib/session';
+import { db } from '@/services/db';
 
-export function ExpenseStatusPill({ report }: { report: Pick<ExpenseReport, 'Status' | 'RejectionReason'> }) {
+export const submitterName = (d: ExpenseReportDetail) =>
+  formatPersonName(d.submitterFirstName, d.submitterLastName) || `Member ${d.report.SubmitterMemberID}`;
+
+export function ExpenseStatusPill({ report }: { report: Pick<ExpenseReport, 'Status' | 'RejectionReason' | 'FinancialSecretaryMemberID'> }) {
   const { label, tone } = expenseStatusBadge(report);
   return <Pill tone={tone}>{label}</Pill>;
 }
@@ -54,6 +70,177 @@ export function ExpenseLineItemsTable({ items, total, caption }: { items: readon
         </Td>
         <Td className="whitespace-nowrap text-right font-bold">{formatMoney(total)}</Td>
       </tr>
+    </Table>
+  );
+}
+
+/** One signature line: who signed and when, or that it is still awaited. */
+function SignatureLine({ label, memberId, name, at }: { label: string; memberId: number | null | undefined; name: string; at: string | null | undefined }) {
+  return (
+    <div className="rounded border border-line p-2">
+      <dt className="text-xs font-bold uppercase tracking-wide">{label}</dt>
+      <dd className="text-sm">
+        {memberId != null ? (
+          <>
+            <span className="font-bold">{name || `Member ${memberId}`}</span> · {formatFullDate(at)}
+          </>
+        ) : (
+          <span className="text-muted">Awaiting signature</span>
+        )}
+      </dd>
+    </div>
+  );
+}
+
+/** The two dual-approval signatures on a sheet (Sprint 5Z-3): the written order, then the counter-signature. */
+export function SignatureTrail({ detail }: { detail: ExpenseReportDetail }) {
+  const { report } = detail;
+  return (
+    <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2" aria-label={`Signatures on expense report ${report.id}`}>
+      <SignatureLine
+        label="📜 Written order · Financial Secretary"
+        memberId={report.FinancialSecretaryMemberID}
+        name={detail.financialSecretaryName}
+        at={report.FinancialSecretaryApprovedAt}
+      />
+      <SignatureLine
+        label="✍️ Counter-signature · Grand Knight"
+        memberId={report.GrandKnightMemberID}
+        name={detail.grandKnightName}
+        at={report.GrandKnightApprovedAt}
+      />
+    </dl>
+  );
+}
+
+/**
+ * Reject & Return for one submitted sheet (expenses.rejectReport; council leadership only): a required reason the
+ * member reads on their expense page. Returning clears any signatures, so the sheet is signed afresh.
+ */
+export function ReturnToMemberForm({ detail, onDone }: { detail: ExpenseReportDetail; onDone: (text: string) => Promise<void> }) {
+  const user = useUser();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { report } = detail;
+  const who = submitterName(detail);
+  if (!open) {
+    return (
+      <Button variant="danger" onClick={() => setOpen(true)}>
+        Reject &amp; Return
+      </Button>
+    );
+  }
+  return (
+    <form
+      className="flex w-full flex-col gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError(null);
+        db.expenses
+          .rejectReport(user.memberId, report.id, reason)
+          .then(() => onDone(`Returned report #${report.id} to ${who} with your reason.`))
+          .catch((err: unknown) => {
+            setError(describeError(err));
+            setBusy(false);
+          });
+      }}
+    >
+      {error ? (
+        <Notice tone="error" onDismiss={() => setError(null)}>
+          {error}
+        </Notice>
+      ) : null}
+      <Field label="Reason for returning (required)" hint={`${who} sees this on their expense page. ${reason.trim().length}/${REJECTION_REASON_MAX_LENGTH} characters.`}>
+        {(id) => (
+          <Textarea
+            id={id}
+            required
+            autoFocus
+            maxLength={REJECTION_REASON_MAX_LENGTH}
+            placeholder="e.g. Please attach the itemized Costco receipt; the photo is of the card slip."
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        )}
+      </Field>
+      <div className="flex gap-2">
+        <Button type="submit" variant="danger" disabled={busy || reason.trim() === ''}>
+          {busy ? 'Returning…' : 'Return to member'}
+        </Button>
+        <Button variant="secondary" disabled={busy} onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * The spreadsheet shared by the dual-approval desks: one row per sheet with its submitter, purpose, receipt count,
+ * total and status, a receipt drawer, and the desk's command beside the drawer toggle. `action` renders that command
+ * (or its lock) for a row; `drawer` adds content under the receipts.
+ */
+export function SignatureDeskTable({
+  rows,
+  refs,
+  caption,
+  empty,
+  action,
+  drawer,
+}: {
+  rows: readonly ExpenseReportDetail[];
+  refs: ExpenseReferenceOptions;
+  caption: string;
+  empty: string;
+  action: (detail: ExpenseReportDetail) => ReactNode;
+  drawer?: (detail: ExpenseReportDetail) => ReactNode;
+}) {
+  const [openId, setOpenId] = useState<number | null>(null);
+  if (rows.length === 0) return <Empty>{empty}</Empty>;
+  return (
+    <Table caption={caption} head={['Report', 'Submitted by', 'Spent for', 'Receipts', 'Total', 'Status', 'Action']}>
+      {rows.map((d) => {
+        const open = d.report.id === openId;
+        return (
+          <Fragment key={d.report.id}>
+            <tr>
+              <Td className="font-bold">#{d.report.id}</Td>
+              <Td>{submitterName(d)}</Td>
+              <Td>{expenseReferenceLabel(d.report, refs)}</Td>
+              <Td>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  aria-expanded={open}
+                  aria-controls={`desk-${d.report.id}`}
+                  onClick={() => setOpenId(open ? null : d.report.id)}
+                >
+                  {open ? '▾' : '▸'} {d.lineItems.length} receipt{d.lineItems.length === 1 ? '' : 's'}
+                </Button>
+              </Td>
+              <Td className="whitespace-nowrap text-right font-bold">{formatMoney(d.total)}</Td>
+              <Td>
+                <ExpenseStatusPill report={d.report} />
+              </Td>
+              <Td className="whitespace-nowrap">{action(d)}</Td>
+            </tr>
+            {open ? (
+              <tr>
+                <Td colSpan={7} className="border-l-8 border-l-gold bg-white">
+                  <div id={`desk-${d.report.id}`} className="flex flex-col gap-3 py-2">
+                    <ExpenseLineItemsTable items={d.lineItems} total={d.total} caption={`Receipts on expense report ${d.report.id}`} />
+                    <SignatureTrail detail={d} />
+                    {drawer ? drawer(d) : null}
+                  </div>
+                </Td>
+              </tr>
+            ) : null}
+          </Fragment>
+        );
+      })}
     </Table>
   );
 }

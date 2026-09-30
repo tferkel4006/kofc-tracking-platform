@@ -1072,7 +1072,7 @@ export function assertMayChangeDonation(
 }
 
 /**
- * Expense reporting leadership (Sprint 5R): expenses.listCouncilQueue, approveReport and rejectReport (checks follow
+ * Expense reporting leadership (Sprint 5R): expenses.listCouncilQueue and rejectReport (checks follow
  * the narrower assertMayDisburseCouncilExpenses since Sprint 5S). An Active
  * Super Admin for any council; an Active Admin, Financial Secretary or Treasurer for their own council only. Members
  * reach their own sheets through listUserReports and submitReport, which need no leadership. `action` completes
@@ -1132,8 +1132,9 @@ function disbursementDenial(actor: MemberWriteActor, councilId: number, action: 
 }
 
 /**
- * expenses.approveReport: nobody may approve an expense sheet they submitted (accounting controls). Since Sprint 5S
- * this holds for every role, Super Admins included. Call after assertMayAuditCouncilExpenses.
+ * Both dual-approval signatures (expenses.financialSecretaryAuditOrder, grandKnightAuthorizeOrder): nobody may sign an
+ * expense sheet they submitted (accounting controls). Since Sprint 5S this holds for every role, Super Admins included.
+ * Call after the seat check (assertMayIssueExpenseOrder or assertMayAuthorizeExpenseOrder).
  */
 export function assertNotSelfApproval(actor: MemberWriteActor, report: { id: number; SubmitterMemberID: number }): void {
   if (isOwnExpense(actor, report)) {
@@ -1212,6 +1213,28 @@ function expenseSignatureDenial(
   return new SecurityPrivilegeError(
     'COUNCIL_ACCESS_DENIED',
     `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; a council's expense orders are signed only by its own ${seat}.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
+  );
+}
+
+/**
+ * expenses.listAuthorizationQueue (Sprint 5Z-4): the Grand Knight Authorization Desk is read by an Active Grand Knight
+ * or Admin of the council, or an Active Super Admin for any council (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Reading it
+ * grants no signature; grandKnightAuthorizeOrder still checks the seat. `action` completes "cannot ...".
+ */
+export function assertMayReadAuthorizationDesk(actor: MemberWriteActor, councilId: number, action: string): void {
+  if (hasSuperAdminRights(actor)) return;
+  if (!hasAdminRights(actor) && !(actor.active && (actor.roles ?? []).includes(GRAND_KNIGHT_ROLE_NAME))) {
+    throw new SecurityPrivilegeError(
+      'ADMIN_REQUIRED',
+      `Only an active Grand Knight, Admin or Super Admin can ${action}; member ${actor.memberId} is ${describeActor(actor)}.`,
+      { actorId: actor.memberId, actorType: actor.memberType ?? null, councilId },
+    );
+  }
+  if (actor.councilId === councilId) return;
+  throw new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; a council's authorization desk is read only by its own leadership.`,
     { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
   );
 }

@@ -5,6 +5,9 @@
 // number and payout date, and "Issue Disbursement Check" records it with expenses.recordDisbursement, which stamps
 // every ticked sheet 'Reimbursed' in one transaction. Nobody may tick their own sheet, whatever their role
 // (canPayExpenseReport; the drivers: FINANCE_OFFICER_REQUIRED and SELF_PAYOUT_BLOCKED).
+// Sprint 5Z-4 vault filter: only sheets carrying both the Financial Secretary's written order and the Grand Knight's
+// counter-signature are listed (isPayableExpenseReport); anything else is hidden, and the drivers refuse to pay it
+// (assertDualSigned, EXPENSE_STATUS_CONFLICT).
 import { Fragment, useEffect, useState } from 'react';
 import {
   canDisburseCouncilExpenses,
@@ -13,6 +16,7 @@ import {
   describeError,
   DISBURSEMENT_NOTES_MAX_LENGTH,
   expenseReferenceLabel,
+  isPayableExpenseReport,
   listExpenseReferences,
   sumAmounts,
   toIsoDate,
@@ -21,15 +25,14 @@ import {
   type ExpenseReportDetail,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { ExpenseLineItemsTable } from '@/components/ExpenseParts';
+import { ExpenseLineItemsTable, SignatureTrail, submitterName } from '@/components/ExpenseParts';
 import { Button, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Table, Td, Textarea } from '@/components/ui';
-import { formatFullDate, formatMoney, formatPersonName } from '@/lib/format';
+import { formatFullDate, formatMoney } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
 const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [] };
-const submitterName = (d: ExpenseReportDetail) => formatPersonName(d.submitterFirstName, d.submitterLastName) || `Member ${d.report.SubmitterMemberID}`;
 
 /** The check just issued: its number, date, total and the sheets it paid. */
 function IssuedCheck({ result, onDismiss }: { result: ExpenseDisbursementResult; onDismiss: () => void }) {
@@ -84,7 +87,8 @@ function DisbursementLedger() {
     setIssued(null);
   }, [councilId]);
 
-  const approved = (queue.data ?? []).filter((d) => d.report.Status === 'Approved');
+  // The vault: 'Approved' and dual-signed only. A sheet missing either signature never reaches the checkbook.
+  const approved = (queue.data ?? []).filter((d) => isPayableExpenseReport(d.report));
   const payable = approved.filter((d) => canPayExpenseReport(user, d.report));
   const chosen = approved.filter((d) => selected.has(d.report.id));
   const chosenTotal = sumAmounts(chosen.map((d) => d.total));
@@ -142,13 +146,13 @@ function DisbursementLedger() {
           {issued ? <IssuedCheck result={issued} onDismiss={() => setIssued(null)} /> : null}
 
           <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
-            <Panel title={`Approved, awaiting payment (${approved.length})`}>
+            <Panel title={`Dual-signed, awaiting payment (${approved.length})`}>
               {queue.loading && !queue.data ? (
                 <p className="text-sm text-muted">Loading…</p>
               ) : approved.length === 0 ? (
-                <Empty>No approved expense reports are waiting for a check.</Empty>
+                <Empty>No dual-signed expense reports are waiting for a check.</Empty>
               ) : (
-                <Table caption="Approved expense reports. Tick the reports this check pays." head={[selectAll, 'Report', 'Payee', 'Spent for', 'Receipts', 'Total', '']}>
+                <Table caption="Expense reports carrying the Financial Secretary's written order and the Grand Knight's counter-signature. Tick the reports this check pays." head={[selectAll, 'Report', 'Payee', 'Spent for', 'Receipts', 'Total', '']}>
                   {approved.map((d) => {
                     const mayPay = canPayExpenseReport(user, d.report);
                     const open = expanded === d.report.id;
@@ -186,8 +190,9 @@ function DisbursementLedger() {
                         {open ? (
                           <tr>
                             <Td colSpan={7} className="border-l-8 border-l-gold">
-                              <div className="py-2">
+                              <div className="flex flex-col gap-3 py-2">
                                 <ExpenseLineItemsTable items={d.lineItems} total={d.total} caption={`Receipts on expense report ${d.report.id}`} />
+                                <SignatureTrail detail={d} />
                               </div>
                             </Td>
                           </tr>

@@ -44,9 +44,12 @@ import {
   type SupremeSnapshotRows,
   assertNoSelfPayout,
   assertDistinctExpenseSigners,
+  assertDualSigned,
   assertExpenseSignatureStage,
   assertMayAuthorizeExpenseOrder,
   assertMayIssueExpenseOrder,
+  assertMayReadAuthorizationDesk,
+  awaitsCounterSignature,
   assertNotSelfApproval,
   CLEARED_EXPENSE_SIGNATURES,
   cleanRejectionReason,
@@ -1684,6 +1687,16 @@ export class MemoryDataService implements DataService {
       return this.expenseDetails(s, [...reports].sort((a, b) => (a.id as number) - (b.id as number)));
     },
 
+    listAuthorizationQueue: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReadAuthorizationDesk(this.memberWriteActor(s, actorId), councilId, `read the authorization desk of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      const reports = s
+        .rows('ExpenseReport')
+        .filter((r) => r.CouncilID === councilId && awaitsCounterSignature(r as unknown as ExpenseReport));
+      return this.expenseDetails(s, [...reports].sort((a, b) => (a.id as number) - (b.id as number)));
+    },
+
     submitReport: async (actorId, report, lineItems) => {
       const clean = cleanExpenseReportInput(report);
       const items = cleanExpenseLineItems(lineItems, clean.Status, this.now());
@@ -1715,19 +1728,6 @@ export class MemoryDataService implements DataService {
         return reportId;
       });
       return this.expenseDetails(s, [this.requireExpenseReport(s, id)])[0];
-    },
-
-    approveReport: async (actorId, reportId) => {
-      const s = await this.ready();
-      s.transaction(() => {
-        const actor = this.memberWriteActor(s, actorId);
-        const row = this.requireExpenseReport(s, reportId);
-        assertMayAuditCouncilExpenses(actor, row.CouncilID as number, `approve expense report ${reportId}`);
-        assertNotSelfApproval(actor, row as unknown as ExpenseReport);
-        assertExpenseStatus(row as unknown as ExpenseReport, 'Submitted', 'be approved');
-        row.Status = 'Approved';
-      });
-      return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
     },
 
     rejectReport: async (actorId, reportId, rejectionReason) => {
@@ -1785,6 +1785,7 @@ export class MemoryDataService implements DataService {
         for (const row of rows) {
           assertReportInCouncil(row as unknown as ExpenseReport, councilId);
           assertExpenseStatus(row as unknown as ExpenseReport, 'Approved', 'be paid');
+          assertDualSigned(row as unknown as ExpenseReport);
           assertNoSelfPayout(actor, row as unknown as ExpenseReport);
         }
         assertCheckNumberUnused(check.CheckNumber, councilId, this.councilCheckNumbers(s, councilId));

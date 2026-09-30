@@ -41,9 +41,11 @@ import {
   type SupremeSnapshotRows,
   assertNoSelfPayout,
   assertDistinctExpenseSigners,
+  assertDualSigned,
   assertExpenseSignatureStage,
   assertMayAuthorizeExpenseOrder,
   assertMayIssueExpenseOrder,
+  assertMayReadAuthorizationDesk,
   assertNotSelfApproval,
   cleanRejectionReason,
   EXPENSE_SPEND_STATUSES,
@@ -1896,6 +1898,19 @@ export class SqliteDataService implements DataService {
       return this.expenseDetails(db, reports);
     },
 
+    listAuthorizationQueue: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayReadAuthorizationDesk(await this.memberWriteActor(db, actorId), councilId, `read the authorization desk of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const reports = await db.getAllAsync<ExpenseReport>(
+        `SELECT * FROM [ExpenseReport]
+          WHERE [CouncilID] = ? AND [Status] = 'Submitted' AND [FinancialSecretaryMemberID] IS NOT NULL AND [GrandKnightMemberID] IS NULL
+          ORDER BY [id]`,
+        [councilId],
+      );
+      return this.expenseDetails(db, reports);
+    },
+
     submitReport: async (actorId, report, lineItems) => {
       const clean = cleanExpenseReportInput(report);
       const items = cleanExpenseLineItems(lineItems, clean.Status, this.now());
@@ -1941,19 +1956,6 @@ export class SqliteDataService implements DataService {
             [reportId, item.DateOfExpense, item.Amount, item.VendorName, item.ReceiptPhotoURL ?? null, item.ExpenseDescription],
           );
         }
-      });
-      return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
-    },
-
-    approveReport: async (actorId, reportId) => {
-      const db = await this.ready();
-      await db.withTransactionAsync(async () => {
-        const actor = await this.memberWriteActor(db, actorId);
-        const row = await this.requireExpenseReport(db, reportId);
-        assertMayAuditCouncilExpenses(actor, row.CouncilID, `approve expense report ${reportId}`);
-        assertNotSelfApproval(actor, row);
-        assertExpenseStatus(row, 'Submitted', 'be approved');
-        await db.runAsync("UPDATE [ExpenseReport] SET [Status] = 'Approved' WHERE [id] = ?", [reportId]);
       });
       return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
     },
@@ -2025,6 +2027,7 @@ export class SqliteDataService implements DataService {
           const row = await this.requireExpenseReport(db, id);
           assertReportInCouncil(row, councilId);
           assertExpenseStatus(row, 'Approved', 'be paid');
+          assertDualSigned(row);
           assertNoSelfPayout(actor, row);
         }
         assertCheckNumberUnused(check.CheckNumber, councilId, await this.councilCheckNumbers(db, councilId));
@@ -2069,7 +2072,12 @@ export class SqliteDataService implements DataService {
 
   private async expenseDetails(db: SQLite.SQLiteDatabase, reports: readonly ExpenseReport[]): Promise<ExpenseReportDetail[]> {
     const reportIds = reports.map((r) => r.id);
-    const memberIds = [...new Set(reports.map((r) => r.SubmitterMemberID))];
+    // Submitters and both signers (Sprint 5Z-4), for the names the desks show.
+    const memberIds = [
+      ...new Set(
+        reports.flatMap((r) => [r.SubmitterMemberID, r.FinancialSecretaryMemberID, r.GrandKnightMemberID]).filter((id): id is number => id != null),
+      ),
+    ];
     const disbursementIds = [...new Set(reports.map((r) => r.DisbursementID).filter((id): id is number => id != null))];
     const [lineItems, members, disbursements] = await Promise.all([
       selectIn<ExpenseLineItem>(db, (m) => `SELECT * FROM [ExpenseLineItem] WHERE [ExpenseReportID] IN (${m})`, reportIds),

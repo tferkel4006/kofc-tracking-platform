@@ -331,7 +331,7 @@ ________________________________________
 
 # 7. Expense Reporting (Sprint 5R)
 [ExpenseDisbursement]
-One check that pays one or more approved expense reports of a council. Recorded only by the council's leadership (expenses.recordDisbursement).
+One check that pays one or more approved expense reports of a council, each carrying both dual-approval signatures (Sprint 5Z-4). Recorded only by the council's Financial Secretary or Treasurer, or a Super Admin (expenses.recordDisbursement).
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). The paying council.
 •	CheckNumber (VARCHAR(50), NOT NULL) — The check's number; unique within the council (ignoring case).
@@ -343,7 +343,7 @@ A member's expense sheet. Members see only their own; the council's Admins, Fina
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). Always the submitter's own council.
 •	SubmitterMemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). The member to reimburse.
-•	Status (VARCHAR(50), NOT NULL) — Draft, Submitted, Approved or Reimbursed. Only drafts may be edited; leadership approves Submitted sheets (never their own, whatever their role), returns them to Draft with a reason, and pays Approved ones. Since Sprint 5Z-3 a Submitted sheet can also reach Approved through dual approval: the Financial Secretary's written order (expenses.financialSecretaryAuditOrder), then the Grand Knight's counter-signature (expenses.grandKnightAuthorizeOrder), which sets Approved. Approved and Reimbursed line items count toward the monthly summary's spend.
+•	Status (VARCHAR(50), NOT NULL) — Draft, Submitted, Approved or Reimbursed. Only drafts may be edited; leadership returns Submitted sheets to Draft with a reason. A Submitted sheet reaches Approved only through dual approval (Sprint 5Z-3; the single-step expenses.approveReport was retired in Sprint 5Z-4): the Financial Secretary's written order (expenses.financialSecretaryAuditOrder), then the Grand Knight's counter-signature (expenses.grandKnightAuthorizeOrder), which sets Approved. Nobody signs their own sheet, whatever their role. The finance officers pay Approved sheets that carry both signatures; a sheet missing either is never paid (expenses.recordDisbursement, EXPENSE_STATUS_CONFLICT). Approved and Reimbursed line items count toward the monthly summary's spend.
 •	LinkedEventID (INTEGER, NULL) — Foreign Key references Event(id). An event linked to the report's council.
 •	LinkedMeetingID (INTEGER, NULL) — Foreign Key references Meeting(id). A meeting of the report's council.
 •	DisbursementID (INTEGER, NULL) — Foreign Key references ExpenseDisbursement(id). The check that paid it; set with Status Reimbursed.
@@ -352,7 +352,7 @@ A member's expense sheet. Members see only their own; the council's Admins, Fina
 •	FinancialSecretaryApprovedAt (DATETIME, NULL) — Sprint 5Z-3: when the written order was issued. Set and cleared with FinancialSecretaryMemberID.
 •	GrandKnightMemberID (INTEGER, NULL) — Sprint 5Z-3: Foreign Key references Member(id). The Grand Knight (or Super Admin) who counter-signed the order, releasing the sheet to the Treasurer with Status Approved. Requires the written order first, and must be neither the submitter nor the officer who issued the order. Cleared when the sheet is returned to Draft.
 •	GrandKnightApprovedAt (DATETIME, NULL) — Sprint 5Z-3: when the Grand Knight counter-signed. Set and cleared with GrandKnightMemberID.
-The four dual-approval columns are appended by explicit ALTER TABLE ... ADD statements (schema version 23).
+The four dual-approval columns are appended by explicit ALTER TABLE ... ADD statements (schema version 23). Seed.sql's presentation data signs every reimbursed sheet (member 2 the order, member 1 the counter-signature) and adds three in the pipeline: #11 awaiting the written order, #12 awaiting the counter-signature and #13 dual-signed, awaiting a check.
 [ExpenseLineItem]
 One receipt on an expense report. A draft's line items are replaced as a whole each time it is saved.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
