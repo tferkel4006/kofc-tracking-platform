@@ -1514,9 +1514,28 @@ export interface DataService {
      * Returns a 'Submitted' sheet to its submitter (council leadership only): Status goes back to 'Draft' and
      * RejectionReason keeps the trimmed `rejectionReason`, so the member can edit and submit again (which clears it).
      * Rejects INVALID_INPUT for a blank reason or one over REJECTION_REASON_MAX_LENGTH characters, RECORD_NOT_FOUND
-     * for an unknown sheet and EXPENSE_STATUS_CONFLICT for one in another status.
+     * for an unknown sheet and EXPENSE_STATUS_CONFLICT for one in another status. Any dual-approval signatures on the
+     * sheet are cleared (Sprint 5Z-3), so a resubmitted sheet is signed afresh.
      */
     rejectReport(actorId: number, reportId: number, rejectionReason: string): Promise<ExpenseReportDetail>;
+    /**
+     * Dual approval, first signature (Sprint 5Z-3): the council's Active Financial Secretary, or an Active Super Admin,
+     * audits a 'Submitted' sheet and issues the written order, stamping FinancialSecretaryMemberID and
+     * FinancialSecretaryApprovedAt. Status stays 'Submitted' until the Grand Knight counter-signs. Rejects
+     * FINANCIAL_SECRETARY_REQUIRED or COUNCIL_ACCESS_DENIED for anyone else, SELF_APPROVAL_BLOCKED for the actor's own
+     * sheet (every role), RECORD_NOT_FOUND for an unknown sheet, and EXPENSE_STATUS_CONFLICT for a sheet not
+     * 'Submitted' or already carrying the order.
+     */
+    financialSecretaryAuditOrder(actorId: number, reportId: number): Promise<ExpenseReportDetail>;
+    /**
+     * Dual approval, second signature (Sprint 5Z-3): the council's Active Grand Knight, or an Active Super Admin,
+     * counter-signs a sheet that carries the Financial Secretary's order, stamping GrandKnightMemberID and
+     * GrandKnightApprovedAt and moving Status to 'Approved', which releases it to the Treasurer's disbursement desk.
+     * Rejects GRAND_KNIGHT_REQUIRED or COUNCIL_ACCESS_DENIED for anyone else, SELF_APPROVAL_BLOCKED for the actor's own
+     * sheet, DUAL_SIGNATURE_CONFLICT when the actor issued the order themselves, RECORD_NOT_FOUND for an unknown sheet,
+     * and EXPENSE_STATUS_CONFLICT for a sheet not 'Submitted' or still awaiting the order.
+     */
+    grandKnightAuthorizeOrder(actorId: number, reportId: number): Promise<ExpenseReportDetail>;
     /**
      * Records one check paying the listed sheets of `councilId` (the council's Active Financial Secretary or Treasurer,
      * or an Active Super Admin; anyone else rejects FINANCE_OFFICER_REQUIRED or COUNCIL_ACCESS_DENIED): creates the

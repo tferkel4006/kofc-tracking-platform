@@ -418,6 +418,12 @@ export interface ExpenseReport {
   LinkedMeetingID?: number | null;
   DisbursementID?: number | null; // set once the sheet is paid (Status 'Reimbursed')
   RejectionReason?: string | null; // why leadership returned it to 'Draft' (expenses.rejectReport); cleared on resubmission
+  // Sprint 5Z-3 dual approval: the Financial Secretary's written order, then the Grand Knight's counter-signature
+  // (which moves Status to 'Approved'). All four are cleared when leadership returns the sheet to 'Draft'.
+  FinancialSecretaryMemberID?: number | null;
+  FinancialSecretaryApprovedAt?: string | null;
+  GrandKnightMemberID?: number | null;
+  GrandKnightApprovedAt?: string | null;
 }
 
 /** One receipt on an expense sheet. */

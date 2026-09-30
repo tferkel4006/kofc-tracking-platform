@@ -40,6 +40,10 @@ import {
   withoutPushToken,
   type SupremeSnapshotRows,
   assertNoSelfPayout,
+  assertDistinctExpenseSigners,
+  assertExpenseSignatureStage,
+  assertMayAuthorizeExpenseOrder,
+  assertMayIssueExpenseOrder,
   assertNotSelfApproval,
   cleanRejectionReason,
   EXPENSE_SPEND_STATUSES,
@@ -386,8 +390,10 @@ const DB_NAME = 'kofc.db';
  * 21: CouncilRelationshipType, CouncilMissionArea, CharitableRequest, and Event.MissionAreaID and Meeting.MissionAreaID
  *     (Sprint 5Z-1; the numbering skips 20).
  * 22: CharitableRequest.MissionAreaID and TargetBudgetLineID (Sprint 5Z-2).
+ * 23: ExpenseReport.FinancialSecretaryMemberID, FinancialSecretaryApprovedAt, GrandKnightMemberID and GrandKnightApprovedAt
+ *     (Sprint 5Z-3).
  */
-const SCHEMA_VERSION = 22;
+const SCHEMA_VERSION = 23;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -1960,7 +1966,48 @@ export class SqliteDataService implements DataService {
         const row = await this.requireExpenseReport(db, reportId);
         assertMayAuditCouncilExpenses(actor, row.CouncilID, `return expense report ${reportId}`);
         assertExpenseStatus(row, 'Submitted', 'be returned to its submitter');
-        await db.runAsync("UPDATE [ExpenseReport] SET [Status] = 'Draft', [RejectionReason] = ? WHERE [id] = ?", [reason, reportId]);
+        // A returned sheet starts its dual approval again (Sprint 5Z-3).
+        await db.runAsync(
+          `UPDATE [ExpenseReport] SET [Status] = 'Draft', [RejectionReason] = ?,
+                  [FinancialSecretaryMemberID] = NULL, [FinancialSecretaryApprovedAt] = NULL,
+                  [GrandKnightMemberID] = NULL, [GrandKnightApprovedAt] = NULL
+            WHERE [id] = ?`,
+          [reason, reportId],
+        );
+      });
+      return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
+    },
+
+    financialSecretaryAuditOrder: async (actorId, reportId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireExpenseReport(db, reportId);
+        assertMayIssueExpenseOrder(actor, row.CouncilID, `issue the written order for expense report ${reportId}`);
+        assertNotSelfApproval(actor, row);
+        assertExpenseSignatureStage(row, 'financialSecretary');
+        await db.runAsync('UPDATE [ExpenseReport] SET [FinancialSecretaryMemberID] = ?, [FinancialSecretaryApprovedAt] = ? WHERE [id] = ?', [
+          actorId,
+          toTimestamp(this.now()),
+          reportId,
+        ]);
+      });
+      return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
+    },
+
+    grandKnightAuthorizeOrder: async (actorId, reportId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireExpenseReport(db, reportId);
+        assertMayAuthorizeExpenseOrder(actor, row.CouncilID, `counter-sign expense report ${reportId}`);
+        assertNotSelfApproval(actor, row);
+        assertExpenseSignatureStage(row, 'grandKnight');
+        assertDistinctExpenseSigners(actor, row);
+        await db.runAsync(
+          "UPDATE [ExpenseReport] SET [Status] = 'Approved', [GrandKnightMemberID] = ?, [GrandKnightApprovedAt] = ? WHERE [id] = ?",
+          [actorId, toTimestamp(this.now()), reportId],
+        );
       });
       return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
     },

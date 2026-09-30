@@ -1531,3 +1531,30 @@ ADD FOREIGN KEY([TargetBudgetLineID])
 REFERENCES [CouncilBudgetForecast]([id])
 ON UPDATE NO ACTION ON DELETE NO ACTION;
 GO
+
+-- =========================================================================
+-- Sprint 5Z-3: EXPENSE REPORT DUAL APPROVAL
+-- A submitted sheet now needs two signatures before it reaches the Treasurer's disbursement desk. The Financial
+-- Secretary audits it and issues the written order (FinancialSecretaryMemberID / FinancialSecretaryApprovedAt); the
+-- Grand Knight then counter-signs (GrandKnightMemberID / GrandKnightApprovedAt), which moves Status to 'Approved'.
+-- Both signatures are cleared when leadership returns the sheet to Draft. The shared rules layer enforces the order,
+-- the signers' seats and that the two signers are different people.
+-- =========================================================================
+ALTER TABLE [ExpenseReport] ADD [FinancialSecretaryMemberID] INTEGER NULL;
+GO
+ALTER TABLE [ExpenseReport] ADD [FinancialSecretaryApprovedAt] DATETIME NULL;
+GO
+ALTER TABLE [ExpenseReport] ADD [GrandKnightMemberID] INTEGER NULL;
+GO
+ALTER TABLE [ExpenseReport] ADD [GrandKnightApprovedAt] DATETIME NULL;
+GO
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([FinancialSecretaryMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([GrandKnightMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO

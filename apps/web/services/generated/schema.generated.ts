@@ -2409,6 +2409,34 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "FinancialSecretaryMemberID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "FinancialSecretaryApprovedAt",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "GrandKnightMemberID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "GrandKnightApprovedAt",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -2435,6 +2463,16 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "DisbursementID",
         "refTable": "ExpenseDisbursement",
+        "refColumn": "id"
+      },
+      {
+        "column": "FinancialSecretaryMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "GrandKnightMemberID",
+        "refTable": "Member",
         "refColumn": "id"
       }
     ],

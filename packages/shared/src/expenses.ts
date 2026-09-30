@@ -178,6 +178,44 @@ export function assertExpenseStatus(report: Pick<ExpenseReport, 'id' | 'Status'>
   );
 }
 
+/** The two signature lines on a submitted sheet (Sprint 5Z-3), in the order they are signed. */
+export type ExpenseSignatureStage = 'financialSecretary' | 'grandKnight';
+
+/**
+ * Rejects EXPENSE_STATUS_CONFLICT unless the sheet is ready for `stage`: 'Submitted' in both cases, with no written order
+ * yet for the Financial Secretary, and with the order already issued for the Grand Knight.
+ */
+export function assertExpenseSignatureStage(
+  report: Pick<ExpenseReport, 'id' | 'Status' | 'FinancialSecretaryMemberID'>,
+  stage: ExpenseSignatureStage,
+): void {
+  const ordered = report.FinancialSecretaryMemberID != null;
+  if (stage === 'financialSecretary') {
+    assertExpenseStatus(report, 'Submitted', 'receive a written order');
+    if (!ordered) return;
+    throw new BusinessRuleError('EXPENSE_STATUS_CONFLICT', `Expense report ${report.id} already carries the Financial Secretary's written order.`, {
+      reportId: report.id,
+      status: report.Status,
+      stage,
+    });
+  }
+  assertExpenseStatus(report, 'Submitted', 'be authorized');
+  if (ordered) return;
+  throw new BusinessRuleError(
+    'EXPENSE_STATUS_CONFLICT',
+    `Expense report ${report.id} awaits the Financial Secretary's written order, so the Grand Knight cannot counter-sign it yet.`,
+    { reportId: report.id, status: report.Status, stage },
+  );
+}
+
+/** What expenses.rejectReport writes over the signature lines: a returned sheet starts its approvals again. */
+export const CLEARED_EXPENSE_SIGNATURES = {
+  FinancialSecretaryMemberID: null,
+  FinancialSecretaryApprovedAt: null,
+  GrandKnightMemberID: null,
+  GrandKnightApprovedAt: null,
+} as const;
+
 /** Amounts summed to the cent, free of floating-point drift. */
 export const sumAmounts = (amounts: readonly number[]): number =>
   amounts.reduce((cents, a) => cents + Math.round(a * 100), 0) / 100;

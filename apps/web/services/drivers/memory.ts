@@ -43,7 +43,12 @@ import {
   withoutPushToken,
   type SupremeSnapshotRows,
   assertNoSelfPayout,
+  assertDistinctExpenseSigners,
+  assertExpenseSignatureStage,
+  assertMayAuthorizeExpenseOrder,
+  assertMayIssueExpenseOrder,
   assertNotSelfApproval,
+  CLEARED_EXPENSE_SIGNATURES,
   cleanRejectionReason,
   EXPENSE_SPEND_STATUSES,
   assertCheckNumberUnused,
@@ -1733,7 +1738,37 @@ export class MemoryDataService implements DataService {
         const row = this.requireExpenseReport(s, reportId);
         assertMayAuditCouncilExpenses(actor, row.CouncilID as number, `return expense report ${reportId}`);
         assertExpenseStatus(row as unknown as ExpenseReport, 'Submitted', 'be returned to its submitter');
-        Object.assign(row, { Status: 'Draft', RejectionReason: reason });
+        // A returned sheet starts its dual approval again (Sprint 5Z-3).
+        Object.assign(row, { Status: 'Draft', RejectionReason: reason, ...CLEARED_EXPENSE_SIGNATURES });
+      });
+      return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
+    },
+
+    financialSecretaryAuditOrder: async (actorId, reportId) => {
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const row = this.requireExpenseReport(s, reportId);
+        const report = row as unknown as ExpenseReport;
+        assertMayIssueExpenseOrder(actor, report.CouncilID, `issue the written order for expense report ${reportId}`);
+        assertNotSelfApproval(actor, report);
+        assertExpenseSignatureStage(report, 'financialSecretary');
+        Object.assign(row, { FinancialSecretaryMemberID: actorId, FinancialSecretaryApprovedAt: toTimestamp(this.now()) });
+      });
+      return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
+    },
+
+    grandKnightAuthorizeOrder: async (actorId, reportId) => {
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const row = this.requireExpenseReport(s, reportId);
+        const report = row as unknown as ExpenseReport;
+        assertMayAuthorizeExpenseOrder(actor, report.CouncilID, `counter-sign expense report ${reportId}`);
+        assertNotSelfApproval(actor, report);
+        assertExpenseSignatureStage(report, 'grandKnight');
+        assertDistinctExpenseSigners(actor, report);
+        Object.assign(row, { Status: 'Approved', GrandKnightMemberID: actorId, GrandKnightApprovedAt: toTimestamp(this.now()) });
       });
       return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
     },

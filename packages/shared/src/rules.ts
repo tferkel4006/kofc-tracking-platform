@@ -94,7 +94,9 @@ export type BusinessRuleCode =
   | 'BUDGET_YEAR_APPROVED'
   | 'VETTING_AUTHORITY_REQUIRED'
   | 'SELF_VETTING_BLOCKED'
-  | 'REQUEST_STATUS_CONFLICT';
+  | 'REQUEST_STATUS_CONFLICT'
+  | 'FINANCIAL_SECRETARY_REQUIRED'
+  | 'DUAL_SIGNATURE_CONFLICT';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -120,7 +122,8 @@ export class SecurityPrivilegeError extends BusinessRuleError {
       | 'COUNCIL_ACCESS_DENIED'
       | 'FINANCE_OFFICER_REQUIRED'
       | 'GRAND_KNIGHT_REQUIRED'
-      | 'VETTING_AUTHORITY_REQUIRED',
+      | 'VETTING_AUTHORITY_REQUIRED'
+      | 'FINANCIAL_SECRETARY_REQUIRED',
     message: string,
     details: Record<string, unknown> = {},
   ) {
@@ -1156,6 +1159,75 @@ export function assertNoSelfPayout(actor: MemberWriteActor, report: { id: number
 
 /** The sheet is the actor's own, which they may neither approve nor pay, whatever their role. */
 const isOwnExpense = (actor: MemberWriteActor, report: { SubmitterMemberID: number }): boolean => report.SubmitterMemberID === actor.memberId;
+
+/** The seat that issues an expense sheet's written order (Sprint 5Z-3), matched by Role name like FINANCE_ROLE_NAMES. */
+export const FINANCIAL_SECRETARY_ROLE_NAME = 'Financial Secretary';
+/** The seat that counter-signs the order and releases the sheet to the Treasurer (Sprint 5Z-3). */
+export const GRAND_KNIGHT_ROLE_NAME = 'Grand Knight';
+
+/**
+ * expenses.financialSecretaryAuditOrder (Sprint 5Z-3): the written order is issued only by an Active Financial Secretary
+ * of the council, or an Active Super Admin for any council (FINANCIAL_SECRETARY_REQUIRED, COUNCIL_ACCESS_DENIED).
+ * `action` completes "cannot ...".
+ */
+export function assertMayIssueExpenseOrder(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = expenseSignatureDenial(actor, councilId, action, FINANCIAL_SECRETARY_ROLE_NAME, 'FINANCIAL_SECRETARY_REQUIRED');
+  if (denial) throw denial;
+}
+
+/** assertMayIssueExpenseOrder as a yes/no. */
+export const mayIssueExpenseOrder = (actor: MemberWriteActor, councilId: number): boolean =>
+  expenseSignatureDenial(actor, councilId, 'issue expense orders', FINANCIAL_SECRETARY_ROLE_NAME, 'FINANCIAL_SECRETARY_REQUIRED') === null;
+
+/**
+ * expenses.grandKnightAuthorizeOrder (Sprint 5Z-3): the counter-signature comes only from an Active Grand Knight of the
+ * council, or an Active Super Admin for any council (GRAND_KNIGHT_REQUIRED, COUNCIL_ACCESS_DENIED). The Deputy Grand
+ * Knight does not sign. `action` completes "cannot ...".
+ */
+export function assertMayAuthorizeExpenseOrder(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = expenseSignatureDenial(actor, councilId, action, GRAND_KNIGHT_ROLE_NAME, 'GRAND_KNIGHT_REQUIRED');
+  if (denial) throw denial;
+}
+
+/** assertMayAuthorizeExpenseOrder as a yes/no. */
+export const mayAuthorizeExpenseOrder = (actor: MemberWriteActor, councilId: number): boolean =>
+  expenseSignatureDenial(actor, councilId, 'authorize expense orders', GRAND_KNIGHT_ROLE_NAME, 'GRAND_KNIGHT_REQUIRED') === null;
+
+function expenseSignatureDenial(
+  actor: MemberWriteActor,
+  councilId: number,
+  action: string,
+  seat: string,
+  code: 'FINANCIAL_SECRETARY_REQUIRED' | 'GRAND_KNIGHT_REQUIRED',
+): SecurityPrivilegeError | null {
+  if (hasSuperAdminRights(actor)) return null;
+  if (!(actor.active && (actor.roles ?? []).includes(seat))) {
+    return new SecurityPrivilegeError(
+      code,
+      `Only an active ${seat} or Super Admin can ${action}; member ${actor.memberId} is ${describeActor(actor)} without that seat.`,
+      { actorId: actor.memberId, actorType: actor.memberType ?? null, councilId },
+    );
+  }
+  if (actor.councilId === councilId) return null;
+  return new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; a council's expense orders are signed only by its own ${seat}.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
+  );
+}
+
+/**
+ * expenses.grandKnightAuthorizeOrder (Sprint 5Z-3): the counter-signature must come from someone other than the officer
+ * who issued the order, so one Super Admin cannot sign both lines (DUAL_SIGNATURE_CONFLICT).
+ */
+export function assertDistinctExpenseSigners(actor: MemberWriteActor, report: { id: number; FinancialSecretaryMemberID?: number | null }): void {
+  if (report.FinancialSecretaryMemberID !== actor.memberId) return;
+  throw new BusinessRuleError(
+    'DUAL_SIGNATURE_CONFLICT',
+    'For accounting controls, the officer who issued an expense order cannot also counter-sign it.',
+    { actorId: actor.memberId, reportId: report.id },
+  );
+}
 
 const expenseAuditDenial = (actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null =>
   councilLeadershipDenial(actor, councilId, action, "expense reports are reviewed only by that council's own leadership");

@@ -2,6 +2,7 @@
 // recordDisbursement), its role gates and its tenant isolation. Sprint 5R-1.5: no self-approval, rejectReport, and
 // approved expenses in reports.monthlySummary. Sprint 5R-2: no self-payout and the shared expense form helpers.
 // Sprint 5S: no Super Admin override on either control, and only finance officers (or a Super Admin) issue checks.
+// Sprint 5Z-3: dual approval, the Financial Secretary written order then the Grand Knight counter-signature.
 import { describe, expect, it } from 'vitest';
 import {
   assertMayDisburseCouncilExpenses,
@@ -24,11 +25,14 @@ import {
   listExpenseReferences,
   mayAuditCouncilExpenses,
   mayDisburseCouncilExpenses,
+  mayAuthorizeExpenseOrder,
+  mayIssueExpenseOrder,
   parseExpenseReferenceKey,
   REJECTION_REASON_MAX_LENGTH,
   summarizeMonth,
   SecurityPrivilegeError,
   sumAmounts,
+  toTimestamp,
   type DataService,
   type ExpenseLineItemInput,
   type MemberWriteActor,
@@ -730,5 +734,122 @@ describe.each(drivers)('finance-officer disbursements ($name driver, Sprint 5S)'
     expect(refs.meetings.every((m) => m.CouncilID === OWN)).toBe(true);
     const dates = refs.meetings.map((m) => m.Date);
     expect(dates).toEqual([...dates].sort().reverse());
+  });
+});
+
+describe('dual approval (pure, Sprint 5Z-3)', () => {
+  const actor = (over: Partial<MemberWriteActor> = {}): MemberWriteActor => ({ memberId: 10, councilId: OWN, memberType: 'Member', active: true, ...over });
+
+  it('gives the written order to the Financial Secretary and the counter-signature to the Grand Knight', () => {
+    expect(mayIssueExpenseOrder(actor({ roles: ['Financial Secretary'] }), OWN)).toBe(true);
+    expect(mayIssueExpenseOrder(actor({ roles: ['Financial Secretary'] }), OTHER)).toBe(false);
+    expect(mayIssueExpenseOrder(actor({ roles: ['Financial Secretary'], active: false }), OWN)).toBe(false);
+    expect(mayIssueExpenseOrder(actor({ roles: ['Treasurer'] }), OWN)).toBe(false);
+    expect(mayIssueExpenseOrder(actor({ roles: ['Grand Knight'] }), OWN)).toBe(false);
+    expect(mayIssueExpenseOrder(actor({ memberType: 'Admin' }), OWN)).toBe(false);
+    expect(mayAuthorizeExpenseOrder(actor({ roles: ['Grand Knight'] }), OWN)).toBe(true);
+    expect(mayAuthorizeExpenseOrder(actor({ roles: ['Grand Knight'] }), OTHER)).toBe(false);
+    expect(mayAuthorizeExpenseOrder(actor({ roles: ['Deputy Grand Knight'] }), OWN)).toBe(false);
+    expect(mayAuthorizeExpenseOrder(actor({ roles: ['Financial Secretary'] }), OWN)).toBe(false);
+    for (const may of [mayIssueExpenseOrder, mayAuthorizeExpenseOrder]) {
+      expect(may(actor({ memberType: 'Super Admin', councilId: 77 }), OTHER)).toBe(true);
+      expect(may(actor({ memberType: 'Super Admin', active: false }), OWN)).toBe(false);
+    }
+  });
+});
+
+describe.each(drivers)('dual approval ($name driver, Sprint 5Z-3)', (d) => {
+  const FS = MEMBER.admin; // seeded Financial Secretary of council 1
+  const GK = MEMBER.superAdmin; // seeded Grand Knight of council 1 (also a Super Admin)
+  const submitted = async (db: DataService, memberId: number = MEMBER.member) =>
+    (await db.expenses.submitReport(memberId, { Status: 'Submitted' }, [receipt()])).report.id;
+
+  it('takes a sheet from the written order to the counter-signature and on to the Treasurer', async () => {
+    const db = await d.make();
+    const id = await submitted(db);
+    const ordered = (await db.expenses.financialSecretaryAuditOrder(FS, id)).report;
+    expect(ordered).toMatchObject({ Status: 'Submitted', FinancialSecretaryMemberID: FS, FinancialSecretaryApprovedAt: toTimestamp(NOW) });
+    expect(ordered.GrandKnightMemberID ?? null).toBeNull();
+    const signed = (await db.expenses.grandKnightAuthorizeOrder(GK, id)).report;
+    expect(signed).toMatchObject({
+      Status: 'Approved',
+      FinancialSecretaryMemberID: FS,
+      GrandKnightMemberID: GK,
+      GrandKnightApprovedAt: toTimestamp(NOW),
+    });
+    expect((await db.expenses.recordDisbursement(FS, OWN, [id], CHECK)).reports[0].report.Status).toBe('Reimbursed');
+  });
+
+  it('signs in order, once each', async () => {
+    const db = await d.make();
+    const id = await submitted(db);
+    await expectRule(db.expenses.grandKnightAuthorizeOrder(GK, id), 'EXPENSE_STATUS_CONFLICT');
+    await db.expenses.financialSecretaryAuditOrder(FS, id);
+    await expectRule(db.expenses.financialSecretaryAuditOrder(FS, id), 'EXPENSE_STATUS_CONFLICT');
+    await db.expenses.grandKnightAuthorizeOrder(GK, id);
+    await expectRule(db.expenses.grandKnightAuthorizeOrder(GK, id), 'EXPENSE_STATUS_CONFLICT');
+    const draft = (await db.expenses.submitReport(MEMBER.member, { Status: 'Draft' }, [])).report.id;
+    await expectRule(db.expenses.financialSecretaryAuditOrder(FS, draft), 'EXPENSE_STATUS_CONFLICT');
+    await expectRule(db.expenses.financialSecretaryAuditOrder(FS, 9999), 'RECORD_NOT_FOUND');
+  });
+
+  it('refuses anyone without the seat, another council’s officers and inactive officers', async () => {
+    const db = await d.make();
+    const id = await submitted(db);
+    const plainAdmin = await addMember(db, OWN, 'Admin', 'plain.signer.admin@example.org');
+    const treasurer = await addMember(db, OWN, 'Member', 'dual.treasurer@example.org');
+    grantRole(d, db, treasurer, 'Treasurer');
+    const dgk = await addMember(db, OWN, 'Member', 'dual.dgk@example.org');
+    grantRole(d, db, dgk, 'Deputy Grand Knight');
+    for (const actorId of [MEMBER.member, plainAdmin, treasurer, dgk]) {
+      const err = await expectRule(db.expenses.financialSecretaryAuditOrder(actorId, id), 'FINANCIAL_SECRETARY_REQUIRED');
+      expect(err).toBeInstanceOf(SecurityPrivilegeError);
+    }
+    const foreignFs = await addMember(db, OTHER, 'Member', 'foreign.fs@example.org');
+    grantRole(d, db, foreignFs, 'Financial Secretary');
+    await expectRule(db.expenses.financialSecretaryAuditOrder(foreignFs, id), 'COUNCIL_ACCESS_DENIED');
+    const inactiveFs = await addMember(db, OWN, 'Member', 'inactive.fs@example.org', 'Inactive');
+    grantRole(d, db, inactiveFs, 'Financial Secretary');
+    await expectRule(db.expenses.financialSecretaryAuditOrder(inactiveFs, id), 'FINANCIAL_SECRETARY_REQUIRED');
+
+    await db.expenses.financialSecretaryAuditOrder(FS, id);
+    for (const actorId of [MEMBER.member, plainAdmin, treasurer, dgk]) {
+      const err = await expectRule(db.expenses.grandKnightAuthorizeOrder(actorId, id), 'GRAND_KNIGHT_REQUIRED');
+      expect(err).toBeInstanceOf(SecurityPrivilegeError);
+    }
+    const foreignGk = await addMember(db, OTHER, 'Member', 'foreign.gk@example.org');
+    grantRole(d, db, foreignGk, 'Grand Knight');
+    await expectRule(db.expenses.grandKnightAuthorizeOrder(foreignGk, id), 'COUNCIL_ACCESS_DENIED');
+    // The refused calls wrote nothing.
+    const queued = (await db.expenses.listCouncilQueue(FS, OWN)).find((q) => q.report.id === id)!.report;
+    expect(queued).toMatchObject({ Status: 'Submitted', FinancialSecretaryMemberID: FS });
+    expect(queued.GrandKnightMemberID ?? null).toBeNull();
+  });
+
+  it('never lets an officer sign their own sheet, nor one person sign both lines', async () => {
+    const db = await d.make();
+    await expectRule(db.expenses.financialSecretaryAuditOrder(FS, await submitted(db, FS)), 'SELF_APPROVAL_BLOCKED');
+    const gkOwn = await submitted(db, GK);
+    await db.expenses.financialSecretaryAuditOrder(FS, gkOwn);
+    await expectRule(db.expenses.grandKnightAuthorizeOrder(GK, gkOwn), 'SELF_APPROVAL_BLOCKED');
+    // The Super Admin may issue the order for any council, but then cannot also counter-sign it.
+    const id = await submitted(db);
+    await db.expenses.financialSecretaryAuditOrder(GK, id);
+    await expectRule(db.expenses.grandKnightAuthorizeOrder(GK, id), 'DUAL_SIGNATURE_CONFLICT');
+    const secondGk = await addMember(db, OWN, 'Member', 'second.gk@example.org');
+    grantRole(d, db, secondGk, 'Grand Knight');
+    expect((await db.expenses.grandKnightAuthorizeOrder(secondGk, id)).report.Status).toBe('Approved');
+  });
+
+  it('clears both signatures when leadership returns the sheet, so it is signed afresh', async () => {
+    const db = await d.make();
+    const id = await submitted(db);
+    await db.expenses.financialSecretaryAuditOrder(FS, id);
+    const returned = (await db.expenses.rejectReport(FS, id, 'Missing the Costco receipt')).report;
+    expect(returned).toMatchObject({ Status: 'Draft', FinancialSecretaryMemberID: null, FinancialSecretaryApprovedAt: null });
+    await db.expenses.submitReport(MEMBER.member, { id, Status: 'Submitted' }, [receipt()]);
+    await expectRule(db.expenses.grandKnightAuthorizeOrder(GK, id), 'EXPENSE_STATUS_CONFLICT');
+    await db.expenses.financialSecretaryAuditOrder(FS, id);
+    expect((await db.expenses.grandKnightAuthorizeOrder(GK, id)).report.Status).toBe('Approved');
   });
 });
