@@ -102,7 +102,7 @@ describe('passwords', () => {
   it('recognises SHA-256 hex digests', () => {
     expect(isSha256Hex('a'.repeat(64))).toBe(true);
     expect(isSha256Hex('A'.repeat(64))).toBe(false);
-    expect(isSha256Hex('koc15295')).toBe(false);
+    expect(isSha256Hex('dev-pass-secure-9912')).toBe(false);
     expect(isSha256Hex('')).toBe(false);
   });
 });

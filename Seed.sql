@@ -94,7 +94,7 @@ VALUES
 GO
 -- =========================================================================
 -- ADDITIONAL SPRINT SEEDING: COUNCILS, CREDENTIALS, AND ROLES
--- Adds testadmin, testsuperadmin, and testmember profiles with password: koc15295
+-- Adds testadmin, testsuperadmin, and testmember profiles with password: dev-pass-secure-9912
 -- =========================================================================
 
 -- 1. Create a Default Baseline Council for Testing
@@ -105,9 +105,9 @@ GO
 -- 2. Create the Login Credentials (Passwords should be encrypted in production, plain for dev stub)
 INSERT INTO [Credentials] ([Username], [Password])
 VALUES 
-('testsuperadmin@kofc.org', 'koc15295'), -- ID 1
-('testadmin@kofc.org', 'koc15295'),      -- ID 2
-('testmember@kofc.org', 'koc15295');     -- ID 3
+('testsuperadmin@kofc.org', 'dev-pass-secure-9912'), -- ID 1
+('testadmin@kofc.org', 'dev-pass-secure-9912'),      -- ID 2
+('testmember@kofc.org', 'dev-pass-secure-9912');     -- ID 3
 GO
 
 -- 3. Create Corresponding Member Profiles linking to those Credentials
@@ -244,26 +244,26 @@ GO
 -- ==============================================================================
 -- Sprint 5Z-1: high-fidelity presentation data for Council 15295 (CouncilID 1)
 -- Fifteen members seated across the officer and director roles (Credentials 4-18, Member 4-18, all with the dev
--- password koc15295), ten reimbursed expense sheets, eight charity checks and five intake requests in the vetting
+-- password dev-pass-secure-9912), ten reimbursed expense sheets, eight charity checks and five intake requests in the vetting
 -- pipeline. Payouts fall between October 2025 and August 2026. Check numbers 1101-1118 are the council's checkbook.
 -- ==============================================================================
 INSERT INTO [Credentials] ([Username], [Password])
 VALUES
-('michael.oconnor@kofc15295.org', 'koc15295'),   -- ID 4
-('james.delgado@kofc15295.org', 'koc15295'),     -- ID 5
-('patrick.nguyen@kofc15295.org', 'koc15295'),    -- ID 6
-('thomas.kowalski@kofc15295.org', 'koc15295'),   -- ID 7
-('robert.fitzgerald@kofc15295.org', 'koc15295'), -- ID 8
-('anthony.russo@kofc15295.org', 'koc15295'),     -- ID 9
-('daniel.mbeki@kofc15295.org', 'koc15295'),      -- ID 10
-('joseph.hernandez@kofc15295.org', 'koc15295'),  -- ID 11
-('francis.byrne@kofc15295.org', 'koc15295'),     -- ID 12
-('william.schmidt@kofc15295.org', 'koc15295'),   -- ID 13
-('george.alvarez@kofc15295.org', 'koc15295'),    -- ID 14
-('peter.lindqvist@kofc15295.org', 'koc15295'),   -- ID 15
-('matthew.okafor@kofc15295.org', 'koc15295'),    -- ID 16
-('stephen.tran@kofc15295.org', 'koc15295'),      -- ID 17
-('christopher.walsh@kofc15295.org', 'koc15295'); -- ID 18
+('michael.oconnor@kofc15295.org', 'dev-pass-secure-9912'),   -- ID 4
+('james.delgado@kofc15295.org', 'dev-pass-secure-9912'),     -- ID 5
+('patrick.nguyen@kofc15295.org', 'dev-pass-secure-9912'),    -- ID 6
+('thomas.kowalski@kofc15295.org', 'dev-pass-secure-9912'),   -- ID 7
+('robert.fitzgerald@kofc15295.org', 'dev-pass-secure-9912'), -- ID 8
+('anthony.russo@kofc15295.org', 'dev-pass-secure-9912'),     -- ID 9
+('daniel.mbeki@kofc15295.org', 'dev-pass-secure-9912'),      -- ID 10
+('joseph.hernandez@kofc15295.org', 'dev-pass-secure-9912'),  -- ID 11
+('francis.byrne@kofc15295.org', 'dev-pass-secure-9912'),     -- ID 12
+('william.schmidt@kofc15295.org', 'dev-pass-secure-9912'),   -- ID 13
+('george.alvarez@kofc15295.org', 'dev-pass-secure-9912'),    -- ID 14
+('peter.lindqvist@kofc15295.org', 'dev-pass-secure-9912'),   -- ID 15
+('matthew.okafor@kofc15295.org', 'dev-pass-secure-9912'),    -- ID 16
+('stephen.tran@kofc15295.org', 'dev-pass-secure-9912'),      -- ID 17
+('christopher.walsh@kofc15295.org', 'dev-pass-secure-9912'); -- ID 18
 GO
 
 INSERT INTO [Member] (

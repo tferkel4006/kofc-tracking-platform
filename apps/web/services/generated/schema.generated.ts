@@ -4172,15 +4172,15 @@ export const SEED_DATA: readonly SeedTable[] = [
     "rows": [
       {
         "Username": "testsuperadmin@kofc.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "testadmin@kofc.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "testmember@kofc.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       }
     ]
   },
@@ -4510,63 +4510,63 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
     "rows": [
       {
         "Username": "michael.oconnor@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "james.delgado@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "patrick.nguyen@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "thomas.kowalski@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "robert.fitzgerald@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "anthony.russo@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "daniel.mbeki@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "joseph.hernandez@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "francis.byrne@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "william.schmidt@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "george.alvarez@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "peter.lindqvist@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "matthew.okafor@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "stephen.tran@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       },
       {
         "Username": "christopher.walsh@kofc15295.org",
-        "Password": "koc15295"
+        "Password": "dev-pass-secure-9912"
       }
     ]
   },

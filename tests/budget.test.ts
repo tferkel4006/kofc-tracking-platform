@@ -1042,8 +1042,8 @@ for (const d of drivers) {
       await expectPrivilege(db.budget.updateLineItemBudget(MEMBER.member, line.id, 10), 'ADMIN_REQUIRED');
 
       expect(await db.members.update(MEMBER.admin, MEMBER.member, { IsBudgetDirector: 1 })).toMatchObject({ IsBudgetDirector: 1 });
-      expect((await db.auth.signIn('testmember@kofc.org', 'koc15295'))?.isBudgetDirector).toBe(true);
-      expect((await db.auth.signIn('testadmin@kofc.org', 'koc15295'))?.isBudgetDirector).toBe(false);
+      expect((await db.auth.signIn('testmember@kofc.org', 'dev-pass-secure-9912'))?.isBudgetDirector).toBe(true);
+      expect((await db.auth.signIn('testadmin@kofc.org', 'dev-pass-secure-9912'))?.isBudgetDirector).toBe(false);
       expect(await db.budget.updateLineItemBudget(MEMBER.member, line.id, 10)).toMatchObject({ ProposedBudgetAmount: 10 });
       await db.budget.addCustomBudgetLine(MEMBER.member, OWN, { FraternalYear: TARGET, LineItemName: 'Snacks' });
       await db.budget.prePopulateNextYear(MEMBER.member, OWN, TARGET);

@@ -9,13 +9,13 @@ describe.each(drivers)('$name driver: auth', (d) => {
     const db = await d.make();
     await db.init();
     const stored = Object.fromEntries(d.credentials(db).map((c) => [c.Username, c.Password]));
-    expect(stored['testmember@kofc.org']).toBe(sha256('koc15295'));
+    expect(stored['testmember@kofc.org']).toBe(sha256('dev-pass-secure-9912'));
     expect(stored['testnewmember@kofc.org']).toBe(''); // placeholder for the pre-provisioned member
 
-    expect((await db.auth.signIn('testmember@kofc.org', 'koc15295'))?.memberId).toBe(MEMBER.member);
-    expect((await db.auth.signIn('TESTMEMBER@kofc.org', 'koc15295'))?.memberId).toBe(MEMBER.member);
+    expect((await db.auth.signIn('testmember@kofc.org', 'dev-pass-secure-9912'))?.memberId).toBe(MEMBER.member);
+    expect((await db.auth.signIn('TESTMEMBER@kofc.org', 'dev-pass-secure-9912'))?.memberId).toBe(MEMBER.member);
     expect(await db.auth.signIn('testmember@kofc.org', 'wrong-password')).toBeNull();
-    expect(await db.auth.signIn('testmember@kofc.org', sha256('koc15295'))).toBeNull(); // the digest is not a password
+    expect(await db.auth.signIn('testmember@kofc.org', sha256('dev-pass-secure-9912'))).toBeNull(); // the digest is not a password
   });
 
   it('never signs in a member who has not registered', async () => {

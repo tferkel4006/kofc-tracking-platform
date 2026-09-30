@@ -103,14 +103,14 @@ describe.each(drivers)('$name driver: mobile onboarding', (d) => {
       email: 'testmember@kofc.org',
     });
     expect(await c.submitPassword('wrong-password')).toMatchObject({ screen: 'signIn', error: expect.stringContaining('Incorrect') });
-    expect(await c.submitPassword('koc15295')).toMatchObject({ screen: 'signedIn', user: { memberId: MEMBER.member } });
+    expect(await c.submitPassword('dev-pass-secure-9912')).toMatchObject({ screen: 'signedIn', user: { memberId: MEMBER.member } });
     // the failed registration must not have changed the real password
-    expect((await db.auth.signIn('testmember@kofc.org', 'koc15295'))?.memberId).toBe(MEMBER.member);
+    expect((await db.auth.signIn('testmember@kofc.org', 'dev-pass-secure-9912'))?.memberId).toBe(MEMBER.member);
   });
 
   it('discards a remembered session whose member no longer exists', async () => {
     const db = await d.make();
-    const user = (await db.auth.signIn('testmember@kofc.org', 'koc15295'))!;
+    const user = (await db.auth.signIn('testmember@kofc.org', 'dev-pass-secure-9912'))!;
     await sessionStore.save({ ...user, memberId: 9999 });
 
     expect(await controllerFor(db).start()).toEqual({ screen: 'enterEmail' });
@@ -119,7 +119,7 @@ describe.each(drivers)('$name driver: mobile onboarding', (d) => {
 
   it('honours a biometric gate without discarding the session when it refuses', async () => {
     const db = await d.make();
-    await sessionStore.save((await db.auth.signIn('testmember@kofc.org', 'koc15295'))!);
+    await sessionStore.save((await db.auth.signIn('testmember@kofc.org', 'dev-pass-secure-9912'))!);
 
     expect(await controllerFor(db, { authenticate: async () => false }).start()).toEqual({ screen: 'enterEmail' });
     expect(await storedSession()).not.toBeNull();
@@ -128,7 +128,7 @@ describe.each(drivers)('$name driver: mobile onboarding', (d) => {
 
   it('signOut forgets the session', async () => {
     const db = await d.make();
-    await sessionStore.save((await db.auth.signIn('testmember@kofc.org', 'koc15295'))!);
+    await sessionStore.save((await db.auth.signIn('testmember@kofc.org', 'dev-pass-secure-9912'))!);
     const c = controllerFor(db);
     expect(await c.start()).toMatchObject({ screen: 'signedIn' });
 

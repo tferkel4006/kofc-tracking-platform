@@ -319,7 +319,7 @@ function SignIn() {
         <Button type="submit" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </Button>
-        {devHint ? <p className="text-xs text-muted">Development data: testadmin@kofc.org or testsuperadmin@kofc.org, password koc15295.</p> : null}
+        {devHint ? <p className="text-xs text-muted">Development data: testadmin@kofc.org or testsuperadmin@kofc.org, password dev-pass-secure-9912.</p> : null}
       </form>
     </div>
   );

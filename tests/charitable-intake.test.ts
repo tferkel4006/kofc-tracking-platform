@@ -262,7 +262,7 @@ describe.each(drivers)('$name driver: presentation data', (d) => {
     expect(expenseQueue.filter((q) => isPayableExpenseReport(q.report)).map((q) => q.report.id)).toEqual([13]);
     expect(d.count(db, 'CharitableDisbursementLedger')).toBe(8);
 
-    const trustee = await db.auth.signIn('francis.byrne@kofc15295.org', 'koc15295');
+    const trustee = await db.auth.signIn('francis.byrne@kofc15295.org', 'dev-pass-secure-9912');
     const queue = await db.charities.listCharitableRequestsQueue(trustee.memberId, OWN);
     expect(queue.map((q) => q.request.RequestStatus)).toEqual(['Submitted', 'Submitted', 'Claimed by Trustee', 'Claimed by Trustee', 'Advanced']);
     expect(queue[4]).toMatchObject({ vetterFirstName: 'George', relationshipName: 'State or Supreme Program' });
@@ -273,7 +273,7 @@ describe.each(drivers)('$name driver: presentation data', (d) => {
 
     // Trustee 1 claimed the robotics club request; Trustee 2 may not take it over.
     const robotics = queue.find((q) => q.request.OrganizationName === 'Cathedral School Robotics Club')!;
-    const trustee2 = await db.auth.signIn('william.schmidt@kofc15295.org', 'koc15295');
+    const trustee2 = await db.auth.signIn('william.schmidt@kofc15295.org', 'dev-pass-secure-9912');
     await expectRule(db.charities.triageRequestStatus(trustee2.memberId, robotics.request.id, { action: 'advance' }), 'REQUEST_STATUS_CONFLICT');
     const advanced = await db.charities.triageRequestStatus(trustee.memberId, robotics.request.id, { action: 'advance' });
     expect(advanced.request.RequestStatus).toBe('Advanced');

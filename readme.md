@@ -34,7 +34,7 @@ bash
 npm run dev:web
 Use code with caution.
 3.	Open your internet web browser and navigate to: http://localhost:3000
-4.	Log in using any of these pre-configured testing developer profiles (Password for all accounts is koc15295):
+4.	Log in using any of these pre-configured testing developer profiles (Password for all accounts is dev-pass-secure-9912):
 o	Super Admin Portal: testsuperadmin@kofc.org (Accesses lookups, roles, and global tabs)
 o	Council Admin Portal: testadmin@kofc.org (Accesses split-screen event planners and meeting setups)
 📱 B. Running the Expo Mobile Phone App
