@@ -410,3 +410,43 @@ describe.each(drivers)('$name driver: Faith-in-Action presentation data (Sprint 
     expect(queue.map((q) => q.missionAreaName)).toEqual(['Faith', 'Community', 'Life', 'Family', 'Community']);
   });
 });
+
+describe.each(drivers)('$name driver: Grand Knight and Deputy Grand Knight executive access (Sprint 5Z-2.5)', (d) => {
+  it('lets a Grand Knight or Deputy Grand Knight without an Admin type read the footprint and work any claimed request', async () => {
+    const db = await d.make();
+    grantRole(d, db, MEMBER.member, 'Deputy Grand Knight');
+    const footprint = await db.reports.missionAreaFootprint(MEMBER.member, OWN, '2026-2027');
+    expect(footprint.areas).toHaveLength(4);
+    await expectRule(db.reports.missionAreaFootprint(MEMBER.member, 2, '2026-2027'), 'COUNCIL_ACCESS_DENIED');
+    expect(await db.budget.getBudgetProgress(MEMBER.member, OWN, '2026-2027')).toMatchObject({ councilId: OWN });
+
+    // Another officer claims a request; the Deputy Grand Knight may annotate and advance it over that claim.
+    const outsider = await db.members.create(MEMBER.superAdmin, {
+      CouncilID: OWN,
+      MemberNumber: 7712399,
+      MemberFirstName: 'Claiming',
+      MemberLastName: 'Trustee',
+      Phone: '503-555-0150',
+      StreetAddress1: '1 Charity Way',
+      City: 'Salem',
+      State: 'OR',
+      ZipCode: '97301',
+      Email: 'claiming.trustee@example.org',
+      DateOfBirth: '1970-05-05',
+      StatusID: 1,
+      DegreeID: 3,
+      MemberTypeID: 3,
+    });
+    grantRole(d, db, outsider.id, 'Trustee 3');
+    const { request } = await db.charities.submitCharitableRequest(MEMBER.admin, form());
+    await db.charities.triageRequestStatus(outsider.id, request.id, { action: 'claim' });
+    const noted = await db.charities.triageRequestStatus(MEMBER.member, request.id, { action: 'note', VettingNotes: 'GK/DGK review' });
+    expect(noted.request).toMatchObject({ VettingNotes: 'GK/DGK review', VetterMemberID: outsider.id });
+    const advanced = await db.charities.triageRequestStatus(MEMBER.member, request.id, { action: 'advance' });
+    expect(advanced.request.RequestStatus).toBe('Advanced');
+
+    // The Four-Eyes Principle still binds them on their own requests.
+    const own = await db.charities.submitCharitableRequest(MEMBER.member, form({ OrganizationName: 'My own' }));
+    await expectRule(db.charities.triageRequestStatus(MEMBER.member, own.request.id, { action: 'claim' }), 'SELF_VETTING_BLOCKED');
+  });
+});

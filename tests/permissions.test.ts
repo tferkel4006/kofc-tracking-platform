@@ -29,6 +29,9 @@ import {
   canDisburseCharity,
   canManageCharityRegistry,
   canReviewCharityProposals,
+  canOverrideVettingClaim,
+  canReviewBudgetPerformance,
+  canVetCharitableRequests,
   portalAreas,
   portalNavGroups,
   PORTAL_NAV_GROUPS,
@@ -230,7 +233,7 @@ describe('portal permissions', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose', 'charities/intake']],
         ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
-        ['Financial Ledgers', ['expenses', 'charities/vetting', 'financials/budget']],
+        ['Financial Ledgers', ['dashboard', 'expenses', 'charities/vetting', 'financials/budget']],
         ['Administrative Lookups', ['council-lookups', 'elections/appointments']],
       ]);
     });
@@ -409,5 +412,34 @@ describe('portal permissions', () => {
     expect(canChangeDonation(actor({ roles: ['Treasurer'], councilId: 2 }), donation, null)).toBe(false);
     expect(canChangeDonation(admin, donation, null)).toBe(true);
     expect(canChangeDonation(member, donation, 11)).toBe(false);
+  });
+});
+
+describe('executive access for the Grand Knight and Deputy Grand Knight (Sprint 5Z-2.5)', () => {
+  const gk = actor({ isOfficer: true, roles: ['Grand Knight'] });
+  const dgk = actor({ isOfficer: true, roles: ['Deputy Grand Knight'] });
+
+  it('opens the executive dashboard, its audits and budget gauges, and the vetting desk, in their own council only', () => {
+    for (const u of [gk, dgk]) {
+      expect(portalAreas(u)).toContain('dashboard');
+      expect(portalAreas(u)).toContain('charities/vetting');
+      expect(portalAreas(u)).not.toContain('supreme-sync');
+      expect(canViewExecutiveAudits(u, 1)).toBe(true);
+      expect(canReviewBudgetPerformance(u, 1)).toBe(true);
+      expect(canVetCharitableRequests(u, 1)).toBe(true);
+      expect(canOverrideVettingClaim(u, 1)).toBe(true);
+      for (const check of [canViewExecutiveAudits, canReviewBudgetPerformance, canVetCharitableRequests, canOverrideVettingClaim]) expect(check(u, 2)).toBe(false);
+    }
+    // Without the officer flag the seat still grants it: the role name, not an Admin member type, carries the access.
+    expect(portalAreas(actor({ roles: ['Deputy Grand Knight'] }))).toEqual(expect.arrayContaining(['dashboard', 'charities/vetting']));
+  });
+
+  it('leaves other officers on the desk without the dashboard or the claim override', () => {
+    const recorder = actor({ isOfficer: true, roles: ['Recorder'] });
+    expect(portalAreas(recorder)).not.toContain('dashboard');
+    expect(canViewExecutiveAudits(recorder, 1)).toBe(false);
+    expect(canOverrideVettingClaim(recorder, 1)).toBe(false);
+    expect(canVetCharitableRequests(recorder, 1)).toBe(true);
+    expect(canOverrideVettingClaim(admin, 1)).toBe(true);
   });
 });

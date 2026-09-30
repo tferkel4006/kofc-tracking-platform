@@ -615,6 +615,20 @@ export const holdsFinanceRole = (roles: readonly string[] | undefined): boolean 
   (roles ?? []).some((r) => (FINANCE_ROLE_NAMES as readonly string[]).includes(r));
 
 /**
+ * The council's executive officers (Sprint 5Z-2.5): the Grand Knight and Deputy Grand Knight read the executive summary
+ * dashboard and run the Pooled Vetting Desk with Admin-level reach inside their own council, without an Admin member
+ * type. (Spelled out here, not taken from elections.ts, which imports this module.)
+ */
+export const EXECUTIVE_ROLE_NAMES = ['Grand Knight', 'Deputy Grand Knight'] as const;
+
+export const holdsExecutiveRole = (roles: readonly string[] | undefined): boolean =>
+  (roles ?? []).some((r) => (EXECUTIVE_ROLE_NAMES as readonly string[]).includes(r));
+
+/** An Active Grand Knight or Deputy Grand Knight of the council. */
+const isCouncilExecutive = (actor: MemberWriteActor, councilId: number): boolean =>
+  actor.active && holdsExecutiveRole(actor.roles) && actor.councilId === councilId;
+
+/**
  * Only an Active Super Admin may create a Super Admin or promote a member to Super Admin. `grantedType` is
  * the MemberType.Type being written; `currentType` is the target's type before an update (omit on create),
  * so saving a Super Admin's other fields is not a promotion.
@@ -1240,7 +1254,7 @@ export const mayVetCharitableRequests = (actor: MemberWriteActor, councilId: num
   vettingDenial(actor, councilId, 'vet charitable requests') === null;
 
 function vettingDenial(actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null {
-  if (hasSuperAdminRights(actor)) return null;
+  if (hasSuperAdminRights(actor) || isCouncilExecutive(actor, councilId)) return null;
   if (!hasAdminRights(actor) && !(actor.active && actor.officer)) {
     return new SecurityPrivilegeError(
       'VETTING_AUTHORITY_REQUIRED',
@@ -1255,6 +1269,14 @@ function vettingDenial(actor: MemberWriteActor, councilId: number, action: strin
     { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
   );
 }
+
+/**
+ * charities.triageRequestStatus (Sprint 5Z-2.5): who may annotate, advance or decline a request another officer has
+ * claimed - an Active Admin or Grand Knight or Deputy Grand Knight of the request's council, or any Active Super Admin.
+ * Everyone else changes only the requests they claimed themselves.
+ */
+export const mayOverrideVettingClaim = (actor: MemberWriteActor, councilId: number): boolean =>
+  hasSuperAdminRights(actor) || (hasAdminRights(actor) && actor.councilId === councilId) || isCouncilExecutive(actor, councilId);
 
 /**
  * charities.triageRequestStatus: vetting must be independent, so the Knight Shepherd who carries a request may never
@@ -1300,9 +1322,19 @@ export function assertMayApproveBudget(actor: MemberWriteActor, councilId: numbe
 /**
  * budget.getBudgetProgress and budget.getHistoricalKPIs (Sprint 5Y-4): budget-versus-actual figures sit beside the
  * monthly executive summaries, so they are for the same readers - the council's Active Admins, Financial Secretary and
- * Treasurer, and any Active Super Admin. `action` completes "cannot ...".
+ * Treasurer, since Sprint 5Z-2.5 its Active Grand Knight and Deputy Grand Knight, and any Active Super Admin. The same
+ * guard covers reports.missionAreaFootprint. `action` completes "cannot ...".
  */
 export function assertMayReviewBudgetPerformance(actor: MemberWriteActor, councilId: number, action: string): void {
+  if (isCouncilExecutive(actor, councilId)) return;
+  // A Grand Knight or Deputy Grand Knight of another council is refused for the council, not for lacking a seat.
+  if (actor.active && holdsExecutiveRole(actor.roles) && !hasAdminRights(actor) && !holdsFinanceRole(actor.roles)) {
+    throw new SecurityPrivilegeError(
+      'COUNCIL_ACCESS_DENIED',
+      `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; a council's budget performance is reviewed only by its own leadership.`,
+      { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
+    );
+  }
   const denial = councilLeadershipDenial(actor, councilId, action, "a council's budget performance is reviewed only by its own leadership");
   if (denial) throw denial;
 }

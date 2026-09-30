@@ -2,8 +2,10 @@
 // Pooled Vetting Desk (Sprint 5Z-2): the council's shared triage spreadsheet of charitable intake requests
 // (charities.listCharitableRequestsQueue), for its officers (Trustees included), Admins and any Super Admin.
 //   - Unassigned rows carry a gold "Claim & Audit" button (charities.triageRequestStatus 'claim').
-//   - Claimed rows show who is reviewing them; the assigned vetter alone opens the vetting drawer to log notes, name
-//     the budget line the gift would come from and advance or decline the request ('note', 'advance', 'decline').
+//   - Claimed rows show who is reviewing them; the assigned vetter opens the vetting drawer to log notes, name the
+//     budget line the gift would come from and advance or decline the request ('note', 'advance', 'decline'). Since
+//     Sprint 5Z-2.5 the council's Admins, Grand Knight and Deputy Grand Knight (and any Super Admin) may open it on any
+//     claimed request too (canOverrideVettingClaim).
 //   - Four-Eyes Principle: on a request the viewer carries as its Knight Shepherd every control is replaced by a
 //     padlocked "Sponsor Restriction" (isSponsorRestricted; the data service refuses it too, SELF_VETTING_BLOCKED).
 import { useState } from 'react';
@@ -11,6 +13,7 @@ import {
   CHARITABLE_REQUEST_MAX_TIER,
   CHARITABLE_REQUEST_STATUSES,
   CHARITABLE_VETTING_NOTES_MAX_LENGTH,
+  canOverrideVettingClaim,
   currentFraternalYear,
   describeError,
   isSponsorRestricted,
@@ -171,9 +174,9 @@ function RowAction({
     );
   }
   if (r.RequestStatus === 'Claimed by Trustee') {
-    return r.VetterMemberID === user.memberId ? (
+    return r.VetterMemberID === user.memberId || canOverrideVettingClaim(user, r.CouncilID) ? (
       <Button size="sm" onClick={onOpen}>
-        Open vetting drawer
+        {r.VetterMemberID === user.memberId ? 'Open vetting drawer' : 'Review as executive'}
       </Button>
     ) : (
       <span className="text-xs text-muted">Held by its vetter</span>
@@ -274,13 +277,14 @@ function VettingDesk() {
             </Table>
           )}
           <p className="mt-2 text-xs text-muted">
-            Four-Eyes Principle: a Knight Shepherd never vets their own request, so those rows are locked for you. Only the claiming vetter opens a claimed
-            request&apos;s drawer.
+            Four-Eyes Principle: a Knight Shepherd never vets their own request, so those rows are locked for you. A claimed request&apos;s drawer opens for
+            its vetter and for the council&apos;s Admins, Grand Knight and Deputy Grand Knight.
           </p>
         </Panel>
       </div>
 
-      {open && !isSponsorRestricted(user, open.request) && open.request.RequestStatus === 'Claimed by Trustee' && open.request.VetterMemberID === user.memberId ? (
+      {open && !isSponsorRestricted(user, open.request) && open.request.RequestStatus === 'Claimed by Trustee' &&
+      (open.request.VetterMemberID === user.memberId || canOverrideVettingClaim(user, open.request.CouncilID)) ? (
         <VettingDrawer
           key={open.request.id}
           detail={open}

@@ -2,7 +2,7 @@
 
 A governance guide for the council's trustees. It shows what each council rank may do in five parts of the Knights of Columbus tracking platform. Every entry below matches a rule the data service enforces, or the screen that offers the control. The notes name the rule so it can be checked in the code (`packages/shared/src/permissions.ts` for the screens, `rules.ts` and the module files for the data service).
 
-Current as of Sprint 5Y-6.
+Current as of Sprint 5Z-2.5.
 
 ## How to read this chart
 
@@ -59,7 +59,7 @@ Every permission also requires an **Active** membership status. Inactive members
 | Read the council's annual budget | 👁️ | 👁️ | 👁️ | 👁️ | 👁️ | 👁️ |
 | Draft figures and add custom lines (May 1 - June 30) | — | 🗓️ | 🗓️ | 🗓️ | 🗓️ | — |
 | Approve & Finalize the entire budget | — | — | ✅ ³ | ✅ ³ | ✅ ³ | — |
-| Budget gauges and historical performance review | — | — | ✅ | ✅ | ✅ | — |
+| Budget gauges and historical performance review | — | — | ✅ | ✅ | ✅ | ✅ ⁷ |
 | Name the Designated Budget Director | — | — | — | — | ✅ | — |
 
 3. Approval opens on May 1 of the budget year and stays open after the July 1 lock, when councils usually vote. An approved year is frozen for everyone (`BUDGET_YEAR_APPROVED`). A Super Admin may override the drafting window, but never the approval freeze. Rules: `assertMayManageBudgetForecast`, `assertMayApproveBudget`.
@@ -101,9 +101,10 @@ The built-in groups are All Members and Active Officers (`DISTRIBUTION_GROUPS`).
 | Mark or clear anyone's no-show | — | — | — | — | ✅ | — |
 | Take meeting attendance and attach minutes | 👤 ⁵ | 👤 ⁵ | ✅ | ✅ | ✅ | ✅ |
 | Edit Meeting Agenda Templates (Council Lookups) | — | — | — | — | ✅ | ✅ |
-| No-show and awaiting-hours audits (dashboard) | — | — | — | — | ✅ | — |
-| Monthly executive summary (dashboard) | — | — | ✅ | ✅ | ✅ | — |
+| No-show and awaiting-hours audits (dashboard) | — | — | — | — | ✅ | ✅ ⁷ |
+| Monthly executive summary and Faith-in-Action mission tracking (dashboard) | — | — | ✅ | ✅ | ✅ | ✅ ⁷ |
 
 6. A member may flag their own no-show but never clear one (`assertMayMarkNoShow`).
+7. Sprint 5Z-2.5: the **Grand Knight and Deputy Grand Knight** open the executive dashboard in full (summary, mission tracking, budget gauges and personnel audits) for their own council, without an Admin account type. They also run the Pooled Vetting Desk with Admin-level reach: they may annotate, advance or decline a request another officer claimed (`mayOverrideVettingClaim`), though never one they shepherd themselves (Sponsor Restriction). Approving the budget stays with Admins and finance officers. Rules: `EXECUTIVE_ROLE_NAMES`, `assertMayReviewBudgetPerformance`, `assertMayVetCharitableRequests`.
 
 Meeting attendance, minutes and invitations are gated by the screens today (`canManageMeeting`). The data service does not yet take the caller's identity for those three actions. Agenda templates are enforced by the data service (`assertMayManageAgendaTemplates`).

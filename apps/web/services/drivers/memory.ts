@@ -172,6 +172,7 @@ import {
   assertMayAddGlobalCharity,
   assertMayReviewCharityProposals,
   assertMayVetCharitableRequests,
+  mayOverrideVettingClaim,
   hasAdminRights,
   assertIndependentVetter,
   assertCouncilRelationshipType,
@@ -3210,7 +3211,7 @@ export class MemoryDataService implements DataService {
         const councilId = request.CouncilID as number;
         assertMayVetCharitableRequests(actor, councilId, `vet charitable request ${requestId}`);
         assertIndependentVetter(actor, request as unknown as CharitableRequest);
-        const changes = planCharitableTriage(request as unknown as CharitableRequest, actorId, hasAdminRights(actor), vettingData, this.now());
+        const changes = planCharitableTriage(request as unknown as CharitableRequest, actorId, mayOverrideVettingClaim(actor, councilId), vettingData, this.now());
         if (changes.TargetBudgetLineID != null) {
           const line = s.rows('CouncilBudgetForecast').find((l) => l.id === changes.TargetBudgetLineID);
           assertCouncilBudgetLine(changes.TargetBudgetLineID, line as unknown as CouncilBudgetForecast | undefined, councilId);

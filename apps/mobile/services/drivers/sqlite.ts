@@ -174,6 +174,7 @@ import {
   assertMayAddGlobalCharity,
   assertMayReviewCharityProposals,
   assertMayVetCharitableRequests,
+  mayOverrideVettingClaim,
   hasAdminRights,
   assertIndependentVetter,
   assertCouncilRelationshipType,
@@ -3756,7 +3757,7 @@ export class SqliteDataService implements DataService {
         if (!request) throw charitableRequestNotFound(requestId);
         assertMayVetCharitableRequests(actor, request.CouncilID, `vet charitable request ${requestId}`);
         assertIndependentVetter(actor, request);
-        const changes = planCharitableTriage(request, actorId, hasAdminRights(actor), vettingData, this.now());
+        const changes = planCharitableTriage(request, actorId, mayOverrideVettingClaim(actor, request.CouncilID), vettingData, this.now());
         if (changes.TargetBudgetLineID != null) {
           const line = await db.getFirstAsync<CouncilBudgetForecast>('SELECT * FROM [CouncilBudgetForecast] WHERE [id] = ?', [changes.TargetBudgetLineID]);
           assertCouncilBudgetLine(changes.TargetBudgetLineID, line, request.CouncilID);

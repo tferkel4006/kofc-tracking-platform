@@ -459,13 +459,19 @@ describe('budget helpers (pure)', () => {
         return false;
       }
     };
-    for (const check of [
-      allowed((a, c) => assertMayApproveBudget(a, c, 'approve the budget')),
-      allowed((a, c) => assertMayReviewBudgetPerformance(a, c, 'review the budget')),
-    ]) {
+    const approve = allowed((a, c) => assertMayApproveBudget(a, c, 'approve the budget'));
+    const review = allowed((a, c) => assertMayReviewBudgetPerformance(a, c, 'review the budget'));
+    // Sprint 5Z-2.5: the Grand Knight and Deputy Grand Knight read budget performance with the executive summaries, but
+    // approving the budget stays with Admins and finance officers.
+    for (const role of ['Grand Knight', 'Deputy Grand Knight']) {
+      expect(approve(actor({ roles: [role] }))).toBe(false);
+      expect(review(actor({ roles: [role] }))).toBe(true);
+      expect(review(actor({ roles: [role] }), OTHER)).toBe(false);
+      expect(review(actor({ roles: [role], active: false }))).toBe(false);
+    }
+    for (const check of [approve, review]) {
       expect(check(actor())).toBe(false);
       expect(check(actor({ budgetDirector: true }))).toBe(false);
-      expect(check(actor({ roles: ['Grand Knight'] }))).toBe(false);
       expect(check(actor({ roles: ['Treasurer'] }))).toBe(true);
       expect(check(actor({ roles: ['Financial Secretary'] }))).toBe(true);
       expect(check(actor({ roles: ['Treasurer'] }), OTHER)).toBe(false);
