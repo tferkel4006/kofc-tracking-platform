@@ -11,6 +11,9 @@
 // Beside the scorecards (Sprint 5Y-4), the same readers (canReviewBudgetPerformance) get budget tracking gauges for the
 // fraternal year of the chosen month (budget.getBudgetProgress): each budget category's actual spend so far - events,
 // approved and reimbursed expenses, and charity checks - against its ApprovedBudgetAmount cap, flagged from 85%.
+//
+// Above them (Sprint 5Z-2) the same readers get the Faith-in-Action Mission Tracking card (reports.missionAreaFootprint):
+// the fraternal year's donations and volunteer service hours by mission area (Faith, Family, Community, Life).
 import { useState, type ReactNode } from 'react';
 import {
   BUDGET_WARNING_THRESHOLD_PERCENT,
@@ -26,6 +29,7 @@ import {
 } from '@kofc/shared';
 import { BudgetAlertTag, BudgetGauge, formatPercent } from '@/components/BudgetParts';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
+import { MissionTracking } from '@/components/MissionTracking';
 import { cx, Empty, Field, Notice, PageTitle, Panel, Pill, Select, Table, Td } from '@/components/ui';
 import { formatDecimalHours, formatFullDate, formatMoney, formatPersonName, formatPhone } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -275,7 +279,10 @@ function Dashboard() {
         <div className="flex flex-col gap-4">
           <Scorecards s={s} />
           {canReviewBudgetPerformance(user, scope.councilId) ? (
-            <BudgetTracking actorId={user.memberId} councilId={scope.councilId} fraternalYear={currentFraternalYear(new Date(year, month - 1, 1))} />
+            <>
+              <MissionTracking actorId={user.memberId} councilId={scope.councilId} fraternalYear={currentFraternalYear(new Date(year, month - 1, 1))} />
+              <BudgetTracking actorId={user.memberId} councilId={scope.councilId} fraternalYear={currentFraternalYear(new Date(year, month - 1, 1))} />
+            </>
           ) : null}
           <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
             <Panel title="Financial ledger">

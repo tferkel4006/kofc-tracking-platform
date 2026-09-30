@@ -388,27 +388,109 @@ INSERT INTO [CharitableRequest] (
     [CouncilID], [OrganizationName], [ContactName], [ContactPhone], [ContactEmail], [AmountRequested], [RequestStatus], [SubmittedAt],
     [ShepherdMemberID], [MailingAddress], [RelationshipTypeID], [Is501c3], [EIN], [Website], [OrgMission], [IsRecurring],
     [FundsNeededBy], [SpecificUse], [TargetBeneficiary], [AccountabilityPlan], [RequestTier],
-    [VetterMemberID], [VettingNotes], [VettedDate], [VoteStatus], [AmountApproved]
+    [VetterMemberID], [VettingNotes], [VettedDate], [VoteStatus], [AmountApproved], [MissionAreaID]
 )
 VALUES
 (1, 'St. Jude Youth Ministry', 'Kevin Brandt', '503-555-0301', 'youth@stjudeparish.org', 800.00, 'Submitted', '2026-09-14 19:22:00',
  15, '5200 NE Alameda St, Portland, OR 97213', 1, 0, NULL, 'https://stjudeparish.org/youth', 'Forming high-school students in faith and service', 0,
  '2026-10-31 00:00:00', 'Bus rental and registration for the diocesan youth rally', 'Thirty parish teens', 'Receipts and a photo report to the council', 1,
- NULL, NULL, NULL, 'Pending', 0.00),
+ NULL, NULL, NULL, 'Pending', 0.00, 1),
 (1, 'Portland Refugee Welcome Network', 'Amina Yusuf', '503-555-0318', 'amina@prwn.org', 1500.00, 'Submitted', '2026-09-21 20:05:00',
  18, '2250 SE 82nd Ave, Portland, OR 97216', 5, 1, NULL, 'https://prwn.org', 'Resettling refugee families arriving in Portland', 0,
  '2026-11-15 00:00:00', 'Starter kitchen kits for five newly arrived families', 'Five refugee families', 'Itemized purchase list and thank-you letters', 2,
- NULL, NULL, NULL, 'Pending', 0.00),
+ NULL, NULL, NULL, 'Pending', 0.00, 3),
 (1, 'Cathedral School Robotics Club', 'Joan Pratt', '503-555-0325', 'robotics@cathedralschoolpdx.org', 650.00, 'Claimed by Trustee', '2026-08-26 18:40:00',
  17, '110 NW 17th Ave, Portland, OR 97209', 2, 0, NULL, 'https://cathedralschoolpdx.org', 'STEM enrichment for Catholic middle-schoolers', 1,
  '2026-10-10 00:00:00', 'Competition registration and replacement parts', 'Twelve seventh and eighth graders', 'Club treasurer reports spending at the November meeting', 1,
- 12, 'Called the principal; the club is school-sponsored. Asked for last year''s budget.', NULL, 'Pending', 0.00),
+ 12, 'Called the principal; the club is school-sponsored. Asked for last year''s budget.', NULL, 'Pending', 0.00, 2),
 (1, 'Gabriel House Maternity Home', 'Rebecca Moore', '503-555-0337', 'rmoore@gabrielhouse.org', 2500.00, 'Claimed by Trustee', '2026-08-18 21:15:00',
  4, '4730 SE Hawthorne Blvd, Portland, OR 97215', 3, 1, NULL, 'https://gabrielhouse.org', 'A home for pregnant women facing homelessness', 1,
  '2026-12-01 00:00:00', 'Crib and car-seat replacements for the nursery', 'Eight mothers and their newborns', 'Invoices plus a site visit by the vetter', 2,
- 13, 'Confirmed 501(c)(3) status. Site visit booked for October 3.', NULL, 'Pending', 0.00),
+ 13, 'Confirmed 501(c)(3) status. Site visit booked for October 3.', NULL, 'Pending', 0.00, 4),
 (1, 'Portland Metro Special Olympics Teams', 'Chris Dunn', '503-555-0349', 'coach@pdxmetroathletes.org', 1000.00, 'Advanced', '2026-07-29 17:55:00',
  16, '6400 SE Lake Rd, Milwaukie, OR 97222', 6, 1, NULL, 'https://pdxmetroathletes.org', 'Year-round sports training for athletes with intellectual disabilities', 1,
  '2026-10-20 00:00:00', 'Uniforms for the fall bocce and basketball teams', 'Forty metro-area athletes', 'Team photo and roster sent to the council', 2,
- 14, 'Long-standing Knights partner program; financials reviewed. Recommend the full amount.', '2026-09-02 20:30:00', 'Pending', 0.00);
+ 14, 'Long-standing Knights partner program; financials reviewed. Recommend the full amount.', '2026-09-02 20:30:00', 'Pending', 0.00, 3);
+GO
+
+-- ==============================================================================
+-- Sprint 5Z-2: Faith-in-Action presentation events for Council 15295, two per mission area (Faith 1, Family 2,
+-- Community 3, Life 4), July - September 2026, each with one shift, its volunteers' logged hours and its recorded
+-- donations. Funds raised on each event match its cash and electronic donations; the pantry's physical items are
+-- not money and count toward neither.
+-- ==============================================================================
+INSERT INTO [Event] ([EventName], [EventDescription], [OwnerID], [StartDate], [EndDate], [Location], [CategoryID], [Budget], [Spend], [FundsRaised-Cash], [FundsRaised-Electronic], [Highlights], [PlannedNumberAttendees], [ActualNumberAttendees], [IsAnnual], [IsMultiDay], [MissionAreaID])
+VALUES
+('Rosary Rally at the Parish Grotto', 'Public rosary for peace with the Knights leading the decades', 4, '2026-07-12', '2026-07-12', 'St. Jude Parish Grotto', 3, 60.00, 45.00, 180.00, 0.00, 'Over ninety parishioners prayed all five decades despite the heat.', 80, 94, 0, 0, 1),
+('Holy Hour for Vocations', 'Eucharistic adoration praying for priestly and religious vocations', 5, '2026-09-10', '2026-09-10', 'St. Jude Church', 3, 25.00, 20.00, 95.00, 0.00, 'Two seminarians joined us and spoke after Benediction.', 40, 37, 0, 0, 1),
+('Parish Family Picnic', 'Summer picnic with games, a bounce house and a Knights grill line', 16, '2026-07-26', '2026-07-26', 'Laurelhurst Park, Picnic Area B', 1, 450.00, 410.00, 640.00, 215.00, 'Record turnout; the grill line served 310 plates.', 250, 312, 1, 0, 2),
+('Back-to-School Pancake Breakfast', 'Pancake breakfast raising school-supply money for parish families', 15, '2026-08-16', '2026-08-16', 'St. Jude Parish Hall', 5, 300.00, 265.00, 525.00, 310.00, 'Funded forty backpacks for the school drive.', 180, 205, 1, 0, 2),
+('Tootsie Roll Drive for Special Olympics', 'Annual candy drive at grocery stores for people with intellectual disabilities', 18, '2026-08-22', '2026-08-22', 'Fred Meyer and Safeway entrances, NE Portland', 5, 75.00, 60.00, 1120.50, 260.00, 'Our best drive in five years.', 0, 0, 1, 0, 3),
+('Food Pantry Restock Day', 'Sorting and shelving donated groceries at the parish pantry', 17, '2026-09-12', '2026-09-12', 'St. Jude Parish Food Pantry', 2, 0.00, 0.00, 150.00, 0.00, 'Restocked every shelf before the fall rush.', 0, 0, 0, 0, 3),
+('Baby Bottle Campaign Kickoff', 'Baby bottles handed out after every Mass to collect change for the pregnancy center', 14, '2026-07-19', '2026-07-19', 'St. Jude Church narthex', 5, 150.00, 120.00, 865.25, 400.00, 'Six hundred bottles went home with families.', 500, 600, 1, 0, 4),
+('Pregnancy Center Nursery Painting', 'Painting and furnishing the nursery at Holy Family Pregnancy Resource Center', 13, '2026-09-19', '2026-09-19', 'Holy Family Pregnancy Resource Center', 2, 200.00, 185.00, 0.00, 0.00, 'The nursery reopened the following Monday.', 0, 0, 0, 0, 4);
+GO
+INSERT INTO [EventCouncils] ([EventID], [CouncilID])
+VALUES
+(1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1), (7, 1), (8, 1);
+GO
+INSERT INTO [Shift] ([ShiftName], [ShiftDescription], [ShiftDate], [StartTime], [EndTime], [EventID], [MinNumberVolunteers], [NumberVolunteersSignedUp])
+VALUES
+('Rally marshals', 'Set up chairs and sound, lead the decades', '2026-07-12', '09:00:00', '12:00:00', 1, 3, 3),
+('Adoration guard', 'Keep watch before the Blessed Sacrament', '2026-09-10', '18:30:00', '20:30:00', 2, 2, 2),
+('Grill and games crew', 'Run the grill line and the children''s games', '2026-07-26', '10:00:00', '15:00:00', 3, 4, 5),
+('Griddle crew', 'Cook and serve pancakes', '2026-08-16', '07:00:00', '11:00:00', 4, 4, 4),
+('Store-front collectors', 'Hand out Tootsie Rolls and collect donations', '2026-08-22', '09:00:00', '15:00:00', 5, 4, 5),
+('Pantry shelvers', 'Sort, date and shelve groceries', '2026-09-12', '08:00:00', '12:00:00', 6, 3, 3),
+('Bottle distributors', 'Hand out bottles after each Mass', '2026-07-19', '08:00:00', '13:00:00', 7, 3, 3),
+('Painting crew', 'Prime, paint and assemble cribs', '2026-09-19', '09:00:00', '14:00:00', 8, 4, 4);
+GO
+INSERT INTO [EventSignup] ([ShiftID], [MemberID], [NoShow])
+VALUES
+(1, 4, 0), (1, 8, 0), (1, 12, 0),
+(2, 5, 0), (2, 9, 0),
+(3, 16, 0), (3, 10, 0), (3, 11, 0), (3, 15, 0), (3, 18, 0),
+(4, 15, 0), (4, 6, 0), (4, 7, 0), (4, 17, 0),
+(5, 18, 0), (5, 9, 0), (5, 10, 0), (5, 11, 0), (5, 13, 0),
+(6, 17, 0), (6, 12, 0), (6, 14, 0),
+(7, 14, 0), (7, 4, 0), (7, 13, 0),
+(8, 13, 0), (8, 8, 0), (8, 5, 0), (8, 16, 0);
+GO
+INSERT INTO [EventTime] ([ShiftID], [MemberID], [Hours])
+VALUES
+(1, 4, 3.00), (1, 8, 3.00), (1, 12, 2.50),
+(2, 5, 2.00), (2, 9, 2.00),
+(3, 16, 5.00), (3, 10, 5.00), (3, 11, 4.50), (3, 15, 5.00), (3, 18, 4.00),
+(4, 15, 4.00), (4, 6, 4.00), (4, 7, 3.50), (4, 17, 4.00),
+(5, 18, 6.00), (5, 9, 6.00), (5, 10, 5.50), (5, 11, 6.00), (5, 13, 4.00),
+(6, 17, 4.00), (6, 12, 4.00), (6, 14, 3.75),
+(7, 14, 5.00), (7, 4, 4.50), (7, 13, 5.00),
+(8, 13, 5.00), (8, 8, 5.00), (8, 5, 4.75), (8, 16, 5.00);
+GO
+-- DonationMethodID: 1 Cash, 2 Credit Card, 3 Venmo, 4 Zelle, 7 Physical Items. DonationTypeID: 2 Parish Event, 3 Meals, 4 Unsolicited.
+INSERT INTO [Donation] ([CouncilID], [DonationDate], [DonationMethodID], [DonationTypeID], [Donor], [DonationDesciption], [EventID], [DonationAmount], [RecordedBy])
+VALUES
+(1, '2026-07-12', 1, 2, NULL, 'Rally free-will offering', 1, 180.00, 7),
+(1, '2026-09-10', 1, 2, NULL, 'Holy Hour vocations basket', 2, 95.00, 7),
+(1, '2026-07-26', 1, 3, NULL, 'Picnic plates, cash', 3, 640.00, 7),
+(1, '2026-07-26', 3, 3, NULL, 'Picnic plates, Venmo', 3, 215.00, 7),
+(1, '2026-08-16', 1, 3, NULL, 'Pancake plates, cash', 4, 525.00, 2),
+(1, '2026-08-16', 2, 3, NULL, 'Pancake plates, card reader', 4, 310.00, 2),
+(1, '2026-08-22', 1, 4, NULL, 'Tootsie Roll cans', 5, 1120.50, 7),
+(1, '2026-08-22', 3, 4, NULL, 'Tootsie Roll QR code', 5, 260.00, 7),
+(1, '2026-09-12', 1, 4, 'Anonymous parishioner', 'Pantry cash gift', 6, 150.00, 2),
+(1, '2026-09-12', 7, 4, 'Safeway NE Broadway', 'Pallet of canned goods (physical items)', 6, 300.00, 2),
+(1, '2026-07-19', 1, 2, NULL, 'Baby bottles returned, cash and coins', 7, 865.25, 7),
+(1, '2026-07-19', 4, 2, NULL, 'Baby bottle campaign, Zelle', 7, 400.00, 7);
+GO
+
+-- Sprint 5Z-2: the council's approved 2026-2027 budget lines a vetter may name as a request's target (BudgetCategoryID 1-6
+-- are the six funds above: 2 Sister Rita Rose Vistica Parish Community Fund, 3 Cathedral School & Student Support, 4 Other
+-- Donations & Projects).
+INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [PrePopulatedAmount], [ApprovedBudgetAmount], [Notes], [BudgetCategoryID], [ProposedBudgetAmount], [BudgetStatus])
+VALUES 
+(1, '2026-2027', 'Donation', 1, 'St. Jude Parish Food Pantry', 1000.00, 1500.00, NULL, 2, 1500.00, 'Approved'),
+(1, '2026-2027', 'Donation', 2, 'Holy Family Pregnancy Resource Center', 1350.00, 1500.00, NULL, 4, 1500.00, 'Approved'),
+(1, '2026-2027', 'Donation', 4, 'Cathedral School Tuition Assistance Fund', 1000.00, 1200.00, NULL, 3, 1200.00, 'Approved'),
+(1, '2026-2027', 'Operational', NULL, 'Outside Organization Requests', 0.00, 5000.00, 'Pool for vetted intake requests', 4, 5000.00, 'Approved');
 GO

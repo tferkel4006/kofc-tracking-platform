@@ -175,6 +175,9 @@ import {
   hasAdminRights,
   assertIndependentVetter,
   assertCouncilRelationshipType,
+  assertCouncilMissionArea,
+  assertCouncilBudgetLine,
+  buildMissionAreaFootprint,
   buildCharitableRequestDetails,
   CHARITABLE_REQUEST_FORM_COLUMNS,
   charitableRequestNotFound,
@@ -2291,6 +2294,38 @@ export class MemoryDataService implements DataService {
       });
     },
 
+    missionAreaFootprint: async (actorId, councilId, fraternalYear) => {
+      const year = assertFraternalYear(fraternalYear);
+      const s = await this.ready();
+      assertMayReviewBudgetPerformance(this.memberWriteActor(s, actorId), councilId, `read the mission footprint of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+      const shifts = new Map(s.rows('Shift').filter((sh) => linked.has(sh.EventID)).map((sh) => [sh.id, sh]));
+      const methodName = (id: unknown) => (s.rows('DonationMethod').find((m) => m.id === id)?.DonationMethod as string | undefined) ?? '';
+      return buildMissionAreaFootprint(
+        councilId,
+        year,
+        s.rows('CouncilMissionArea').map((a) => ({ ...a })) as unknown as CouncilMissionArea[],
+        s.rows('Event').filter((e) => linked.has(e.id)).map((e) => ({ id: e.id as number, StartDate: e.StartDate as string, MissionAreaID: (e.MissionAreaID as number | null) ?? null })),
+        s
+          .rows('Donation')
+          .filter((d) => d.CouncilID === councilId)
+          .map((d) => ({
+            EventID: (d.EventID as number | null) ?? null,
+            DonationDate: d.DonationDate as string,
+            DonationAmount: d.DonationAmount as number,
+            methodName: methodName(d.DonationMethodID),
+          })),
+        s
+          .rows('EventTime')
+          .filter((t) => shifts.has(t.ShiftID))
+          .map((t) => {
+            const shift = shifts.get(t.ShiftID)!;
+            return { Hours: t.Hours as number, eventId: shift.EventID as number, shiftDate: shift.ShiftDate as string };
+          }),
+      );
+    },
+
     listNoShowsAudit: async (councilId, dateThreshold) => {
       const threshold = noShowAuditThreshold(dateThreshold, this.now());
       const s = await this.ready();
@@ -3152,6 +3187,7 @@ export class MemoryDataService implements DataService {
         const actor = this.memberWriteActor(s, actorId);
         assertMayProposeCharityGift(actor, actor.councilId, 'submit a charitable request');
         assertCouncilRelationshipType(clean.RelationshipTypeID, this.relationshipTypes(s, actor.councilId), actor.councilId);
+        assertCouncilMissionArea(clean.MissionAreaID, s.rows('CouncilMissionArea') as unknown as CouncilMissionArea[], actor.councilId);
         return s.insert('CharitableRequest', {
           ...rowValues(CHARITABLE_REQUEST_FORM_COLUMNS, clean),
           CouncilID: actor.councilId,
@@ -3175,6 +3211,10 @@ export class MemoryDataService implements DataService {
         assertMayVetCharitableRequests(actor, councilId, `vet charitable request ${requestId}`);
         assertIndependentVetter(actor, request as unknown as CharitableRequest);
         const changes = planCharitableTriage(request as unknown as CharitableRequest, actorId, hasAdminRights(actor), vettingData, this.now());
+        if (changes.TargetBudgetLineID != null) {
+          const line = s.rows('CouncilBudgetForecast').find((l) => l.id === changes.TargetBudgetLineID);
+          assertCouncilBudgetLine(changes.TargetBudgetLineID, line as unknown as CouncilBudgetForecast | undefined, councilId);
+        }
         Object.assign(request, changes);
       });
       return this.charitableRequestDetails(s, (r) => r.id === requestId)[0];
@@ -3448,7 +3488,9 @@ export class MemoryDataService implements DataService {
       s.rows('CharitableRequest').filter(keep).map((r) => ({ ...r })) as unknown as CharitableRequest[],
       s.rows('Member') as unknown as Member[],
       s.rows('CouncilRelationshipType') as unknown as CouncilRelationshipType[],
-    ).map((d) => ({ ...d, request: { ...d.request } }));
+      s.rows('CouncilMissionArea') as unknown as CouncilMissionArea[],
+      s.rows('CouncilBudgetForecast') as unknown as CouncilBudgetForecast[],
+    ).map((d) => ({ ...d, request: { ...d.request }, targetBudgetLine: d.targetBudgetLine ? { ...d.targetBudgetLine } : null }));
   }
 
   private charityRows(s: MemoryStore): readonly GlobalCharityRegistry[] {

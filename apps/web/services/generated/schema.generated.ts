@@ -3824,6 +3824,20 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "MissionAreaID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "TargetBudgetLineID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -3860,6 +3874,16 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "PaymentOrderId",
         "refTable": "CharitableDisbursementLedger",
+        "refColumn": "id"
+      },
+      {
+        "column": "MissionAreaID",
+        "refTable": "CouncilMissionArea",
+        "refColumn": "id"
+      },
+      {
+        "column": "TargetBudgetLineID",
+        "refTable": "CouncilBudgetForecast",
         "refColumn": "id"
       }
     ],
@@ -5294,7 +5318,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "VettingNotes": null,
         "VettedDate": null,
         "VoteStatus": "Pending",
-        "AmountApproved": 0
+        "AmountApproved": 0,
+        "MissionAreaID": 1
       },
       {
         "CouncilID": 1,
@@ -5322,7 +5347,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "VettingNotes": null,
         "VettedDate": null,
         "VoteStatus": "Pending",
-        "AmountApproved": 0
+        "AmountApproved": 0,
+        "MissionAreaID": 3
       },
       {
         "CouncilID": 1,
@@ -5350,7 +5376,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "VettingNotes": "Called the principal; the club is school-sponsored. Asked for last year's budget.",
         "VettedDate": null,
         "VoteStatus": "Pending",
-        "AmountApproved": 0
+        "AmountApproved": 0,
+        "MissionAreaID": 2
       },
       {
         "CouncilID": 1,
@@ -5378,7 +5405,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "VettingNotes": "Confirmed 501(c)(3) status. Site visit booked for October 3.",
         "VettedDate": null,
         "VoteStatus": "Pending",
-        "AmountApproved": 0
+        "AmountApproved": 0,
+        "MissionAreaID": 4
       },
       {
         "CouncilID": 1,
@@ -5406,7 +5434,781 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "VettingNotes": "Long-standing Knights partner program; financials reviewed. Recommend the full amount.",
         "VettedDate": "2026-09-02 20:30:00",
         "VoteStatus": "Pending",
-        "AmountApproved": 0
+        "AmountApproved": 0,
+        "MissionAreaID": 3
+      }
+    ]
+  },
+  {
+    "table": "Event",
+    "rows": [
+      {
+        "EventName": "Rosary Rally at the Parish Grotto",
+        "EventDescription": "Public rosary for peace with the Knights leading the decades",
+        "OwnerID": 4,
+        "StartDate": "2026-07-12",
+        "EndDate": "2026-07-12",
+        "Location": "St. Jude Parish Grotto",
+        "CategoryID": 3,
+        "Budget": 60,
+        "Spend": 45,
+        "FundsRaised-Cash": 180,
+        "FundsRaised-Electronic": 0,
+        "Highlights": "Over ninety parishioners prayed all five decades despite the heat.",
+        "PlannedNumberAttendees": 80,
+        "ActualNumberAttendees": 94,
+        "IsAnnual": 0,
+        "IsMultiDay": 0,
+        "MissionAreaID": 1
+      },
+      {
+        "EventName": "Holy Hour for Vocations",
+        "EventDescription": "Eucharistic adoration praying for priestly and religious vocations",
+        "OwnerID": 5,
+        "StartDate": "2026-09-10",
+        "EndDate": "2026-09-10",
+        "Location": "St. Jude Church",
+        "CategoryID": 3,
+        "Budget": 25,
+        "Spend": 20,
+        "FundsRaised-Cash": 95,
+        "FundsRaised-Electronic": 0,
+        "Highlights": "Two seminarians joined us and spoke after Benediction.",
+        "PlannedNumberAttendees": 40,
+        "ActualNumberAttendees": 37,
+        "IsAnnual": 0,
+        "IsMultiDay": 0,
+        "MissionAreaID": 1
+      },
+      {
+        "EventName": "Parish Family Picnic",
+        "EventDescription": "Summer picnic with games, a bounce house and a Knights grill line",
+        "OwnerID": 16,
+        "StartDate": "2026-07-26",
+        "EndDate": "2026-07-26",
+        "Location": "Laurelhurst Park, Picnic Area B",
+        "CategoryID": 1,
+        "Budget": 450,
+        "Spend": 410,
+        "FundsRaised-Cash": 640,
+        "FundsRaised-Electronic": 215,
+        "Highlights": "Record turnout; the grill line served 310 plates.",
+        "PlannedNumberAttendees": 250,
+        "ActualNumberAttendees": 312,
+        "IsAnnual": 1,
+        "IsMultiDay": 0,
+        "MissionAreaID": 2
+      },
+      {
+        "EventName": "Back-to-School Pancake Breakfast",
+        "EventDescription": "Pancake breakfast raising school-supply money for parish families",
+        "OwnerID": 15,
+        "StartDate": "2026-08-16",
+        "EndDate": "2026-08-16",
+        "Location": "St. Jude Parish Hall",
+        "CategoryID": 5,
+        "Budget": 300,
+        "Spend": 265,
+        "FundsRaised-Cash": 525,
+        "FundsRaised-Electronic": 310,
+        "Highlights": "Funded forty backpacks for the school drive.",
+        "PlannedNumberAttendees": 180,
+        "ActualNumberAttendees": 205,
+        "IsAnnual": 1,
+        "IsMultiDay": 0,
+        "MissionAreaID": 2
+      },
+      {
+        "EventName": "Tootsie Roll Drive for Special Olympics",
+        "EventDescription": "Annual candy drive at grocery stores for people with intellectual disabilities",
+        "OwnerID": 18,
+        "StartDate": "2026-08-22",
+        "EndDate": "2026-08-22",
+        "Location": "Fred Meyer and Safeway entrances, NE Portland",
+        "CategoryID": 5,
+        "Budget": 75,
+        "Spend": 60,
+        "FundsRaised-Cash": 1120.5,
+        "FundsRaised-Electronic": 260,
+        "Highlights": "Our best drive in five years.",
+        "PlannedNumberAttendees": 0,
+        "ActualNumberAttendees": 0,
+        "IsAnnual": 1,
+        "IsMultiDay": 0,
+        "MissionAreaID": 3
+      },
+      {
+        "EventName": "Food Pantry Restock Day",
+        "EventDescription": "Sorting and shelving donated groceries at the parish pantry",
+        "OwnerID": 17,
+        "StartDate": "2026-09-12",
+        "EndDate": "2026-09-12",
+        "Location": "St. Jude Parish Food Pantry",
+        "CategoryID": 2,
+        "Budget": 0,
+        "Spend": 0,
+        "FundsRaised-Cash": 150,
+        "FundsRaised-Electronic": 0,
+        "Highlights": "Restocked every shelf before the fall rush.",
+        "PlannedNumberAttendees": 0,
+        "ActualNumberAttendees": 0,
+        "IsAnnual": 0,
+        "IsMultiDay": 0,
+        "MissionAreaID": 3
+      },
+      {
+        "EventName": "Baby Bottle Campaign Kickoff",
+        "EventDescription": "Baby bottles handed out after every Mass to collect change for the pregnancy center",
+        "OwnerID": 14,
+        "StartDate": "2026-07-19",
+        "EndDate": "2026-07-19",
+        "Location": "St. Jude Church narthex",
+        "CategoryID": 5,
+        "Budget": 150,
+        "Spend": 120,
+        "FundsRaised-Cash": 865.25,
+        "FundsRaised-Electronic": 400,
+        "Highlights": "Six hundred bottles went home with families.",
+        "PlannedNumberAttendees": 500,
+        "ActualNumberAttendees": 600,
+        "IsAnnual": 1,
+        "IsMultiDay": 0,
+        "MissionAreaID": 4
+      },
+      {
+        "EventName": "Pregnancy Center Nursery Painting",
+        "EventDescription": "Painting and furnishing the nursery at Holy Family Pregnancy Resource Center",
+        "OwnerID": 13,
+        "StartDate": "2026-09-19",
+        "EndDate": "2026-09-19",
+        "Location": "Holy Family Pregnancy Resource Center",
+        "CategoryID": 2,
+        "Budget": 200,
+        "Spend": 185,
+        "FundsRaised-Cash": 0,
+        "FundsRaised-Electronic": 0,
+        "Highlights": "The nursery reopened the following Monday.",
+        "PlannedNumberAttendees": 0,
+        "ActualNumberAttendees": 0,
+        "IsAnnual": 0,
+        "IsMultiDay": 0,
+        "MissionAreaID": 4
+      }
+    ]
+  },
+  {
+    "table": "EventCouncils",
+    "rows": [
+      {
+        "EventID": 1,
+        "CouncilID": 1
+      },
+      {
+        "EventID": 2,
+        "CouncilID": 1
+      },
+      {
+        "EventID": 3,
+        "CouncilID": 1
+      },
+      {
+        "EventID": 4,
+        "CouncilID": 1
+      },
+      {
+        "EventID": 5,
+        "CouncilID": 1
+      },
+      {
+        "EventID": 6,
+        "CouncilID": 1
+      },
+      {
+        "EventID": 7,
+        "CouncilID": 1
+      },
+      {
+        "EventID": 8,
+        "CouncilID": 1
+      }
+    ]
+  },
+  {
+    "table": "Shift",
+    "rows": [
+      {
+        "ShiftName": "Rally marshals",
+        "ShiftDescription": "Set up chairs and sound, lead the decades",
+        "ShiftDate": "2026-07-12",
+        "StartTime": "09:00:00",
+        "EndTime": "12:00:00",
+        "EventID": 1,
+        "MinNumberVolunteers": 3,
+        "NumberVolunteersSignedUp": 3
+      },
+      {
+        "ShiftName": "Adoration guard",
+        "ShiftDescription": "Keep watch before the Blessed Sacrament",
+        "ShiftDate": "2026-09-10",
+        "StartTime": "18:30:00",
+        "EndTime": "20:30:00",
+        "EventID": 2,
+        "MinNumberVolunteers": 2,
+        "NumberVolunteersSignedUp": 2
+      },
+      {
+        "ShiftName": "Grill and games crew",
+        "ShiftDescription": "Run the grill line and the children's games",
+        "ShiftDate": "2026-07-26",
+        "StartTime": "10:00:00",
+        "EndTime": "15:00:00",
+        "EventID": 3,
+        "MinNumberVolunteers": 4,
+        "NumberVolunteersSignedUp": 5
+      },
+      {
+        "ShiftName": "Griddle crew",
+        "ShiftDescription": "Cook and serve pancakes",
+        "ShiftDate": "2026-08-16",
+        "StartTime": "07:00:00",
+        "EndTime": "11:00:00",
+        "EventID": 4,
+        "MinNumberVolunteers": 4,
+        "NumberVolunteersSignedUp": 4
+      },
+      {
+        "ShiftName": "Store-front collectors",
+        "ShiftDescription": "Hand out Tootsie Rolls and collect donations",
+        "ShiftDate": "2026-08-22",
+        "StartTime": "09:00:00",
+        "EndTime": "15:00:00",
+        "EventID": 5,
+        "MinNumberVolunteers": 4,
+        "NumberVolunteersSignedUp": 5
+      },
+      {
+        "ShiftName": "Pantry shelvers",
+        "ShiftDescription": "Sort, date and shelve groceries",
+        "ShiftDate": "2026-09-12",
+        "StartTime": "08:00:00",
+        "EndTime": "12:00:00",
+        "EventID": 6,
+        "MinNumberVolunteers": 3,
+        "NumberVolunteersSignedUp": 3
+      },
+      {
+        "ShiftName": "Bottle distributors",
+        "ShiftDescription": "Hand out bottles after each Mass",
+        "ShiftDate": "2026-07-19",
+        "StartTime": "08:00:00",
+        "EndTime": "13:00:00",
+        "EventID": 7,
+        "MinNumberVolunteers": 3,
+        "NumberVolunteersSignedUp": 3
+      },
+      {
+        "ShiftName": "Painting crew",
+        "ShiftDescription": "Prime, paint and assemble cribs",
+        "ShiftDate": "2026-09-19",
+        "StartTime": "09:00:00",
+        "EndTime": "14:00:00",
+        "EventID": 8,
+        "MinNumberVolunteers": 4,
+        "NumberVolunteersSignedUp": 4
+      }
+    ]
+  },
+  {
+    "table": "EventSignup",
+    "rows": [
+      {
+        "ShiftID": 1,
+        "MemberID": 4,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 1,
+        "MemberID": 8,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 1,
+        "MemberID": 12,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 2,
+        "MemberID": 5,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 2,
+        "MemberID": 9,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 3,
+        "MemberID": 16,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 3,
+        "MemberID": 10,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 3,
+        "MemberID": 11,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 3,
+        "MemberID": 15,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 3,
+        "MemberID": 18,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 4,
+        "MemberID": 15,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 4,
+        "MemberID": 6,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 4,
+        "MemberID": 7,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 4,
+        "MemberID": 17,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 5,
+        "MemberID": 18,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 5,
+        "MemberID": 9,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 5,
+        "MemberID": 10,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 5,
+        "MemberID": 11,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 5,
+        "MemberID": 13,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 6,
+        "MemberID": 17,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 6,
+        "MemberID": 12,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 6,
+        "MemberID": 14,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 7,
+        "MemberID": 14,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 7,
+        "MemberID": 4,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 7,
+        "MemberID": 13,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 8,
+        "MemberID": 13,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 8,
+        "MemberID": 8,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 8,
+        "MemberID": 5,
+        "NoShow": 0
+      },
+      {
+        "ShiftID": 8,
+        "MemberID": 16,
+        "NoShow": 0
+      }
+    ]
+  },
+  {
+    "table": "EventTime",
+    "rows": [
+      {
+        "ShiftID": 1,
+        "MemberID": 4,
+        "Hours": 3
+      },
+      {
+        "ShiftID": 1,
+        "MemberID": 8,
+        "Hours": 3
+      },
+      {
+        "ShiftID": 1,
+        "MemberID": 12,
+        "Hours": 2.5
+      },
+      {
+        "ShiftID": 2,
+        "MemberID": 5,
+        "Hours": 2
+      },
+      {
+        "ShiftID": 2,
+        "MemberID": 9,
+        "Hours": 2
+      },
+      {
+        "ShiftID": 3,
+        "MemberID": 16,
+        "Hours": 5
+      },
+      {
+        "ShiftID": 3,
+        "MemberID": 10,
+        "Hours": 5
+      },
+      {
+        "ShiftID": 3,
+        "MemberID": 11,
+        "Hours": 4.5
+      },
+      {
+        "ShiftID": 3,
+        "MemberID": 15,
+        "Hours": 5
+      },
+      {
+        "ShiftID": 3,
+        "MemberID": 18,
+        "Hours": 4
+      },
+      {
+        "ShiftID": 4,
+        "MemberID": 15,
+        "Hours": 4
+      },
+      {
+        "ShiftID": 4,
+        "MemberID": 6,
+        "Hours": 4
+      },
+      {
+        "ShiftID": 4,
+        "MemberID": 7,
+        "Hours": 3.5
+      },
+      {
+        "ShiftID": 4,
+        "MemberID": 17,
+        "Hours": 4
+      },
+      {
+        "ShiftID": 5,
+        "MemberID": 18,
+        "Hours": 6
+      },
+      {
+        "ShiftID": 5,
+        "MemberID": 9,
+        "Hours": 6
+      },
+      {
+        "ShiftID": 5,
+        "MemberID": 10,
+        "Hours": 5.5
+      },
+      {
+        "ShiftID": 5,
+        "MemberID": 11,
+        "Hours": 6
+      },
+      {
+        "ShiftID": 5,
+        "MemberID": 13,
+        "Hours": 4
+      },
+      {
+        "ShiftID": 6,
+        "MemberID": 17,
+        "Hours": 4
+      },
+      {
+        "ShiftID": 6,
+        "MemberID": 12,
+        "Hours": 4
+      },
+      {
+        "ShiftID": 6,
+        "MemberID": 14,
+        "Hours": 3.75
+      },
+      {
+        "ShiftID": 7,
+        "MemberID": 14,
+        "Hours": 5
+      },
+      {
+        "ShiftID": 7,
+        "MemberID": 4,
+        "Hours": 4.5
+      },
+      {
+        "ShiftID": 7,
+        "MemberID": 13,
+        "Hours": 5
+      },
+      {
+        "ShiftID": 8,
+        "MemberID": 13,
+        "Hours": 5
+      },
+      {
+        "ShiftID": 8,
+        "MemberID": 8,
+        "Hours": 5
+      },
+      {
+        "ShiftID": 8,
+        "MemberID": 5,
+        "Hours": 4.75
+      },
+      {
+        "ShiftID": 8,
+        "MemberID": 16,
+        "Hours": 5
+      }
+    ]
+  },
+  {
+    "table": "Donation",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-07-12",
+        "DonationMethodID": 1,
+        "DonationTypeID": 2,
+        "Donor": null,
+        "DonationDesciption": "Rally free-will offering",
+        "EventID": 1,
+        "DonationAmount": 180,
+        "RecordedBy": 7
+      },
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-09-10",
+        "DonationMethodID": 1,
+        "DonationTypeID": 2,
+        "Donor": null,
+        "DonationDesciption": "Holy Hour vocations basket",
+        "EventID": 2,
+        "DonationAmount": 95,
+        "RecordedBy": 7
+      },
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-07-26",
+        "DonationMethodID": 1,
+        "DonationTypeID": 3,
+        "Donor": null,
+        "DonationDesciption": "Picnic plates, cash",
+        "EventID": 3,
+        "DonationAmount": 640,
+        "RecordedBy": 7
+      },
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-07-26",
+        "DonationMethodID": 3,
+        "DonationTypeID": 3,
+        "Donor": null,
+        "DonationDesciption": "Picnic plates, Venmo",
+        "EventID": 3,
+        "DonationAmount": 215,
+        "RecordedBy": 7
+      },
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-08-16",
+        "DonationMethodID": 1,
+        "DonationTypeID": 3,
+        "Donor": null,
+        "DonationDesciption": "Pancake plates, cash",
+        "EventID": 4,
+        "DonationAmount": 525,
+        "RecordedBy": 2
+      },
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-08-16",
+        "DonationMethodID": 2,
+        "DonationTypeID": 3,
+        "Donor": null,
+        "DonationDesciption": "Pancake plates, card reader",
+        "EventID": 4,
+        "DonationAmount": 310,
+        "RecordedBy": 2
+      },
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-08-22",
+        "DonationMethodID": 1,
+        "DonationTypeID": 4,
+        "Donor": null,
+        "DonationDesciption": "Tootsie Roll cans",
+        "EventID": 5,
+        "DonationAmount": 1120.5,
+        "RecordedBy": 7
+      },
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-08-22",
+        "DonationMethodID": 3,
+        "DonationTypeID": 4,
+        "Donor": null,
+        "DonationDesciption": "Tootsie Roll QR code",
+        "EventID": 5,
+        "DonationAmount": 260,
+        "RecordedBy": 7
+      },
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-09-12",
+        "DonationMethodID": 1,
+        "DonationTypeID": 4,
+        "Donor": "Anonymous parishioner",
+        "DonationDesciption": "Pantry cash gift",
+        "EventID": 6,
+        "DonationAmount": 150,
+        "RecordedBy": 2
+      },
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-09-12",
+        "DonationMethodID": 7,
+        "DonationTypeID": 4,
+        "Donor": "Safeway NE Broadway",
+        "DonationDesciption": "Pallet of canned goods (physical items)",
+        "EventID": 6,
+        "DonationAmount": 300,
+        "RecordedBy": 2
+      },
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-07-19",
+        "DonationMethodID": 1,
+        "DonationTypeID": 2,
+        "Donor": null,
+        "DonationDesciption": "Baby bottles returned, cash and coins",
+        "EventID": 7,
+        "DonationAmount": 865.25,
+        "RecordedBy": 7
+      },
+      {
+        "CouncilID": 1,
+        "DonationDate": "2026-07-19",
+        "DonationMethodID": 4,
+        "DonationTypeID": 2,
+        "Donor": null,
+        "DonationDesciption": "Baby bottle campaign, Zelle",
+        "EventID": 7,
+        "DonationAmount": 400,
+        "RecordedBy": 7
+      }
+    ]
+  },
+  {
+    "table": "CouncilBudgetForecast",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "FraternalYear": "2026-2027",
+        "CategoryType": "Donation",
+        "ReferenceSourceID": 1,
+        "LineItemName": "St. Jude Parish Food Pantry",
+        "PrePopulatedAmount": 1000,
+        "ApprovedBudgetAmount": 1500,
+        "Notes": null,
+        "BudgetCategoryID": 2,
+        "ProposedBudgetAmount": 1500,
+        "BudgetStatus": "Approved"
+      },
+      {
+        "CouncilID": 1,
+        "FraternalYear": "2026-2027",
+        "CategoryType": "Donation",
+        "ReferenceSourceID": 2,
+        "LineItemName": "Holy Family Pregnancy Resource Center",
+        "PrePopulatedAmount": 1350,
+        "ApprovedBudgetAmount": 1500,
+        "Notes": null,
+        "BudgetCategoryID": 4,
+        "ProposedBudgetAmount": 1500,
+        "BudgetStatus": "Approved"
+      },
+      {
+        "CouncilID": 1,
+        "FraternalYear": "2026-2027",
+        "CategoryType": "Donation",
+        "ReferenceSourceID": 4,
+        "LineItemName": "Cathedral School Tuition Assistance Fund",
+        "PrePopulatedAmount": 1000,
+        "ApprovedBudgetAmount": 1200,
+        "Notes": null,
+        "BudgetCategoryID": 3,
+        "ProposedBudgetAmount": 1200,
+        "BudgetStatus": "Approved"
+      },
+      {
+        "CouncilID": 1,
+        "FraternalYear": "2026-2027",
+        "CategoryType": "Operational",
+        "ReferenceSourceID": null,
+        "LineItemName": "Outside Organization Requests",
+        "PrePopulatedAmount": 0,
+        "ApprovedBudgetAmount": 5000,
+        "Notes": "Pool for vetted intake requests",
+        "BudgetCategoryID": 4,
+        "ProposedBudgetAmount": 5000,
+        "BudgetStatus": "Approved"
       }
     ]
   }

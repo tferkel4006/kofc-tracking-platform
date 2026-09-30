@@ -1393,7 +1393,7 @@ CREATE TABLE [CharitableRequest] (
 	[ContactPhone] VARCHAR(50) NULL,
 	[ContactEmail] VARCHAR(255) NULL,
 	[AmountRequested] DECIMAL(18,2) NOT NULL,
-	[RequestStatus] VARCHAR(50) NOT NULL DEFAULT 'Submitted', -- Submitted, Claimed by Trustee, Advanced
+	[RequestStatus] VARCHAR(50) NOT NULL DEFAULT 'Submitted', -- Submitted, Claimed by Trustee, Advanced; Declined (Sprint 5Z-2)
 	[SubmittedAt] DATETIME NOT NULL DEFAULT getdate(),
 	PRIMARY KEY([id])
 );
@@ -1509,4 +1509,25 @@ GO
 CREATE UNIQUE INDEX [CouncilMissionArea_Council_Name_Idx] ON [CouncilMissionArea] ([CouncilID], [MissionAreaName]);
 GO
 CREATE INDEX [CharitableRequest_Council_Status_Idx] ON [CharitableRequest] ([CouncilID], [RequestStatus]);
+GO
+
+-- =========================================================================
+-- Sprint 5Z-2: CHARITABLE REQUEST MISSION AREA, TARGET BUDGET LINE AND DECLINE
+-- The intake form files a request under one of the council's mission areas (MissionAreaID), and the vetter names the
+-- budget line the gift would come out of (TargetBudgetLineID, a CouncilBudgetForecast row of the same council). A
+-- claimed request may now end in 'Declined' instead of 'Advanced' (RequestStatus, enforced by the shared rules layer).
+-- =========================================================================
+ALTER TABLE [CharitableRequest] ADD [MissionAreaID] INTEGER NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [TargetBudgetLineID] INTEGER NULL;
+GO
+ALTER TABLE [CharitableRequest]
+ADD FOREIGN KEY([MissionAreaID])
+REFERENCES [CouncilMissionArea]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequest]
+ADD FOREIGN KEY([TargetBudgetLineID])
+REFERENCES [CouncilBudgetForecast]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
 GO

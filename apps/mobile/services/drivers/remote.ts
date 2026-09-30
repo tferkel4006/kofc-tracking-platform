@@ -132,6 +132,7 @@ export function createRemoteDataService(): DataService {
     activityTime: { logHours: notImplemented('activityTime.logHours'), listByActivity: notImplemented('activityTime.listByActivity') },
     reports: {
       monthlySummary: notImplemented('reports.monthlySummary'),
+      missionAreaFootprint: notImplemented('reports.missionAreaFootprint'),
       listNoShowsAudit: notImplemented('reports.listNoShowsAudit'),
       listShiftsAwaitingHours: notImplemented('reports.listShiftsAwaitingHours'),
     },

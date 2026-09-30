@@ -957,8 +957,9 @@ export interface CharityDisbursementResult {
 /**
  * A Knight Shepherd's intake form for charities.submitCharitableRequest. The council is the Shepherd's own, the
  * Shepherd is the caller, RequestStatus starts 'Submitted' and VoteStatus 'Pending'. Blank optional text is stored as
- * NULL. RelationshipTypeID must be one of the council's CouncilRelationshipType rows; EIN is folded to 'NN-NNNNNNN';
- * FundsNeededBy is a YYYY-MM-DD date; RequestTier is 1 to CHARITABLE_REQUEST_MAX_TIER (default 1).
+ * NULL. RelationshipTypeID must be one of the council's CouncilRelationshipType rows and MissionAreaID (Sprint 5Z-2) one
+ * of its CouncilMissionArea rows; EIN is folded to 'NN-NNNNNNN'; FundsNeededBy is a YYYY-MM-DD date; RequestTier is 1
+ * to CHARITABLE_REQUEST_MAX_TIER (default 1).
  */
 export interface NewCharitableRequest {
   OrganizationName: string;
@@ -968,6 +969,7 @@ export interface NewCharitableRequest {
   ContactEmail?: string | null;
   MailingAddress?: string | null;
   RelationshipTypeID?: number | null;
+  MissionAreaID?: number | null;
   Is501c3?: boolean | null;
   EIN?: string | null;
   Website?: string | null;
@@ -983,19 +985,22 @@ export interface NewCharitableRequest {
 /**
  * What charities.triageRequestStatus does to a request:
  * - 'claim' takes a 'Submitted' request: it becomes 'Claimed by Trustee' with the caller as its vetter.
- * - 'note' updates the vetting notes (and tier) of a claimed request without moving it.
+ * - 'note' updates the vetting notes (and tier and target budget line) of a claimed request without moving it.
  * - 'advance' sends a claimed request on to the council's vote: 'Advanced', with VettedDate stamped.
+ * - 'decline' (Sprint 5Z-2) ends a claimed request's vetting without a vote: 'Declined', with VettedDate stamped.
  */
-export type CharitableTriageAction = 'claim' | 'note' | 'advance';
+export type CharitableTriageAction = 'claim' | 'note' | 'advance' | 'decline';
 
 /**
- * The vetting desk's change for charities.triageRequestStatus. VettingNotes and RequestTier, when given, replace the
- * stored values (a blank note clears it); left out, they are kept.
+ * The vetting desk's change for charities.triageRequestStatus. VettingNotes, RequestTier and TargetBudgetLineID, when
+ * given, replace the stored values (a blank note or a null line clears it); left out, they are kept. TargetBudgetLineID
+ * must be a CouncilBudgetForecast line of the request's council.
  */
 export interface CharitableTriageInput {
   action: CharitableTriageAction;
   VettingNotes?: string | null;
   RequestTier?: number | null;
+  TargetBudgetLineID?: number | null;
 }
 
 /** One intake request with the names the vetting desk shows beside it. */
@@ -1008,6 +1013,37 @@ export interface CharitableRequestDetail {
   vetterLastName: string | null;
   /** The CouncilRelationshipType name; null when the form named none. */
   relationshipName: string | null;
+  /** The CouncilMissionArea name (Sprint 5Z-2); null when the form named none. */
+  missionAreaName: string | null;
+  /** The target budget line's LineItemName and FraternalYear (Sprint 5Z-2); null while the vetter has named none. */
+  targetBudgetLine: { name: string; fraternalYear: string } | null;
+}
+
+/** One mission area's share of a council's fraternal year (Sprint 5Z-2). */
+export interface MissionAreaFootprintEntry {
+  /** Null for the "Unfiled" bucket: events filed under no mission area. */
+  missionAreaId: number | null;
+  missionAreaName: string;
+  /** Recorded donations (Donation rows) at the area's events, to the cent; physical items are not counted. */
+  donations: number;
+  /** Volunteer hours logged on the area's event shifts (EventTime). */
+  serviceHours: number;
+  /** The area's events that started in the year. */
+  events: number;
+}
+
+/**
+ * reports.missionAreaFootprint: the Faith-in-Action footprint of one council's fraternal year. `areas` holds every
+ * mission area of the council by name (zero rows included), `unfiled` what no area claims, `totals` both together.
+ */
+export interface MissionAreaFootprint {
+  councilId: number;
+  fraternalYear: string;
+  fromDate: string;
+  toDate: string;
+  areas: MissionAreaFootprintEntry[];
+  unfiled: MissionAreaFootprintEntry;
+  totals: { donations: number; serviceHours: number; events: number };
 }
 
 // 18. ANNUAL BUDGET FORECASTING (Sprint 5Y)
@@ -1640,6 +1676,14 @@ export interface DataService {
      */
     monthlySummary(councilId: number, year: number, month: number): Promise<MonthlySummary>;
     /**
+     * The Faith-in-Action footprint of the council's fraternal year (Sprint 5Z-2): recorded donations (by DonationDate,
+     * physical items excluded) and volunteer hours (by ShiftDate) at the council's events, grouped by the events'
+     * mission areas (Event.MissionAreaID), with an Unfiled bucket. For the executive summaries' readers, as for
+     * budget.getBudgetProgress (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for an unknown council or
+     * a fraternal year that is not 'YYYY-YYYY' with consecutive years.
+     */
+    missionAreaFootprint(actorId: number, councilId: number, fraternalYear: string): Promise<MissionAreaFootprint>;
+    /**
      * Signups flagged NoShow by members of the council on shifts dated on or after `dateThreshold` (default:
      * NO_SHOW_AUDIT_MONTHS before today), with or without a recorded reason. Newest ShiftDate first, then last
      * and first name. Rejects INVALID_INPUT for an unknown council and INVALID_DATE for a malformed threshold.
@@ -1947,17 +1991,19 @@ export interface DataService {
      * A Knight Shepherd files a completed intake form into the shared queue of their own council: RequestStatus
      * 'Submitted', ShepherdMemberID = actorId, VoteStatus 'Pending', AmountApproved 0.00, SubmittedAt now. Any Active
      * member (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for a missing organization name, an amount of 0 or with
-     * fractions of a cent, a bad EIN, email or tier, an unknown field or a RelationshipTypeID outside the council;
+     * fractions of a cent, a bad EIN, email or tier, an unknown field or a RelationshipTypeID or MissionAreaID outside
+     * the council;
      * INVALID_DATE for a malformed FundsNeededBy.
      */
     submitCharitableRequest(actorId: number, requestData: NewCharitableRequest): Promise<CharitableRequestDetail>;
     /**
-     * Claims, annotates or advances a request (CharitableTriageInput). Vetting authority of the request's council, as
+     * Claims, annotates, advances or declines (Sprint 5Z-2) a request (CharitableTriageInput). Vetting authority of the request's council, as
      * for listCharitableRequestsQueue, and independent of the request: its Shepherd may never vet it
      * (SELF_VETTING_BLOCKED, Super Admins included). Only the claiming vetter, or an Active Admin of the council or
      * Super Admin, may annotate or advance a claimed request. Rejects RECORD_NOT_FOUND for an unknown request,
      * REQUEST_STATUS_CONFLICT when the action does not fit the request's stage or another officer holds the claim,
-     * INVALID_INPUT for an unknown action, notes over CHARITABLE_VETTING_NOTES_MAX_LENGTH characters or a bad tier.
+     * INVALID_INPUT for an unknown action, notes over CHARITABLE_VETTING_NOTES_MAX_LENGTH characters, a bad tier or a
+     * TargetBudgetLineID that is not a budget line of the request's council.
      */
     triageRequestStatus(actorId: number, requestId: number, vettingData: CharitableTriageInput): Promise<CharitableRequestDetail>;
   };

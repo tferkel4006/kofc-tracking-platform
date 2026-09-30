@@ -603,7 +603,7 @@ export interface CouncilMissionArea {
 }
 
 /** Where an intake request stands in the vetting pipeline; see CHARITABLE_REQUEST_STATUSES. */
-export type CharitableRequestStatus = 'Submitted' | 'Claimed by Trustee' | 'Advanced';
+export type CharitableRequestStatus = 'Submitted' | 'Claimed by Trustee' | 'Advanced' | 'Declined';
 
 /** The council's vote on an advanced request; 'Pending' until the vote is recorded. */
 export type CharitableRequestVoteStatus = 'Pending' | 'Approved' | 'Rejected';
@@ -644,4 +644,6 @@ export interface CharitableRequest {
   VoteStatus: CharitableRequestVoteStatus;
   AmountApproved: number; // DECIMAL(18,2); 0.00 until the council votes
   PaymentOrderId?: number | null; // the CharitableDisbursementLedger check that paid it
+  MissionAreaID?: number | null; // Sprint 5Z-2: CouncilMissionArea of the same council, chosen on the intake form
+  TargetBudgetLineID?: number | null; // Sprint 5Z-2: the CouncilBudgetForecast line the vetter would pay it from
 }

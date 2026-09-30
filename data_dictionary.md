@@ -489,12 +489,12 @@ A council lookup table: how an organization asking the council for money is conn
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
 •	RelationshipName (VARCHAR(100), NOT NULL) — The type's name. Unique per council (a unique index on CouncilID, RelationshipName).
 [CouncilMissionArea]
-A council lookup table of mission pillars under which events and meetings are filed (Event.MissionAreaID, Meeting.MissionAreaID). Seed.sql gives Council 15295 the four Faith in Action pillars: Faith, Family, Community and Life. Read with charities.listCouncilMissionAreas, by name. A council cannot be deleted while it has mission areas.
+A council lookup table of mission pillars under which events, meetings and (Sprint 5Z-2) charitable requests are filed (Event.MissionAreaID, Meeting.MissionAreaID, CharitableRequest.MissionAreaID). reports.missionAreaFootprint sums a fraternal year's recorded donations and volunteer hours at the council's events by the events' mission areas for the executive dashboard's Faith-in-Action Mission Tracking card. Seed.sql gives Council 15295 the four Faith in Action pillars: Faith, Family, Community and Life. Read with charities.listCouncilMissionAreas, by name. A council cannot be deleted while it has mission areas.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
 •	MissionAreaName (VARCHAR(100), NOT NULL) — The pillar's name. Unique per council (a unique index on CouncilID, MissionAreaName).
 [CharitableRequest]
-A Knight Shepherd's intake form for an outside organization asking the council for money. Any Active member (the Shepherd) files it into their own council's shared vetting queue with charities.submitCharitableRequest. Anyone with vetting authority - the council's Active officers (any Role with Officer = 1, the three Trustees included) and Admins, or an Active Super Admin (assertMayVetCharitableRequests) - reads the queue (charities.listCharitableRequestsQueue) and triages requests with charities.triageRequestStatus: 'claim' a Submitted request, add 'note's to a claimed one, or 'advance' it to the council's vote. Vetting is independent: the Shepherd may never vet their own request (SELF_VETTING_BLOCKED), and only the claiming vetter, an Admin or a Super Admin may change a claimed request (REQUEST_STATUS_CONFLICT). The table is created with its core intake columns; the process-form columns from ShepherdMemberID on are appended by explicit ALTER TABLE ... ADD statements. A council cannot be deleted while it has requests.
+A Knight Shepherd's intake form for an outside organization asking the council for money. Any Active member (the Shepherd) files it into their own council's shared vetting queue with charities.submitCharitableRequest. Anyone with vetting authority - the council's Active officers (any Role with Officer = 1, the three Trustees included) and Admins, or an Active Super Admin (assertMayVetCharitableRequests) - reads the queue (charities.listCharitableRequestsQueue) and triages requests with charities.triageRequestStatus: 'claim' a Submitted request, add 'note's to a claimed one, 'advance' it to the council's vote or (Sprint 5Z-2) 'decline' it. Vetting is independent: the Shepherd may never vet their own request (SELF_VETTING_BLOCKED), and only the claiming vetter, an Admin or a Super Admin may change a claimed request (REQUEST_STATUS_CONFLICT). The table is created with its core intake columns; the process-form columns from ShepherdMemberID on are appended by explicit ALTER TABLE ... ADD statements. A council cannot be deleted while it has requests.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). Always the Shepherd's own council.
 •	OrganizationName (VARCHAR(255), NOT NULL) — The organization asking for money.
@@ -502,7 +502,7 @@ A Knight Shepherd's intake form for an outside organization asking the council f
 •	ContactPhone (VARCHAR(50), NULL) — The contact's phone.
 •	ContactEmail (VARCHAR(255), NULL) — The contact's email address.
 •	AmountRequested (DECIMAL(18,2), NOT NULL) — The sum asked for, more than 0, to the cent.
-•	RequestStatus (VARCHAR(50), NOT NULL, DEFAULT 'Submitted') — Submitted, Claimed by Trustee or Advanced, in that order only. Enforced by the shared rules layer (no CHECK).
+•	RequestStatus (VARCHAR(50), NOT NULL, DEFAULT 'Submitted') — Submitted, Claimed by Trustee, then Advanced or (Sprint 5Z-2) Declined, in that order only. Enforced by the shared rules layer (no CHECK).
 •	SubmittedAt (DATETIME, NOT NULL, DEFAULT getdate()) — When the Shepherd filed the form (UTC). The queue lists requests by stage, then oldest first.
 •	ShepherdMemberID (INTEGER, NOT NULL, DEFAULT 0) — Foreign Key references Member(id). The Knight Shepherd who carries the request; always the member who submitted it.
 •	MailingAddress (TEXT, NULL) — Where a check would be mailed.
@@ -525,5 +525,7 @@ A Knight Shepherd's intake form for an outside organization asking the council f
 •	VoteStatus (VARCHAR(50), NOT NULL, DEFAULT 'Pending') — The council's vote on an advanced request: Pending, Approved or Rejected.
 •	AmountApproved (DECIMAL(18,2), NOT NULL, DEFAULT 0.00) — The sum the council voted; 0.00 until the vote.
 •	PaymentOrderId (INTEGER, NULL) — Foreign Key references CharitableDisbursementLedger(id). The check that paid the request.
+•	MissionAreaID (INTEGER, NULL) — Sprint 5Z-2: Foreign Key references CouncilMissionArea(id). The mission area the Shepherd files the request under on the intake form; must be one of the council's own (INVALID_INPUT).
+•	TargetBudgetLineID (INTEGER, NULL) — Sprint 5Z-2: Foreign Key references CouncilBudgetForecast(id). The budget line the vetter would pay the gift from, set from the Pooled Vetting Desk (triageRequestStatus); must be a line of the request's council (INVALID_INPUT).
 Seed.sql's presentation data (loaded by the apps, not by the automated tests) puts five requests in the pipeline for Council 15295: two Submitted, two Claimed by Trustee and one Advanced.
 ________________________________________

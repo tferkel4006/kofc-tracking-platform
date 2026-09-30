@@ -16,12 +16,15 @@ import type {
   CharityProposalInput,
   CharitySearchFilters,
   CouncilCharityLedgerEntry,
+  MissionAreaFootprint,
+  MissionAreaFootprintEntry,
   NewCharitableRequest,
   NewGlobalCharity,
 } from './contract';
 import { cleanDisbursementCheck, sumAmounts } from './expenses';
+import { fraternalYearBounds } from './budget';
 import { toTimestamp } from './messaging';
-import { assertIsoDate, assertMoney, assertText, BusinessRuleError, optionalText } from './rules';
+import { assertIsoDate, assertMoney, assertText, BusinessRuleError, donationMethodKind, optionalText } from './rules';
 import type {
   CharitableDisbursementLedger,
   CharitableRequest,
@@ -29,8 +32,13 @@ import type {
   CharitableRequestVoteStatus,
   CharityDonationProposal,
   CharityProposalStatus,
+  CouncilBudgetForecast,
   CouncilCharityLink,
+  CouncilMissionArea,
   CouncilRelationshipType,
+  Donation,
+  Event,
+  EventTime,
   GlobalCharityRegistry,
   Meeting,
   Member,
@@ -470,9 +478,9 @@ export function charitySearchFromText(text: string): Pick<CharitySearchFilters, 
 // ---- normalized charitable intake and the vetting desk (Sprint 5Z-1) -----------
 
 /** The vetting pipeline in order; the queue lists requests stage by stage. */
-export const CHARITABLE_REQUEST_STATUSES: readonly CharitableRequestStatus[] = ['Submitted', 'Claimed by Trustee', 'Advanced'];
+export const CHARITABLE_REQUEST_STATUSES: readonly CharitableRequestStatus[] = ['Submitted', 'Claimed by Trustee', 'Advanced', 'Declined'];
 export const CHARITABLE_VOTE_STATUSES: readonly CharitableRequestVoteStatus[] = ['Pending', 'Approved', 'Rejected'];
-export const CHARITABLE_TRIAGE_ACTIONS: readonly CharitableTriageAction[] = ['claim', 'note', 'advance'];
+export const CHARITABLE_TRIAGE_ACTIONS: readonly CharitableTriageAction[] = ['claim', 'note', 'advance', 'decline'];
 /** Highest CharitableRequest.RequestTier; tiers run 1 (small, routine) to this. */
 export const CHARITABLE_REQUEST_MAX_TIER = 3;
 /** Longest CharitableRequest.VettingNotes; the column is TEXT, the cap keeps notes readable. */
@@ -489,6 +497,7 @@ export const CHARITABLE_REQUEST_FORM_COLUMNS = [
   'ContactEmail',
   'MailingAddress',
   'RelationshipTypeID',
+  'MissionAreaID',
   'Is501c3',
   'EIN',
   'Website',
@@ -537,6 +546,7 @@ export function cleanCharitableRequest(input: NewCharitableRequest): CleanCharit
     ContactEmail: email,
     MailingAddress: text(input.MailingAddress, 'Mailing address'),
     RelationshipTypeID: optionalId(input.RelationshipTypeID, 'Relationship type'),
+    MissionAreaID: optionalId(input.MissionAreaID, 'Mission area'),
     Is501c3: optionalFlag(input.Is501c3, 'Is501c3'),
     EIN: ein === null ? null : normalizeEin(ein),
     Website: optionalText(input.Website, 'Website', 255),
@@ -560,11 +570,31 @@ export function assertCouncilRelationshipType(
   throw invalid(`Relationship type ${relationshipTypeId} is not one of council ${councilId}'s relationship types.`, { relationshipTypeId, councilId });
 }
 
+/** The form's MissionAreaID must be one of the council's own mission areas (Sprint 5Z-2). */
+export function assertCouncilMissionArea(
+  missionAreaId: number | null | undefined,
+  areas: readonly Pick<CouncilMissionArea, 'id' | 'CouncilID'>[],
+  councilId: number,
+): void {
+  if (missionAreaId == null || areas.some((a) => a.id === missionAreaId && a.CouncilID === councilId)) return;
+  throw invalid(`Mission area ${missionAreaId} is not one of council ${councilId}'s mission areas.`, { missionAreaId, councilId });
+}
+
+/** The vetter's TargetBudgetLineID must be a budget line of the request's council (Sprint 5Z-2). */
+export function assertCouncilBudgetLine(
+  budgetLineId: number | null | undefined,
+  line: Pick<CouncilBudgetForecast, 'id' | 'CouncilID'> | null | undefined,
+  councilId: number,
+): void {
+  if (budgetLineId == null || (line && line.id === budgetLineId && line.CouncilID === councilId)) return;
+  throw invalid(`Budget line ${budgetLineId} is not a budget line of council ${councilId}.`, { budgetLineId, councilId });
+}
+
 export const charitableRequestNotFound = (requestId: number): BusinessRuleError =>
   new BusinessRuleError('RECORD_NOT_FOUND', `Charitable request ${requestId} does not exist.`, { table: 'CharitableRequest', id: requestId });
 
 /** The columns triageRequestStatus changes; the only ones a driver may interpolate into its UPDATE. */
-export const CHARITABLE_TRIAGE_COLUMNS = ['RequestStatus', 'VetterMemberID', 'VettingNotes', 'RequestTier', 'VettedDate'] as const satisfies readonly (keyof CharitableRequest)[];
+export const CHARITABLE_TRIAGE_COLUMNS = ['RequestStatus', 'VetterMemberID', 'VettingNotes', 'RequestTier', 'VettedDate', 'TargetBudgetLineID'] as const satisfies readonly (keyof CharitableRequest)[];
 
 export type CharitableTriageChanges = Partial<Pick<CharitableRequest, (typeof CHARITABLE_TRIAGE_COLUMNS)[number]>>;
 
@@ -573,8 +603,8 @@ const statusConflict = (request: Pick<CharitableRequest, 'id' | 'RequestStatus'>
 
 /**
  * What charities.triageRequestStatus writes, once the driver has checked vetting authority and independence. 'claim'
- * takes a 'Submitted' request; 'note' and 'advance' need a claimed one held by the caller, unless `overridesClaim`
- * (an Admin of the council or a Super Admin). `now` stamps VettedDate on 'advance'.
+ * takes a 'Submitted' request; 'note', 'advance' and 'decline' need a claimed one held by the caller, unless
+ * `overridesClaim` (an Admin of the council or a Super Admin). `now` stamps VettedDate on 'advance' and 'decline'.
  */
 export function planCharitableTriage(
   request: Pick<CharitableRequest, 'id' | 'RequestStatus' | 'VetterMemberID'>,
@@ -590,6 +620,7 @@ export function planCharitableTriage(
   const changes: CharitableTriageChanges = {};
   if (input.VettingNotes !== undefined) changes.VettingNotes = optionalText(input.VettingNotes, 'Vetting notes', CHARITABLE_VETTING_NOTES_MAX_LENGTH);
   if (input.RequestTier !== undefined && input.RequestTier !== null) changes.RequestTier = assertRequestTier(input.RequestTier);
+  if (input.TargetBudgetLineID !== undefined) changes.TargetBudgetLineID = optionalId(input.TargetBudgetLineID, 'Target budget line');
 
   if (input.action === 'claim') {
     if (request.RequestStatus !== 'Submitted') {
@@ -598,7 +629,8 @@ export function planCharitableTriage(
     return { ...changes, RequestStatus: 'Claimed by Trustee', VetterMemberID: actorId };
   }
   if (request.RequestStatus !== 'Claimed by Trustee') {
-    const why = request.RequestStatus === 'Submitted' ? 'claim it first' : 'it has already been advanced to the vote';
+    const why =
+      request.RequestStatus === 'Submitted' ? 'claim it first' : request.RequestStatus === 'Declined' ? 'it has already been declined' : 'it has already been advanced to the vote';
     throw statusConflict(request, `Charitable request ${request.id} is ${request.RequestStatus}; ${why}.`);
   }
   if (request.VetterMemberID !== actorId && !overridesClaim) {
@@ -608,7 +640,8 @@ export function planCharitableTriage(
       { vetterMemberId: request.VetterMemberID ?? null },
     );
   }
-  return input.action === 'advance' ? { ...changes, RequestStatus: 'Advanced', VettedDate: toTimestamp(now) } : changes;
+  if (input.action === 'note') return changes;
+  return { ...changes, RequestStatus: input.action === 'advance' ? 'Advanced' : 'Declined', VettedDate: toTimestamp(now) };
 }
 
 /** Pipeline stage, then oldest SubmittedAt, then id. */
@@ -617,11 +650,13 @@ const compareCharitableRequests = (a: CharitableRequest, b: CharitableRequest) =
   a.SubmittedAt.localeCompare(b.SubmittedAt) ||
   a.id - b.id;
 
-/** Joins requests with their Shepherds, vetters and relationship types, in queue order. */
+/** Joins requests with their Shepherds, vetters, relationship types, mission areas and budget lines, in queue order. */
 export function buildCharitableRequestDetails(
   requests: readonly CharitableRequest[],
   members: readonly Pick<Member, 'id' | 'MemberFirstName' | 'MemberLastName'>[],
   relationshipTypes: readonly CouncilRelationshipType[],
+  missionAreas: readonly CouncilMissionArea[] = [],
+  budgetLines: readonly Pick<CouncilBudgetForecast, 'id' | 'LineItemName' | 'FraternalYear'>[] = [],
 ): CharitableRequestDetail[] {
   return [...requests].sort(compareCharitableRequests).map((request) => {
     const shepherd = members.find((m) => m.id === request.ShepherdMemberID);
@@ -633,6 +668,64 @@ export function buildCharitableRequestDetails(
       vetterFirstName: vetter?.MemberFirstName ?? null,
       vetterLastName: vetter?.MemberLastName ?? null,
       relationshipName: relationshipTypes.find((t) => t.id === request.RelationshipTypeID)?.RelationshipName ?? null,
+      missionAreaName: missionAreas.find((a) => a.id === request.MissionAreaID)?.MissionAreaName ?? null,
+      targetBudgetLine: ((line) => (line ? { name: line.LineItemName, fraternalYear: line.FraternalYear } : null))(
+        request.TargetBudgetLineID == null ? undefined : budgetLines.find((l) => l.id === request.TargetBudgetLineID),
+      ),
     };
   });
+}
+
+// ---- Faith-in-Action mission footprint (Sprint 5Z-2) -------------------------
+
+const sumCents = (values: readonly number[]): number => values.reduce((total, v) => total + Math.round(v * 100), 0) / 100;
+
+/**
+ * reports.missionAreaFootprint from rows the driver loaded for the council: its mission areas, the events linked to it,
+ * its donations (with their method names; physical items are not money and are left out) and the EventTime rows of its
+ * events' shifts (with each shift's EventID and ShiftDate). Only rows inside the fraternal year count: events by
+ * StartDate, donations by DonationDate, hours by ShiftDate.
+ */
+export function buildMissionAreaFootprint(
+  councilId: number,
+  fraternalYear: string,
+  areas: readonly CouncilMissionArea[],
+  events: readonly Pick<Event, 'id' | 'StartDate' | 'MissionAreaID'>[],
+  donations: readonly (Pick<Donation, 'EventID' | 'DonationDate' | 'DonationAmount'> & { methodName: string })[],
+  eventTimes: readonly (Pick<EventTime, 'Hours'> & { eventId: number; shiftDate: string })[],
+): MissionAreaFootprint {
+  const { fromDate, toDate } = fraternalYearBounds(fraternalYear);
+  const inYear = (date: string) => date >= fromDate && date <= toDate;
+  const areaOf = new Map(events.map((e) => [e.id, e.MissionAreaID ?? null]));
+  const bucket = (missionAreaId: number | null, missionAreaName: string): MissionAreaFootprintEntry => ({
+    missionAreaId,
+    missionAreaName,
+    donations: sumCents(
+      donations
+        .filter((d) => d.EventID != null && areaOf.has(d.EventID) && areaOf.get(d.EventID) === missionAreaId)
+        .filter((d) => inYear(d.DonationDate) && donationMethodKind(d.methodName) !== 'item')
+        .map((d) => d.DonationAmount),
+    ),
+    serviceHours: sumCents(eventTimes.filter((t) => areaOf.get(t.eventId) === missionAreaId && inYear(t.shiftDate)).map((t) => t.Hours)),
+    events: events.filter((e) => (e.MissionAreaID ?? null) === missionAreaId && inYear(e.StartDate)).length,
+  });
+  const sorted = [...areas]
+    .filter((a) => a.CouncilID === councilId)
+    .sort((a, b) => (a.MissionAreaName < b.MissionAreaName ? -1 : a.MissionAreaName > b.MissionAreaName ? 1 : a.id - b.id));
+  const filed = sorted.map((a) => bucket(a.id, a.MissionAreaName));
+  const unfiled = bucket(null, 'Unfiled');
+  const all = [...filed, unfiled];
+  return {
+    councilId,
+    fraternalYear,
+    fromDate,
+    toDate,
+    areas: filed,
+    unfiled,
+    totals: {
+      donations: sumCents(all.map((b) => b.donations)),
+      serviceHours: sumCents(all.map((b) => b.serviceHours)),
+      events: all.reduce((n, b) => n + b.events, 0),
+    },
+  };
 }

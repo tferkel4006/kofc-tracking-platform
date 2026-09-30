@@ -1,10 +1,12 @@
 // Sprint 5Z-1: normalized charitable intake - council relationship types and mission areas, the Knight Shepherd's
 // intake form (charities.submitCharitableRequest), the shared vetting queue and its triage (claim, note, advance) with
-// independent vetting, and Seed.sql's presentation data loading cleanly into both drivers.
+// independent vetting, and Seed.sql's presentation data loading cleanly into both drivers. Sprint 5Z-2: mission areas on
+// the form, target budget lines, declines and the Faith-in-Action mission footprint.
 import { describe, expect, it } from 'vitest';
 import {
   assertIndependentVetter,
   assertMayVetCharitableRequests,
+  buildMissionAreaFootprint,
   cleanCharitableRequest,
   planCharitableTriage,
   SecurityPrivilegeError,
@@ -268,5 +270,143 @@ describe.each(drivers)('$name driver: presentation data', (d) => {
     await expectRule(db.charities.triageRequestStatus(trustee2.memberId, robotics.request.id, { action: 'advance' }), 'REQUEST_STATUS_CONFLICT');
     const advanced = await db.charities.triageRequestStatus(trustee.memberId, robotics.request.id, { action: 'advance' });
     expect(advanced.request.RequestStatus).toBe('Advanced');
+  });
+});
+
+// ---- Sprint 5Z-2: mission areas on the form, target budget lines, declines and the mission footprint ----------
+
+/** Adds a budget line for `councilId` straight in the backing store; budget writes are window-gated. */
+function insertBudgetLine(d: DriverUnderTest, db: DataService, councilId: number, name: string): number {
+  const row = { CouncilID: councilId, FraternalYear: '2026-2027', CategoryType: 'Operational', LineItemName: name, BudgetStatus: 'Draft' };
+  if (d.name === 'memory') return (db as MemoryDataService).debugStore.insert('CouncilBudgetForecast', row).id as number;
+  const result = openDatabases
+    .at(-1)!
+    .prepare('INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [LineItemName], [BudgetStatus]) VALUES (?, ?, ?, ?, ?)')
+    .run(row.CouncilID, row.FraternalYear, row.CategoryType, row.LineItemName, row.BudgetStatus);
+  return Number(result.lastInsertRowid);
+}
+
+describe('mission footprint and declines (pure, Sprint 5Z-2)', () => {
+  it('declines a claimed request like an advance, and names the target budget line on any action', () => {
+    const claimed = { id: 1, RequestStatus: 'Claimed by Trustee' as const, VetterMemberID: 12 };
+    expect(planCharitableTriage(claimed, 12, false, { action: 'decline', VettingNotes: 'Not a fit', TargetBudgetLineID: null }, NOW)).toEqual({
+      RequestStatus: 'Declined',
+      VettedDate: toTimestamp(NOW),
+      VettingNotes: 'Not a fit',
+      TargetBudgetLineID: null,
+    });
+    expect(planCharitableTriage(claimed, 12, false, { action: 'note', TargetBudgetLineID: 7 }, NOW)).toEqual({ TargetBudgetLineID: 7 });
+    expect(() => planCharitableTriage(claimed, 12, false, { action: 'note', TargetBudgetLineID: 0 }, NOW)).toThrow(/record id/);
+    const declined = { id: 1, RequestStatus: 'Declined' as const, VetterMemberID: 12 };
+    expect(() => planCharitableTriage(declined, 12, false, { action: 'advance' }, NOW)).toThrow(/already been declined/);
+    expect(() => planCharitableTriage({ ...claimed, RequestStatus: 'Submitted' }, 12, false, { action: 'decline' }, NOW)).toThrow(/claim it first/);
+  });
+
+  it('sums donations and service hours by mission area inside the fraternal year, leaving physical items out', () => {
+    const areas = [
+      { id: 2, CouncilID: OWN, MissionAreaName: 'Life' },
+      { id: 1, CouncilID: OWN, MissionAreaName: 'Faith' },
+      { id: 9, CouncilID: 2, MissionAreaName: 'Other council' },
+    ];
+    const events = [
+      { id: 10, StartDate: '2026-08-01', MissionAreaID: 1 },
+      { id: 11, StartDate: '2026-06-30', MissionAreaID: 2 }, // the previous fraternal year
+      { id: 12, StartDate: '2026-09-01', MissionAreaID: null },
+    ];
+    const footprint = buildMissionAreaFootprint(
+      OWN,
+      '2026-2027',
+      areas,
+      events,
+      [
+        { EventID: 10, DonationDate: '2026-08-01', DonationAmount: 100.1, methodName: 'Cash' },
+        { EventID: 10, DonationDate: '2026-08-01', DonationAmount: 0.2, methodName: 'Venmo' },
+        { EventID: 10, DonationDate: '2026-08-01', DonationAmount: 500, methodName: 'Physical Items' },
+        { EventID: 11, DonationDate: '2026-06-30', DonationAmount: 75, methodName: 'Cash' },
+        { EventID: 12, DonationDate: '2026-09-01', DonationAmount: 40, methodName: 'Zelle' },
+        { EventID: null, DonationDate: '2026-09-01', DonationAmount: 999, methodName: 'Cash' },
+      ],
+      [
+        { Hours: 2.25, eventId: 10, shiftDate: '2026-08-01' },
+        { Hours: 3, eventId: 11, shiftDate: '2026-06-30' },
+        { Hours: 1.5, eventId: 12, shiftDate: '2026-09-01' },
+      ],
+    );
+    expect(footprint).toMatchObject({ fromDate: '2026-07-01', toDate: '2027-06-30' });
+    expect(footprint.areas).toEqual([
+      { missionAreaId: 1, missionAreaName: 'Faith', donations: 100.3, serviceHours: 2.25, events: 1 },
+      { missionAreaId: 2, missionAreaName: 'Life', donations: 0, serviceHours: 0, events: 0 },
+    ]);
+    expect(footprint.unfiled).toEqual({ missionAreaId: null, missionAreaName: 'Unfiled', donations: 40, serviceHours: 1.5, events: 1 });
+    expect(footprint.totals).toEqual({ donations: 140.3, serviceHours: 3.75, events: 2 });
+  });
+});
+
+describe.each(drivers)('$name driver: mission areas, target budget lines and declines (Sprint 5Z-2)', (d) => {
+  it("files the form under one of the council's mission areas", async () => {
+    const db = await d.make();
+    const detail = await db.charities.submitCharitableRequest(MEMBER.member, form({ MissionAreaID: 4 }));
+    expect(detail.request.MissionAreaID).toBe(4);
+    expect(detail.missionAreaName).toBe('Life');
+    expect(detail.targetBudgetLine).toBeNull();
+    await expectRule(db.charities.submitCharitableRequest(MEMBER.member, form({ MissionAreaID: 999 })), 'INVALID_INPUT');
+  });
+
+  it("names a target budget line of the request's council and declines a claimed request", async () => {
+    const db = await d.make();
+    const { request } = await db.charities.submitCharitableRequest(MEMBER.member, form());
+    const line = insertBudgetLine(d, db, OWN, 'Other Donations & Projects');
+    const foreign = insertBudgetLine(d, db, 2, 'Another council line');
+    await db.charities.triageRequestStatus(MEMBER.admin, request.id, { action: 'claim' });
+    await expectRule(db.charities.triageRequestStatus(MEMBER.admin, request.id, { action: 'note', TargetBudgetLineID: foreign }), 'INVALID_INPUT');
+    await expectRule(db.charities.triageRequestStatus(MEMBER.admin, request.id, { action: 'note', TargetBudgetLineID: 9999 }), 'INVALID_INPUT');
+
+    const declined = await db.charities.triageRequestStatus(MEMBER.admin, request.id, {
+      action: 'decline',
+      VettingNotes: 'Outside our giving guidelines',
+      TargetBudgetLineID: line,
+    });
+    expect(declined.request).toMatchObject({ RequestStatus: 'Declined', VettedDate: toTimestamp(NOW), TargetBudgetLineID: line, VoteStatus: 'Pending' });
+    expect(declined.targetBudgetLine).toEqual({ name: 'Other Donations & Projects', fraternalYear: '2026-2027' });
+    await expectRule(db.charities.triageRequestStatus(MEMBER.admin, request.id, { action: 'note', VettingNotes: 'late' }), 'REQUEST_STATUS_CONFLICT');
+
+    const queue = await db.charities.listCharitableRequestsQueue(MEMBER.admin, OWN);
+    expect(queue.at(-1)?.request.RequestStatus).toBe('Declined');
+  });
+
+  it('keeps the mission footprint to the executive summaries’ readers', async () => {
+    const db = await d.make();
+    await expectRule(db.reports.missionAreaFootprint(MEMBER.member, OWN, '2026-2027'), 'ADMIN_REQUIRED');
+    await expectRule(db.reports.missionAreaFootprint(MEMBER.admin, OWN, '2026'), 'INVALID_INPUT');
+    const footprint = await db.reports.missionAreaFootprint(MEMBER.admin, OWN, '2026-2027');
+    expect(footprint.areas.map((a) => [a.missionAreaName, a.donations, a.serviceHours])).toEqual([
+      ['Community', 0, 0],
+      ['Faith', 0, 0],
+      ['Family', 0, 0],
+      ['Life', 0, 0],
+    ]);
+  });
+});
+
+describe.each(drivers)('$name driver: Faith-in-Action presentation data (Sprint 5Z-2)', (d) => {
+  it('tracks the seeded events of each mission area', async () => {
+    const now = () => new Date(NOW);
+    let db: DataService;
+    if (d.name === 'memory') {
+      db = new MemoryDataService({ now, presentationData: true });
+    } else {
+      openDatabases.length = 0;
+      db = new SqliteDataService({ now, presentationData: true });
+    }
+    await db.init();
+    const footprint = await db.reports.missionAreaFootprint(MEMBER.admin, OWN, '2026-2027');
+    expect(footprint.areas.map((a) => [a.missionAreaName, a.donations, a.serviceHours, a.events])).toEqual([
+      ['Community', 1530.5, 39.25, 2],
+      ['Faith', 275, 12.5, 2],
+      ['Family', 1690, 39, 2],
+      ['Life', 1265.25, 34.25, 2],
+    ]);
+    const queue = await db.charities.listCharitableRequestsQueue(MEMBER.admin, OWN);
+    expect(queue.map((q) => q.missionAreaName)).toEqual(['Faith', 'Community', 'Life', 'Family', 'Community']);
   });
 });

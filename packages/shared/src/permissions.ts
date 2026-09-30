@@ -44,6 +44,8 @@ export type PortalArea =
   | 'charities/propose'
   | 'charities/registry'
   | 'charities/queue'
+  | 'charities/intake'
+  | 'charities/vetting'
   | 'lessons-registry'
   | 'donations'
   | 'dashboard'
@@ -243,6 +245,19 @@ export const canReviewCharityProposals = (u: Actor, councilId: number): boolean 
 export const canDisburseCharity = (u: Actor, councilId: number): boolean => canDisburseCouncilExpenses(u, councilId);
 
 /**
+ * The Pooled Vetting Desk (Sprint 5Z-2), mirroring assertMayVetCharitableRequests (activity status is checked there): the
+ * council's officers (Trustees included) and Admins, and any Super Admin.
+ */
+export const canVetCharitableRequests = (u: Actor, councilId: number): boolean =>
+  canAdministerCouncil(u, councilId) || (u.isOfficer && u.councilId === councilId);
+
+/**
+ * The claim and vetting controls on one intake request (Sprint 5Z-2): vetting authority for its council, and never on a
+ * request the viewer carries as its Knight Shepherd (the Four-Eyes Principle, assertIndependentVetter).
+ */
+export const isSponsorRestricted = (u: Actor, request: { ShepherdMemberID: number }): boolean => request.ShepherdMemberID === u.memberId;
+
+/**
  * Edit controls on the annual budget, mirroring assertMayManageBudgetForecast (Sprint 5Y; activity status is checked
  * there): the council's Admins, its Financial Secretary and Treasurer, its Designated Budget Director (Sprint 5Y-3), and
  * any Super Admin.
@@ -321,9 +336,11 @@ export function portalAreas(u: Actor): PortalArea[] {
   // Every member files their own expense reports; the council's leadership audits them; only its finance officers
   // (or a Super Admin) pay them.
   // Every member may propose a charity grant (Sprint 5V).
-  areas.push('ledger', 'expenses', 'charities/propose');
+  // Every member may carry an outside organization's request to the council as its Knight Shepherd (Sprint 5Z-2).
+  areas.push('ledger', 'expenses', 'charities/propose', 'charities/intake');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/queue');
   if (isSuperAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/disbursements', 'charities/queue');
+  if (canVetCharitableRequests(u, u.councilId)) areas.push('charities/vetting');
   if (canBrowseLessonsRegistry(u)) areas.push('lessons-registry');
   if (canManageCharityRegistry(u)) areas.push('charities/registry');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('dashboard', 'supreme-sync');
@@ -350,14 +367,14 @@ export interface PortalNavGroup {
 
 /** Every sidebar link in its group, in display order (Sprint 5S). Each PortalArea but 'profile' and 'messages' appears exactly once. */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
-  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, items: ['member-actions', 'charities/propose'] },
+  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, items: ['member-actions', 'charities/propose', 'charities/intake'] },
   {
     id: 'volunteer',
     label: 'Volunteer Operations',
     collapsible: true,
     items: ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
   },
-  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/queue', 'financials/budget'] },
+  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/vetting', 'charities/queue', 'financials/budget'] },
   { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'] },
 ];
 
