@@ -2,6 +2,7 @@
 // The schema and seed statements are generated from Schema.sql / Seed.sql by
 // scripts/gen-db-assets.mjs. Nothing outside /services may import this file.
 import * as Crypto from 'expo-crypto';
+import * as SecureStore from 'expo-secure-store';
 import * as SQLite from 'expo-sqlite';
 import {
   ACTIVITY_COLUMNS,
@@ -291,6 +292,27 @@ import {
   buildAccountLedger,
   formatTransactionId,
   glAccountNotFound,
+  assertBallotLaunchable,
+  assertBallotOpen,
+  assertBallotSelection,
+  assertCheckedIn,
+  assertFinalMotionResult,
+  assertLiveParticipant,
+  assertMayFollowLiveAssembly,
+  assertMayRunLiveAssembly,
+  assertMeetingLive,
+  assertMotionPending,
+  assertNoBallotOpen,
+  assertResultMatchesTally,
+  ballotAlreadyCast,
+  ballotHashInput,
+  buildLiveAssemblyState,
+  charitableVoteOutcome,
+  cleanLiveAgendaItem,
+  formatBallotSecret,
+  isMeetingLive,
+  proposedMotionNotFound,
+  tallyBallots,
   type CleanJournalLine,
 } from '@kofc/shared';
 import type {
@@ -353,6 +375,11 @@ import type {
   LookupValues,
   Meeting,
   BankReconciliationResult,
+  BallotTally,
+  BallotVote,
+  LiveAssemblyState,
+  LiveAttendance,
+  MotionVoteFinalization,
   GLAccount,
   JournalEntry,
   MeetingInvites,
@@ -442,8 +469,12 @@ const DB_NAME = 'kofc.db';
  * 25: Meeting.InviteReleaseDate and CouncilCadenceConfig.DefaultRecipientGroup (Sprint 5Z-6).
  * 26: GLAccount, JournalEntry and Event.IntakeSessionStatus (Sprint 5Z-7).
  * 27: JournalEntry.TransactionID and the Opening Balance Equity account (Sprint 5Z-8).
+ * 28: the live meeting columns on Meeting, ProposedMotion.BallotOpenedAt, LiveAttendance and BallotVote (Sprint 5Z-9).
  */
-const SCHEMA_VERSION = 27;
+const SCHEMA_VERSION = 28;
+
+/** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
+const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -521,6 +552,11 @@ export interface SqliteDataServiceOptions {
    * baseline. Default: false.
    */
   presentationData?: boolean;
+  /**
+   * The secret ballot key (Sprint 5Z-9) hashed with each voter into BallotVote.AnonymousBallotHash. Default: one kept in
+   * the device's secure store (see ballotSecret).
+   */
+  ballotSecret?: string;
 }
 
 export class SqliteDataService implements DataService {
@@ -529,9 +565,11 @@ export class SqliteDataService implements DataService {
   private readonly log: (...args: unknown[]) => void;
   private readonly postAlchemer: (request: AlchemerRequest) => Promise<AlchemerResponse>;
   private readonly presentationData: boolean;
+  private ballotSecretValue: Promise<string> | null;
 
   constructor(options: SqliteDataServiceOptions = {}) {
     this.presentationData = options.presentationData ?? false;
+    this.ballotSecretValue = options.ballotSecret ? Promise.resolve(options.ballotSecret) : null;
     this.now = options.now ?? (() => new Date());
     this.log = options.log ?? console.log;
     this.postAlchemer = options.postAlchemer ?? logAlchemerRequest((...args) => this.log(...args));
@@ -3195,7 +3233,232 @@ export class SqliteDataService implements DataService {
         presenterLastName: presenterLastName ?? '',
       }));
     },
+
+    startLiveAssemblyConsole: async (actorId, meetingId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const meeting = await this.requireMeetingRow(db, meetingId);
+        assertMayRunLiveAssembly(actor, meeting, `start the live console of meeting ${meetingId}`);
+        if (isMeetingLive(meeting)) return;
+        // Lock the quorum base: the council's Active roster at the moment the meeting goes live.
+        await db.runAsync(
+          `UPDATE [Meeting] SET [IsLiveInProgress] = 1,
+              [LiveQuorumRosterCount] = (SELECT COUNT(*) FROM [Member] m WHERE ${ACTIVE_MEMBER_FILTER})
+            WHERE [id] = ?`,
+          [meeting.CouncilID, meetingId],
+        );
+      });
+      return this.liveAssemblyState(db, actorId, meetingId);
+    },
+
+    advanceActiveAgendaItem: async (actorId, meetingId, itemName, allottedMinutes) => {
+      const item = cleanLiveAgendaItem(itemName, allottedMinutes);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const meeting = await this.requireMeetingRow(db, meetingId);
+        assertMayRunLiveAssembly(actor, meeting, `set the agenda of meeting ${meetingId}`);
+        assertMeetingLive(meeting, 'take a new agenda item');
+        await db.runAsync(
+          'UPDATE [Meeting] SET [ActiveAgendaItemName] = ?, [ActiveAgendaItemTimeRemaining] = ?, [ActiveAgendaItemStartedAt] = ? WHERE [id] = ?',
+          [item.name, item.minutes, toTimestamp(this.now()), meetingId],
+        );
+      });
+      return this.liveAssemblyState(db, actorId, meetingId);
+    },
+
+    logLiveAttendanceOverride: async (actorId, meetingId, memberId) => {
+      const db = await this.ready();
+      let rowId = 0;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const meeting = await this.requireMeetingRow(db, meetingId);
+        if (actorId !== memberId) assertMayRunLiveAssembly(actor, meeting, `check member ${memberId} in to meeting ${meetingId}`);
+        assertMeetingLive(meeting, 'take check-ins');
+        assertLiveParticipant(actorId === memberId ? actor : await this.memberWriteActor(db, memberId), meeting);
+        const existing = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [LiveAttendance] WHERE [MeetingID] = ? AND [MemberID] = ?', [meetingId, memberId]);
+        if (existing) {
+          rowId = existing.id;
+          return;
+        }
+        // Checking in overrides whatever the member answered: the invitation reads Accepted and Attended.
+        const updated = await db.runAsync(
+          "UPDATE [MeetingInvites] SET [Attended] = 1, [ResponseStatus] = 'Accepted' WHERE [MeetingID] = ? AND [MemberID] = ?",
+          [meetingId, memberId],
+        );
+        if (updated.changes === 0) {
+          await db.runAsync("INSERT INTO [MeetingInvites] ([MeetingID], [MemberID], [Attended], [ResponseStatus]) VALUES (?, ?, 1, 'Accepted')", [meetingId, memberId]);
+        }
+        const res = await db.runAsync('INSERT INTO [LiveAttendance] ([CouncilID], [MeetingID], [MemberID], [CheckedInAt]) VALUES (?, ?, ?, ?)', [
+          meeting.CouncilID,
+          meetingId,
+          memberId,
+          toTimestamp(this.now()),
+        ]);
+        rowId = res.lastInsertRowId;
+      });
+      return (await db.getFirstAsync<LiveAttendance>('SELECT * FROM [LiveAttendance] WHERE [id] = ?', [rowId]))!;
+    },
+
+    launchSecretSmartphoneBallot: async (actorId, proposedMotionId) => {
+      const db = await this.ready();
+      let meetingId = 0;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const motion = await db.getFirstAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [id] = ?', [proposedMotionId]);
+        if (!motion) throw proposedMotionNotFound(proposedMotionId);
+        const meeting = await this.requireMeetingRow(db, motion.TargetMeetingID);
+        assertMayRunLiveAssembly(actor, meeting, `open the ballot on motion ${proposedMotionId}`);
+        assertMotionPending(motion, 'go to a ballot');
+        assertMeetingLive(meeting, 'open a ballot');
+        assertBallotLaunchable(motion, await db.getAllAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [TargetMeetingID] = ?', [meeting.id]));
+        await db.runAsync('UPDATE [ProposedMotion] SET [BallotOpenedAt] = ? WHERE [id] = ?', [toTimestamp(this.now()), proposedMotionId]);
+        meetingId = meeting.id;
+      });
+      return this.liveAssemblyState(db, actorId, meetingId);
+    },
+
+    castAnonymousMobileVote: async (actorId, councilId, motionId, selection) => {
+      const choice = assertBallotSelection(selection);
+      const hash = await sha256Hex(ballotHashInput(await this.ballotSecret(), motionId, actorId));
+      const db = await this.ready();
+      let tally: BallotTally | null = null;
+      await db.withTransactionAsync(async () => {
+        const voter = await this.memberWriteActor(db, actorId);
+        const motion = await db.getFirstAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [id] = ? AND [CouncilID] = ?', [motionId, councilId]);
+        if (!motion) throw proposedMotionNotFound(motionId);
+        const meeting = await this.requireMeetingRow(db, motion.TargetMeetingID);
+        assertBallotOpen(motion);
+        assertLiveParticipant(voter, meeting);
+        const checkedIn = await db.getAllAsync<{ MemberID: number }>('SELECT [MemberID] FROM [LiveAttendance] WHERE [MeetingID] = ?', [meeting.id]);
+        assertCheckedIn(checkedIn.some((a) => a.MemberID === actorId), actorId, meeting.id);
+        if (await db.getFirstAsync('SELECT [id] FROM [BallotVote] WHERE [ProposedMotionID] = ? AND [AnonymousBallotHash] = ?', [motionId, hash])) {
+          throw ballotAlreadyCast(motionId);
+        }
+        await db.runAsync(
+          'INSERT INTO [BallotVote] ([CouncilID], [ProposedMotionID], [AnonymousBallotHash], [VoteSelection], [CastAt]) VALUES (?, ?, ?, ?, ?)',
+          [councilId, motionId, hash, choice, toTimestamp(this.now())],
+        );
+        const votes = await db.getAllAsync<BallotVote>('SELECT * FROM [BallotVote] WHERE [ProposedMotionID] = ?', [motionId]);
+        tally = tallyBallots(motionId, votes, checkedIn.length);
+      });
+      return tally!;
+    },
+
+    finalizeProposedMotionVote: async (actorId, motionId, resultStatus) => {
+      const result = assertFinalMotionResult(resultStatus);
+      const db = await this.ready();
+      let finalization: MotionVoteFinalization | null = null;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const motion = await db.getFirstAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [id] = ?', [motionId]);
+        if (!motion) throw proposedMotionNotFound(motionId);
+        const meeting = await this.requireMeetingRow(db, motion.TargetMeetingID);
+        assertMayRunLiveAssembly(actor, meeting, `decide motion ${motionId}`);
+        assertMotionPending(motion, 'be decided again');
+        const votes = await db.getAllAsync<BallotVote>('SELECT * FROM [BallotVote] WHERE [ProposedMotionID] = ?', [motionId]);
+        const eligible = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM [LiveAttendance] WHERE [MeetingID] = ?', [meeting.id]);
+        const tally = tallyBallots(motionId, votes, eligible?.n ?? 0);
+        assertResultMatchesTally(result, tally, motion.BallotOpenedAt != null);
+        await db.runAsync('UPDATE [ProposedMotion] SET [VoteResult] = ? WHERE [id] = ?', [result, motionId]);
+        let charitableRequest: CharitableRequest | null = null;
+        if (motion.SourceType === 'CharitableRequest' && motion.SourceRecordID != null) {
+          const request = await db.getFirstAsync<CharitableRequest>('SELECT * FROM [CharitableRequest] WHERE [id] = ?', [motion.SourceRecordID]);
+          if (request) {
+            const outcome = charitableVoteOutcome(result, request);
+            if (outcome) {
+              await db.runAsync('UPDATE [CharitableRequest] SET [VoteStatus] = ?, [AmountApproved] = ? WHERE [id] = ?', [outcome.VoteStatus, outcome.AmountApproved, request.id]);
+            }
+            charitableRequest = await db.getFirstAsync<CharitableRequest>('SELECT * FROM [CharitableRequest] WHERE [id] = ?', [request.id]);
+          }
+        }
+        finalization = {
+          motion: (await db.getFirstAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [id] = ?', [motionId]))!,
+          tally,
+          charitableRequest,
+        };
+      });
+      return finalization!;
+    },
+
+    getLiveAssemblyState: async (actorId, meetingId) => {
+      const db = await this.ready();
+      assertMayFollowLiveAssembly(await this.memberWriteActor(db, actorId), await this.requireMeetingRow(db, meetingId));
+      return this.liveAssemblyState(db, actorId, meetingId);
+    },
+
+    closeLiveAssemblyConsole: async (actorId, meetingId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const meeting = await this.requireMeetingRow(db, meetingId);
+        assertMayRunLiveAssembly(actor, meeting, `close the live console of meeting ${meetingId}`);
+        if (!isMeetingLive(meeting)) return;
+        assertNoBallotOpen(meetingId, await db.getAllAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [TargetMeetingID] = ?', [meetingId]));
+        await db.runAsync(
+          `UPDATE [Meeting] SET [IsLiveInProgress] = 0, [ActiveAgendaItemName] = NULL, [ActiveAgendaItemTimeRemaining] = NULL,
+              [ActiveAgendaItemStartedAt] = NULL WHERE [id] = ?`,
+          [meetingId],
+        );
+      });
+      return this.liveAssemblyState(db, actorId, meetingId);
+    },
   };
+
+  /** A meeting row; an unknown id rejects MEETING_NOT_FOUND. */
+  private async requireMeetingRow(db: SQLite.SQLiteDatabase, meetingId: number): Promise<Meeting> {
+    const row = await db.getFirstAsync<Meeting>('SELECT * FROM [Meeting] WHERE [id] = ?', [meetingId]);
+    if (!row) throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
+    return row;
+  }
+
+  /**
+   * The secret ballot key (Sprint 5Z-9): options.ballotSecret, or one kept in the device's secure store, created on first
+   * use. It never enters the database, so the ballots cannot be traced back to voters from the tables, and it outlives
+   * an app restart, so a member cannot vote twice by relaunching.
+   */
+  private ballotSecret(): Promise<string> {
+    if (!this.ballotSecretValue) {
+      this.ballotSecretValue = (async () => {
+        const stored = await SecureStore.getItemAsync(BALLOT_SECRET_KEY);
+        if (stored) return stored;
+        const secret = formatBallotSecret(await Crypto.getRandomBytesAsync(32));
+        await SecureStore.setItemAsync(BALLOT_SECRET_KEY, secret, { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY });
+        return secret;
+      })().catch((err) => {
+        this.ballotSecretValue = null; // let the next ballot retry
+        throw err;
+      });
+    }
+    return this.ballotSecretValue;
+  }
+
+  /** LiveAssemblyState for `viewerId`, who has voted on a motion when one of its ballots carries the viewer's hash. */
+  private async liveAssemblyState(db: SQLite.SQLiteDatabase, viewerId: number, meetingId: number): Promise<LiveAssemblyState> {
+    const meeting = await this.requireMeetingRow(db, meetingId);
+    const motions = await db.getAllAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [TargetMeetingID] = ? ORDER BY [id]', [meetingId]);
+    const votes = await db.getAllAsync<BallotVote>(
+      'SELECT v.* FROM [BallotVote] v JOIN [ProposedMotion] p ON p.[id] = v.[ProposedMotionID] WHERE p.[TargetMeetingID] = ?',
+      [meetingId],
+    );
+    const secret = motions.length ? await this.ballotSecret() : '';
+    const voted = new Set<number>();
+    for (const m of motions) {
+      const hash = await sha256Hex(ballotHashInput(secret, m.id, viewerId));
+      if (votes.some((v) => v.ProposedMotionID === m.id && v.AnonymousBallotHash === hash)) voted.add(m.id);
+    }
+    const checkedIn = await db.getAllAsync<{ MemberID: number }>('SELECT [MemberID] FROM [LiveAttendance] WHERE [MeetingID] = ?', [meetingId]);
+    return buildLiveAssemblyState({
+      meeting,
+      motions,
+      votes,
+      checkedInMemberIds: checkedIn.map((a) => a.MemberID),
+      viewerId,
+      viewerVotedMotionIds: voted,
+      now: this.now(),
+    });
+  }
 
   /** A CouncilMeetingType of `councilId`; another council's type or an unknown id rejects INVALID_INPUT. */
   private async requireCouncilMeetingType(db: SQLite.SQLiteDatabase, councilId: number, meetingTypeId: number): Promise<void> {
@@ -3946,6 +4209,16 @@ export class SqliteDataService implements DataService {
       return db.getAllAsync<CouncilMissionArea>('SELECT * FROM [CouncilMissionArea] WHERE [CouncilID] = ? ORDER BY [MissionAreaName], [id]', [councilId]);
     },
 
+    listApprovedFundingQueue: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayAuditCouncilExpenses(await this.memberWriteActor(db, actorId), councilId, `read the charitable funding queue of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return db.getAllAsync<CharitableRequest>(
+        "SELECT * FROM [CharitableRequest] WHERE [CouncilID] = ? AND [VoteStatus] = 'Approved' AND [PaymentOrderId] IS NULL ORDER BY [id]",
+        [councilId],
+      );
+    },
+
     listCharitableRequestsQueue: async (actorId, councilId) => {
       const db = await this.ready();
       assertMayVetCharitableRequests(await this.memberWriteActor(db, actorId), councilId, `read the charitable request queue of council ${councilId}`);
@@ -4477,7 +4750,10 @@ export class SqliteDataService implements DataService {
       const account = await this.glAccount(db, glAccountId);
       if (!account) throw glAccountNotFound(glAccountId);
       assertMayReadGeneralLedger(actor, account.CouncilID, `read the ledger of account ${glAccountId}`);
-      return buildAccountLedger(account, await this.glAccounts(db, account.CouncilID), await this.journalEntries(db, account.CouncilID));
+      const entries = await this.journalEntries(db, account.CouncilID);
+      const linked = [...new Set(entries.map((e) => e.LinkedEventID).filter((id): id is number => id != null))];
+      const events = await selectIn<{ id: number; EventName: string }>(db, (m) => `SELECT [id], [EventName] FROM [Event] WHERE [id] IN (${m})`, linked);
+      return buildAccountLedger(account, await this.glAccounts(db, account.CouncilID), entries, new Map(events.map((e) => [e.id, e.EventName])));
     },
 
     uploadBankStatementReconciliation: async (actorId, csvFileData, options = {}) => {

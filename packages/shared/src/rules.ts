@@ -101,7 +101,13 @@ export type BusinessRuleCode =
   | 'EXPENSE_WINDOW_CLOSED'
   | 'NO_ELIGIBLE_MEETING'
   | 'UNBALANCED_TRANSACTION'
-  | 'INSUFFICIENT_FUNDS';
+  | 'INSUFFICIENT_FUNDS'
+  | 'LIVE_ASSEMBLY_CONFLICT'
+  | 'BALLOT_STATE_CONFLICT'
+  | 'BALLOT_ALREADY_CAST'
+  | 'NOT_CHECKED_IN'
+  | 'MOTION_STATUS_CONFLICT'
+  | 'VOTE_TALLY_CONFLICT';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {

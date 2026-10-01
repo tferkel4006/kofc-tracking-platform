@@ -17,6 +17,8 @@ import type {
   CharitableDisbursementLedger,
   CharitableRequest,
   ProposedMotion,
+  BallotSelection,
+  LiveAttendance,
   CharityDonationProposal,
   ChatThread,
   Council,
@@ -1388,6 +1390,8 @@ export interface AccountLedgerRow {
   runningBalance: number;
   /** Every line of the posting (TransactionID), this one included, in id order. */
   transactionLines: JournalCounterLine[];
+  /** Sprint 5Z-9: the linked event's full EventName, shown beside its #ID; null without a linked event. */
+  eventName: string | null;
 }
 
 /** finance.getAccountLedger (Sprint 5Z-8): every line ever posted to one account, oldest first. */
@@ -1435,7 +1439,68 @@ export interface BankReconciliationResult {
   reconciledEntryIds: number[];
 }
 
-// 20. THE SERVICE
+// 20. LIVE MEETING MANAGEMENT AND SMARTPHONE BALLOTING (Sprint 5Z-9)
+/** A motion's secret ballot count so far. Every member checked in to the meeting may vote once. */
+export interface BallotTally {
+  motionId: number;
+  approve: number;
+  deny: number;
+  abstain: number;
+  /** Ballots cast. */
+  total: number;
+  /** Members checked in to the meeting: who may vote. */
+  eligible: number;
+}
+
+/** The topic on the live console's center bar, counting down from when it was pushed. */
+export interface LiveAgendaItem {
+  name: string;
+  allottedMinutes: number;
+  /** 'YYYY-MM-DD HH:MM:SS' UTC. */
+  startedAt: string;
+  /** Whole seconds left of the allotment at the moment the state was read; 0 once it has run out. */
+  secondsRemaining: number;
+}
+
+/** One of the meeting's motions as the console and the phones show it. */
+export interface LiveMotionState {
+  motion: ProposedMotion;
+  /** Its smartphone ballot is open: launched and not yet finalized. */
+  ballotOpen: boolean;
+  tally: BallotTally;
+  /** The reader has cast a ballot on it. */
+  viewerHasVoted: boolean;
+}
+
+/**
+ * meetings.getLiveAssemblyState and the console methods: the meeting as it runs. Phones poll it to follow along, so the
+ * center bar, the check-in count and the tallies are always what the console last wrote.
+ */
+export interface LiveAssemblyState {
+  meeting: Meeting;
+  isLive: boolean;
+  /** The council's Active roster count locked when the console started (quorum base); null before it ever started. */
+  rosterCount: number | null;
+  checkedInCount: number;
+  activeItem: LiveAgendaItem | null;
+  /** The reader is checked in, and so may vote. */
+  viewerCheckedIn: boolean;
+  motions: LiveMotionState[];
+}
+
+/** meetings.finalizeProposedMotionVote's answer. */
+export interface MotionVoteFinalization {
+  motion: ProposedMotion;
+  tally: BallotTally;
+  /**
+   * For a motion carrying a charitable request: the request with its vote recorded (Passed: VoteStatus 'Approved' and
+   * AmountApproved = AmountRequested, now on the Financial Secretary's funding queue; Failed: 'Rejected'; Tabled:
+   * unchanged and free to be routed again). Null for a member's own motion.
+   */
+  charitableRequest: CharitableRequest | null;
+}
+
+// 21. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -2060,6 +2125,68 @@ export interface DataService {
      * unknown meeting.
      */
     listProposedMotions(meetingId: number): Promise<ProposedMotionDetail[]>;
+    /**
+     * Sprint 5Z-9 live assembly. The console is run by the meeting's chair: its Active owner, an Active Admin or officer
+     * of its council, or an Active Super Admin (assertMayRunLiveAssembly; ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Every
+     * method rejects MEMBER_NOT_FOUND for an unknown actor and MEETING_NOT_FOUND for an unknown meeting.
+     *
+     * Starts the live console: IsLiveInProgress becomes 1 and the council's Active roster count is locked into
+     * LiveQuorumRosterCount, the base for the quorum check. Calling it on a meeting already live changes nothing and
+     * keeps the locked count. Resolves to the state the console boots with.
+     */
+    startLiveAssemblyConsole(actorId: number, meetingId: number): Promise<LiveAssemblyState>;
+    /**
+     * Pushes a new topic to the center bar: ActiveAgendaItemName, the allotted minutes (ActiveAgendaItemTimeRemaining)
+     * and ActiveAgendaItemStartedAt now, which every phone following getLiveAssemblyState counts down from. Rejects
+     * LIVE_ASSEMBLY_CONFLICT unless the meeting is live, and INVALID_INPUT for a blank name or one over
+     * LIVE_AGENDA_ITEM_NAME_MAX_LENGTH characters, or minutes that are not a whole number from 1 to
+     * LIVE_AGENDA_ITEM_MAX_MINUTES.
+     */
+    advanceActiveAgendaItem(actorId: number, meetingId: number, itemName: string, allottedMinutes: number): Promise<LiveAssemblyState>;
+    /**
+     * Checks `memberId` in to the live meeting (LiveAttendance), whatever they answered to the invitation: a member taps
+     * 'Broadcast Active Assembly Feed' to check themselves in (actorId = memberId), or the chair checks someone in. The
+     * member's invitation is marked Attended and Accepted, created if they had none, so the meeting counts toward their
+     * hours. Checking in twice returns the first check-in. The member must be Active and of the meeting's council
+     * (NOT_ACTIVE_COUNCIL_MEMBER); anyone else checking a member in must run the console. Rejects LIVE_ASSEMBLY_CONFLICT
+     * unless the meeting is live.
+     */
+    logLiveAttendanceOverride(actorId: number, meetingId: number, memberId: number): Promise<LiveAttendance>;
+    /**
+     * Opens the motion's secret smartphone ballot (BallotOpenedAt now): every member checked in sees it on
+     * getLiveAssemblyState and may vote. Rejects RECORD_NOT_FOUND for an unknown motion, MOTION_STATUS_CONFLICT unless
+     * its VoteResult is 'Pending', LIVE_ASSEMBLY_CONFLICT unless its meeting is live, and BALLOT_STATE_CONFLICT when its
+     * ballot is already open or another motion of the meeting has a ballot open.
+     */
+    launchSecretSmartphoneBallot(actorId: number, proposedMotionId: number): Promise<LiveAssemblyState>;
+    /**
+     * Casts `actorId`'s secret ballot and resolves to the new tally. The stored row never names the voter (see
+     * BallotVote). `actorId` is required although the ballot is anonymous: only a member checked in to the meeting may
+     * vote (NOT_CHECKED_IN), once per motion (BALLOT_ALREADY_CAST), and must be Active. Rejects RECORD_NOT_FOUND for a
+     * motion that is not `councilId`'s, BALLOT_STATE_CONFLICT unless its ballot is open, and INVALID_INPUT for a
+     * selection other than BALLOT_SELECTIONS.
+     */
+    castAnonymousMobileVote(actorId: number, councilId: number, motionId: number, selection: BallotSelection): Promise<BallotTally>;
+    /**
+     * Records the council's decision on a 'Pending' motion - Passed, Failed or Tabled - and closes its ballot, in one
+     * transaction. When a smartphone ballot was held the decision must match it (VOTE_TALLY_CONFLICT): Passed needs more
+     * Approve than Deny ballots, Failed no more; Tabled is always allowed. A motion carrying a charitable request records
+     * the vote on the request (see MotionVoteFinalization), and a passed one joins the Financial Secretary's funding
+     * queue (charities.listApprovedFundingQueue). Rejects RECORD_NOT_FOUND, MOTION_STATUS_CONFLICT unless the motion is
+     * 'Pending', and INVALID_INPUT for another result.
+     */
+    finalizeProposedMotionVote(actorId: number, motionId: number, resultStatus: 'Passed' | 'Failed' | 'Tabled'): Promise<MotionVoteFinalization>;
+    /**
+     * The meeting as it runs (LiveAssemblyState) for `actorId`: any Active member of the meeting's council, or an Active
+     * Super Admin (COUNCIL_ACCESS_DENIED otherwise). Phones and the console poll it.
+     */
+    getLiveAssemblyState(actorId: number, meetingId: number): Promise<LiveAssemblyState>;
+    /**
+     * Ends the live console: IsLiveInProgress 0 and the center bar cleared. The locked roster count and the check-ins
+     * stay as the meeting's record. Rejects BALLOT_STATE_CONFLICT while a ballot is open (finalize it first); a meeting
+     * that is not live is returned unchanged.
+     */
+    closeLiveAssemblyConsole(actorId: number, meetingId: number): Promise<LiveAssemblyState>;
   };
 
   /** Shift helpers behind the automatic hour-reporting defaults (Sprint 5Y-5). */
@@ -2300,6 +2427,13 @@ export interface DataService {
      * TargetBudgetLineID that is not a budget line of the request's council.
      */
     triageRequestStatus(actorId: number, requestId: number, vettingData: CharitableTriageInput): Promise<CharitableRequestDetail>;
+    /**
+     * Sprint 5Z-9: the council's charitable requests the council voted to fund (VoteStatus 'Approved', through
+     * meetings.finalizeProposedMotionVote) that no check has paid yet (PaymentOrderId null), in request order - the
+     * Financial Secretary's funding queue. Read by the council's leadership as on the expense audit desk
+     * (assertMayAuditCouncilExpenses: its Admins, Financial Secretary and Treasurer, any Active Super Admin).
+     */
+    listApprovedFundingQueue(actorId: number, councilId: number): Promise<CharitableRequest[]>;
     /**
      * Puts a vetted request on the council floor (Sprint 5Z-5): finds the request council's soonest Monthly meeting
      * (a Meeting whose MeetingTypeID is the council's CouncilMeetingType named MONTHLY_MEETING_TYPE_NAME) dated at

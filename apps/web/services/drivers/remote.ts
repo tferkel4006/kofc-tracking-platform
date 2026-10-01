@@ -158,6 +158,14 @@ export function createRemoteDataService(): DataService {
       saveCadenceConfig: notImplemented('meetings.saveCadenceConfig'),
       removeCadenceConfig: notImplemented('meetings.removeCadenceConfig'),
       listProposedMotions: notImplemented('meetings.listProposedMotions'),
+      startLiveAssemblyConsole: notImplemented('meetings.startLiveAssemblyConsole'),
+      advanceActiveAgendaItem: notImplemented('meetings.advanceActiveAgendaItem'),
+      logLiveAttendanceOverride: notImplemented('meetings.logLiveAttendanceOverride'),
+      launchSecretSmartphoneBallot: notImplemented('meetings.launchSecretSmartphoneBallot'),
+      castAnonymousMobileVote: notImplemented('meetings.castAnonymousMobileVote'),
+      finalizeProposedMotionVote: notImplemented('meetings.finalizeProposedMotionVote'),
+      getLiveAssemblyState: notImplemented('meetings.getLiveAssemblyState'),
+      closeLiveAssemblyConsole: notImplemented('meetings.closeLiveAssemblyConsole'),
     },
     shifts: { getShiftDefaultLength: notImplemented('shifts.getShiftDefaultLength') },
     notifications: {
@@ -193,6 +201,7 @@ export function createRemoteDataService(): DataService {
       submitCharitableRequest: notImplemented('charities.submitCharitableRequest'),
       triageRequestStatus: notImplemented('charities.triageRequestStatus'),
       routeRequestToNextEligibleAgenda: notImplemented('charities.routeRequestToNextEligibleAgenda'),
+      listApprovedFundingQueue: notImplemented('charities.listApprovedFundingQueue'),
     },
     budget: {
       listAnnualForecast: notImplemented('budget.listAnnualForecast'),

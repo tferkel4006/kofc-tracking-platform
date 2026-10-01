@@ -372,9 +372,14 @@ const compareEntries = (a: JournalEntry, b: JournalEntry): number => a.DateLogge
 /**
  * finance.getAccountLedger: every line on `account`, oldest first, with the running normal-side balance and every line
  * of the posting it belongs to. `accounts` and `entries` are the account's whole council, so the other lines of each
- * posting can be named.
+ * posting can be named; `eventNames` names the events the lines link (Sprint 5Z-9), by Event id.
  */
-export function buildAccountLedger(account: GLAccount, accounts: readonly GLAccount[], entries: readonly JournalEntry[]): AccountLedger {
+export function buildAccountLedger(
+  account: GLAccount,
+  accounts: readonly GLAccount[],
+  entries: readonly JournalEntry[],
+  eventNames: ReadonlyMap<number, string> = new Map(),
+): AccountLedger {
   const names = new Map(accounts.map((a) => [a.id, a.AccountName]));
   const byTransaction = new Map<string, JournalEntry[]>();
   for (const e of [...entries].sort((a, b) => a.id - b.id)) byTransaction.set(e.TransactionID, [...(byTransaction.get(e.TransactionID) ?? []), e]);
@@ -394,6 +399,7 @@ export function buildAccountLedger(account: GLAccount, accounts: readonly GLAcco
         entry: { ...line },
         accountName: names.get(line.GLAccountID) ?? `Account ${line.GLAccountID}`,
       })),
+      eventName: e.LinkedEventID != null ? (eventNames.get(e.LinkedEventID) ?? null) : null,
     });
   }
   return { account: { ...account }, balance: dollars(running), debitTotal: dollars(debits), creditTotal: dollars(credits), rows };

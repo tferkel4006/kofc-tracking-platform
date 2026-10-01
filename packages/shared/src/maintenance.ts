@@ -86,6 +86,8 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
     { table: 'ProposedMotion', column: 'CouncilID', noun: ['proposed motion', 'proposed motions'] },
     { table: 'GLAccount', column: 'CouncilID', noun: ['general ledger account', 'general ledger accounts'] },
     { table: 'JournalEntry', column: 'CouncilID', noun: ['journal entry', 'journal entries'] },
+    { table: 'LiveAttendance', column: 'CouncilID', noun: ['live check-in', 'live check-ins'] },
+    { table: 'BallotVote', column: 'CouncilID', noun: ['ballot', 'ballots'] },
     { table: 'AffiliatedCouncils', column: 'PrimaryCouncilID', noun: ['affiliation', 'affiliations'] },
     { table: 'AffiliatedCouncils', column: 'AffiliatedCouncilID', noun: ['affiliation', 'affiliations'] },
   ],

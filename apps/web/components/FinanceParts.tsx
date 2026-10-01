@@ -431,7 +431,7 @@ export function AccountLedgerDrawer({ account, onClose }: { account: GLAccount; 
                     {open.has(r.entry.id) ? <PostingLines lines={r.transactionLines} /> : null}
                   </Td>
                   <Td>{r.entry.CheckNumber ?? '–'}</Td>
-                  <Td>{r.entry.LinkedEventID != null ? `#${r.entry.LinkedEventID}` : '–'}</Td>
+                  <Td>{r.entry.LinkedEventID != null ? `#${r.entry.LinkedEventID}${r.eventName ? ` · ${r.eventName}` : ''}` : '–'}</Td>
                   <Td className="text-right">{r.entry.DebitAmount > 0 ? <Money value={r.entry.DebitAmount} /> : ''}</Td>
                   <Td className="text-right">{r.entry.CreditAmount > 0 ? <Money value={r.entry.CreditAmount} /> : ''}</Td>
                   <Td className="text-right font-bold">

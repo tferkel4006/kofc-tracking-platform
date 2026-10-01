@@ -289,6 +289,27 @@ import {
   buildAccountLedger,
   formatTransactionId,
   glAccountNotFound,
+  assertBallotLaunchable,
+  assertBallotOpen,
+  assertBallotSelection,
+  assertCheckedIn,
+  assertFinalMotionResult,
+  assertLiveParticipant,
+  assertMayFollowLiveAssembly,
+  assertMayRunLiveAssembly,
+  assertMeetingLive,
+  assertMotionPending,
+  assertNoBallotOpen,
+  assertResultMatchesTally,
+  ballotAlreadyCast,
+  ballotHashInput,
+  buildLiveAssemblyState,
+  charitableVoteOutcome,
+  cleanLiveAgendaItem,
+  formatBallotSecret,
+  isMeetingLive,
+  proposedMotionNotFound,
+  tallyBallots,
   type CleanJournalLine,
 } from '@kofc/shared';
 import type {
@@ -365,6 +386,9 @@ import type {
   Meeting,
   GLAccount,
   JournalEntry,
+  BallotVote,
+  LiveAssemblyState,
+  LiveAttendance,
   MeetingInvites,
   MeetingResponseStatus,
   CouncilMeetingType,
@@ -543,6 +567,12 @@ export interface MemoryDataServiceOptions {
    * right after the baseline rows. The app turns it on; tests keep the minimal baseline. Default: false.
    */
   presentationData?: boolean;
+  /**
+   * The secret ballot key (Sprint 5Z-9) hashed with each voter into BallotVote.AnonymousBallotHash. It never enters the
+   * store, so the ballots cannot be traced back to voters from the tables. Default: 32 random bytes per service (the
+   * store lives as long as the service, so its ballots do too).
+   */
+  ballotSecret?: string;
 }
 
 export class MemoryDataService implements DataService {
@@ -552,9 +582,11 @@ export class MemoryDataService implements DataService {
   private readonly log: (...args: unknown[]) => void;
   private readonly postAlchemer: (request: AlchemerRequest) => Promise<AlchemerResponse>;
   private readonly presentationData: boolean;
+  private readonly ballotSecret: string;
 
   constructor(options: MemoryDataServiceOptions = {}) {
     this.presentationData = options.presentationData ?? false;
+    this.ballotSecret = options.ballotSecret ?? formatBallotSecret(globalThis.crypto.getRandomValues(new Uint8Array(32)));
     this.now = options.now ?? (() => new Date());
     this.log = options.log ?? console.log;
     this.postAlchemer = options.postAlchemer ?? logAlchemerRequest((...args) => this.log(...args));
@@ -2729,7 +2761,174 @@ export class MemoryDataService implements DataService {
           };
         });
     },
+
+    startLiveAssemblyConsole: async (actorId, meetingId) => {
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const meeting = this.requireMeetingRow(s, meetingId);
+        assertMayRunLiveAssembly(actor, meeting as unknown as Meeting, `start the live console of meeting ${meetingId}`);
+        if (isMeetingLive(meeting as unknown as Meeting)) return;
+        // Lock the quorum base: the council's Active roster at the moment the meeting goes live.
+        const active = this.activeStatusId(s);
+        const roster = s.rows('Member').filter((m) => m.CouncilID === meeting.CouncilID && m.StatusID === active).length;
+        Object.assign(meeting, { IsLiveInProgress: 1, LiveQuorumRosterCount: roster });
+      });
+      return this.liveAssemblyState(s, actorId, meetingId);
+    },
+
+    advanceActiveAgendaItem: async (actorId, meetingId, itemName, allottedMinutes) => {
+      const item = cleanLiveAgendaItem(itemName, allottedMinutes);
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const meeting = this.requireMeetingRow(s, meetingId);
+        assertMayRunLiveAssembly(actor, meeting as unknown as Meeting, `set the agenda of meeting ${meetingId}`);
+        assertMeetingLive(meeting as unknown as Meeting, 'take a new agenda item');
+        Object.assign(meeting, {
+          ActiveAgendaItemName: item.name,
+          ActiveAgendaItemTimeRemaining: item.minutes,
+          ActiveAgendaItemStartedAt: toTimestamp(this.now()),
+        });
+      });
+      return this.liveAssemblyState(s, actorId, meetingId);
+    },
+
+    logLiveAttendanceOverride: async (actorId, meetingId, memberId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const meeting = this.requireMeetingRow(s, meetingId);
+        if (actorId !== memberId) assertMayRunLiveAssembly(actor, meeting as unknown as Meeting, `check member ${memberId} in to meeting ${meetingId}`);
+        assertMeetingLive(meeting as unknown as Meeting, 'take check-ins');
+        assertLiveParticipant(actorId === memberId ? actor : this.memberWriteActor(s, memberId), meeting as unknown as Meeting);
+        const existing = s.rows('LiveAttendance').find((a) => a.MeetingID === meetingId && a.MemberID === memberId);
+        if (existing) return { ...existing } as unknown as LiveAttendance;
+        // Checking in overrides whatever the member answered: the invitation reads Accepted and Attended.
+        const invite = s.rows('MeetingInvites').find((i) => i.MeetingID === meetingId && i.MemberID === memberId);
+        if (invite) Object.assign(invite, { Attended: 1, ResponseStatus: 'Accepted' });
+        else s.insert('MeetingInvites', { MeetingID: meetingId, MemberID: memberId, Attended: 1, ResponseStatus: 'Accepted' });
+        const row = s.insert('LiveAttendance', { CouncilID: meeting.CouncilID, MeetingID: meetingId, MemberID: memberId, CheckedInAt: toTimestamp(this.now()) });
+        return { ...row } as unknown as LiveAttendance;
+      });
+    },
+
+    launchSecretSmartphoneBallot: async (actorId, proposedMotionId) => {
+      const s = await this.ready();
+      const meetingId = s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const motion = s.rows('ProposedMotion').find((p) => p.id === proposedMotionId);
+        if (!motion) throw proposedMotionNotFound(proposedMotionId);
+        const meeting = this.requireMeetingRow(s, motion.TargetMeetingID as number);
+        assertMayRunLiveAssembly(actor, meeting as unknown as Meeting, `open the ballot on motion ${proposedMotionId}`);
+        assertMotionPending(motion as unknown as ProposedMotion, 'go to a ballot');
+        assertMeetingLive(meeting as unknown as Meeting, 'open a ballot');
+        assertBallotLaunchable(
+          motion as unknown as ProposedMotion,
+          s.rows('ProposedMotion').filter((p) => p.TargetMeetingID === meeting.id) as unknown as ProposedMotion[],
+        );
+        motion.BallotOpenedAt = toTimestamp(this.now());
+        return meeting.id as number;
+      });
+      return this.liveAssemblyState(s, actorId, meetingId);
+    },
+
+    castAnonymousMobileVote: async (actorId, councilId, motionId, selection) => {
+      const choice = assertBallotSelection(selection);
+      const hash = await sha256Hex(ballotHashInput(this.ballotSecret, motionId, actorId));
+      const s = await this.ready();
+      return s.transaction(() => {
+        const voter = this.memberWriteActor(s, actorId);
+        const motion = s.rows('ProposedMotion').find((p) => p.id === motionId && p.CouncilID === councilId);
+        if (!motion) throw proposedMotionNotFound(motionId);
+        const meeting = this.requireMeetingRow(s, motion.TargetMeetingID as number);
+        assertBallotOpen(motion as unknown as ProposedMotion);
+        assertLiveParticipant(voter, meeting as unknown as Meeting);
+        const checkedIn = s.rows('LiveAttendance').filter((a) => a.MeetingID === meeting.id);
+        assertCheckedIn(checkedIn.some((a) => a.MemberID === actorId), actorId, meeting.id as number);
+        if (s.rows('BallotVote').some((v) => v.ProposedMotionID === motionId && v.AnonymousBallotHash === hash)) throw ballotAlreadyCast(motionId);
+        s.insert('BallotVote', { CouncilID: councilId, ProposedMotionID: motionId, AnonymousBallotHash: hash, VoteSelection: choice, CastAt: toTimestamp(this.now()) });
+        const votes = s.rows('BallotVote').filter((v) => v.ProposedMotionID === motionId) as unknown as BallotVote[];
+        return tallyBallots(motionId, votes, checkedIn.length);
+      });
+    },
+
+    finalizeProposedMotionVote: async (actorId, motionId, resultStatus) => {
+      const result = assertFinalMotionResult(resultStatus);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const motion = s.rows('ProposedMotion').find((p) => p.id === motionId);
+        if (!motion) throw proposedMotionNotFound(motionId);
+        const meeting = this.requireMeetingRow(s, motion.TargetMeetingID as number);
+        assertMayRunLiveAssembly(actor, meeting as unknown as Meeting, `decide motion ${motionId}`);
+        assertMotionPending(motion as unknown as ProposedMotion, 'be decided again');
+        const votes = s.rows('BallotVote').filter((v) => v.ProposedMotionID === motionId) as unknown as BallotVote[];
+        const eligible = s.rows('LiveAttendance').filter((a) => a.MeetingID === meeting.id).length;
+        const tally = tallyBallots(motionId, votes, eligible);
+        assertResultMatchesTally(result, tally, motion.BallotOpenedAt != null);
+        motion.VoteResult = result;
+        let charitableRequest: CharitableRequest | null = null;
+        if (motion.SourceType === 'CharitableRequest' && motion.SourceRecordID != null) {
+          const request = s.rows('CharitableRequest').find((r) => r.id === motion.SourceRecordID);
+          if (request) {
+            const outcome = charitableVoteOutcome(result, request as unknown as CharitableRequest);
+            if (outcome) Object.assign(request, outcome);
+            charitableRequest = { ...request } as unknown as CharitableRequest;
+          }
+        }
+        return { motion: { ...motion } as unknown as ProposedMotion, tally, charitableRequest };
+      });
+    },
+
+    getLiveAssemblyState: async (actorId, meetingId) => {
+      const s = await this.ready();
+      assertMayFollowLiveAssembly(this.memberWriteActor(s, actorId), this.requireMeetingRow(s, meetingId) as unknown as Meeting);
+      return this.liveAssemblyState(s, actorId, meetingId);
+    },
+
+    closeLiveAssemblyConsole: async (actorId, meetingId) => {
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const meeting = this.requireMeetingRow(s, meetingId);
+        assertMayRunLiveAssembly(actor, meeting as unknown as Meeting, `close the live console of meeting ${meetingId}`);
+        if (!isMeetingLive(meeting as unknown as Meeting)) return;
+        assertNoBallotOpen(meetingId, s.rows('ProposedMotion').filter((p) => p.TargetMeetingID === meetingId) as unknown as ProposedMotion[]);
+        Object.assign(meeting, { IsLiveInProgress: 0, ActiveAgendaItemName: null, ActiveAgendaItemTimeRemaining: null, ActiveAgendaItemStartedAt: null });
+      });
+      return this.liveAssemblyState(s, actorId, meetingId);
+    },
   };
+
+  /** A meeting row of the store (inside a transaction, its working copy); an unknown id rejects MEETING_NOT_FOUND. */
+  private requireMeetingRow(s: MemoryStore, meetingId: number): Row {
+    const row = s.rows('Meeting').find((m) => m.id === meetingId);
+    if (!row) throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
+    return row as Row;
+  }
+
+  /** LiveAssemblyState for `viewerId`, who has voted on a motion when one of its ballots carries the viewer's hash. */
+  private async liveAssemblyState(s: MemoryStore, viewerId: number, meetingId: number): Promise<LiveAssemblyState> {
+    const meeting = { ...this.requireMeetingRow(s, meetingId) } as unknown as Meeting;
+    const motions = s.rows('ProposedMotion').filter((p) => p.TargetMeetingID === meetingId).map((p) => ({ ...p })) as unknown as ProposedMotion[];
+    const motionIds = new Set(motions.map((m) => m.id));
+    const votes = s.rows('BallotVote').filter((v) => motionIds.has(v.ProposedMotionID as number)).map((v) => ({ ...v })) as unknown as BallotVote[];
+    const voted = new Set<number>();
+    for (const m of motions) {
+      const hash = await sha256Hex(ballotHashInput(this.ballotSecret, m.id, viewerId));
+      if (votes.some((v) => v.ProposedMotionID === m.id && v.AnonymousBallotHash === hash)) voted.add(m.id);
+    }
+    return buildLiveAssemblyState({
+      meeting,
+      motions,
+      votes,
+      checkedInMemberIds: s.rows('LiveAttendance').filter((a) => a.MeetingID === meetingId).map((a) => a.MemberID as number),
+      viewerId,
+      viewerVotedMotionIds: voted,
+      now: this.now(),
+    });
+  }
 
   /** A CouncilMeetingType of `councilId`; another council's type or an unknown id rejects INVALID_INPUT. */
   private requireCouncilMeetingType(s: MemoryStore, councilId: number, meetingTypeId: number): Row {
@@ -3373,6 +3572,17 @@ export class MemoryDataService implements DataService {
       );
     },
 
+    listApprovedFundingQueue: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayAuditCouncilExpenses(this.memberWriteActor(s, actorId), councilId, `read the charitable funding queue of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return s
+        .rows('CharitableRequest')
+        .filter((r) => r.CouncilID === councilId && r.VoteStatus === 'Approved' && r.PaymentOrderId == null)
+        .sort((a, b) => (a.id as number) - (b.id as number))
+        .map((r) => ({ ...r }) as unknown as CharitableRequest);
+    },
+
     listCharitableRequestsQueue: async (actorId, councilId) => {
       const s = await this.ready();
       assertMayVetCharitableRequests(this.memberWriteActor(s, actorId), councilId, `read the charitable request queue of council ${councilId}`);
@@ -3810,7 +4020,10 @@ export class MemoryDataService implements DataService {
       const account = this.glAccount(s, glAccountId);
       if (!account) throw glAccountNotFound(glAccountId);
       assertMayReadGeneralLedger(actor, account.CouncilID, `read the ledger of account ${glAccountId}`);
-      return buildAccountLedger(account, this.glAccounts(s, account.CouncilID), this.journalEntries(s, account.CouncilID));
+      const entries = this.journalEntries(s, account.CouncilID);
+      const linked = new Set(entries.map((e) => e.LinkedEventID).filter((id): id is number => id != null));
+      const eventNames = new Map(s.rows('Event').filter((e) => linked.has(e.id as number)).map((e) => [e.id as number, e.EventName as string]));
+      return buildAccountLedger(account, this.glAccounts(s, account.CouncilID), entries, eventNames);
     },
 
     uploadBankStatementReconciliation: async (actorId, csvFileData, options = {}) => {

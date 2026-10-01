@@ -300,6 +300,16 @@ export interface Meeting {
    * at once. populateAnnualCadence sets it CADENCE_INVITE_LEAD_DAYS before Date.
    */
   InviteReleaseDate?: string | null;
+  /** VARCHAR(255) (Sprint 5Z-9): the agenda topic on the live console's center bar; null when none. */
+  ActiveAgendaItemName?: string | null;
+  /** Sprint 5Z-9: the minutes allotted to the active agenda item when it was pushed. */
+  ActiveAgendaItemTimeRemaining?: number | null;
+  /** BIT (Sprint 5Z-9): the meeting is being run live from the console. Default 0. */
+  IsLiveInProgress?: number;
+  /** DATETIME (Sprint 5Z-9): when the active agenda item began, so every phone counts down from the same moment. */
+  ActiveAgendaItemStartedAt?: string | null;
+  /** Sprint 5Z-9: the council's Active roster count, locked when the live console started (the quorum base). */
+  LiveQuorumRosterCount?: number | null;
 }
 
 /** An invitee's RSVP (Sprint 5Y-5); see MEETING_RESPONSE_STATUSES. */
@@ -363,6 +373,33 @@ export interface ProposedMotion {
   PresenterMemberID: number;
   AllocatedMinutes: number; // default 5
   VoteResult: ProposedMotionVoteResult; // default 'Pending'
+  /** DATETIME (Sprint 5Z-9): when its smartphone ballot opened; open while VoteResult is still 'Pending'. */
+  BallotOpenedAt?: string | null;
+}
+
+/** A member checked in to a live meeting (Sprint 5Z-9); one row per meeting and member. */
+export interface LiveAttendance {
+  id: number;
+  CouncilID: number;
+  MeetingID: number;
+  MemberID: number;
+  CheckedInAt: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+/** A secret ballot's choice (Sprint 5Z-9); see BALLOT_SELECTIONS. */
+export type BallotSelection = 'Approve' | 'Deny' | 'Abstain';
+
+/**
+ * One secret ballot (Sprint 5Z-9). The row never names its voter: AnonymousBallotHash is a keyed SHA-256 of the motion and
+ * the voter under a secret kept outside the database, unique per motion so nobody votes twice.
+ */
+export interface BallotVote {
+  id: number;
+  CouncilID: number;
+  ProposedMotionID: number;
+  AnonymousBallotHash: string; // VARCHAR(255), 64 hex characters
+  VoteSelection: BallotSelection;
+  CastAt: string; // DATETIME
 }
 
 

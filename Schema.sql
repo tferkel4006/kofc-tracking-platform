@@ -1731,3 +1731,81 @@ ALTER TABLE [JournalEntry] ADD [TransactionID] VARCHAR(50) NOT NULL;
 GO
 CREATE INDEX [JournalEntry_Transaction_Idx] ON [JournalEntry] ([TransactionID]);
 GO
+
+-- =========================================================================
+-- Sprint 5Z-9: LIVE MEETING MANAGEMENT AND SMARTPHONE BALLOTING
+-- A meeting's chair runs it live from the console: IsLiveInProgress marks it under way, ActiveAgendaItemName and
+-- ActiveAgendaItemTimeRemaining (the minutes allotted to the item) are the topic on the center bar, and
+-- ActiveAgendaItemStartedAt is when that item began, so every phone counts down from the same moment.
+-- LiveQuorumRosterCount locks the council's Active roster count when the console starts, for the quorum check.
+-- LiveAttendance is the live check-in roster (one row per member and meeting): a member checked in may vote whatever
+-- they answered to the invitation. ProposedMotion.BallotOpenedAt marks a motion's smartphone ballot open (while its
+-- VoteResult is still 'Pending'). BallotVote holds the secret ballots: AnonymousBallotHash is a keyed SHA-256 of the
+-- motion and the voter under a secret kept outside the database, so the table never names a voter yet a second vote
+-- from the same member collides on the unique index. VoteSelection is 'Approve', 'Deny' or 'Abstain'
+-- (BALLOT_SELECTIONS; rules layer, no CHECK).
+-- =========================================================================
+ALTER TABLE [Meeting] ADD [ActiveAgendaItemName] VARCHAR(255) NULL;
+GO
+ALTER TABLE [Meeting] ADD [ActiveAgendaItemTimeRemaining] INTEGER NULL;
+GO
+ALTER TABLE [Meeting] ADD [IsLiveInProgress] BIT NOT NULL DEFAULT 0;
+GO
+ALTER TABLE [Meeting] ADD [ActiveAgendaItemStartedAt] DATETIME NULL;
+GO
+ALTER TABLE [Meeting] ADD [LiveQuorumRosterCount] INTEGER NULL;
+GO
+ALTER TABLE [ProposedMotion] ADD [BallotOpenedAt] DATETIME NULL;
+GO
+
+CREATE TABLE [LiveAttendance] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[MeetingID] INTEGER NOT NULL,
+	[MemberID] INTEGER NOT NULL,
+	[CheckedInAt] DATETIME NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [BallotVote] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[ProposedMotionID] INTEGER NOT NULL,
+	[AnonymousBallotHash] VARCHAR(255) NOT NULL,
+	[VoteSelection] VARCHAR(50) NOT NULL,
+	[CastAt] DATETIME NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [LiveAttendance]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [LiveAttendance]
+ADD FOREIGN KEY([MeetingID])
+REFERENCES [Meeting]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [LiveAttendance]
+ADD FOREIGN KEY([MemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [BallotVote]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [BallotVote]
+ADD FOREIGN KEY([ProposedMotionID])
+REFERENCES [ProposedMotion]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [LiveAttendance_Meeting_Member_Idx] ON [LiveAttendance] ([MeetingID], [MemberID]);
+GO
+CREATE UNIQUE INDEX [BallotVote_Motion_Hash_Idx] ON [BallotVote] ([ProposedMotionID], [AnonymousBallotHash]);
+GO

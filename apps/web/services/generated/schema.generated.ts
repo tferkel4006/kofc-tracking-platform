@@ -625,6 +625,44 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "ActiveAgendaItemName",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ActiveAgendaItemTimeRemaining",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "IsLiveInProgress",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "ActiveAgendaItemStartedAt",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "LiveQuorumRosterCount",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -4094,6 +4132,13 @@ export const TABLES: Record<string, TableMeta> = {
           "kind": "literal",
           "value": "Pending"
         }
+      },
+      {
+        "name": "BallotOpenedAt",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -4317,6 +4362,138 @@ export const TABLES: Record<string, TableMeta> = {
       }
     ],
     "uniqueKeys": []
+  },
+  "LiveAttendance": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "MeetingID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "MemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "CheckedInAt",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "MeetingID",
+        "refTable": "Meeting",
+        "refColumn": "id"
+      },
+      {
+        "column": "MemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "MeetingID",
+        "MemberID"
+      ]
+    ]
+  },
+  "BallotVote": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ProposedMotionID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "AnonymousBallotHash",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "VoteSelection",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "CastAt",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "ProposedMotionID",
+        "refTable": "ProposedMotion",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "ProposedMotionID",
+        "AnonymousBallotHash"
+      ]
+    ]
   }
 };
 

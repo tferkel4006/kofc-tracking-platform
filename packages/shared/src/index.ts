@@ -21,3 +21,4 @@ export * from './charities';
 export * from './budget';
 export * from './meetings';
 export * from './finance';
+export * from './assembly';
