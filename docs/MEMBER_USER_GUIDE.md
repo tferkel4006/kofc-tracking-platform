@@ -315,7 +315,7 @@ If you don't pin an event, donations are recorded as **standalone** (not linked 
 
 ### 8.3 If the QR code does not appear
 
-The Venmo, Zelle, Zeffy and ParishSoft codes come with the app, so they always appear. These messages apply only to another QR method your council adds:
+Venmo, Zelle, Zeffy and ParishSoft always show a code: your council's own, or the one that comes with the app if your council has not added one or it cannot be loaded. These messages apply only to another QR method your council adds:
 
 - *"Your council has not uploaded this QR code yet."* An Admin or finance officer needs to add the code's image link under **Council Lookup Tables → Enabled donation methods**.
 - *"The QR code could not be loaded."* The phone may be offline, or the link may be broken.

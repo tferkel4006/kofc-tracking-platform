@@ -11,8 +11,8 @@
 //     something different, then records it or cancels.
 // While a session is running, the event's donations from every phone are listed, newest first.
 // Sprint 5Z-Mobile-Intake: tapping Venmo, ParishSoft, Zeffy or Zelle opens a full-screen pop-up with only that channel's
-// code, bundled with the app (components/CollectionQrModal.tsx); the council's uploaded code is shown only for a QR
-// method the app carries no image for.
+// code (components/CollectionQrModal.tsx): the council's uploaded code first, else the one bundled with the app
+// (Sprint 5Z-WhiteLabel). A QR method the app carries no image for shows the council's code inline (DonationQr).
 // Sprint 5Z-10 high-speed gate intake: the pinned-event card carries the '🎬 Start Active Intake Session' switch
 // (events.setIntakeSessionStatus). While the event's intake is Active, a full-screen overlay offers two one-tap targets,
 // cash and card, that log a donation at a preset amount with nothing typed (components/GateIntake.tsx).
@@ -157,7 +157,7 @@ function DonationForm({
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Venmo, ParishSoft, Zeffy and Zelle open their own bundled code full screen as soon as the tile is tapped.
+  // Venmo, ParishSoft, Zeffy and Zelle open their code full screen as soon as the tile is tapped.
   const bundledQr = option.kind === 'qr' ? collectionQrFor(option.method.DonationMethod) : null;
   const [qrOpen, setQrOpen] = useState(bundledQr !== null);
 
@@ -182,7 +182,13 @@ function DonationForm({
     <View style={{ gap: space.lg }}>
       {bundledQr ? (
         <>
-          <CollectionQrModal methodName={option.method.DonationMethod} source={bundledQr} visible={qrOpen} onClose={() => setQrOpen(false)} />
+          <CollectionQrModal
+            methodName={option.method.DonationMethod}
+            uploadedUrl={option.qrCodeUrl}
+            fallback={bundledQr}
+            visible={qrOpen}
+            onClose={() => setQrOpen(false)}
+          />
           <Button title={`Show the ${option.method.DonationMethod} QR code`} variant="secondary" onPress={() => setQrOpen(true)} />
         </>
       ) : option.kind === 'qr' ? (

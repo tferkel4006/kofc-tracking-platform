@@ -1,10 +1,13 @@
-// The four electronic collection channels' QR codes, bundled with the app (Sprint 5Z-Mobile-Intake). Tapping Venmo,
-// ParishSoft, Zeffy or Zelle on the Donate screen opens a full-screen pop-up showing only that channel's code, so the
-// donor scans exactly one. The images live in apps/mobile/assets/images/qr/; replace a file under the same name to
-// change a code.
+// The four electronic collection channels' QR codes (Sprint 5Z-Mobile-Intake). Tapping Venmo, ParishSoft, Zeffy or Zelle
+// on the Donate screen opens a full-screen pop-up showing only that channel's code, so the donor scans exactly one.
+// Sprint 5Z-WhiteLabel: the council's own uploaded code (CouncilDonationOption.qrCodeUrl) comes first; when it is
+// missing, blank, a placeholder:// link, or fails to load, the code bundled with the app from
+// apps/mobile/assets/images/qr/ is shown instead.
+import { useState } from 'react';
 import type { ImageSourcePropType } from 'react-native';
 import { Image, Modal, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { isLoadableQrUrl } from '@/components/DonationQr';
 import { AppText, Button } from '@/components/ui';
 import { color, radius, space } from '@/lib/theme';
 import parishsoftQr from '../assets/images/qr/parishsoft-collection.png';
@@ -25,16 +28,23 @@ export const collectionQrFor = (methodName: string): ImageSourcePropType | null 
 
 export function CollectionQrModal({
   methodName,
-  source,
+  uploadedUrl,
+  fallback,
   visible,
   onClose,
 }: {
   methodName: string;
-  source: ImageSourcePropType;
+  /** The council's uploaded code for this channel, shown first when the phone can load it. */
+  uploadedUrl: string | null;
+  /** The code bundled with the app, shown when the council has none or it fails to load. */
+  fallback: ImageSourcePropType;
   visible: boolean;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const [uploadFailed, setUploadFailed] = useState(false);
+  const useUpload = isLoadableQrUrl(uploadedUrl) && !uploadFailed;
+  const source: ImageSourcePropType = useUpload ? { uri: uploadedUrl.trim() } : fallback;
   return (
     <Modal visible={visible} animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
       <View
@@ -53,7 +63,11 @@ export function CollectionQrModal({
           Scan to pay with {methodName}
         </AppText>
         <View style={{ width: '100%', maxWidth: 420, padding: space.md, borderWidth: 6, borderColor: color.gold, borderRadius: radius.md }}>
-          <Image source={source} accessibilityLabel={`${methodName} QR code for the donor to scan`} resizeMode="contain" style={{ width: '100%', aspectRatio: 1 }} />
+          <Image
+            key={useUpload ? 'uploaded' : 'bundled'}
+            source={source}
+            onError={useUpload ? () => setUploadFailed(true) : undefined}
+            accessibilityLabel={`${methodName} QR code for the donor to scan`} resizeMode="contain" style={{ width: '100%', aspectRatio: 1 }} />
         </View>
         <AppText tone="muted" style={{ textAlign: 'center' }}>
           Turn the phone toward the donor. When they show you the payment confirmation, close this and record the amount.

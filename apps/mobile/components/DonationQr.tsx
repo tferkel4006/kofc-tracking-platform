@@ -9,9 +9,12 @@ import { color, radius, space } from '@/lib/theme';
 
 const LOADABLE = /^(https?:|data:image\/|file:)/i;
 
+/** True when a council's QR link is one the phone can load: not null, blank or a dev-seed placeholder:// link. */
+export const isLoadableQrUrl = (url: string | null): url is string => url !== null && LOADABLE.test(url.trim());
+
 export function DonationQr({ url, methodName }: { url: string | null; methodName: string }) {
   const [failed, setFailed] = useState(false);
-  const usable = url !== null && LOADABLE.test(url) && !failed;
+  const usable = isLoadableQrUrl(url) && !failed;
 
   return (
     <View
