@@ -7,7 +7,10 @@
 // rows already scoped to one council, call these, then only store. Who may act
 // is decided in rules.ts (assertMayReadGeneralLedger, assertMayPostGeneralLedger).
 // =========================================================================
+import { currentFraternalYear, fraternalYearBounds } from './budget';
 import type {
+  AccountLedger,
+  AccountLedgerRow,
   AssetTransferOptions,
   BalanceSheet,
   BalanceSheetLine,
@@ -18,6 +21,7 @@ import type {
   ChartOfAccounts,
   ChartOfAccountsNode,
   JournalLineInput,
+  LiquidityGauge,
 } from './contract';
 import { CHECK_NUMBER_MAX_LENGTH } from './expenses';
 import { toTimestamp } from './messaging';
@@ -329,6 +333,17 @@ export function buildBalanceSheet(councilId: number, accounts: readonly GLAccoun
   const equityTotal = equity.cents + surplus;
   const right = liabilities.cents + equityTotal;
   const strip = ({ lines, total }: BalanceSheetSection) => ({ lines, total });
+  // The year-to-date surplus: revenue less expenses posted since the current fraternal year's July 1 (local calendar).
+  const fraternalYear = currentFraternalYear(now);
+  const yearOpens = fraternalYearBounds(fraternalYear).fromDate;
+  const typeOf = new Map(accounts.map((a) => [a.id, a.AccountType]));
+  let ytd = 0;
+  for (const e of entries) {
+    const type = typeOf.get(e.GLAccountID);
+    if (e.DateLogged.slice(0, 10) < yearOpens || (type !== 'Revenue' && type !== 'Expense')) continue;
+    // Credits raise revenue and debits raise expenses, so credits less debits is the surplus either way.
+    ytd += cents(e.CreditAmount) - cents(e.DebitAmount);
+  }
   return {
     councilId,
     asOf: toTimestamp(now),
@@ -338,6 +353,9 @@ export function buildBalanceSheet(councilId: number, accounts: readonly GLAccoun
     revenue: strip(revenue),
     expenses: strip(expenses),
     netSurplus: dollars(surplus),
+    fraternalYear,
+    yearToDateSurplus: dollars(ytd),
+    priorYearsSurplus: dollars(surplus - ytd),
     totalAssets: assets.total,
     totalLiabilities: liabilities.total,
     totalEquity: dollars(equityTotal),
@@ -347,6 +365,91 @@ export function buildBalanceSheet(councilId: number, accounts: readonly GLAccoun
     entryCount: entries.length,
   };
 }
+
+/** Ledger order: DateLogged, then id. */
+const compareEntries = (a: JournalEntry, b: JournalEntry): number => a.DateLogged.localeCompare(b.DateLogged) || a.id - b.id;
+
+/**
+ * finance.getAccountLedger: every line on `account`, oldest first, with the running normal-side balance and every line
+ * of the posting it belongs to. `accounts` and `entries` are the account's whole council, so the other lines of each
+ * posting can be named.
+ */
+export function buildAccountLedger(account: GLAccount, accounts: readonly GLAccount[], entries: readonly JournalEntry[]): AccountLedger {
+  const names = new Map(accounts.map((a) => [a.id, a.AccountName]));
+  const byTransaction = new Map<string, JournalEntry[]>();
+  for (const e of [...entries].sort((a, b) => a.id - b.id)) byTransaction.set(e.TransactionID, [...(byTransaction.get(e.TransactionID) ?? []), e]);
+  const debitNormal = isDebitNormal(account.AccountType);
+  let running = 0;
+  let debits = 0;
+  let credits = 0;
+  const rows: AccountLedgerRow[] = [];
+  for (const e of entries.filter((x) => x.GLAccountID === account.id).sort(compareEntries)) {
+    debits += cents(e.DebitAmount);
+    credits += cents(e.CreditAmount);
+    running += debitNormal ? cents(e.DebitAmount) - cents(e.CreditAmount) : cents(e.CreditAmount) - cents(e.DebitAmount);
+    rows.push({
+      entry: { ...e },
+      runningBalance: dollars(running),
+      transactionLines: (byTransaction.get(e.TransactionID) ?? [e]).map((line) => ({
+        entry: { ...line },
+        accountName: names.get(line.GLAccountID) ?? `Account ${line.GLAccountID}`,
+      })),
+    });
+  }
+  return { account: { ...account }, balance: dollars(running), debitTotal: dollars(debits), creditTotal: dollars(credits), rows };
+}
+
+/**
+ * The dashboard's liquidity gauges (Sprint 5Z-8): one per bank account (a non-virtual Asset account) that has virtual
+ * goals inside it, in chart order. Goals nest under their bank account in the chart, so this reads the tree
+ * listChartOfAccounts returns; no account name is assumed.
+ */
+export function buildLiquidityGauges(chart: ChartOfAccounts): LiquidityGauge[] {
+  const gauges: LiquidityGauge[] = [];
+  const visit = (node: ChartOfAccountsNode) => {
+    const goals = node.children.filter((c) => c.account.IsVirtualGoal === 1);
+    if (isBankAccount(node.account) && goals.length) {
+      const reserved = goals.reduce((sum, g) => sum + cents(g.rolledUpBalance), 0);
+      gauges.push({
+        account: { ...node.account },
+        totalCash: node.rolledUpBalance,
+        reserved: dollars(reserved),
+        liquid: dollars(cents(node.rolledUpBalance) - reserved),
+        goals: goals.map((g) => ({
+          account: { ...g.account },
+          balance: g.rolledUpBalance,
+          target: g.account.TargetGoalAmount,
+          percentFunded: cents(g.account.TargetGoalAmount) > 0 ? Math.round((cents(g.rolledUpBalance) / cents(g.account.TargetGoalAmount)) * 1000) / 10 : null,
+        })),
+      });
+    }
+    node.children.forEach(visit);
+  };
+  chart.accounts.forEach(visit);
+  return gauges;
+}
+
+/**
+ * A fresh TransactionID (Sprint 5Z-8): an RFC 4122 version 4 UUID from 16 random bytes. Each driver supplies the bytes
+ * from its platform's secure generator (Web Crypto in the browser, expo-crypto on the phone).
+ */
+export function formatTransactionId(bytes: Uint8Array): string {
+  if (bytes.length < 16) throw new Error(`A transaction id needs 16 random bytes; received ${bytes.length}.`);
+  const b = Array.from(bytes.slice(0, 16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const hex = b.map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** Each account type's heading on the ledger spreadsheet and the balance sheet. */
+export const GL_ACCOUNT_TYPE_LABELS: Record<GLAccountType, string> = {
+  Asset: 'Assets',
+  Liability: 'Liabilities',
+  Equity: 'Equity',
+  Revenue: 'Revenue',
+  Expense: 'Expenses',
+};
 
 // ---- bank statement reconciliation --------------------------------------------------
 
@@ -551,3 +654,6 @@ export function matchBankStatement(
     unmatched: rows.filter((r) => misses.has(r)).map((row) => ({ row, reason: misses.get(row)! })),
   };
 }
+
+export const glAccountNotFound = (accountId: number): BusinessRuleError =>
+  new BusinessRuleError('RECORD_NOT_FOUND', `General ledger account ${accountId} does not exist.`, { table: 'GLAccount', id: accountId });

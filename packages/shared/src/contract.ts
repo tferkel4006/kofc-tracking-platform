@@ -1327,6 +1327,12 @@ export interface BalanceSheet {
   expenses: BalanceSheetSection;
   /** revenue.total - expenses.total. */
   netSurplus: number;
+  /** Sprint 5Z-8: the fraternal year (July through June) the year-to-date figure covers, e.g. '2026-2027'. */
+  fraternalYear: string;
+  /** Sprint 5Z-8: the part of netSurplus from entries dated in the current fraternal year (from its July 1). */
+  yearToDateSurplus: number;
+  /** Sprint 5Z-8: the rest of netSurplus, from entries dated before that July 1. */
+  priorYearsSurplus: number;
   totalAssets: number;
   totalLiabilities: number;
   /** equity.total + netSurplus. */
@@ -1367,6 +1373,55 @@ export interface BankReconciliationMatch {
 export interface BankReconciliationMiss {
   row: BankStatementRow;
   reason: string;
+}
+
+/** Another line of the same posting, beside an account ledger row (Sprint 5Z-8). */
+export interface JournalCounterLine {
+  entry: JournalEntry;
+  accountName: string;
+}
+
+/** One line on an account, with the account's balance after it and the posting it belongs to (Sprint 5Z-8). */
+export interface AccountLedgerRow {
+  entry: JournalEntry;
+  /** The account's normal-side balance once this line is counted, to the cent. */
+  runningBalance: number;
+  /** Every line of the posting (TransactionID), this one included, in id order. */
+  transactionLines: JournalCounterLine[];
+}
+
+/** finance.getAccountLedger (Sprint 5Z-8): every line ever posted to one account, oldest first. */
+export interface AccountLedger {
+  account: GLAccount;
+  balance: number;
+  debitTotal: number;
+  creditTotal: number;
+  rows: AccountLedgerRow[];
+}
+
+/** A virtual goal inside a liquidity gauge (Sprint 5Z-8). */
+export interface LiquidityGoal {
+  account: GLAccount;
+  /** What the goal holds now (its rolled-up balance). */
+  balance: number;
+  target: number;
+  /** balance as a share of target, 0-100 to one decimal; null without a target. */
+  percentFunded: number | null;
+}
+
+/**
+ * A bank account with virtual goals carved out of it (buildLiquidityGauges, Sprint 5Z-8): the cash the bank holds,
+ * what the goals reserve, and what is truly free to spend.
+ */
+export interface LiquidityGauge {
+  account: GLAccount;
+  /** The bank's figure: the account's own balance plus every goal inside it. */
+  totalCash: number;
+  /** The goals' balances together. */
+  reserved: number;
+  /** totalCash - reserved: true liquid operating cash. Negative when the goals hold more than the bank. */
+  liquid: number;
+  goals: LiquidityGoal[];
 }
 
 export interface BankReconciliationResult {
@@ -2371,6 +2426,7 @@ export interface DataService {
     listChartOfAccounts(actorId: number, councilId: number): Promise<ChartOfAccounts>;
     /**
      * Posts one balanced transaction atomically and resolves to its stored lines, in the order given (cleanJournalLines).
+     * Since Sprint 5Z-8 every line carries the same freshly generated TransactionID (a UUID), as do a transfer's two.
      * Rejects INVALID_INPUT for fewer than two lines or more than JOURNAL_MAX_LINES, a line with both or neither amount,
      * an amount below 0 or with fractions of a cent, a blank or over-long description or check number, a malformed
      * date, an unknown account, accounts of more than one council, or a linked event or meeting outside that council;
@@ -2396,6 +2452,13 @@ export interface DataService {
      * against liabilities plus equity and the current surplus, compared to the penny.
      */
     getLatestBalanceSheet(actorId: number, councilId: number): Promise<BalanceSheet>;
+    /**
+     * Sprint 5Z-8: every line posted to one account, oldest first (by DateLogged, then id), each with the account's
+     * running balance and every line of its posting (buildAccountLedger) - the ledger spreadsheet's drill-down. Read by
+     * whoever reads the account's council books (assertMayReadGeneralLedger). Rejects RECORD_NOT_FOUND for an unknown
+     * account.
+     */
+    getAccountLedger(actorId: number, glAccountId: number): Promise<AccountLedger>;
     /**
      * Reads a bank statement CSV (parseBankStatementCsv) and flags each journal entry it matches IsBankReconciled, in
      * one transaction (matchBankStatement). A deposit matches a debit of the same amount and a withdrawal a credit,

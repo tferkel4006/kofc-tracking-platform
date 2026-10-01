@@ -34,6 +34,7 @@ describe('web theme matches the shared brand tokens', () => {
     ['color-white', BRAND.white],
     ['color-muted', BRAND.muted],
     ['color-line', BRAND.line],
+    ['color-green', BRAND.green],
   ])('--%s is %s', (name, expected) => {
     expect(token(name)?.toUpperCase()).toBe(expected.toUpperCase());
   });

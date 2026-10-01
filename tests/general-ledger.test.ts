@@ -27,7 +27,8 @@ import { drivers, expectRule, MEMBER, NOW, type DriverUnderTest } from './helper
 import { openDatabases } from './shims/expo-sqlite';
 
 // Dev seed: council 1 is 15295 (Super Admin 1 who is Grand Knight, Admin 2 who is Financial Secretary, Member 3);
-// council 2 exists. Seed.sql's baseline gives council 1 its chart of accounts, GLAccount ids 1-14.
+// council 2 exists. Seed.sql's baseline gives council 1 its chart of accounts, GLAccount ids 1-14, and since
+// Sprint 5Z-8 Opening Balance Equity (15).
 const OWN = 1;
 const OTHER = 2;
 const ACCT = {
@@ -45,6 +46,7 @@ const ACCT = {
   eventCosts: 12,
   councilCosts: 13,
   supreme: 14,
+  openingEquity: 15,
 } as const;
 
 const code = (fn: () => unknown): string | undefined => {
@@ -79,6 +81,7 @@ const entry = (over: Partial<JournalEntry> = {}): JournalEntry => ({
   LinkedMeetingID: null,
   IsBankReconciled: 0,
   CheckNumber: null,
+  TransactionID: 'txn-1',
   ...over,
 });
 
@@ -302,6 +305,7 @@ describe.each(drivers)('general ledger ($name driver)', (d) => {
       'General Savings',
       'Charity Savings',
       'Physical Assets',
+      'Opening Balance Equity',
       'Member Dues Collections',
       'Parking Fundraising',
       'General Fundraising',
@@ -316,6 +320,8 @@ describe.each(drivers)('general ledger ($name driver)', (d) => {
       [ACCT.goal1, 1, ACCT.checking],
       [ACCT.goal2, 1, ACCT.checking],
     ]);
+    // Sprint 5Z-8 targets.
+    expect(checking.children.map((c) => c.account.TargetGoalAmount)).toEqual([4000, 1500]);
     expect(names(chart.accounts.filter((n) => n.rolledUpBalance !== 0))).toEqual([]);
     expect(d.count(db, 'JournalEntry')).toBe(0);
     expect((await db.finance.listChartOfAccounts(MEMBER.superAdmin, OTHER)).accounts).toEqual([]);

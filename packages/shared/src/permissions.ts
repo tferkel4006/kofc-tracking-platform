@@ -52,6 +52,9 @@ export type PortalArea =
   | 'lessons-registry'
   | 'donations'
   | 'dashboard'
+  | 'finance/dashboard'
+  | 'finance/ledger'
+  | 'finance/balance-sheet'
   | 'supreme-sync'
   | 'financials/budget'
   | 'messages'
@@ -387,6 +390,19 @@ export const canFinalizeBudgetYear = (
  */
 export const canReviewBudgetPerformance = (u: Actor, councilId: number): boolean => canViewExecutiveDashboard(u, councilId);
 
+/**
+ * The general ledger screens (Sprint 5Z-8: /finance/dashboard, /finance/ledger, /finance/balance-sheet), mirroring
+ * assertMayReadGeneralLedger: the executive dashboard's readers - the council's Admins and seated officers - and any Super
+ * Admin.
+ */
+export const canReadGeneralLedger = (u: Actor, councilId: number): boolean => canViewExecutiveDashboard(u, councilId);
+
+/**
+ * Posting to the general ledger, transferring between its accounts and uploading bank statements (Sprint 5Z-8 quick
+ * actions), mirroring assertMayPostGeneralLedger: the council's Financial Secretary and Treasurer, and any Super Admin.
+ */
+export const canPostGeneralLedger = (u: Actor, councilId: number): boolean => isSuperAdmin(u) || (isFinanceOfficer(u) && u.councilId === councilId);
+
 /** Reading the annual budget, mirroring assertMayViewBudgetForecast (Sprint 5Y-3): every member of the council, any Super Admin. */
 export const canViewBudgetForecast = (u: Actor, councilId: number): boolean => isSuperAdmin(u) || u.councilId === councilId;
 
@@ -428,6 +444,8 @@ export function portalAreas(u: Actor): PortalArea[] {
   if (canManageCharityRegistry(u)) areas.push('charities/registry');
   // Sprint 5Z-2.5: every officer of the council reads the executive summaries, as on the Pooled Vetting Desk.
   if (isAdmin(u) || canViewExecutiveDashboard(u, u.councilId)) areas.push('dashboard');
+  // Sprint 5Z-8: the general ledger screens have the dashboard's audience (canReadGeneralLedger); posting is gated inside.
+  if (isAdmin(u) || canReadGeneralLedger(u, u.councilId)) areas.push('finance/dashboard', 'finance/ledger', 'finance/balance-sheet');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('supreme-sync');
   // Every member may read the council's annual budget (Sprint 5Y-3 transparency); canManageBudgetForecast decides editing.
   areas.push('financials/budget');
@@ -459,7 +477,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
     collapsible: true,
     items: ['calendar', 'activities', 'members', 'events', 'meetings', 'meetings/cadence', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
   },
-  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'expenses/disbursements', 'charities/vetting', 'charities/queue', 'financials/budget'] },
+  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'donations', 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'expenses/disbursements', 'charities/vetting', 'charities/queue', 'financials/budget'] },
   { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'] },
 ];
 

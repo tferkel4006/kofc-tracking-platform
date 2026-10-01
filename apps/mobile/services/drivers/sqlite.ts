@@ -1,6 +1,7 @@
 // SQLite driver for the mobile app (expo-sqlite).
 // The schema and seed statements are generated from Schema.sql / Seed.sql by
 // scripts/gen-db-assets.mjs. Nothing outside /services may import this file.
+import * as Crypto from 'expo-crypto';
 import * as SQLite from 'expo-sqlite';
 import {
   ACTIVITY_COLUMNS,
@@ -287,6 +288,9 @@ import {
   parseBankStatementCsv,
   planAssetTransfer,
   reconcilableAccountIds,
+  buildAccountLedger,
+  formatTransactionId,
+  glAccountNotFound,
   type CleanJournalLine,
 } from '@kofc/shared';
 import type {
@@ -437,8 +441,9 @@ const DB_NAME = 'kofc.db';
  * 24: CouncilCadenceConfig and ProposedMotion (Sprint 5Z-5).
  * 25: Meeting.InviteReleaseDate and CouncilCadenceConfig.DefaultRecipientGroup (Sprint 5Z-6).
  * 26: GLAccount, JournalEntry and Event.IntakeSessionStatus (Sprint 5Z-7).
+ * 27: JournalEntry.TransactionID and the Opening Balance Equity account (Sprint 5Z-8).
  */
-const SCHEMA_VERSION = 26;
+const SCHEMA_VERSION = 27;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -4466,6 +4471,15 @@ export class SqliteDataService implements DataService {
       return buildBalanceSheet(councilId, await this.glAccounts(db, councilId), await this.journalEntries(db, councilId), this.now());
     },
 
+    getAccountLedger: async (actorId, glAccountId) => {
+      const db = await this.ready();
+      const actor = await this.memberWriteActor(db, actorId);
+      const account = await this.glAccount(db, glAccountId);
+      if (!account) throw glAccountNotFound(glAccountId);
+      assertMayReadGeneralLedger(actor, account.CouncilID, `read the ledger of account ${glAccountId}`);
+      return buildAccountLedger(account, await this.glAccounts(db, account.CouncilID), await this.journalEntries(db, account.CouncilID));
+    },
+
     uploadBankStatementReconciliation: async (actorId, csvFileData, options = {}) => {
       const rows = parseBankStatementCsv(csvFileData);
       const db = await this.ready();
@@ -4506,14 +4520,18 @@ export class SqliteDataService implements DataService {
     return ids.map((id) => rows.get(id)!);
   }
 
-  /** Stores a balanced transaction's lines for the council, unreconciled; resolves to their ids in the order given. */
+  /**
+   * Stores a balanced transaction's lines for the council, unreconciled and sharing one new TransactionID; resolves to
+   * their ids in the order given.
+   */
   private async insertJournalLines(db: SQLite.SQLiteDatabase, councilId: number, lines: readonly CleanJournalLine[]): Promise<number[]> {
+    const transactionId = formatTransactionId(await Crypto.getRandomBytesAsync(16));
     const ids: number[] = [];
     for (const l of lines) {
       const res = await db.runAsync(
-        `INSERT INTO [JournalEntry] ([CouncilID], [GLAccountID], [DateLogged], [Description], [DebitAmount], [CreditAmount], [LinkedEventID], [LinkedMeetingID], [IsBankReconciled], [CheckNumber])
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-        [councilId, l.GLAccountID, l.DateLogged, l.Description, l.DebitAmount, l.CreditAmount, l.LinkedEventID, l.LinkedMeetingID, l.CheckNumber],
+        `INSERT INTO [JournalEntry] ([CouncilID], [GLAccountID], [DateLogged], [Description], [DebitAmount], [CreditAmount], [LinkedEventID], [LinkedMeetingID], [IsBankReconciled], [CheckNumber], [TransactionID])
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        [councilId, l.GLAccountID, l.DateLogged, l.Description, l.DebitAmount, l.CreditAmount, l.LinkedEventID, l.LinkedMeetingID, l.CheckNumber, transactionId],
       );
       ids.push(res.lastInsertRowId);
     }

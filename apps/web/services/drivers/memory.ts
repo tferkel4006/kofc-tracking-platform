@@ -286,6 +286,9 @@ import {
   parseBankStatementCsv,
   planAssetTransfer,
   reconcilableAccountIds,
+  buildAccountLedger,
+  formatTransactionId,
+  glAccountNotFound,
   type CleanJournalLine,
 } from '@kofc/shared';
 import type {
@@ -3801,6 +3804,15 @@ export class MemoryDataService implements DataService {
       return buildBalanceSheet(councilId, this.glAccounts(s, councilId), this.journalEntries(s, councilId), this.now());
     },
 
+    getAccountLedger: async (actorId, glAccountId) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const account = this.glAccount(s, glAccountId);
+      if (!account) throw glAccountNotFound(glAccountId);
+      assertMayReadGeneralLedger(actor, account.CouncilID, `read the ledger of account ${glAccountId}`);
+      return buildAccountLedger(account, this.glAccounts(s, account.CouncilID), this.journalEntries(s, account.CouncilID));
+    },
+
     uploadBankStatementReconciliation: async (actorId, csvFileData, options = {}) => {
       const rows = parseBankStatementCsv(csvFileData);
       const s = await this.ready();
@@ -3833,9 +3845,13 @@ export class MemoryDataService implements DataService {
     return s.rows('JournalEntry').filter((e) => e.CouncilID === councilId).map((e) => ({ ...e }) as unknown as JournalEntry);
   }
 
-  /** Stores a balanced transaction's lines for the council, unreconciled, and returns copies in the order given. */
+  /**
+   * Stores a balanced transaction's lines for the council, unreconciled and sharing one new TransactionID, and returns
+   * copies in the order given.
+   */
   private insertJournalLines(s: MemoryStore, councilId: number, lines: readonly CleanJournalLine[]): JournalEntry[] {
-    return lines.map((line) => ({ ...s.insert('JournalEntry', { CouncilID: councilId, ...line, IsBankReconciled: 0 }) }) as unknown as JournalEntry);
+    const TransactionID = formatTransactionId(globalThis.crypto.getRandomValues(new Uint8Array(16)));
+    return lines.map((line) => ({ ...s.insert('JournalEntry', { CouncilID: councilId, ...line, IsBankReconciled: 0, TransactionID }) }) as unknown as JournalEntry);
   }
 
   feedback: DataService['feedback'] = {

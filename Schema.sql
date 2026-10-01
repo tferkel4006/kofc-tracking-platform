@@ -1719,3 +1719,15 @@ GO
 
 ALTER TABLE [Event] ADD [IntakeSessionStatus] VARCHAR(50) NOT NULL DEFAULT 'Inactive';
 GO
+
+-- =========================================================================
+-- Sprint 5Z-8: TRANSACTION GROUPING
+-- JournalEntry.TransactionID ties together the lines of one posting: finance.logDoubleEntryTransaction and
+-- finance.transferAssetFunds stamp every line they write with one freshly generated UUID (36 characters), so a
+-- posting can be read, shown and later reversed as a unit. The table is empty when the column is added, so it needs
+-- no default.
+-- =========================================================================
+ALTER TABLE [JournalEntry] ADD [TransactionID] VARCHAR(50) NOT NULL;
+GO
+CREATE INDEX [JournalEntry_Transaction_Idx] ON [JournalEntry] ([TransactionID]);
+GO

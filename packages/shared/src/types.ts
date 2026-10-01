@@ -736,4 +736,6 @@ export interface JournalEntry {
   LinkedMeetingID?: number | null;
   IsBankReconciled: number; // BIT, default 0; set by finance.uploadBankStatementReconciliation
   CheckNumber?: string | null; // VARCHAR(50)
+  /** VARCHAR(50) (Sprint 5Z-8): the UUID every line of one posting shares. */
+  TransactionID: string;
 }

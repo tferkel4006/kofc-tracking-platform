@@ -250,13 +250,13 @@ GO
 
 -- ==============================================================================
 -- Sprint 5Z-7: Council 15295's standard chart of accounts (GLAccount ids 1-14). The two virtual goal accounts are
--- earmarks inside Operating Checking (ParentAccountID 1); their targets start at 0.00 until leadership sets them.
+-- earmarks inside Operating Checking (ParentAccountID 1). Sprint 5Z-8 targets: Goal #1 $4,000.00, Goal #2 $1,500.00.
 -- ==============================================================================
 Insert Into [GLAccount] ([CouncilID], [AccountName], [AccountType], [ParentAccountID], [IsVirtualGoal], [TargetGoalAmount])
 Values
 (1, 'Operating Checking', 'Asset', NULL, 0, 0.00),
-(1, 'Goal Account #1', 'Asset', 1, 1, 0.00),
-(1, 'Goal Account #2', 'Asset', 1, 1, 0.00),
+(1, 'Goal Account #1', 'Asset', 1, 1, 4000.00),
+(1, 'Goal Account #2', 'Asset', 1, 1, 1500.00),
 (1, 'General Savings', 'Asset', NULL, 0, 0.00),
 (1, 'Charity Savings', 'Asset', NULL, 0, 0.00),
 (1, 'Physical Assets', 'Asset', NULL, 0, 0.00),
@@ -268,6 +268,13 @@ Values
 (1, 'Event Operational Costs', 'Expense', NULL, 0, 0.00),
 (1, 'Council Operational Costs', 'Expense', NULL, 0, 0.00),
 (1, 'Supreme Assessments', 'Expense', NULL, 0, 0.00);
+GO
+
+-- Sprint 5Z-8: Opening Balance Equity (GLAccount 15) takes the other side of the balances the council carries into the
+-- ledger on day one, so the books start balanced.
+Insert Into [GLAccount] ([CouncilID], [AccountName], [AccountType], [ParentAccountID], [IsVirtualGoal], [TargetGoalAmount])
+Values
+(1, 'Opening Balance Equity', 'Equity', NULL, 0, 0.00);
 GO
 -- @presentation-data
 -- Everything below this marker is presentation data. The apps load it (presentationData: true); the automated
@@ -534,4 +541,45 @@ VALUES
 (1, '2026-2027', 'Donation', 2, 'Holy Family Pregnancy Resource Center', 1350.00, 1500.00, NULL, 4, 1500.00, 'Approved'),
 (1, '2026-2027', 'Donation', 4, 'Cathedral School Tuition Assistance Fund', 1000.00, 1200.00, NULL, 3, 1200.00, 'Approved'),
 (1, '2026-2027', 'Operational', NULL, 'Outside Organization Requests', 0.00, 5000.00, 'Pool for vetted intake requests', 4, 5000.00, 'Approved');
+GO
+
+-- Sprint 5Z-8: Council 15295's general ledger since the 2026-2027 fraternal year opened. Each TransactionID groups one
+-- balanced posting (debits equal credits). GLAccount ids: 1 Operating Checking, 2 Goal Account #1, 3 Goal Account #2,
+-- 4 General Savings, 5 Charity Savings, 6 Physical Assets, 7 Member Dues Collections, 8 Parking Fundraising, 9 General
+-- Fundraising, 10 General Donations, 11 Charitable Disbursements, 12 Event Operational Costs, 13 Council Operational
+-- Costs, 14 Supreme Assessments, 15 Opening Balance Equity. Checks 1119-1123 follow the expense checkbook; July's
+-- bank activity is already reconciled.
+INSERT INTO [JournalEntry] ([CouncilID], [GLAccountID], [DateLogged], [Description], [DebitAmount], [CreditAmount], [LinkedEventID], [LinkedMeetingID], [IsBankReconciled], [CheckNumber], [TransactionID])
+VALUES
+(1, 1, '2026-07-01 00:00:00', 'Opening balance carried into the ledger', 8450.00, 0.00, NULL, NULL, 1, NULL, 'seed-txn-0001'),
+(1, 4, '2026-07-01 00:00:00', 'Opening balance carried into the ledger', 3200.00, 0.00, NULL, NULL, 1, NULL, 'seed-txn-0001'),
+(1, 5, '2026-07-01 00:00:00', 'Opening balance carried into the ledger', 2150.00, 0.00, NULL, NULL, 1, NULL, 'seed-txn-0001'),
+(1, 6, '2026-07-01 00:00:00', 'Opening balance: hall tables, banners and grill', 1875.00, 0.00, NULL, NULL, 0, NULL, 'seed-txn-0001'),
+(1, 15, '2026-07-01 00:00:00', 'Opening balance carried into the ledger', 0.00, 15675.00, NULL, NULL, 0, NULL, 'seed-txn-0001'),
+(1, 1, '2026-07-12 00:00:00', 'Rally free-will offering deposit', 180.00, 0.00, 1, NULL, 1, NULL, 'seed-txn-0002'),
+(1, 10, '2026-07-12 00:00:00', 'Rally free-will offering deposit', 0.00, 180.00, 1, NULL, 0, NULL, 'seed-txn-0002'),
+(1, 1, '2026-07-15 00:00:00', 'July member dues deposit', 1260.00, 0.00, NULL, NULL, 1, NULL, 'seed-txn-0003'),
+(1, 7, '2026-07-15 00:00:00', 'July member dues deposit', 0.00, 1260.00, NULL, NULL, 0, NULL, 'seed-txn-0003'),
+(1, 1, '2026-07-27 00:00:00', 'Family picnic plate sales deposit', 855.00, 0.00, 3, NULL, 1, NULL, 'seed-txn-0004'),
+(1, 9, '2026-07-27 00:00:00', 'Family picnic plate sales deposit', 0.00, 855.00, 3, NULL, 0, NULL, 'seed-txn-0004'),
+(1, 14, '2026-08-01 00:00:00', 'Supreme per capita assessment', 642.00, 0.00, NULL, NULL, 0, '1119', 'seed-txn-0005'),
+(1, 1, '2026-08-01 00:00:00', 'Supreme per capita assessment', 0.00, 642.00, NULL, NULL, 0, '1119', 'seed-txn-0005'),
+(1, 2, '2026-08-05 00:00:00', 'Set aside toward Goal Account #1', 2250.00, 0.00, NULL, NULL, 0, NULL, 'seed-txn-0006'),
+(1, 1, '2026-08-05 00:00:00', 'Set aside toward Goal Account #1', 0.00, 2250.00, NULL, NULL, 0, NULL, 'seed-txn-0006'),
+(1, 3, '2026-08-05 00:00:00', 'Set aside toward Goal Account #2', 600.00, 0.00, NULL, NULL, 0, NULL, 'seed-txn-0007'),
+(1, 1, '2026-08-05 00:00:00', 'Set aside toward Goal Account #2', 0.00, 600.00, NULL, NULL, 0, NULL, 'seed-txn-0007'),
+(1, 1, '2026-08-17 00:00:00', 'Pancake breakfast plate sales deposit', 835.00, 0.00, 4, NULL, 0, NULL, 'seed-txn-0008'),
+(1, 9, '2026-08-17 00:00:00', 'Pancake breakfast plate sales deposit', 0.00, 835.00, 4, NULL, 0, NULL, 'seed-txn-0008'),
+(1, 12, '2026-08-20 00:00:00', 'Pancake breakfast griddle rental and supplies', 312.40, 0.00, 4, NULL, 0, '1120', 'seed-txn-0009'),
+(1, 1, '2026-08-20 00:00:00', 'Pancake breakfast griddle rental and supplies', 0.00, 312.40, 4, NULL, 0, '1120', 'seed-txn-0009'),
+(1, 1, '2026-08-29 00:00:00', 'Fair parking lot proceeds deposit', 1480.00, 0.00, NULL, NULL, 0, NULL, 'seed-txn-0010'),
+(1, 8, '2026-08-29 00:00:00', 'Fair parking lot proceeds deposit', 0.00, 1480.00, NULL, NULL, 0, NULL, 'seed-txn-0010'),
+(1, 11, '2026-09-03 00:00:00', 'Gift to St. Jude Parish Food Pantry', 500.00, 0.00, NULL, NULL, 0, '1121', 'seed-txn-0011'),
+(1, 5, '2026-09-03 00:00:00', 'Gift to St. Jude Parish Food Pantry', 0.00, 500.00, NULL, NULL, 0, '1121', 'seed-txn-0011'),
+(1, 13, '2026-09-08 00:00:00', 'Parish hall rental, September meeting', 150.00, 0.00, NULL, NULL, 0, '1122', 'seed-txn-0012'),
+(1, 1, '2026-09-08 00:00:00', 'Parish hall rental, September meeting', 0.00, 150.00, NULL, NULL, 0, '1122', 'seed-txn-0012'),
+(1, 6, '2026-09-10 00:00:00', 'Purchased a second outdoor grill', 425.00, 0.00, NULL, NULL, 0, '1123', 'seed-txn-0013'),
+(1, 1, '2026-09-10 00:00:00', 'Purchased a second outdoor grill', 0.00, 425.00, NULL, NULL, 0, '1123', 'seed-txn-0013'),
+(1, 4, '2026-09-15 00:00:00', 'Transfer from Operating Checking to General Savings', 1000.00, 0.00, NULL, NULL, 0, NULL, 'seed-txn-0014'),
+(1, 1, '2026-09-15 00:00:00', 'Transfer from Operating Checking to General Savings', 0.00, 1000.00, NULL, NULL, 0, NULL, 'seed-txn-0014');
 GO

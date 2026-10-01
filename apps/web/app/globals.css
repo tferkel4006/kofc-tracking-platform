@@ -10,6 +10,7 @@
  *   brand-red - urgency, required alerts, no-show tallies
  *   gold  - priority milestones and selection markers (a fill or bar, never text on white: ~2.3:1)
  *   white - every content surface
+ *   green - confirmation only (Sprint 5Z-8: the balanced-ledger badge), always a fill carrying white text (6.8:1)
  */
 @theme {
   --color-*: initial;
@@ -19,6 +20,7 @@
   --color-white: #FFFFFF;
   --color-muted: #4A5568;
   --color-line: #C9D1DC;
+  --color-green: #17692F;
 
   --font-sans: Arial, sans-serif;
   --font-serif: Georgia, "Times New Roman", serif;

@@ -7,7 +7,8 @@
 //   Red   - urgency: shifts within 2 days, required alerts, the no-show badge
 //   Gold  - priority milestones and selection markers
 //   White - every content surface stays flat white for contrast
-//   Green - confirmation only: the phone's "Attending" RSVP banner (Sprint 5Y-6), white text at 6.8:1
+//   Green - confirmation only: the phone's "Attending" RSVP banner (Sprint 5Y-6) and the portal's balanced-ledger
+//           badge (Sprint 5Z-8), white text at 6.8:1
 //
 // Gold on white is only ~2.3:1, so gold is never used as text on white. It is a
 // border, bar or fill, and the text on a gold fill is navy (~6.4:1).

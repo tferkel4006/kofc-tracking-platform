@@ -4285,6 +4285,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "TransactionID",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -4914,7 +4921,7 @@ export const SEED_DATA: readonly SeedTable[] = [
         "AccountType": "Asset",
         "ParentAccountID": 1,
         "IsVirtualGoal": 1,
-        "TargetGoalAmount": 0
+        "TargetGoalAmount": 4000
       },
       {
         "CouncilID": 1,
@@ -4922,7 +4929,7 @@ export const SEED_DATA: readonly SeedTable[] = [
         "AccountType": "Asset",
         "ParentAccountID": 1,
         "IsVirtualGoal": 1,
-        "TargetGoalAmount": 0
+        "TargetGoalAmount": 1500
       },
       {
         "CouncilID": 1,
@@ -5008,6 +5015,19 @@ export const SEED_DATA: readonly SeedTable[] = [
         "CouncilID": 1,
         "AccountName": "Supreme Assessments",
         "AccountType": "Expense",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      }
+    ]
+  },
+  {
+    "table": "GLAccount",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "AccountName": "Opening Balance Equity",
+        "AccountType": "Equity",
         "ParentAccountID": null,
         "IsVirtualGoal": 0,
         "TargetGoalAmount": 0
@@ -6858,6 +6878,414 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "BudgetCategoryID": 4,
         "ProposedBudgetAmount": 5000,
         "BudgetStatus": "Approved"
+      }
+    ]
+  },
+  {
+    "table": "JournalEntry",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-07-01 00:00:00",
+        "Description": "Opening balance carried into the ledger",
+        "DebitAmount": 8450,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 1,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0001"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 4,
+        "DateLogged": "2026-07-01 00:00:00",
+        "Description": "Opening balance carried into the ledger",
+        "DebitAmount": 3200,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 1,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0001"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 5,
+        "DateLogged": "2026-07-01 00:00:00",
+        "Description": "Opening balance carried into the ledger",
+        "DebitAmount": 2150,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 1,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0001"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 6,
+        "DateLogged": "2026-07-01 00:00:00",
+        "Description": "Opening balance: hall tables, banners and grill",
+        "DebitAmount": 1875,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0001"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 15,
+        "DateLogged": "2026-07-01 00:00:00",
+        "Description": "Opening balance carried into the ledger",
+        "DebitAmount": 0,
+        "CreditAmount": 15675,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0001"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-07-12 00:00:00",
+        "Description": "Rally free-will offering deposit",
+        "DebitAmount": 180,
+        "CreditAmount": 0,
+        "LinkedEventID": 1,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 1,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0002"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 10,
+        "DateLogged": "2026-07-12 00:00:00",
+        "Description": "Rally free-will offering deposit",
+        "DebitAmount": 0,
+        "CreditAmount": 180,
+        "LinkedEventID": 1,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0002"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-07-15 00:00:00",
+        "Description": "July member dues deposit",
+        "DebitAmount": 1260,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 1,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0003"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 7,
+        "DateLogged": "2026-07-15 00:00:00",
+        "Description": "July member dues deposit",
+        "DebitAmount": 0,
+        "CreditAmount": 1260,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0003"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-07-27 00:00:00",
+        "Description": "Family picnic plate sales deposit",
+        "DebitAmount": 855,
+        "CreditAmount": 0,
+        "LinkedEventID": 3,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 1,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0004"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 9,
+        "DateLogged": "2026-07-27 00:00:00",
+        "Description": "Family picnic plate sales deposit",
+        "DebitAmount": 0,
+        "CreditAmount": 855,
+        "LinkedEventID": 3,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0004"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 14,
+        "DateLogged": "2026-08-01 00:00:00",
+        "Description": "Supreme per capita assessment",
+        "DebitAmount": 642,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": "1119",
+        "TransactionID": "seed-txn-0005"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-08-01 00:00:00",
+        "Description": "Supreme per capita assessment",
+        "DebitAmount": 0,
+        "CreditAmount": 642,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": "1119",
+        "TransactionID": "seed-txn-0005"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 2,
+        "DateLogged": "2026-08-05 00:00:00",
+        "Description": "Set aside toward Goal Account #1",
+        "DebitAmount": 2250,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0006"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-08-05 00:00:00",
+        "Description": "Set aside toward Goal Account #1",
+        "DebitAmount": 0,
+        "CreditAmount": 2250,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0006"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 3,
+        "DateLogged": "2026-08-05 00:00:00",
+        "Description": "Set aside toward Goal Account #2",
+        "DebitAmount": 600,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0007"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-08-05 00:00:00",
+        "Description": "Set aside toward Goal Account #2",
+        "DebitAmount": 0,
+        "CreditAmount": 600,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0007"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-08-17 00:00:00",
+        "Description": "Pancake breakfast plate sales deposit",
+        "DebitAmount": 835,
+        "CreditAmount": 0,
+        "LinkedEventID": 4,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0008"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 9,
+        "DateLogged": "2026-08-17 00:00:00",
+        "Description": "Pancake breakfast plate sales deposit",
+        "DebitAmount": 0,
+        "CreditAmount": 835,
+        "LinkedEventID": 4,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0008"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 12,
+        "DateLogged": "2026-08-20 00:00:00",
+        "Description": "Pancake breakfast griddle rental and supplies",
+        "DebitAmount": 312.4,
+        "CreditAmount": 0,
+        "LinkedEventID": 4,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": "1120",
+        "TransactionID": "seed-txn-0009"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-08-20 00:00:00",
+        "Description": "Pancake breakfast griddle rental and supplies",
+        "DebitAmount": 0,
+        "CreditAmount": 312.4,
+        "LinkedEventID": 4,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": "1120",
+        "TransactionID": "seed-txn-0009"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-08-29 00:00:00",
+        "Description": "Fair parking lot proceeds deposit",
+        "DebitAmount": 1480,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0010"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 8,
+        "DateLogged": "2026-08-29 00:00:00",
+        "Description": "Fair parking lot proceeds deposit",
+        "DebitAmount": 0,
+        "CreditAmount": 1480,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0010"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 11,
+        "DateLogged": "2026-09-03 00:00:00",
+        "Description": "Gift to St. Jude Parish Food Pantry",
+        "DebitAmount": 500,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": "1121",
+        "TransactionID": "seed-txn-0011"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 5,
+        "DateLogged": "2026-09-03 00:00:00",
+        "Description": "Gift to St. Jude Parish Food Pantry",
+        "DebitAmount": 0,
+        "CreditAmount": 500,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": "1121",
+        "TransactionID": "seed-txn-0011"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 13,
+        "DateLogged": "2026-09-08 00:00:00",
+        "Description": "Parish hall rental, September meeting",
+        "DebitAmount": 150,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": "1122",
+        "TransactionID": "seed-txn-0012"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-09-08 00:00:00",
+        "Description": "Parish hall rental, September meeting",
+        "DebitAmount": 0,
+        "CreditAmount": 150,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": "1122",
+        "TransactionID": "seed-txn-0012"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 6,
+        "DateLogged": "2026-09-10 00:00:00",
+        "Description": "Purchased a second outdoor grill",
+        "DebitAmount": 425,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": "1123",
+        "TransactionID": "seed-txn-0013"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-09-10 00:00:00",
+        "Description": "Purchased a second outdoor grill",
+        "DebitAmount": 0,
+        "CreditAmount": 425,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": "1123",
+        "TransactionID": "seed-txn-0013"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 4,
+        "DateLogged": "2026-09-15 00:00:00",
+        "Description": "Transfer from Operating Checking to General Savings",
+        "DebitAmount": 1000,
+        "CreditAmount": 0,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0014"
+      },
+      {
+        "CouncilID": 1,
+        "GLAccountID": 1,
+        "DateLogged": "2026-09-15 00:00:00",
+        "Description": "Transfer from Operating Checking to General Savings",
+        "DebitAmount": 0,
+        "CreditAmount": 1000,
+        "LinkedEventID": null,
+        "LinkedMeetingID": null,
+        "IsBankReconciled": 0,
+        "CheckNumber": null,
+        "TransactionID": "seed-txn-0014"
       }
     ]
   }

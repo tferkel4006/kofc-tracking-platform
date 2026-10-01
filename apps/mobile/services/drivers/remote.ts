@@ -209,6 +209,7 @@ export function createRemoteDataService(): DataService {
       logDoubleEntryTransaction: notImplemented('finance.logDoubleEntryTransaction'),
       transferAssetFunds: notImplemented('finance.transferAssetFunds'),
       getLatestBalanceSheet: notImplemented('finance.getLatestBalanceSheet'),
+      getAccountLedger: notImplemented('finance.getAccountLedger'),
       uploadBankStatementReconciliation: notImplemented('finance.uploadBankStatementReconciliation'),
     },
     supreme: {
