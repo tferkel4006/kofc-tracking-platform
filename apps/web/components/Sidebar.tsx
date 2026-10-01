@@ -1,12 +1,12 @@
 'use client';
 // The portal's left sidebar (Sprint 5Z-10 redesign): a navy column of high-intent directories from portalSidebar -
-// the Self-Service Hub, Executive Action Desks, the Fraternal Analytics Hub, the Fraternal Scheduler, Financial Ledgers
+// the Self-Service Hub, the Communications Hub (Sprint 5Z-10.7, under a gold envelope), Executive Action Desks, the Fraternal Analytics Hub, the Fraternal Scheduler, Financial Ledgers
 // and Administrative Lookups. The Self-Service Hub is always open; the others fold under a header button (▸ closed,
 // ▾ open), the group holding the current page opens itself, and the viewer's choices are remembered in this browser.
 // The Executive Action Desks list every desk: one the viewer may not open is shown with a gold lock badge and says who
 // holds it, instead of a link. The current page carries a gold marker.
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactElement } from 'react';
 import { portalSidebar, type PortalNavGroup, type PortalNavItem, type SessionUser } from '@kofc/shared';
 import { cx } from '@/components/ui';
 
@@ -120,6 +120,29 @@ function LockIcon() {
   );
 }
 
+/** An envelope drawn in currentColor: the Communications Hub's heading (Sprint 5Z-10.7). */
+function EnvelopeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 6 9-6" />
+    </svg>
+  );
+}
+
+/** Group headings that carry an icon. */
+const GROUP_ICONS: Partial<Record<PortalNavGroup['id'], () => ReactElement>> = { communications: EnvelopeIcon };
+
+/** The heading icon of a group, in gold, or nothing. */
+function GroupIcon({ id }: { id: PortalNavGroup['id'] }) {
+  const Icon = GROUP_ICONS[id];
+  return Icon ? (
+    <span className="text-gold">
+      <Icon />
+    </span>
+  ) : null;
+}
+
 /** One dense sidebar link: the label only, with its description as the tooltip; gold marker when current. */
 function NavLink({ item, current }: { item: PortalNavItem; current: boolean }) {
   const { href, label, hint } = NAV[item];
@@ -186,7 +209,10 @@ export function Sidebar({ user, pathname }: { user: SessionUser; pathname: strin
                   onClick={() => toggle(group.id)}
                   className="flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-xs font-bold uppercase tracking-wide hover:underline"
                 >
-                  <span>{group.label}</span>
+                  <span className="flex items-center gap-2">
+                    <GroupIcon id={group.id} />
+                    {group.label}
+                  </span>
                   <span aria-hidden="true" className="flex items-center gap-1.5 text-gold">
                     {lockedCount > 0 && lockedCount === group.entries.length ? <LockIcon /> : null}
                     {expanded ? '▾' : '▸'}

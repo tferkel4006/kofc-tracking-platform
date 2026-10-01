@@ -201,6 +201,7 @@ describe('portal permissions', () => {
       // Sprint 5Z-10: the high-intent directories.
       expect(PORTAL_NAV_GROUPS.map((g) => [g.label, g.collapsible, g.showLocked])).toEqual([
         ['Self-Service Hub', false, false],
+        ['Communications Hub', true, false],
         ['Executive Action Desks', true, true],
         ['Fraternal Analytics Hub', true, false],
         ['Fraternal Scheduler', true, false],
@@ -216,7 +217,14 @@ describe('portal permissions', () => {
       }
     });
 
-    it("leaves the Communications Hub out of the sidebar for every role; the header's Messaging shortcut opens it (Sprint 5X)", () => {
+    it('files the Distribution List Builder under the Communications Hub for Admins only (Sprint 5Z-10.7)', () => {
+      const hub = (u: Parameters<typeof portalNavGroups>[0]) => portalNavGroups(u).find((g) => g.id === 'communications')?.items;
+      for (const u of [superAdmin, admin]) expect(hub(u)).toEqual(['distribution-lists']);
+      for (const u of [officer, member]) expect(hub(u)).toBeUndefined();
+      for (const g of PORTAL_NAV_GROUPS.filter((x) => x.id !== 'communications')) expect(g.items).not.toContain('distribution-lists');
+    });
+
+    it("keeps the messages out of the sidebar for every role; the header's Messaging shortcut opens them (Sprint 5X, 5Z-10.6)", () => {
       for (const u of [superAdmin, admin, officer, member]) {
         expect(portalAreas(u)).toContain('messages');
         expect(portalNavGroups(u).flatMap((g) => g.items as string[])).not.toContain('messages');
@@ -226,22 +234,24 @@ describe('portal permissions', () => {
     it('shows a Super Admin every group in full', () => {
       expect(shape(superAdmin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose', 'charities/intake']],
+        ['Communications Hub', ['distribution-lists']],
         ['Executive Action Desks', ['expenses/audit', 'expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live']],
         ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
         ['Fraternal Scheduler', ['calendar', 'events', 'meetings', 'activities', 'ledger', 'elections', 'gallery', 'lessons-registry']],
         ['Financial Ledgers', ['donations', 'expenses/queue', 'expenses/disbursements', 'charities/queue', 'financials/budget']],
-        ['Administrative Lookups', ['members', 'distribution-lists', 'council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils']],
+        ['Administrative Lookups', ['members', 'council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils']],
       ]);
     });
 
     it('shows a council Admin everything but the global tables, councils and the check ledger', () => {
       expect(shape(admin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose', 'charities/intake']],
+        ['Communications Hub', ['distribution-lists']],
         ['Executive Action Desks', ['expenses/audit', 'expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live']],
         ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
         ['Fraternal Scheduler', ['calendar', 'events', 'meetings', 'activities', 'ledger', 'elections', 'gallery', 'lessons-registry']],
         ['Financial Ledgers', ['donations', 'expenses/queue', 'financials/budget']],
-        ['Administrative Lookups', ['members', 'distribution-lists', 'council-lookups', 'charities/registry', 'supreme-sync', 'parishes']],
+        ['Administrative Lookups', ['members', 'council-lookups', 'charities/registry', 'supreme-sync', 'parishes']],
       ]);
     });
 

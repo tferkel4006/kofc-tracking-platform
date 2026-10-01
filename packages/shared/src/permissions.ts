@@ -471,7 +471,7 @@ export function portalAreas(u: Actor): PortalArea[] {
 export type PortalNavItem = Exclude<PortalArea, 'profile' | 'messages'>;
 
 export interface PortalNavGroup {
-  id: 'self-service' | 'executive' | 'analytics' | 'scheduler' | 'finance' | 'admin';
+  id: 'self-service' | 'communications' | 'executive' | 'analytics' | 'scheduler' | 'finance' | 'admin';
   label: string;
   /** The Self-Service Hub is always open; the other groups fold. */
   collapsible: boolean;
@@ -485,10 +485,12 @@ export interface PortalNavGroup {
 
 /**
  * Every sidebar link in its group, in display order (Sprint 5S; regrouped into high-intent directories in Sprint 5Z-10).
- * Each PortalArea but 'profile' and 'messages' appears exactly once.
+ * Each PortalArea but 'profile' and 'messages' appears exactly once. Sprint 5Z-10.7: the Communications Hub group (under a
+ * gold envelope) holds the Distribution List Builder; the messages themselves stay the header's Messaging shortcut.
  */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
   { id: 'self-service', label: 'Self-Service Hub', collapsible: false, showLocked: false, items: ['member-actions', 'expenses', 'charities/propose', 'charities/intake'] },
+  { id: 'communications', label: 'Communications Hub', collapsible: true, showLocked: false, items: ['distribution-lists'] },
   {
     id: 'executive',
     label: 'Executive Action Desks',
@@ -522,7 +524,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
     label: 'Administrative Lookups',
     collapsible: true,
     showLocked: false,
-    items: ['members', 'distribution-lists', 'council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'],
+    items: ['members', 'council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'],
   },
 ];
 
