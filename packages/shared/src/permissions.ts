@@ -464,14 +464,14 @@ export function portalAreas(u: Actor): PortalArea[] {
 }
 
 /**
- * A sidebar link: a portal area, except the profile, which the header's member menu opens. The Communications Hub is
- * both the header's Messaging shortcut (Sprint 5X) and, since Sprint 5Z-10.5, a Messaging Hub link. The help center is the
- * header's Help shortcut, not a sidebar link (Sprint 5W).
+ * A sidebar link: a portal area, except the profile, which the header's member menu opens, and the Communications Hub,
+ * which the header's Messaging shortcut opens (Sprint 5X). The help center is the header's Help shortcut, not a sidebar
+ * link (Sprint 5W).
  */
-export type PortalNavItem = Exclude<PortalArea, 'profile'>;
+export type PortalNavItem = Exclude<PortalArea, 'profile' | 'messages'>;
 
 export interface PortalNavGroup {
-  id: 'self-service' | 'messaging' | 'executive' | 'analytics' | 'scheduler' | 'finance' | 'admin';
+  id: 'self-service' | 'executive' | 'analytics' | 'scheduler' | 'finance' | 'admin';
   label: string;
   /** The Self-Service Hub is always open; the other groups fold. */
   collapsible: boolean;
@@ -485,12 +485,10 @@ export interface PortalNavGroup {
 
 /**
  * Every sidebar link in its group, in display order (Sprint 5S; regrouped into high-intent directories in Sprint 5Z-10).
- * Each PortalArea but 'profile' appears exactly once. Sprint 5Z-10.5: the Messaging Hub gathers the outbound communication
- * tools - the Communications Hub ('messages', also the header's Messaging shortcut) and the Distribution List Builder.
+ * Each PortalArea but 'profile' and 'messages' appears exactly once.
  */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
   { id: 'self-service', label: 'Self-Service Hub', collapsible: false, showLocked: false, items: ['member-actions', 'expenses', 'charities/propose', 'charities/intake'] },
-  { id: 'messaging', label: 'Messaging Hub', collapsible: true, showLocked: false, items: ['messages', 'distribution-lists'] },
   {
     id: 'executive',
     label: 'Executive Action Desks',
@@ -524,7 +522,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
     label: 'Administrative Lookups',
     collapsible: true,
     showLocked: false,
-    items: ['members', 'council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'],
+    items: ['members', 'distribution-lists', 'council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'],
   },
 ];
 

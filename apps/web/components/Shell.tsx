@@ -35,11 +35,12 @@ function HelpIcon() {
   );
 }
 
-/** Speech bubble, drawn in currentColor so it follows the header's white text. */
-function ChatIcon() {
+/** An envelope, drawn in currentColor so it follows the header's white text (Sprint 5Z-10.6, matching the phone app). */
+function EnvelopeIcon() {
   return (
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7 9 6 9-6" />
     </svg>
   );
 }
@@ -57,7 +58,7 @@ function MessagingLink({ current }: { current: boolean }) {
         current && 'bg-white/10 underline decoration-gold decoration-2 underline-offset-4',
       )}
     >
-      <ChatIcon />
+      <EnvelopeIcon />
       Messaging
     </Link>
   );
