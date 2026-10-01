@@ -518,11 +518,11 @@ Quick answers are also in the portal's **Online Help Center**.
 ## Appendix: Council Archive Vault and parish QR codes
 
 - **Council Archive Vault.** Open **Administrative Lookups** in the sidebar and select **📂 Council Archive Vault**. The council's shared Google Drive folder opens in a new browser tab. The link shows only to seated officers, Admins and Super Admins; regular members do not see it. Google Drive's own sharing settings still decide who can open the folder.
-- **Parish QR codes.** The **Welcome, Brother Knight** card on **Member Actions** shows four codes from `apps/web/public/assets/images/qr/`. To put a real code in place, replace the placeholder file and keep its name:
+- **Collection QR codes.** The **Welcome, Brother Knight** card on **Member Actions** shows the four collection channels' codes (ParishSoft, Venmo, Zeffy and Zelle) from `apps/web/public/assets/images/qr/`. To put a real code in place, replace the placeholder file and keep its name:
 
 | Code | File |
 |---|---|
-| ![Zelle Cathedral Collection QR code](../apps/web/public/assets/images/qr/zelle-cathedral-collection.png) | `zelle-cathedral-collection.png` |
-| ![Mobile App Expo Go Sync QR code](../apps/web/public/assets/images/qr/expo-go-sync.png) | `expo-go-sync.png` |
-| ![Member Sign-Up QR code](../apps/web/public/assets/images/qr/member-sign-up.png) | `member-sign-up.png` |
-| ![Feedback Registry QR code](../apps/web/public/assets/images/qr/feedback-registry.png) | `feedback-registry.png` |
+| ![ParishSoft collection QR code](../apps/web/public/assets/images/qr/parishsoft-collection.png) | `parishsoft-collection.png` |
+| ![Venmo collection QR code](../apps/web/public/assets/images/qr/venmo-collection.png) | `venmo-collection.png` |
+| ![Zeffy collection QR code](../apps/web/public/assets/images/qr/zeffy-collection.png) | `zeffy-collection.png` |
+| ![Zelle collection QR code](../apps/web/public/assets/images/qr/zelle-collection.png) | `zelle-collection.png` |

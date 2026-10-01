@@ -11,15 +11,15 @@ export interface ParishQr {
 export const QR_ASSET_DIR = '/assets/images/qr';
 
 export const PARISH_QR_CODES: readonly ParishQr[] = [
-  { file: 'zelle-cathedral-collection.png', title: 'Zelle Cathedral Collection', caption: 'Give to the cathedral collection through Zelle.' },
-  { file: 'expo-go-sync.png', title: 'Mobile App (Expo Go)', caption: 'Open the phone app in Expo Go.' },
-  { file: 'member-sign-up.png', title: 'Member Sign-Up', caption: 'Ask to join the council.' },
-  { file: 'feedback-registry.png', title: 'Feedback Registry', caption: 'Tell us what works and what does not.' },
+  { file: 'parishsoft-collection.png', title: 'ParishSoft', caption: 'Give through ParishSoft.' },
+  { file: 'venmo-collection.png', title: 'Venmo', caption: 'Give through Venmo.' },
+  { file: 'zeffy-collection.png', title: 'Zeffy', caption: 'Give through Zeffy.' },
+  { file: 'zelle-collection.png', title: 'Zelle', caption: 'Give through Zelle.' },
 ];
 
 export function QrWelcomeCard() {
   return (
-    <Panel title="Welcome, Brother Knight: scan to connect" className="mb-4">
+    <Panel title="Welcome, Brother Knight: scan to give" className="mb-4">
       <ul className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {PARISH_QR_CODES.map(({ file, title, caption }) => (
           <li key={file} className="flex flex-col items-center text-center">

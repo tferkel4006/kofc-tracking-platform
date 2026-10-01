@@ -59,9 +59,9 @@ The cloud runner handles your project verification across three discrete pipelin
 ________________________________________
 
 📇 5. Parish QR Codes & Council Archive Vault
-The Member Actions welcome card and the user guides show four parish QR codes from apps/web/public/assets/images/qr/. Each file is a placeholder until the council's real code replaces it under the same name.
-| Zelle Cathedral Collection | Mobile App Expo Go Sync | Member Sign-Up | Feedback Registry |
+The Member Actions welcome card and the user guides show the council's four collection-channel QR codes from apps/web/public/assets/images/qr/. Each file is a placeholder until the council's real code replaces it under the same name.
+| ParishSoft | Venmo | Zeffy | Zelle |
 |---|---|---|---|
-| ![Zelle Cathedral Collection QR code](apps/web/public/assets/images/qr/zelle-cathedral-collection.png) | ![Mobile App Expo Go Sync QR code](apps/web/public/assets/images/qr/expo-go-sync.png) | ![Member Sign-Up QR code](apps/web/public/assets/images/qr/member-sign-up.png) | ![Feedback Registry QR code](apps/web/public/assets/images/qr/feedback-registry.png) |
+| ![ParishSoft collection QR code](apps/web/public/assets/images/qr/parishsoft-collection.png) | ![Venmo collection QR code](apps/web/public/assets/images/qr/venmo-collection.png) | ![Zeffy collection QR code](apps/web/public/assets/images/qr/zeffy-collection.png) | ![Zelle collection QR code](apps/web/public/assets/images/qr/zelle-collection.png) |
 The council's shared Google Drive archive opens in a new tab from the sidebar for seated officers, Admins and Super Admins: Administrative Lookups → 📂 Council Archive Vault.
 ________________________________________

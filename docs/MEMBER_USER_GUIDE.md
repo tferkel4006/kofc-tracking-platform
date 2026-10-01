@@ -32,14 +32,13 @@
 
 ![Image: Member Dashboard Setup]
 
-### Scan to connect
+### Scan to give
 
-The **Welcome, Brother Knight** card at the top of **Member Actions** shows these four codes. Point your phone's camera at one to open it.
+The **Welcome, Brother Knight** card at the top of **Member Actions** shows the council's four collection channels. Point your phone's camera at one to give through that service.
 
-| Zelle Cathedral Collection | Mobile App (Expo Go) | Member Sign-Up | Feedback Registry |
+| ParishSoft | Venmo | Zeffy | Zelle |
 |---|---|---|---|
-| ![Zelle Cathedral Collection QR code](../apps/web/public/assets/images/qr/zelle-cathedral-collection.png) | ![Mobile App Expo Go Sync QR code](../apps/web/public/assets/images/qr/expo-go-sync.png) | ![Member Sign-Up QR code](../apps/web/public/assets/images/qr/member-sign-up.png) | ![Feedback Registry QR code](../apps/web/public/assets/images/qr/feedback-registry.png) |
-| Give to the cathedral collection through Zelle. | Open the phone app in Expo Go. | Ask to join the council. | Tell us what works and what does not. |
+| ![ParishSoft collection QR code](../apps/web/public/assets/images/qr/parishsoft-collection.png) | ![Venmo collection QR code](../apps/web/public/assets/images/qr/venmo-collection.png) | ![Zeffy collection QR code](../apps/web/public/assets/images/qr/zeffy-collection.png) | ![Zelle collection QR code](../apps/web/public/assets/images/qr/zelle-collection.png) |
 
 ---
 
