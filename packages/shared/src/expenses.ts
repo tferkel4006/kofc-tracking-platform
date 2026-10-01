@@ -7,6 +7,7 @@
 // shared by the web portal and the phone app (Sprint 5R-2).
 // =========================================================================
 import type { DataService, DisbursementCheckDetails, ExpenseLineItemInput, ExpenseReportDetail, ExpenseReportInput } from './contract';
+import { addDays } from './planning';
 import { formatDate } from './presentation';
 import { assertIsoDate, assertMoney, assertText, BusinessRuleError, optionalText, toIsoDate } from './rules';
 import type { Event, ExpenseDisbursement, ExpenseLineItem, ExpenseReport, ExpenseReportStatus, Meeting, Member } from './types';
@@ -119,6 +120,41 @@ export function assertExpenseLinks(
     if (meeting.CouncilID !== councilId) {
       throw invalid(`Meeting ${meetingId} belongs to another council, so an expense report of council ${councilId} cannot name it.`, { meetingId, councilId });
     }
+  }
+}
+
+/** How many days after a linked event's EndDate its expense sheets may still be submitted (Sprint 5Z-5). */
+export const EXPENSE_SUBMISSION_GRACE_DAYS = 30;
+
+/**
+ * expenses.submitReport timeline rule (Sprint 5Z-5): a sheet linked to an event may be submitted only from the event's
+ * StartDate through EXPENSE_SUBMISSION_GRACE_DAYS days after its EndDate, both inclusive, by the local calendar date
+ * of `now`. Earlier rejects EXPENSE_WINDOW_NOT_OPEN, later EXPENSE_WINDOW_CLOSED. Drafts may be saved at any time, and
+ * a sheet with no linked event is not limited. `event` is the linked event's row; call after assertExpenseLinks.
+ */
+export function assertExpenseSubmissionWindow(
+  status: 'Draft' | 'Submitted',
+  event: Pick<Event, 'id' | 'StartDate' | 'EndDate'> | null,
+  now: Date,
+): void {
+  if (status !== 'Submitted' || event === null) return;
+  const today = toIsoDate(now);
+  const start = String(event.StartDate).slice(0, 10);
+  const end = String(event.EndDate).slice(0, 10);
+  if (today < start) {
+    throw new BusinessRuleError(
+      'EXPENSE_WINDOW_NOT_OPEN',
+      `Expenses for event ${event.id} can be submitted from the day it starts (${start}); save the sheet as a draft until then.`,
+      { eventId: event.id, startDate: start, today },
+    );
+  }
+  const closes = addDays(end, EXPENSE_SUBMISSION_GRACE_DAYS);
+  if (today > closes) {
+    throw new BusinessRuleError(
+      'EXPENSE_WINDOW_CLOSED',
+      `Expenses for event ${event.id} had to be submitted within ${EXPENSE_SUBMISSION_GRACE_DAYS} days of its end (${end}); the window closed on ${closes}.`,
+      { eventId: event.id, endDate: end, closesOn: closes, today },
+    );
   }
 }
 

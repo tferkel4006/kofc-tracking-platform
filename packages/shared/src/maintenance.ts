@@ -82,6 +82,8 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
     { table: 'CouncilRelationshipType', column: 'CouncilID', noun: ['relationship type', 'relationship types'] },
     { table: 'CouncilMissionArea', column: 'CouncilID', noun: ['mission area', 'mission areas'] },
     { table: 'CharitableRequest', column: 'CouncilID', noun: ['charitable request', 'charitable requests'] },
+    { table: 'CouncilCadenceConfig', column: 'CouncilID', noun: ['meeting cadence', 'meeting cadences'] },
+    { table: 'ProposedMotion', column: 'CouncilID', noun: ['proposed motion', 'proposed motions'] },
     { table: 'AffiliatedCouncils', column: 'PrimaryCouncilID', noun: ['affiliation', 'affiliations'] },
     { table: 'AffiliatedCouncils', column: 'AffiliatedCouncilID', noun: ['affiliation', 'affiliations'] },
   ],

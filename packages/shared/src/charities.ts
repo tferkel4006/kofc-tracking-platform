@@ -23,6 +23,7 @@ import type {
 } from './contract';
 import { cleanDisbursementCheck, sumAmounts } from './expenses';
 import { fraternalYearBounds } from './budget';
+import { addDays } from './planning';
 import { toTimestamp } from './messaging';
 import { assertIsoDate, assertMoney, assertText, BusinessRuleError, donationMethodKind, optionalText } from './rules';
 import type {
@@ -729,3 +730,64 @@ export function buildMissionAreaFootprint(
     },
   };
 }
+
+// ---- routing an advanced request to the council floor (Sprint 5Z-5) -------------
+//
+// charities.routeRequestToNextEligibleAgenda puts a vetted request ('Advanced', vote still 'Pending') on the agenda of
+// the council's soonest Monthly meeting that honors the 10-day rule: the meeting must fall at least
+// AGENDA_NOTICE_DAYS calendar days after today, so the membership has notice of the motion before it is moved.
+
+/** Calendar days of notice a motion needs before the meeting that hears it (the 10-day rule). */
+export const AGENDA_NOTICE_DAYS = 10;
+
+/** The council meeting type (CouncilMeetingType.TypeName, ignoring case) whose meetings hear charitable motions. */
+export const MONTHLY_MEETING_TYPE_NAME = 'Monthly';
+
+/** True for the council's Monthly meeting type. */
+export const isMonthlyCouncilMeetingType = (typeName: string): boolean =>
+  typeName.trim().toLowerCase() === MONTHLY_MEETING_TYPE_NAME.toLowerCase();
+
+/** The first day a meeting can hear a motion routed `today` (YYYY-MM-DD): AGENDA_NOTICE_DAYS days later. */
+export const earliestAgendaDate = (today: string): string => addDays(today, AGENDA_NOTICE_DAYS);
+
+/**
+ * The soonest of `monthlyMeetings` (already limited to the council's Monthly meetings) dated on or after
+ * earliestAgendaDate(today), by Date, then Time Start, then id; null when none qualifies.
+ */
+export function nextEligibleAgendaMeeting<M extends Pick<Meeting, 'id' | 'Date' | 'Time Start'>>(monthlyMeetings: readonly M[], today: string): M | null {
+  const earliest = earliestAgendaDate(today);
+  const eligible = monthlyMeetings
+    .filter((m) => String(m.Date).slice(0, 10) >= earliest)
+    .sort((a, b) => (a.Date < b.Date ? -1 : a.Date > b.Date ? 1 : a['Time Start'] < b['Time Start'] ? -1 : a['Time Start'] > b['Time Start'] ? 1 : a.id - b.id));
+  return eligible[0] ?? null;
+}
+
+export const noEligibleAgendaMeeting = (requestId: number, councilId: number, today: string): BusinessRuleError =>
+  new BusinessRuleError(
+    'NO_ELIGIBLE_MEETING',
+    `Council ${councilId} has no ${MONTHLY_MEETING_TYPE_NAME} meeting on or after ${earliestAgendaDate(today)} (${AGENDA_NOTICE_DAYS} days' notice) to hear request ${requestId}; populate the year's meeting cadence first.`,
+    { requestId, councilId, earliestDate: earliestAgendaDate(today) },
+  );
+
+/**
+ * Only a vetted request still awaiting its vote may be routed - RequestStatus 'Advanced', VoteStatus 'Pending' - and only
+ * once: `alreadyRouted` is true when a 'Pending' ProposedMotion already carries it. Rejects REQUEST_STATUS_CONFLICT.
+ */
+export function assertRoutableRequest(request: Pick<CharitableRequest, 'id' | 'RequestStatus' | 'VoteStatus'>, alreadyRouted: boolean): void {
+  if (request.RequestStatus !== 'Advanced' || request.VoteStatus !== 'Pending') {
+    throw new BusinessRuleError(
+      'REQUEST_STATUS_CONFLICT',
+      `Charitable request ${request.id} is '${request.RequestStatus}' with vote '${request.VoteStatus}'; only an advanced request awaiting its vote can be put on an agenda.`,
+      { requestId: request.id, requestStatus: request.RequestStatus, voteStatus: request.VoteStatus },
+    );
+  }
+  if (alreadyRouted) {
+    throw new BusinessRuleError('REQUEST_STATUS_CONFLICT', `Charitable request ${request.id} is already on a meeting agenda awaiting its vote.`, {
+      requestId: request.id,
+    });
+  }
+}
+
+/** The motion read to the floor for a routed request: 'That the council donate $500.00 to St. Mary's Food Pantry (charitable request #7).' */
+export const charitableMotionText = (request: Pick<CharitableRequest, 'id' | 'OrganizationName' | 'AmountRequested'>): string =>
+  `That the council donate $${Number(request.AmountRequested).toFixed(2)} to ${request.OrganizationName} (charitable request #${request.id}).`;

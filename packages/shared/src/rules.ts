@@ -96,7 +96,10 @@ export type BusinessRuleCode =
   | 'SELF_VETTING_BLOCKED'
   | 'REQUEST_STATUS_CONFLICT'
   | 'FINANCIAL_SECRETARY_REQUIRED'
-  | 'DUAL_SIGNATURE_CONFLICT';
+  | 'DUAL_SIGNATURE_CONFLICT'
+  | 'EXPENSE_WINDOW_NOT_OPEN'
+  | 'EXPENSE_WINDOW_CLOSED'
+  | 'NO_ELIGIBLE_MEETING';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {

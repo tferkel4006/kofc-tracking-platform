@@ -344,7 +344,7 @@ A member's expense sheet. Members see only their own; the council's Admins, Fina
 •	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). Always the submitter's own council.
 •	SubmitterMemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). The member to reimburse.
 •	Status (VARCHAR(50), NOT NULL) — Draft, Submitted, Approved or Reimbursed. Only drafts may be edited; leadership returns Submitted sheets to Draft with a reason. A Submitted sheet reaches Approved only through dual approval (Sprint 5Z-3; the single-step expenses.approveReport was retired in Sprint 5Z-4): the Financial Secretary's written order (expenses.financialSecretaryAuditOrder), then the Grand Knight's counter-signature (expenses.grandKnightAuthorizeOrder), which sets Approved. Nobody signs their own sheet, whatever their role. The finance officers pay Approved sheets that carry both signatures; a sheet missing either is never paid (expenses.recordDisbursement, EXPENSE_STATUS_CONFLICT). Approved and Reimbursed line items count toward the monthly summary's spend.
-•	LinkedEventID (INTEGER, NULL) — Foreign Key references Event(id). An event linked to the report's council.
+•	LinkedEventID (INTEGER, NULL) — Foreign Key references Event(id). An event linked to the report's council. Sprint 5Z-5 submission window: a sheet linked to an event can be submitted only from the event's StartDate (earlier rejects EXPENSE_WINDOW_NOT_OPEN) through 30 days after its EndDate (EXPENSE_SUBMISSION_GRACE_DAYS; later rejects EXPENSE_WINDOW_CLOSED), both inclusive, by the local calendar date. Drafts may be saved at any time; sheets with no linked event are not limited.
 •	LinkedMeetingID (INTEGER, NULL) — Foreign Key references Meeting(id). A meeting of the report's council.
 •	DisbursementID (INTEGER, NULL) — Foreign Key references ExpenseDisbursement(id). The check that paid it; set with Status Reimbursed.
 •	RejectionReason (VARCHAR(2000), NULL) — Why leadership returned the sheet to Draft (expenses.rejectReport); kept while it is a draft, cleared when it is submitted again.
@@ -533,4 +533,26 @@ A Knight Shepherd's intake form for an outside organization asking the council f
 •	MissionAreaID (INTEGER, NULL) — Sprint 5Z-2: Foreign Key references CouncilMissionArea(id). The mission area the Shepherd files the request under on the intake form; must be one of the council's own (INVALID_INPUT).
 •	TargetBudgetLineID (INTEGER, NULL) — Sprint 5Z-2: Foreign Key references CouncilBudgetForecast(id). The budget line the vetter would pay the gift from, set from the Pooled Vetting Desk (triageRequestStatus); must be a line of the request's council (INVALID_INPUT).
 Seed.sql's presentation data (loaded by the apps, not by the automated tests) puts five requests in the pipeline for Council 15295: two Submitted, two Claimed by Trustee and one Advanced.
+________________________________________
+# 13. Parliamentary Cadence and Proposed Motions (Sprint 5Z-5)
+Schema version 24. Both tables are council-scoped and block deleting their council (RECORD_IN_USE).
+[CouncilCadenceConfig]
+A council's standing recurrence rule for one of its own meeting types. meetings.populateAnnualCadence expands it into the twelve meetings of a fraternal year (July through June): one per month on the day CadencePattern names, from DefaultStartTime for 120 minutes (CADENCE_MEETING_MINUTES; never past 23:59) at DefaultLocation, filed under the config's meeting type with the council's agenda template for it, with no owner and no invitations. A date that already has a meeting of that type is skipped, so the run can be repeated. Run by an Active Admin or Grand Knight of the council, or an Active Super Admin (assertMayScheduleCouncilCadence). Seed.sql's baseline gives Council 15295 one config: Monthly, First Tuesday, 19:30, Parish Hall.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	MeetingTypeID (INTEGER, NOT NULL) — Foreign Key references CouncilMeetingType(id). One of the council's own meeting types. One config per council and type (a unique index on CouncilID, MeetingTypeID).
+•	CadencePattern (VARCHAR(100), NOT NULL) — An ordinal and a weekday: First, Second, Third, Fourth or Last, then Sunday through Saturday (e.g. 'First Tuesday', 'Last Thursday'); case and spacing are ignored. Fifth is not accepted, since not every month has one (parseCadencePattern, INVALID_INPUT).
+•	DefaultStartTime (VARCHAR(50), NOT NULL) — The meetings' 24-hour start time, 'HH:MM' or 'HH:MM:SS'.
+•	DefaultLocation (TEXT, NOT NULL) — Where the meetings are held.
+[ProposedMotion]
+A motion queued for a meeting's floor. charities.routeRequestToNextEligibleAgenda adds one for a vetted charitable request (RequestStatus Advanced, VoteStatus Pending) to the council's soonest Monthly meeting that honors the 10-day rule: the meeting must fall at least 10 calendar days after today (AGENDA_NOTICE_DAYS). A request is carried by at most one Pending motion at a time. Routing takes vetting authority of the request's council and is independent of the request: its Knight Shepherd may not route it (SELF_VETTING_BLOCKED). With no eligible meeting it rejects NO_ELIGIBLE_MEETING.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	TargetMeetingID (INTEGER, NOT NULL) — Foreign Key references Meeting(id). A meeting of the same council.
+•	SourceType (VARCHAR(50), NOT NULL) — Where the motion came from: CharitableRequest or GeneralMember (PROPOSED_MOTION_SOURCE_TYPES; rules layer, no CHECK).
+•	SourceRecordID (INTEGER, NULL) — The originating row: the CharitableRequest id for SourceType CharitableRequest; NULL for a member's own motion. Polymorphic, so it carries no foreign key.
+•	MotionText (TEXT, NOT NULL) — The motion as read to the floor. A routed request reads 'That the council donate $<amount> to <organization> (charitable request #<id>).'
+•	PresenterMemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). Who presents the motion; the Knight Shepherd for a routed request.
+•	AllocatedMinutes (INTEGER, NOT NULL, DEFAULT 5) — Floor time set aside for the motion.
+•	VoteResult (VARCHAR(50), NOT NULL, DEFAULT 'Pending') — Pending, Passed, Failed or Tabled (PROPOSED_MOTION_VOTE_RESULTS; rules layer, no CHECK).
 ________________________________________

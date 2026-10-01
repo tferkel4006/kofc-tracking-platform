@@ -16,6 +16,7 @@ import type {
   Category,
   CharitableDisbursementLedger,
   CharitableRequest,
+  ProposedMotion,
   CharityDonationProposal,
   ChatThread,
   Council,
@@ -45,6 +46,7 @@ import type {
   MeetingResponseStatus,
   CouncilMeetingType,
   CouncilAgendaTemplate,
+  CouncilCadenceConfig,
   CouncilMissionArea,
   CouncilRelationshipType,
   KOCTrainingClasses,
@@ -1023,6 +1025,25 @@ export interface CharitableRequestDetail {
   targetBudgetLine: { name: string; fraternalYear: string } | null;
 }
 
+/** What meetings.populateAnnualCadence laid down (Sprint 5Z-5). */
+export interface CadencePopulationResult {
+  /** The recurrence rule that was expanded. */
+  config: CouncilCadenceConfig;
+  fraternalYear: string;
+  /** The meetings created, soonest first. */
+  created: Meeting[];
+  /** Dates in the year's cadence skipped because the council already had a meeting of that type that day. */
+  skippedDates: string[];
+}
+
+/** Where charities.routeRequestToNextEligibleAgenda put a request (Sprint 5Z-5). */
+export interface AgendaRoutingResult {
+  /** The new 'Pending' motion carrying the request. */
+  motion: ProposedMotion;
+  /** The Monthly meeting whose agenda now carries it. */
+  meeting: Meeting;
+}
+
 /** One mission area's share of a council's fraternal year (Sprint 5Z-2). */
 export interface MissionAreaFootprintEntry {
   /** Null for the "Unfiled" bucket: events filed under no mission area. */
@@ -1793,6 +1814,21 @@ export interface DataService {
      * not the council's own and for text over AGENDA_TEMPLATE_MAX_LENGTH characters. Nothing is written when it rejects.
      */
     saveAgendaTemplate(actorId: number, councilId: number, meetingTypeId: number, templateText: string): Promise<CouncilAgendaTemplate | null>;
+    /**
+     * Lays down a fraternal year of meetings from one of the council's standing cadences (CouncilCadenceConfig,
+     * Sprint 5Z-5), server side and all or nothing: one meeting per month, July of the year's first calendar year
+     * through June of its second, on the day CadencePattern names ('First Tuesday', 'Last Thursday'), from
+     * DefaultStartTime for CADENCE_MEETING_MINUTES at DefaultLocation. Each meeting is filed under the config's
+     * MeetingTypeID (and the global MeetingType of the same name), named cadenceMeetingName(TypeName), has no owner
+     * and no invitations, and starts from the council's agenda template for the type ('' when it has none). A date
+     * on which the council already has a meeting of that type is skipped and listed in skippedDates, so running it
+     * again creates only what is missing. `actorId` is the signed-in member: an Active Admin or Grand Knight of the
+     * council, or any Active Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects MEMBER_NOT_FOUND for an
+     * unknown actor, INVALID_INPUT for an unknown council, a fraternal year that is not 'YYYY-YYYY' with consecutive
+     * years, or a stored pattern or start time that cannot be read, and RECORD_NOT_FOUND for a config that is not
+     * the council's.
+     */
+    populateAnnualCadence(actorId: number, councilId: number, configId: number, fraternalYear: string): Promise<CadencePopulationResult>;
   };
 
   /** Shift helpers behind the automatic hour-reporting defaults (Sprint 5Y-5). */
@@ -2033,6 +2069,19 @@ export interface DataService {
      * TargetBudgetLineID that is not a budget line of the request's council.
      */
     triageRequestStatus(actorId: number, requestId: number, vettingData: CharitableTriageInput): Promise<CharitableRequestDetail>;
+    /**
+     * Puts a vetted request on the council floor (Sprint 5Z-5): finds the request council's soonest Monthly meeting
+     * (a Meeting whose MeetingTypeID is the council's CouncilMeetingType named MONTHLY_MEETING_TYPE_NAME) dated at
+     * least AGENDA_NOTICE_DAYS days after today - the 10-day rule - and adds a ProposedMotion to it: SourceType
+     * 'CharitableRequest', SourceRecordID = requestId, MotionText charitableMotionText(request), presented by the
+     * request's Knight Shepherd, AllocatedMinutes PROPOSED_MOTION_DEFAULT_MINUTES, VoteResult 'Pending'. Vetting
+     * authority of the request's council, as for listCharitableRequestsQueue, and independent of the request
+     * (SELF_VETTING_BLOCKED for its Shepherd). Rejects MEMBER_NOT_FOUND for an unknown actor, RECORD_NOT_FOUND for an
+     * unknown request, REQUEST_STATUS_CONFLICT unless the request is 'Advanced' with VoteStatus 'Pending' or when a
+     * 'Pending' motion already carries it, and NO_ELIGIBLE_MEETING when no Monthly meeting satisfies the 10-day rule.
+     * Nothing is written when it rejects.
+     */
+    routeRequestToNextEligibleAgenda(actorId: number, requestId: number): Promise<AgendaRoutingResult>;
   };
 
   /**

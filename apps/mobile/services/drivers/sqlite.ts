@@ -255,8 +255,25 @@ import {
   assertMayManageAgendaTemplates,
   cleanAgendaTemplateText,
   cleanMeetingSpan,
+  assertExpenseSubmissionWindow,
+  assertMayScheduleCouncilCadence,
+  assertRoutableRequest,
+  cadenceConfigNotFound,
+  cadenceDatesForYear,
+  cadenceMeetingName,
+  cadenceMeetingTimes,
+  charitableMotionText,
+  globalMeetingTypeFor,
+  isMonthlyCouncilMeetingType,
+  nextEligibleAgendaMeeting,
+  noEligibleAgendaMeeting,
+  PROPOSED_MOTION_DEFAULT_MINUTES,
 } from '@kofc/shared';
 import type {
+  CouncilCadenceConfig,
+  Event,
+  MeetingType,
+  ProposedMotion,
   DistributionGroup,
   Activities,
   AlchemerRequest,
@@ -394,8 +411,9 @@ const DB_NAME = 'kofc.db';
  * 22: CharitableRequest.MissionAreaID and TargetBudgetLineID (Sprint 5Z-2).
  * 23: ExpenseReport.FinancialSecretaryMemberID, FinancialSecretaryApprovedAt, GrandKnightMemberID and GrandKnightApprovedAt
  *     (Sprint 5Z-3).
+ * 24: CouncilCadenceConfig and ProposedMotion (Sprint 5Z-5).
  */
-const SCHEMA_VERSION = 23;
+const SCHEMA_VERSION = 24;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -1931,6 +1949,11 @@ export class SqliteDataService implements DataService {
             ? null
             : await db.getFirstAsync<Meeting>('SELECT [CouncilID] FROM [Meeting] WHERE [id] = ?', [clean.LinkedMeetingID]),
         );
+        assertExpenseSubmissionWindow(
+          clean.Status,
+          eventId === null ? null : await db.getFirstAsync<Event>('SELECT [id], [StartDate], [EndDate] FROM [Event] WHERE [id] = ?', [eventId]),
+          this.now(),
+        );
         const fields: Bind[] = [clean.Status, clean.LinkedEventID, clean.LinkedMeetingID];
         if (draft) {
           // Resubmitting answers the rejection, so its reason goes; a draft keeps it for the member to read.
@@ -3016,6 +3039,61 @@ export class SqliteDataService implements DataService {
       });
       return this.meetings.getAgendaTemplate(councilId, meetingTypeId);
     },
+
+    populateAnnualCadence: async (actorId, councilId, configId, fraternalYear) => {
+      const year = assertFraternalYear(fraternalYear);
+      const db = await this.ready();
+      let config: CouncilCadenceConfig | null = null;
+      const createdIds: number[] = [];
+      const skippedDates: string[] = [];
+      await db.withTransactionAsync(async () => {
+        assertMayScheduleCouncilCadence(await this.memberWriteActor(db, actorId), councilId);
+        await this.assertCouncilsExist(db, [councilId]);
+        config = await db.getFirstAsync<CouncilCadenceConfig>('SELECT * FROM [CouncilCadenceConfig] WHERE [id] = ? AND [CouncilID] = ?', [
+          configId,
+          councilId,
+        ]);
+        if (!config) throw cadenceConfigNotFound(configId, councilId);
+        const cadence: CouncilCadenceConfig = config;
+        await this.requireCouncilMeetingType(db, councilId, cadence.MeetingTypeID);
+        const type = (await db.getFirstAsync<{ TypeName: string }>('SELECT [TypeName] FROM [CouncilMeetingType] WHERE [id] = ?', [cadence.MeetingTypeID]))!;
+        const dates = cadenceDatesForYear(cadence.CadencePattern, year);
+        const times = cadenceMeetingTimes(cadence.DefaultStartTime);
+        const globalType = globalMeetingTypeFor(type.TypeName, await db.getAllAsync<MeetingType>('SELECT [id], [Type] FROM [MeetingType] ORDER BY [id]'));
+        if (globalType === undefined) throw new BusinessRuleError('INVALID_INPUT', 'No global meeting types are defined to file the meetings under.');
+        const template = await db.getFirstAsync<{ TemplateText: string }>(
+          'SELECT [TemplateText] FROM [CouncilAgendaTemplate] WHERE [CouncilID] = ? AND [MeetingTypeID] = ?',
+          [councilId, cadence.MeetingTypeID],
+        );
+        for (const date of dates) {
+          const taken = await db.getFirstAsync(
+            'SELECT [id] FROM [Meeting] WHERE [CouncilID] = ? AND [MeetingTypeID] = ? AND substr([Date], 1, 10) = ?',
+            [councilId, cadence.MeetingTypeID, date],
+          );
+          if (taken) {
+            skippedDates.push(date);
+            continue;
+          }
+          const meeting: NewMeeting = {
+            CouncilID: councilId,
+            'Meeting Name': cadenceMeetingName(type.TypeName),
+            Date: date,
+            ...times,
+            Location: cadence.DefaultLocation,
+            Agenda: template?.TemplateText ?? '',
+            MinutesURL: '',
+            MeetingType: globalType,
+            MeetingTypeID: cadence.MeetingTypeID,
+            OwnerID: null,
+            IsMultiDay: 0,
+            EndDate: null,
+          };
+          createdIds.push(await this.insertMeeting(db, meeting, 'none'));
+        }
+      });
+      const created = await selectIn<Meeting>(db, (m) => `SELECT * FROM [Meeting] WHERE [id] IN (${m}) ORDER BY [Date], [id]`, createdIds);
+      return { config: config!, fraternalYear: year, created, skippedDates };
+    },
   };
 
   /** A CouncilMeetingType of `councilId`; another council's type or an unknown id rejects INVALID_INPUT. */
@@ -3825,6 +3903,47 @@ export class SqliteDataService implements DataService {
         ]);
       });
       return (await this.charitableRequestDetails(db, '[id] = ?', [requestId]))[0];
+    },
+
+    routeRequestToNextEligibleAgenda: async (actorId, requestId) => {
+      const db = await this.ready();
+      let motionId = 0;
+      let meetingId = 0;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const request = await db.getFirstAsync<CharitableRequest>('SELECT * FROM [CharitableRequest] WHERE [id] = ?', [requestId]);
+        if (!request) throw charitableRequestNotFound(requestId);
+        const councilId = request.CouncilID;
+        assertMayVetCharitableRequests(actor, councilId, `put charitable request ${requestId} on a meeting agenda`);
+        assertIndependentVetter(actor, request);
+        const alreadyRouted = await db.getFirstAsync(
+          `SELECT [id] FROM [ProposedMotion] WHERE [SourceType] = 'CharitableRequest' AND [SourceRecordID] = ? AND [VoteResult] = 'Pending'`,
+          [requestId],
+        );
+        assertRoutableRequest(request, alreadyRouted !== null);
+        const types = await db.getAllAsync<{ id: number; TypeName: string }>('SELECT [id], [TypeName] FROM [CouncilMeetingType] WHERE [CouncilID] = ?', [councilId]);
+        const monthlyTypeIds = types.filter((t) => isMonthlyCouncilMeetingType(t.TypeName)).map((t) => t.id);
+        const monthly = await selectIn<Meeting>(
+          db,
+          (m) => `SELECT * FROM [Meeting] WHERE [CouncilID] = ${Number(councilId)} AND [MeetingTypeID] IN (${m})`,
+          monthlyTypeIds,
+        );
+        const today = toIsoDate(this.now());
+        const meeting = nextEligibleAgendaMeeting(monthly, today);
+        if (!meeting) throw noEligibleAgendaMeeting(requestId, councilId, today);
+        meetingId = meeting.id;
+        const res = await db.runAsync(
+          `INSERT INTO [ProposedMotion] ([CouncilID], [TargetMeetingID], [SourceType], [SourceRecordID], [MotionText], [PresenterMemberID],
+                                         [AllocatedMinutes], [VoteResult])
+           VALUES (?, ?, 'CharitableRequest', ?, ?, ?, ?, 'Pending')`,
+          [councilId, meeting.id, requestId, charitableMotionText(request), request.ShepherdMemberID, PROPOSED_MOTION_DEFAULT_MINUTES],
+        );
+        motionId = res.lastInsertRowId;
+      });
+      return {
+        motion: (await db.getFirstAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [id] = ?', [motionId]))!,
+        meeting: (await db.getFirstAsync<Meeting>('SELECT * FROM [Meeting] WHERE [id] = ?', [meetingId]))!,
+      };
     },
   };
 

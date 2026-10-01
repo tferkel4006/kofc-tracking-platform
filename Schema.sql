@@ -1558,3 +1558,69 @@ ADD FOREIGN KEY([GrandKnightMemberID])
 REFERENCES [Member]([id])
 ON UPDATE NO ACTION ON DELETE NO ACTION;
 GO
+
+-- =========================================================================
+-- Sprint 5Z-5: PARLIAMENTARY CADENCE AND PROPOSED MOTIONS
+-- CouncilCadenceConfig holds a council's standing recurrence rule for one of its own meeting types (at most one per
+-- council and type): the CadencePattern ('First Tuesday' ... 'Fourth Saturday', or 'Last Thursday'), the default
+-- 24-hour start time and the default location. meetings.populateAnnualCadence expands it into the twelve meetings of a
+-- fraternal year (July through June). ProposedMotion is a meeting's list of motions to be put to the floor: SourceType
+-- names where a motion came from ('CharitableRequest' or 'GeneralMember') and SourceRecordID the originating row
+-- (a CharitableRequest id; NULL for a member's own motion, so it carries no foreign key). VoteResult stays 'Pending'
+-- until the council votes. Both value lists are enforced by the shared rules layer (no CHECK).
+-- =========================================================================
+CREATE TABLE [CouncilCadenceConfig] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[MeetingTypeID] INTEGER NOT NULL,
+	[CadencePattern] VARCHAR(100) NOT NULL,
+	[DefaultStartTime] VARCHAR(50) NOT NULL,
+	[DefaultLocation] TEXT NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [ProposedMotion] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[TargetMeetingID] INTEGER NOT NULL,
+	[SourceType] VARCHAR(50) NOT NULL,
+	[SourceRecordID] INTEGER NULL,
+	[MotionText] TEXT NOT NULL,
+	[PresenterMemberID] INTEGER NOT NULL,
+	[AllocatedMinutes] INTEGER NOT NULL DEFAULT 5,
+	[VoteResult] VARCHAR(50) NOT NULL DEFAULT 'Pending',
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CouncilCadenceConfig]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilCadenceConfig]
+ADD FOREIGN KEY([MeetingTypeID])
+REFERENCES [CouncilMeetingType]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ProposedMotion]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ProposedMotion]
+ADD FOREIGN KEY([TargetMeetingID])
+REFERENCES [Meeting]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ProposedMotion]
+ADD FOREIGN KEY([PresenterMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [CouncilCadenceConfig_Council_MeetingType_Idx] ON [CouncilCadenceConfig] ([CouncilID], [MeetingTypeID]);
+GO
+CREATE INDEX [ProposedMotion_Meeting_Idx] ON [ProposedMotion] ([TargetMeetingID]);
+GO

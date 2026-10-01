@@ -238,6 +238,15 @@ Values
 (1, 'Community'),
 (1, 'Life');
 GO
+
+-- ==============================================================================
+-- Sprint 5Z-5: the standing cadence of Council 15295's monthly meeting (CouncilMeetingType 1, 'Monthly'): the first
+-- Tuesday of every month at 7:30 PM in the parish hall. meetings.populateAnnualCadence expands it per fraternal year.
+-- ==============================================================================
+Insert Into [CouncilCadenceConfig] ([CouncilID], [MeetingTypeID], [CadencePattern], [DefaultStartTime], [DefaultLocation])
+Values
+(1, 1, 'First Tuesday', '19:30', 'Parish Hall');
+GO
 -- @presentation-data
 -- Everything below this marker is presentation data. The apps load it (presentationData: true); the automated
 -- tests keep the minimal baseline above, so their fixture ids, vacant seats and empty ledgers stay stable.

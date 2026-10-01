@@ -9,11 +9,13 @@
 // Agenda templates (CouncilAgendaTemplate) are kept by the council's Admins, its Grand Knight and any Super Admin
 // (meetings.saveAgendaTemplate); every member's meeting form reads them (meetings.getAgendaTemplate).
 // =========================================================================
+import { assertFraternalYear } from './budget';
 import { GRAND_KNIGHT_ROLE } from './elections';
 import { formatDate, formatTimeRange } from './presentation';
 import {
   assertIsoDate,
   assertText,
+  assertTimeOfDay,
   BusinessRuleError,
   describeActor,
   hasAdminRights,
@@ -21,7 +23,7 @@ import {
   SecurityPrivilegeError,
   type MemberWriteActor,
 } from './rules';
-import type { Meeting, MeetingType } from './types';
+import type { Meeting, MeetingType, ProposedMotionSourceType, ProposedMotionVoteResult } from './types';
 
 /** The Time Start and Time End stored on a multi-day meeting, which has no clock times. */
 export const MULTI_DAY_MEETING_TIME = '00:00:00';
@@ -78,25 +80,32 @@ export function globalMeetingTypeFor(typeName: string, globals: readonly Pick<Me
   return (globals.find((g) => String(g.Type).trim().toLowerCase() === wanted) ?? globals[0])?.id;
 }
 
-function agendaDenial(actor: MemberWriteActor, councilId: number): SecurityPrivilegeError | null {
+/**
+ * The council's meeting keepers - an Active Admin or Grand Knight of the council, or any Active Super Admin - who edit
+ * its agenda templates and lay down its annual meeting cadence. `can` completes "can ...", `cannot` "cannot ...".
+ */
+function meetingKeeperDenial(actor: MemberWriteActor, councilId: number, can: string, cannot: string): SecurityPrivilegeError | null {
   if (hasSuperAdminRights(actor)) return null;
   const grandKnight = actor.active && (actor.roles ?? []).includes(GRAND_KNIGHT_ROLE);
   if (!hasAdminRights(actor) && !grandKnight) {
     return new SecurityPrivilegeError(
       'ADMIN_REQUIRED',
-      `Only an active Admin or the Grand Knight of the council, or a Super Admin, can edit its agenda templates; member ${actor.memberId} is ${describeActor(actor)}.`,
+      `Only an active Admin or the Grand Knight of the council, or a Super Admin, can ${can}; member ${actor.memberId} is ${describeActor(actor)}.`,
       { actorId: actor.memberId, actorType: actor.memberType ?? null, councilId },
     );
   }
   if (actor.councilId !== councilId) {
     return new SecurityPrivilegeError(
       'COUNCIL_ACCESS_DENIED',
-      `Member ${actor.memberId} of council ${actor.councilId} cannot edit the agenda templates of council ${councilId}.`,
+      `Member ${actor.memberId} of council ${actor.councilId} cannot ${cannot}.`,
       { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
     );
   }
   return null;
 }
+
+const agendaDenial = (actor: MemberWriteActor, councilId: number): SecurityPrivilegeError | null =>
+  meetingKeeperDenial(actor, councilId, 'edit its agenda templates', `edit the agenda templates of council ${councilId}`);
 
 /** meetings.saveAgendaTemplate: an Active Admin or Grand Knight of the council, or an Active Super Admin. */
 export function assertMayManageAgendaTemplates(actor: MemberWriteActor, councilId: number): void {
@@ -108,3 +117,97 @@ export const mayManageAgendaTemplates = (actor: MemberWriteActor, councilId: num
 
 /** An agenda template's text, trimmed; '' means "remove the template". Rejects INVALID_INPUT past the cap. */
 export const cleanAgendaTemplateText = (value: unknown): string => assertText(value, 'Agenda template', AGENDA_TEMPLATE_MAX_LENGTH, false);
+
+// ---- parliamentary cadence (Sprint 5Z-5) ---------------------------------------
+//
+// A CouncilCadenceConfig names when one of the council's meeting types recurs ('First Tuesday', 'Last Thursday'):
+// meetings.populateAnnualCadence expands it into the twelve meetings of a fraternal year, July through June, each at
+// DefaultStartTime for CADENCE_MEETING_MINUTES at DefaultLocation, with the council's agenda template for the type.
+
+/** How long a meeting laid down by populateAnnualCadence runs; the config carries only a start time. */
+export const CADENCE_MEETING_MINUTES = 120;
+
+/** The ordinals a CadencePattern may use. 'Fifth' is left out: not every month has one, and a year needs twelve. */
+export const CADENCE_ORDINALS = ['First', 'Second', 'Third', 'Fourth', 'Last'] as const;
+export type CadenceOrdinal = (typeof CADENCE_ORDINALS)[number];
+
+/** Weekday names in Date.getDay() order. */
+export const CADENCE_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+export type CadenceWeekday = (typeof CADENCE_WEEKDAYS)[number];
+
+export interface CadenceRule {
+  ordinal: CadenceOrdinal;
+  weekday: CadenceWeekday;
+}
+
+const capitalized = (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+
+/** 'first tuesday' -> { ordinal: 'First', weekday: 'Tuesday' }. Rejects INVALID_INPUT for anything else. */
+export function parseCadencePattern(value: unknown): CadenceRule {
+  const words = typeof value === 'string' ? value.trim().split(/\s+/).map(capitalized) : [];
+  const [ordinal, weekday] = words;
+  if (words.length === 2 && (CADENCE_ORDINALS as readonly string[]).includes(ordinal) && (CADENCE_WEEKDAYS as readonly string[]).includes(weekday)) {
+    return { ordinal: ordinal as CadenceOrdinal, weekday: weekday as CadenceWeekday };
+  }
+  throw new BusinessRuleError(
+    'INVALID_INPUT',
+    `A cadence pattern is an ordinal (${CADENCE_ORDINALS.join(', ')}) and a weekday, as 'First Tuesday'; received ${JSON.stringify(value)}.`,
+    { field: 'CadencePattern', value },
+  );
+}
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** The day in `year`/`month` (1-12) that `rule` names, as YYYY-MM-DD. */
+export function cadenceDateInMonth(rule: CadenceRule, year: number, month: number): string {
+  const target = CADENCE_WEEKDAYS.indexOf(rule.weekday);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  let day: number;
+  if (rule.ordinal === 'Last') {
+    const lastWeekday = new Date(year, month - 1, daysInMonth).getDay();
+    day = daysInMonth - ((lastWeekday - target + 7) % 7);
+  } else {
+    const firstWeekday = new Date(year, month - 1, 1).getDay();
+    day = 1 + ((target - firstWeekday + 7) % 7) + 7 * CADENCE_ORDINALS.indexOf(rule.ordinal);
+  }
+  return `${year}-${pad2(month)}-${pad2(day)}`;
+}
+
+/** The twelve dates `pattern` names in `fraternalYear` ('YYYY-YYYY'), July of its first year through June of its second. */
+export function cadenceDatesForYear(pattern: unknown, fraternalYear: string): string[] {
+  const rule = parseCadencePattern(pattern);
+  const start = Number(assertFraternalYear(fraternalYear).slice(0, 4));
+  return Array.from({ length: 12 }, (_, i) => {
+    const month = ((6 + i) % 12) + 1; // July (7) .. June (6)
+    return cadenceDateInMonth(rule, month >= 7 ? start : start + 1, month);
+  });
+}
+
+/** A cadence meeting's Time Start and Time End: DefaultStartTime and CADENCE_MEETING_MINUTES later, kept on the same day. */
+export function cadenceMeetingTimes(defaultStartTime: unknown): { 'Time Start': string; 'Time End': string } {
+  const start = assertTimeOfDay(defaultStartTime, 'Default start time');
+  const [h, m] = start.split(':').map(Number);
+  const endMinutes = Math.min(h * 60 + m + CADENCE_MEETING_MINUTES, 23 * 60 + 59);
+  return { 'Time Start': start, 'Time End': `${pad2(Math.floor(endMinutes / 60))}:${pad2(endMinutes % 60)}:00` };
+}
+
+/** The name populateAnnualCadence gives a meeting of the council type `typeName`: 'Monthly' -> 'Monthly Meeting'. */
+export const cadenceMeetingName = (typeName: string): string => `${typeName.trim()} Meeting`.slice(0, 100);
+
+export const cadenceConfigNotFound = (configId: number, councilId: number): BusinessRuleError =>
+  new BusinessRuleError('RECORD_NOT_FOUND', `Council ${councilId} has no meeting cadence with id ${configId}.`, { configId, councilId });
+
+/** meetings.populateAnnualCadence: the council's meeting keepers - an Active Admin or Grand Knight, or an Active Super Admin. */
+export function assertMayScheduleCouncilCadence(actor: MemberWriteActor, councilId: number): void {
+  const denial = meetingKeeperDenial(actor, councilId, 'lay down its annual meeting cadence', `lay down the meeting cadence of council ${councilId}`);
+  if (denial) throw denial;
+}
+
+// ---- proposed motions (Sprint 5Z-5) ---------------------------------------------
+
+/** Every ProposedMotion.SourceType. */
+export const PROPOSED_MOTION_SOURCE_TYPES: readonly ProposedMotionSourceType[] = ['CharitableRequest', 'GeneralMember'];
+/** Every ProposedMotion.VoteResult; 'Pending' until the council votes. */
+export const PROPOSED_MOTION_VOTE_RESULTS: readonly ProposedMotionVoteResult[] = ['Pending', 'Passed', 'Failed', 'Tabled'];
+/** ProposedMotion.AllocatedMinutes default (the column's DEFAULT 5). */
+export const PROPOSED_MOTION_DEFAULT_MINUTES = 5;

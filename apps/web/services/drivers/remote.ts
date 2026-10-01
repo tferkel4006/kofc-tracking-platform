@@ -153,6 +153,7 @@ export function createRemoteDataService(): DataService {
       rsvpToInvite: notImplemented('meetings.rsvpToInvite'),
       getAgendaTemplate: notImplemented('meetings.getAgendaTemplate'),
       saveAgendaTemplate: notImplemented('meetings.saveAgendaTemplate'),
+      populateAnnualCadence: notImplemented('meetings.populateAnnualCadence'),
     },
     shifts: { getShiftDefaultLength: notImplemented('shifts.getShiftDefaultLength') },
     notifications: {
@@ -187,6 +188,7 @@ export function createRemoteDataService(): DataService {
       listCharitableRequestsQueue: notImplemented('charities.listCharitableRequestsQueue'),
       submitCharitableRequest: notImplemented('charities.submitCharitableRequest'),
       triageRequestStatus: notImplemented('charities.triageRequestStatus'),
+      routeRequestToNextEligibleAgenda: notImplemented('charities.routeRequestToNextEligibleAgenda'),
     },
     budget: {
       listAnnualForecast: notImplemented('budget.listAnnualForecast'),

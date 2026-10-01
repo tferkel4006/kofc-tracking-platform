@@ -254,8 +254,25 @@ import {
   cleanAgendaTemplateText,
   cleanMeetingSpan,
   meetingLastDate,
+  assertExpenseSubmissionWindow,
+  assertMayScheduleCouncilCadence,
+  assertRoutableRequest,
+  cadenceConfigNotFound,
+  cadenceDatesForYear,
+  cadenceMeetingName,
+  cadenceMeetingTimes,
+  charitableMotionText,
+  globalMeetingTypeFor,
+  isMonthlyCouncilMeetingType,
+  nextEligibleAgendaMeeting,
+  noEligibleAgendaMeeting,
+  PROPOSED_MOTION_DEFAULT_MINUTES,
 } from '@kofc/shared';
 import type {
+  CouncilCadenceConfig,
+  Event,
+  MeetingType,
+  ProposedMotion,
   DistributionGroup,
   AnnualBudgetForecast,
   BudgetYearPerformance,
@@ -1714,6 +1731,11 @@ export class MemoryDataService implements DataService {
           eventId !== null && s.rows('Event').some((e) => e.id === eventId) ? this.councilIdsOf(s, eventId) : null,
           (s.rows('Meeting').find((m) => m.id === clean.LinkedMeetingID) as unknown as Meeting | undefined) ?? null,
         );
+        assertExpenseSubmissionWindow(
+          clean.Status,
+          eventId === null ? null : (s.rows('Event').find((e) => e.id === eventId) as unknown as Event),
+          this.now(),
+        );
         const fields = { Status: clean.Status, LinkedEventID: clean.LinkedEventID, LinkedMeetingID: clean.LinkedMeetingID };
         let reportId: number;
         if (draft) {
@@ -2567,6 +2589,53 @@ export class MemoryDataService implements DataService {
         return { ...s.insert('CouncilAgendaTemplate', { CouncilID: councilId, MeetingTypeID: meetingTypeId, TemplateText: text }) } as unknown as CouncilAgendaTemplate;
       });
     },
+
+    populateAnnualCadence: async (actorId, councilId, configId, fraternalYear) => {
+      const year = assertFraternalYear(fraternalYear);
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayScheduleCouncilCadence(this.memberWriteActor(s, actorId), councilId);
+        this.assertCouncilsExist(s, [councilId]);
+        const config = s.rows('CouncilCadenceConfig').find((c) => c.id === configId && c.CouncilID === councilId) as unknown as
+          | CouncilCadenceConfig
+          | undefined;
+        if (!config) throw cadenceConfigNotFound(configId, councilId);
+        const typeName = String(this.requireCouncilMeetingType(s, councilId, config.MeetingTypeID).TypeName);
+        const dates = cadenceDatesForYear(config.CadencePattern, year);
+        const times = cadenceMeetingTimes(config.DefaultStartTime);
+        const globalType = globalMeetingTypeFor(typeName, s.rows('MeetingType') as unknown as MeetingType[]);
+        if (globalType === undefined) throw new BusinessRuleError('INVALID_INPUT', 'No global meeting types are defined to file the meetings under.');
+        const template = s.rows('CouncilAgendaTemplate').find((t) => t.CouncilID === councilId && t.MeetingTypeID === config.MeetingTypeID);
+        const createdIds: number[] = [];
+        const skippedDates: string[] = [];
+        for (const date of dates) {
+          const taken = s
+            .rows('Meeting')
+            .some((m) => m.CouncilID === councilId && m.MeetingTypeID === config.MeetingTypeID && String(m.Date).slice(0, 10) === date);
+          if (taken) {
+            skippedDates.push(date);
+            continue;
+          }
+          const meeting: NewMeeting = {
+            CouncilID: councilId,
+            'Meeting Name': cadenceMeetingName(typeName),
+            Date: date,
+            ...times,
+            Location: config.DefaultLocation,
+            Agenda: (template?.TemplateText as string | undefined) ?? '',
+            MinutesURL: '',
+            MeetingType: globalType,
+            MeetingTypeID: config.MeetingTypeID,
+            OwnerID: null,
+            IsMultiDay: 0,
+            EndDate: null,
+          };
+          createdIds.push(this.insertMeeting(meeting, 'none'));
+        }
+        const created = createdIds.map((id) => ({ ...s.rows('Meeting').find((m) => m.id === id)! }) as unknown as Meeting);
+        return { config: { ...config }, fraternalYear: year, created, skippedDates };
+      });
+    },
   };
 
   /** A CouncilMeetingType of `councilId`; another council's type or an unknown id rejects INVALID_INPUT. */
@@ -3255,6 +3324,43 @@ export class MemoryDataService implements DataService {
         Object.assign(request, changes);
       });
       return this.charitableRequestDetails(s, (r) => r.id === requestId)[0];
+    },
+
+    routeRequestToNextEligibleAgenda: async (actorId, requestId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const request = s.rows('CharitableRequest').find((r) => r.id === requestId) as unknown as CharitableRequest | undefined;
+        if (!request) throw charitableRequestNotFound(requestId);
+        const councilId = request.CouncilID;
+        assertMayVetCharitableRequests(actor, councilId, `put charitable request ${requestId} on a meeting agenda`);
+        assertIndependentVetter(actor, request);
+        const alreadyRouted = s
+          .rows('ProposedMotion')
+          .some((p) => p.SourceType === 'CharitableRequest' && p.SourceRecordID === requestId && p.VoteResult === 'Pending');
+        assertRoutableRequest(request, alreadyRouted);
+        const monthlyTypeIds = new Set(
+          s
+            .rows('CouncilMeetingType')
+            .filter((t) => t.CouncilID === councilId && isMonthlyCouncilMeetingType(String(t.TypeName)))
+            .map((t) => t.id),
+        );
+        const monthly = s.rows('Meeting').filter((m) => m.CouncilID === councilId && monthlyTypeIds.has(m.MeetingTypeID)) as unknown as Meeting[];
+        const today = toIsoDate(this.now());
+        const meeting = nextEligibleAgendaMeeting(monthly, today);
+        if (!meeting) throw noEligibleAgendaMeeting(requestId, councilId, today);
+        const motion = s.insert('ProposedMotion', {
+          CouncilID: councilId,
+          TargetMeetingID: meeting.id,
+          SourceType: 'CharitableRequest',
+          SourceRecordID: requestId,
+          MotionText: charitableMotionText(request),
+          PresenterMemberID: request.ShepherdMemberID,
+          AllocatedMinutes: PROPOSED_MOTION_DEFAULT_MINUTES,
+          VoteResult: 'Pending',
+        });
+        return { motion: { ...motion } as unknown as ProposedMotion, meeting: { ...meeting } };
+      });
     },
   };
 

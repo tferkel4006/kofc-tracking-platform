@@ -316,6 +316,38 @@ export interface CouncilAgendaTemplate {
   TemplateText: string;
 }
 
+/**
+ * A council's standing recurrence rule for one of its meeting types (Sprint 5Z-5); one per council and type.
+ * meetings.populateAnnualCadence expands it into a fraternal year's twelve meetings.
+ */
+export interface CouncilCadenceConfig {
+  id: number;
+  CouncilID: number;
+  MeetingTypeID: number; // CouncilMeetingType of the same council
+  CadencePattern: string; // VARCHAR(100): 'First Tuesday' ... 'Fourth Saturday', or 'Last Thursday'
+  DefaultStartTime: string; // VARCHAR(50): 24-hour 'HH:MM' or 'HH:MM:SS'
+  DefaultLocation: string; // TEXT
+}
+
+/** Where a proposed motion came from; see PROPOSED_MOTION_SOURCE_TYPES. */
+export type ProposedMotionSourceType = 'CharitableRequest' | 'GeneralMember';
+
+/** The council's vote on a proposed motion; 'Pending' until the vote is recorded. */
+export type ProposedMotionVoteResult = 'Pending' | 'Passed' | 'Failed' | 'Tabled';
+
+/** A motion queued for a meeting's floor (Sprint 5Z-5). */
+export interface ProposedMotion {
+  id: number;
+  CouncilID: number;
+  TargetMeetingID: number; // a Meeting of the same council
+  SourceType: ProposedMotionSourceType;
+  SourceRecordID?: number | null; // the CharitableRequest id for 'CharitableRequest'; null for a member's own motion
+  MotionText: string;
+  PresenterMemberID: number;
+  AllocatedMinutes: number; // default 5
+  VoteResult: ProposedMotionVoteResult; // default 'Pending'
+}
+
 
 
 // 7. PHASE 2 EXTENSIONS: DONATIONS, SKILLS, TRAINING, WORKING STATUS
