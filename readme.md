@@ -59,9 +59,13 @@ The cloud runner handles your project verification across three discrete pipelin
 ________________________________________
 
 📇 5. Parish QR Codes & Council Archive Vault
-The Member Actions welcome card and the user guides show the council's four collection-channel QR codes from apps/web/public/assets/images/qr/. Each file is a placeholder until the council's real code replaces it under the same name.
+The Member Actions welcome card (the hall projector's app download checkpoint) shows two onboarding codes from apps/web/public/assets/images/qr/. The phone's Donate screen opens each collection channel's code full screen, one at a time, from apps/mobile/assets/images/qr/. Each file is a placeholder until the council's real code replaces it under the same name.
+| Mobile App Expo Go Sync | Member Sign-Up |
+|---|---|
+| ![Mobile App Expo Go Sync QR code](apps/web/public/assets/images/qr/expo-go-sync.png) | ![Member Sign-Up QR code](apps/web/public/assets/images/qr/member-sign-up.png) |
+
 | ParishSoft | Venmo | Zeffy | Zelle |
 |---|---|---|---|
-| ![ParishSoft collection QR code](apps/web/public/assets/images/qr/parishsoft-collection.png) | ![Venmo collection QR code](apps/web/public/assets/images/qr/venmo-collection.png) | ![Zeffy collection QR code](apps/web/public/assets/images/qr/zeffy-collection.png) | ![Zelle collection QR code](apps/web/public/assets/images/qr/zelle-collection.png) |
+| ![ParishSoft collection QR code](apps/mobile/assets/images/qr/parishsoft-collection.png) | ![Venmo collection QR code](apps/mobile/assets/images/qr/venmo-collection.png) | ![Zeffy collection QR code](apps/mobile/assets/images/qr/zeffy-collection.png) | ![Zelle collection QR code](apps/mobile/assets/images/qr/zelle-collection.png) |
 The council's shared Google Drive archive opens in a new tab from the sidebar for seated officers, Admins and Super Admins: Administrative Lookups → 📂 Council Archive Vault.
 ________________________________________

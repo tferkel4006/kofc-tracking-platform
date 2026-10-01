@@ -10,6 +10,9 @@
 //  3. The form is pre-filled from the session defaults; the member corrects the amount if the donor gave
 //     something different, then records it or cancels.
 // While a session is running, the event's donations from every phone are listed, newest first.
+// Sprint 5Z-Mobile-Intake: tapping Venmo, ParishSoft, Zeffy or Zelle opens a full-screen pop-up with only that channel's
+// code, bundled with the app (components/CollectionQrModal.tsx); the council's uploaded code is shown only for a QR
+// method the app carries no image for.
 // Sprint 5Z-10 high-speed gate intake: the pinned-event card carries the '🎬 Start Active Intake Session' switch
 // (events.setIntakeSessionStatus). While the event's intake is Active, a full-screen overlay offers two one-tap targets,
 // cash and card, that log a donation at a preset amount with nothing typed (components/GateIntake.tsx).
@@ -23,6 +26,7 @@ import {
   type DonationType,
   type Event,
 } from '@kofc/shared';
+import { CollectionQrModal, collectionQrFor } from '@/components/CollectionQrModal';
 import { DonationMethodGrid } from '@/components/DonationMethodGrid';
 import { DonationQr } from '@/components/DonationQr';
 import { GateIntakeOverlay, IntakeSessionSwitch } from '@/components/GateIntake';
@@ -153,6 +157,9 @@ function DonationForm({
   const [photoPath, setPhotoPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Venmo, ParishSoft, Zeffy and Zelle open their own bundled code full screen as soon as the tile is tapped.
+  const bundledQr = option.kind === 'qr' ? collectionQrFor(option.method.DonationMethod) : null;
+  const [qrOpen, setQrOpen] = useState(bundledQr !== null);
 
   const amountLabel = isItem ? 'Estimated value' : 'Amount';
   const record = async () => {
@@ -173,7 +180,14 @@ function DonationForm({
 
   return (
     <View style={{ gap: space.lg }}>
-      {option.kind === 'qr' ? <DonationQr url={option.qrCodeUrl} methodName={option.method.DonationMethod} /> : null}
+      {bundledQr ? (
+        <>
+          <CollectionQrModal methodName={option.method.DonationMethod} source={bundledQr} visible={qrOpen} onClose={() => setQrOpen(false)} />
+          <Button title={`Show the ${option.method.DonationMethod} QR code`} variant="secondary" onPress={() => setQrOpen(true)} />
+        </>
+      ) : option.kind === 'qr' ? (
+        <DonationQr url={option.qrCodeUrl} methodName={option.method.DonationMethod} />
+      ) : null}
       <Card accent={color.navy}>
         <AppText variant="title">{isItem ? 'Physical item donation' : `${option.method.DonationMethod} donation`}</AppText>
         {error ? <Notice tone="error" message={error} /> : null}

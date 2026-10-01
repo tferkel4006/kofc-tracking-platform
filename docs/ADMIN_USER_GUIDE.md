@@ -518,11 +518,16 @@ Quick answers are also in the portal's **Online Help Center**.
 ## Appendix: Council Archive Vault and parish QR codes
 
 - **Council Archive Vault.** Open **Administrative Lookups** in the sidebar and select **📂 Council Archive Vault**. The council's shared Google Drive folder opens in a new browser tab. The link shows only to seated officers, Admins and Super Admins; regular members do not see it. Google Drive's own sharing settings still decide who can open the folder.
-- **Collection QR codes.** The **Welcome, Brother Knight** card on **Member Actions** shows the four collection channels' codes (ParishSoft, Venmo, Zeffy and Zelle) from `apps/web/public/assets/images/qr/`. To put a real code in place, replace the placeholder file and keep its name:
+- **App download keys.** The **Welcome, Brother Knight** card on **Member Actions**, which doubles as the hall projector's app download checkpoint, shows two codes from `apps/web/public/assets/images/qr/`.
+- **Collection QR codes.** On the phone's **Donate** screen, tapping Venmo, ParishSoft, Zeffy or Zelle opens a full-screen pop-up with only that channel's code. The codes come with the app from `apps/mobile/assets/images/qr/`, so they take the place of any image link set under **Council Lookup Tables → Enabled donation methods** for those four methods.
+
+To put a real code in place, replace the placeholder file and keep its name:
 
 | Code | File |
 |---|---|
-| ![ParishSoft collection QR code](../apps/web/public/assets/images/qr/parishsoft-collection.png) | `parishsoft-collection.png` |
-| ![Venmo collection QR code](../apps/web/public/assets/images/qr/venmo-collection.png) | `venmo-collection.png` |
-| ![Zeffy collection QR code](../apps/web/public/assets/images/qr/zeffy-collection.png) | `zeffy-collection.png` |
-| ![Zelle collection QR code](../apps/web/public/assets/images/qr/zelle-collection.png) | `zelle-collection.png` |
+| ![Mobile App Expo Go Sync QR code](../apps/web/public/assets/images/qr/expo-go-sync.png) | `apps/web/public/assets/images/qr/expo-go-sync.png` |
+| ![Member Sign-Up QR code](../apps/web/public/assets/images/qr/member-sign-up.png) | `apps/web/public/assets/images/qr/member-sign-up.png` |
+| ![ParishSoft collection QR code](../apps/mobile/assets/images/qr/parishsoft-collection.png) | `apps/mobile/assets/images/qr/parishsoft-collection.png` |
+| ![Venmo collection QR code](../apps/mobile/assets/images/qr/venmo-collection.png) | `apps/mobile/assets/images/qr/venmo-collection.png` |
+| ![Zeffy collection QR code](../apps/mobile/assets/images/qr/zeffy-collection.png) | `apps/mobile/assets/images/qr/zeffy-collection.png` |
+| ![Zelle collection QR code](../apps/mobile/assets/images/qr/zelle-collection.png) | `apps/mobile/assets/images/qr/zelle-collection.png` |

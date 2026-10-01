@@ -32,13 +32,16 @@
 
 ![Image: Member Dashboard Setup]
 
-### Scan to give
+### Get the app
 
-The **Welcome, Brother Knight** card at the top of **Member Actions** shows the council's four collection channels. Point your phone's camera at one to give through that service.
+The **Welcome, Brother Knight** card at the top of **Member Actions** (also shown on the hall projector) carries two codes. Point your phone's camera at one to open it.
 
-| ParishSoft | Venmo | Zeffy | Zelle |
-|---|---|---|---|
-| ![ParishSoft collection QR code](../apps/web/public/assets/images/qr/parishsoft-collection.png) | ![Venmo collection QR code](../apps/web/public/assets/images/qr/venmo-collection.png) | ![Zeffy collection QR code](../apps/web/public/assets/images/qr/zeffy-collection.png) | ![Zelle collection QR code](../apps/web/public/assets/images/qr/zelle-collection.png) |
+| Mobile App (Expo Go) | Member Sign-Up |
+|---|---|
+| ![Mobile App Expo Go Sync QR code](../apps/web/public/assets/images/qr/expo-go-sync.png) | ![Member Sign-Up QR code](../apps/web/public/assets/images/qr/member-sign-up.png) |
+| Open the KofC Tracker phone app in Expo Go. | Ask to join the council. |
+
+The codes for giving by Venmo, Zelle, Zeffy and ParishSoft are on the phone's **Donate** screen (§8.2).
 
 ---
 
@@ -294,18 +297,25 @@ If you don't pin an event, donations are recorded as **standalone** (not linked 
 |---|---|---|
 | **Record the amount** | Cash, and any other method your council adds | Enter the amount. |
 | **Record the charge** | Credit Card | Enter the amount charged. |
-| **Show the QR code** | Venmo, Zelle, Zeffy, ParishSoft | The council's QR code fills the screen. |
+| **Show the QR code** | Venmo, Zelle, Zeffy, ParishSoft | A full-screen pop-up shows only that channel's QR code. |
 | **Describe and value** | Physical items | Describe the items and estimate their value. |
 
 2. **For a QR payment:**
-   1. Turn the phone toward the donor so they can scan **"Scan to pay with *method*"**.
-   2. Wait until they show you their **payment confirmation**, and check that the amount matches.
+   1. Turn the phone toward the donor so they can scan **"Scan to pay with *method*"**. Each tile shows only its own code:
+
+| ParishSoft | Venmo | Zeffy | Zelle |
+|---|---|---|---|
+| ![ParishSoft collection QR code](../apps/mobile/assets/images/qr/parishsoft-collection.png) | ![Venmo collection QR code](../apps/mobile/assets/images/qr/venmo-collection.png) | ![Zeffy collection QR code](../apps/mobile/assets/images/qr/zeffy-collection.png) | ![Zelle collection QR code](../apps/mobile/assets/images/qr/zelle-collection.png) |
+
+   2. Wait until they show you their **payment confirmation**, and check that the amount matches. Tap **Done – record the payment** to close the pop-up (**Show the *method* QR code** opens it again).
    3. Enter the amount, choose the **DONATION TYPE**, and optionally add the donor's name and a description.
    4. Tap **Record donation**.
 3. You will see *"Recorded $20.00 by Venmo for *event*. Thank the donor!"*
 4. **Recorded for this event** lists the event's latest donations **from every phone**, so helpers at the same table can see each other's entries.
 
 ### 8.3 If the QR code does not appear
+
+The Venmo, Zelle, Zeffy and ParishSoft codes come with the app, so they always appear. These messages apply only to another QR method your council adds:
 
 - *"Your council has not uploaded this QR code yet."* An Admin or finance officer needs to add the code's image link under **Council Lookup Tables → Enabled donation methods**.
 - *"The QR code could not be loaded."* The phone may be offline, or the link may be broken.
