@@ -32,6 +32,15 @@
 
 ![Image: Member Dashboard Setup]
 
+### Scan to connect
+
+The **Welcome, Brother Knight** card at the top of **Member Actions** shows these four codes. Point your phone's camera at one to open it.
+
+| Zelle Cathedral Collection | Mobile App (Expo Go) | Member Sign-Up | Feedback Registry |
+|---|---|---|---|
+| ![Zelle Cathedral Collection QR code](../apps/web/public/assets/images/qr/zelle-cathedral-collection.svg) | ![Mobile App Expo Go Sync QR code](../apps/web/public/assets/images/qr/expo-go-sync.svg) | ![Member Sign-Up QR code](../apps/web/public/assets/images/qr/member-sign-up.svg) | ![Feedback Registry QR code](../apps/web/public/assets/images/qr/feedback-registry.svg) |
+| Give to the cathedral collection through Zelle. | Open the phone app in Expo Go. | Ask to join the council. | Tell us what works and what does not. |
+
 ---
 
 ## 2. Onboarding and setting your password

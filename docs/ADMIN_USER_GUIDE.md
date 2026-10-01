@@ -512,3 +512,17 @@ Members send feedback and bug reports from **Online Help Center → Submit Syste
 | New member cannot sign in | They have not onboarded, or their roster email is wrong. | Check the **Email (also the login)** field. They must create a password on the phone first. |
 
 Quick answers are also in the portal's **Online Help Center**.
+
+---
+
+## Appendix: Council Archive Vault and parish QR codes
+
+- **Council Archive Vault.** Open **Administrative Lookups** in the sidebar and select **📂 Council Archive Vault**. The council's shared Google Drive folder opens in a new browser tab. The link shows to everyone who sees the Administrative Lookups group, so Google Drive's own sharing settings decide who can open the folder.
+- **Parish QR codes.** The **Welcome, Brother Knight** card on **Member Actions** shows four codes from `apps/web/public/assets/images/qr/`. To put a real code in place, replace the placeholder file and keep its name:
+
+| Code | File |
+|---|---|
+| ![Zelle Cathedral Collection QR code](../apps/web/public/assets/images/qr/zelle-cathedral-collection.svg) | `zelle-cathedral-collection.svg` |
+| ![Mobile App Expo Go Sync QR code](../apps/web/public/assets/images/qr/expo-go-sync.svg) | `expo-go-sync.svg` |
+| ![Member Sign-Up QR code](../apps/web/public/assets/images/qr/member-sign-up.svg) | `member-sign-up.svg` |
+| ![Feedback Registry QR code](../apps/web/public/assets/images/qr/feedback-registry.svg) | `feedback-registry.svg` |

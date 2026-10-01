@@ -87,6 +87,45 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
   profile: { href: '/profile', label: 'My Profile', hint: 'Photo, biography, contact details, skills' },
 };
 
+/**
+ * Links outside the portal, drawn after a group's own entries and opened in a new tab (Sprint 5Z-Demo-Assets). They show
+ * to whoever sees the group; the destination's own sharing settings decide who can open it.
+ */
+interface ExternalNavEntry {
+  href: string;
+  label: string;
+  hint: string;
+}
+
+export const EXTERNAL_NAV: Partial<Record<PortalNavGroup['id'], ExternalNavEntry[]>> = {
+  admin: [
+    {
+      href: 'https://drive.google.com/drive/u/3/folders/1ZGDjpkJG61hzWvDFRg4IZHI440ZYDjyH',
+      label: '📂 Council Archive Vault',
+      hint: "The council's shared Google Drive archive folder (opens in a new tab)",
+    },
+  ],
+};
+
+/** A sidebar link to a site outside the portal, opened in a new browser tab. */
+function ExternalNavLink({ href, label, hint }: ExternalNavEntry) {
+  return (
+    <li>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={hint}
+        className="flex items-center gap-2 border-l-8 border-transparent py-1.5 pl-6 pr-3 text-sm hover:underline"
+      >
+        {label}
+        <span aria-hidden="true">↗</span>
+        <span className="sr-only">(opens in a new tab)</span>
+      </a>
+    </li>
+  );
+}
+
 /** Which collapsible groups the viewer has open, remembered per browser. Storage may be blocked; the sidebar works without it. */
 const NAV_STATE_KEY = 'kofc.nav.open';
 type OpenGroups = Partial<Record<PortalNavGroup['id'], boolean>>;
@@ -201,6 +240,9 @@ export function Sidebar({ user, pathname }: { user: SessionUser; pathname: strin
                 {group.entries.map(({ item, locked }) =>
                   locked ? <LockedEntry key={item} item={item} /> : <NavLink key={item} item={item} current={isCurrent(pathname, item)} />,
                 )}
+                {(EXTERNAL_NAV[group.id] ?? []).map((link) => (
+                  <ExternalNavLink key={link.href} {...link} />
+                ))}
               </ul>
             ) : null}
           </div>

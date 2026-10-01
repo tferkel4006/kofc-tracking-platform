@@ -32,6 +32,7 @@ import {
   type Council,
 } from '@kofc/shared';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td } from '@/components/ui';
+import { QrWelcomeCard } from '@/components/QrWelcomeCard';
 import { formatFullDate, formatPersonName, formatPhone } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -504,6 +505,7 @@ export default function MemberActionsPage() {
   return (
     <>
       <PageTitle>Member Actions</PageTitle>
+      <QrWelcomeCard />
       <Tabs tabs={TABS} value={tab} onChange={setTab} label="Member actions" idPrefix="member-actions" />
       <div id="member-actions-panel" role="tabpanel" aria-labelledby={`member-actions-tab-${tab}`} className="pt-4">
         {tab === 'shifts' ? <ActiveShifts /> : tab === 'desk' ? <RegistrationDesk /> : tab === 'roster' ? <FraternalRoster /> : <HourLedger />}
