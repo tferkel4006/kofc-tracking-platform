@@ -1098,6 +1098,16 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "IntakeSessionStatus",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": "Inactive"
+        }
       }
     ],
     "foreignKeys": [
@@ -4104,6 +4114,202 @@ export const TABLES: Record<string, TableMeta> = {
       }
     ],
     "uniqueKeys": []
+  },
+  "GLAccount": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "AccountName",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "AccountType",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ParentAccountID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "IsVirtualGoal",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "TargetGoalAmount",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "ParentAccountID",
+        "refTable": "GLAccount",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "CouncilID",
+        "AccountName"
+      ]
+    ]
+  },
+  "JournalEntry": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "GLAccountID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DateLogged",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "Description",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DebitAmount",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "CreditAmount",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "LinkedEventID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "LinkedMeetingID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "IsBankReconciled",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "CheckNumber",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "GLAccountID",
+        "refTable": "GLAccount",
+        "refColumn": "id"
+      },
+      {
+        "column": "LinkedEventID",
+        "refTable": "Event",
+        "refColumn": "id"
+      },
+      {
+        "column": "LinkedMeetingID",
+        "refTable": "Meeting",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": []
   }
 };
 
@@ -4688,6 +4894,123 @@ export const SEED_DATA: readonly SeedTable[] = [
         "CadencePattern": "First Tuesday",
         "DefaultStartTime": "19:30",
         "DefaultLocation": "Parish Hall"
+      }
+    ]
+  },
+  {
+    "table": "GLAccount",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "AccountName": "Operating Checking",
+        "AccountType": "Asset",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "Goal Account #1",
+        "AccountType": "Asset",
+        "ParentAccountID": 1,
+        "IsVirtualGoal": 1,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "Goal Account #2",
+        "AccountType": "Asset",
+        "ParentAccountID": 1,
+        "IsVirtualGoal": 1,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "General Savings",
+        "AccountType": "Asset",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "Charity Savings",
+        "AccountType": "Asset",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "Physical Assets",
+        "AccountType": "Asset",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "Member Dues Collections",
+        "AccountType": "Revenue",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "Parking Fundraising",
+        "AccountType": "Revenue",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "General Fundraising",
+        "AccountType": "Revenue",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "General Donations",
+        "AccountType": "Revenue",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "Charitable Disbursements",
+        "AccountType": "Expense",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "Event Operational Costs",
+        "AccountType": "Expense",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "Council Operational Costs",
+        "AccountType": "Expense",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
+      },
+      {
+        "CouncilID": 1,
+        "AccountName": "Supreme Assessments",
+        "AccountType": "Expense",
+        "ParentAccountID": null,
+        "IsVirtualGoal": 0,
+        "TargetGoalAmount": 0
       }
     ]
   }

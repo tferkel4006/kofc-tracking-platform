@@ -274,6 +274,19 @@ import {
   eventExpenseSpan,
   isInvitationReleased,
   meetingExpenseSpan,
+  accountBalance,
+  assertJournalLinks,
+  assertMayPostGeneralLedger,
+  assertMayReadGeneralLedger,
+  buildBalanceSheet,
+  buildChartOfAccounts,
+  cleanJournalLines,
+  journalCouncilOf,
+  matchBankStatement,
+  parseBankStatementCsv,
+  planAssetTransfer,
+  reconcilableAccountIds,
+  type CleanJournalLine,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -347,6 +360,8 @@ import type {
   LookupRowMap,
   LookupTableName,
   Meeting,
+  GLAccount,
+  JournalEntry,
   MeetingInvites,
   MeetingResponseStatus,
   CouncilMeetingType,
@@ -3735,6 +3750,92 @@ export class MemoryDataService implements DataService {
     return [...s.rows('ExpenseDisbursement'), ...s.rows('CharitableDisbursementLedger')]
       .filter((d) => d.CouncilID === councilId)
       .map((d) => ({ CheckNumber: d.CheckNumber as string }));
+  }
+
+  finance: DataService['finance'] = {
+    listChartOfAccounts: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReadGeneralLedger(this.memberWriteActor(s, actorId), councilId, `read the chart of accounts of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return buildChartOfAccounts(councilId, this.glAccounts(s, councilId), this.journalEntries(s, councilId));
+    },
+
+    logDoubleEntryTransaction: async (actorId, linesData) => {
+      const lines = cleanJournalLines(linesData, this.now());
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const named = new Set(lines.map((l) => l.GLAccountID));
+        const councilId = journalCouncilOf(lines, s.rows('GLAccount').filter((a) => named.has(a.id as number)) as unknown as GLAccount[]);
+        assertMayPostGeneralLedger(actor, councilId, `post to the general ledger of council ${councilId}`);
+        for (const line of lines) {
+          const eventId = line.LinkedEventID;
+          assertJournalLinks(
+            line,
+            councilId,
+            eventId !== null && s.rows('Event').some((e) => e.id === eventId) ? this.councilIdsOf(s, eventId) : null,
+            (s.rows('Meeting').find((m) => m.id === line.LinkedMeetingID) as unknown as Meeting | undefined) ?? null,
+          );
+        }
+        return this.insertJournalLines(s, councilId, lines);
+      });
+    },
+
+    transferAssetFunds: async (actorId, sourceAccountId, targetAccountId, amount, options = {}) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const source = this.glAccount(s, sourceAccountId);
+        const target = this.glAccount(s, targetAccountId);
+        if (source) assertMayPostGeneralLedger(actor, source.CouncilID, `transfer funds in council ${source.CouncilID}`);
+        const sourceBalance = source ? accountBalance(source, this.journalEntries(s, source.CouncilID)) : 0;
+        const plan = planAssetTransfer(source, target, amount, sourceBalance, this.now(), options);
+        return this.insertJournalLines(s, plan.councilId, plan.lines);
+      });
+    },
+
+    getLatestBalanceSheet: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReadGeneralLedger(this.memberWriteActor(s, actorId), councilId, `read the balance sheet of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return buildBalanceSheet(councilId, this.glAccounts(s, councilId), this.journalEntries(s, councilId), this.now());
+    },
+
+    uploadBankStatementReconciliation: async (actorId, csvFileData, options = {}) => {
+      const rows = parseBankStatementCsv(csvFileData);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const councilId = options.councilId ?? actor.councilId;
+        assertMayPostGeneralLedger(actor, councilId, `reconcile the bank statements of council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const bankIds = reconcilableAccountIds(this.glAccounts(s, councilId), options.glAccountId);
+        const candidates = this.journalEntries(s, councilId).filter((e) => bankIds.has(e.GLAccountID) && e.IsBankReconciled !== 1);
+        const { matched, unmatched } = matchBankStatement(rows, candidates);
+        const reconciledEntryIds = matched.map((m) => m.journalEntryId).sort((a, b) => a - b);
+        // Inside a transaction the store works on copied rows, so flag the copies.
+        for (const id of reconciledEntryIds) Object.assign(s.rows('JournalEntry').find((e) => e.id === id)!, { IsBankReconciled: 1 });
+        return { councilId, glAccountId: options.glAccountId ?? null, statementRows: rows.length, matched, unmatched, reconciledEntryIds };
+      });
+    },
+  };
+
+  private glAccounts(s: MemoryStore, councilId: number): GLAccount[] {
+    return s.rows('GLAccount').filter((a) => a.CouncilID === councilId).map((a) => ({ ...a }) as unknown as GLAccount);
+  }
+
+  private glAccount(s: MemoryStore, accountId: number): GLAccount | null {
+    const row = s.rows('GLAccount').find((a) => a.id === accountId);
+    return row ? ({ ...row } as unknown as GLAccount) : null;
+  }
+
+  private journalEntries(s: MemoryStore, councilId: number): JournalEntry[] {
+    return s.rows('JournalEntry').filter((e) => e.CouncilID === councilId).map((e) => ({ ...e }) as unknown as JournalEntry);
+  }
+
+  /** Stores a balanced transaction's lines for the council, unreconciled, and returns copies in the order given. */
+  private insertJournalLines(s: MemoryStore, councilId: number, lines: readonly CleanJournalLine[]): JournalEntry[] {
+    return lines.map((line) => ({ ...s.insert('JournalEntry', { CouncilID: councilId, ...line, IsBankReconciled: 0 }) }) as unknown as JournalEntry);
   }
 
   feedback: DataService['feedback'] = {

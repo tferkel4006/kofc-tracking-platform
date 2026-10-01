@@ -1638,3 +1638,84 @@ ALTER TABLE [Meeting] ADD [InviteReleaseDate] DATE NULL;
 GO
 ALTER TABLE [CouncilCadenceConfig] ADD [DefaultRecipientGroup] VARCHAR(50) NOT NULL DEFAULT 'all_members';
 GO
+
+-- =========================================================================
+-- Sprint 5Z-7: DOUBLE-ENTRY GENERAL LEDGER AND BALANCE SHEET
+-- GLAccount is a council's chart of accounts: one row per account, AccountType 'Asset', 'Liability', 'Equity',
+-- 'Revenue' or 'Expense' (GL_ACCOUNT_TYPES; rules layer, no CHECK). ParentAccountID nests an account under another of
+-- the same council. A virtual goal (IsVirtualGoal = 1) is an earmark inside its parent asset account, saving toward
+-- TargetGoalAmount; money moved into it is still held by the parent's bank account. JournalEntry is one line of a
+-- posted transaction: exactly one of DebitAmount and CreditAmount is above zero. finance.logDoubleEntryTransaction
+-- posts a transaction's lines together, and only when its debits equal its credits to the cent, so the ledger always
+-- balances. IsBankReconciled is set by finance.uploadBankStatementReconciliation when a bank statement row matches.
+-- Event.IntakeSessionStatus ('Inactive' or 'Active'; EVENT_INTAKE_SESSION_STATUSES, rules layer) gates the phone's
+-- high-speed intake screens for an event.
+-- =========================================================================
+CREATE TABLE [GLAccount] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[AccountName] VARCHAR(100) NOT NULL,
+	[AccountType] VARCHAR(50) NOT NULL,
+	[ParentAccountID] INTEGER NULL,
+	[IsVirtualGoal] BIT NOT NULL DEFAULT 0,
+	[TargetGoalAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [JournalEntry] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[GLAccountID] INTEGER NOT NULL,
+	[DateLogged] DATETIME NOT NULL,
+	[Description] TEXT NOT NULL,
+	[DebitAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+	[CreditAmount] DECIMAL(18,2) NOT NULL DEFAULT 0.00,
+	[LinkedEventID] INTEGER NULL,
+	[LinkedMeetingID] INTEGER NULL,
+	[IsBankReconciled] BIT NOT NULL DEFAULT 0,
+	[CheckNumber] VARCHAR(50) NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [GLAccount]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [GLAccount]
+ADD FOREIGN KEY([ParentAccountID])
+REFERENCES [GLAccount]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [JournalEntry]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [JournalEntry]
+ADD FOREIGN KEY([GLAccountID])
+REFERENCES [GLAccount]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [JournalEntry]
+ADD FOREIGN KEY([LinkedEventID])
+REFERENCES [Event]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [JournalEntry]
+ADD FOREIGN KEY([LinkedMeetingID])
+REFERENCES [Meeting]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [GLAccount_Council_Name_Idx] ON [GLAccount] ([CouncilID], [AccountName]);
+GO
+CREATE INDEX [JournalEntry_Council_Account_Idx] ON [JournalEntry] ([CouncilID], [GLAccountID]);
+GO
+CREATE INDEX [JournalEntry_Council_Reconciled_Idx] ON [JournalEntry] ([CouncilID], [IsBankReconciled]);
+GO
+
+ALTER TABLE [Event] ADD [IntakeSessionStatus] VARCHAR(50) NOT NULL DEFAULT 'Inactive';
+GO

@@ -36,6 +36,9 @@ import type {
   EventSignup,
   GlobalCharityRegistry,
   EventTime,
+  GLAccount,
+  GLAccountType,
+  JournalEntry,
   ExpenseDisbursement,
   ExpenseLineItem,
   ExpenseReport,
@@ -1240,7 +1243,144 @@ export interface BudgetHistoricalKPIs {
   };
 }
 
-// 19. THE SERVICE
+// 19. DOUBLE-ENTRY GENERAL LEDGER AND BALANCE SHEET (Sprint 5Z-7)
+/**
+ * One line of a transaction for finance.logDoubleEntryTransaction: exactly one of DebitAmount and CreditAmount above 0
+ * (the other omitted or 0), in whole cents. The lines of one call must balance and belong to one council.
+ */
+export interface JournalLineInput {
+  GLAccountID: number;
+  DebitAmount?: number;
+  CreditAmount?: number;
+  Description: string;
+  /** 'YYYY-MM-DD' (stored as midnight) or 'YYYY-MM-DD HH:MM[:SS]'; default now (UTC, as other DATETIME stamps). */
+  DateLogged?: string;
+  /** An event linked to the account's council (EventCouncils). */
+  LinkedEventID?: number | null;
+  /** A meeting of the account's council. */
+  LinkedMeetingID?: number | null;
+  CheckNumber?: string | null;
+}
+
+/** finance.transferAssetFunds's optional details. */
+export interface AssetTransferOptions {
+  /** Default 'Transfer from <source> to <target>'. */
+  description?: string;
+  /** As JournalLineInput.DateLogged; default now. */
+  dateLogged?: string;
+}
+
+/** An account of the chart with its own posted balance and its descendants (finance.listChartOfAccounts). */
+export interface ChartOfAccountsNode {
+  account: GLAccount;
+  /** 0 for a top-level account, 1 for its children, and so on. */
+  depth: number;
+  /** The account's own posted debits and credits, to the cent. */
+  debitTotal: number;
+  creditTotal: number;
+  /**
+   * The account's own balance on its normal side: debits minus credits for Asset and Expense accounts, credits minus
+   * debits for Liability, Equity and Revenue accounts.
+   */
+  balance: number;
+  /** balance plus every descendant's rolledUpBalance: Operating Checking with its virtual goals is the bank's figure. */
+  rolledUpBalance: number;
+  children: ChartOfAccountsNode[];
+}
+
+/** A council's chart of accounts as a hierarchy: top-level accounts in GL_ACCOUNT_TYPES order, then by id. */
+export interface ChartOfAccounts {
+  councilId: number;
+  accounts: ChartOfAccountsNode[];
+}
+
+/** One account's line on the balance sheet. */
+export interface BalanceSheetLine {
+  accountId: number;
+  accountName: string;
+  accountType: GLAccountType;
+  parentAccountId: number | null;
+  isVirtualGoal: boolean;
+  balance: number;
+}
+
+/** One section of the balance sheet: its accounts and their total. */
+export interface BalanceSheetSection {
+  lines: BalanceSheetLine[];
+  total: number;
+}
+
+/**
+ * finance.getLatestBalanceSheet: every posted entry of the council, summed in whole cents. The fundamental equation is
+ * Assets = Liabilities + Equity, where Equity includes the surplus of Revenue over Expenses not yet closed to an equity
+ * account. isBalanced compares the two sides to the penny; difference is assets minus liabilities and equity.
+ */
+export interface BalanceSheet {
+  councilId: number;
+  /** When it was read, 'YYYY-MM-DD HH:MM:SS' UTC. */
+  asOf: string;
+  /** Every Asset account, physical property and virtual goals included. */
+  assets: BalanceSheetSection;
+  liabilities: BalanceSheetSection;
+  equity: BalanceSheetSection;
+  revenue: BalanceSheetSection;
+  expenses: BalanceSheetSection;
+  /** revenue.total - expenses.total. */
+  netSurplus: number;
+  totalAssets: number;
+  totalLiabilities: number;
+  /** equity.total + netSurplus. */
+  totalEquity: number;
+  totalLiabilitiesAndEquity: number;
+  difference: number;
+  isBalanced: boolean;
+  entryCount: number;
+}
+
+/** finance.uploadBankStatementReconciliation's optional scope. */
+export interface BankReconciliationOptions {
+  /** The council whose books are reconciled; default the actor's own council. */
+  councilId?: number;
+  /** Only match entries on this account (a non-virtual Asset account of the council); default every such account. */
+  glAccountId?: number;
+}
+
+/** One data row of an uploaded bank statement CSV (parseBankStatementCsv). */
+export interface BankStatementRow {
+  /** The file's line number, counting the header as line 1. */
+  line: number;
+  /** YYYY-MM-DD. */
+  date: string;
+  description: string;
+  /** Signed, in dollars to the cent: positive for a deposit, negative for a withdrawal or cleared check. */
+  amount: number;
+  checkNumber: string | null;
+}
+
+/** A statement row that reconciled a journal entry. */
+export interface BankReconciliationMatch {
+  row: BankStatementRow;
+  journalEntryId: number;
+}
+
+/** A statement row that matched nothing; nothing was flagged for it. */
+export interface BankReconciliationMiss {
+  row: BankStatementRow;
+  reason: string;
+}
+
+export interface BankReconciliationResult {
+  councilId: number;
+  /** The account matched against, or null for every non-virtual asset account of the council. */
+  glAccountId: number | null;
+  statementRows: number;
+  matched: BankReconciliationMatch[];
+  unmatched: BankReconciliationMiss[];
+  /** The journal entries now flagged IsBankReconciled, in id order. */
+  reconciledEntryIds: number[];
+}
+
+// 20. THE SERVICE
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -2212,6 +2352,65 @@ export interface DataService {
      * approved years (summarizeBudgetHistory). Council leadership, as getBudgetProgress.
      */
     getHistoricalKPIs(actorId: number, councilId: number): Promise<BudgetHistoricalKPIs>;
+  };
+
+  /**
+   * The council's double-entry general ledger (Sprint 5Z-7): its chart of accounts (GLAccount) and the journal lines
+   * posted against it (JournalEntry). Every posting balances - its debits equal its credits to the cent - so the
+   * balance sheet always balances. Reads belong to the executive dashboard's audience (assertMayReadGeneralLedger: the
+   * council's Active Admins and officers, any Active Super Admin); postings and reconciliation to its finance officers
+   * (assertMayPostGeneralLedger: an Active Financial Secretary or Treasurer of the council, or an Active Super Admin;
+   * FINANCE_OFFICER_REQUIRED). Nothing crosses councils. Writes are all or nothing; an unknown actor rejects
+   * MEMBER_NOT_FOUND, an unknown council INVALID_INPUT.
+   */
+  finance: {
+    /**
+     * The council's chart of accounts as a hierarchy (ChartOfAccounts): asset accounts with their virtual goals and the
+     * physical property account, liabilities, equity, revenue and expense accounts, each with its posted balance.
+     */
+    listChartOfAccounts(actorId: number, councilId: number): Promise<ChartOfAccounts>;
+    /**
+     * Posts one balanced transaction atomically and resolves to its stored lines, in the order given (cleanJournalLines).
+     * Rejects INVALID_INPUT for fewer than two lines or more than JOURNAL_MAX_LINES, a line with both or neither amount,
+     * an amount below 0 or with fractions of a cent, a blank or over-long description or check number, a malformed
+     * date, an unknown account, accounts of more than one council, or a linked event or meeting outside that council;
+     * and UNBALANCED_TRANSACTION (details: debits, credits, difference) when the debits do not equal the credits.
+     */
+    logDoubleEntryTransaction(actorId: number, linesData: readonly JournalLineInput[]): Promise<JournalEntry[]>;
+    /**
+     * Moves `amount` between two Asset accounts of one council as a balanced pair of lines: a debit to the target and a
+     * credit to the source (planAssetTransfer). Funding or releasing a virtual goal is a transfer with its parent
+     * account. Rejects INVALID_INPUT for the same account twice, an account that is not an Asset or belongs to another
+     * council, or an amount that is not above 0 in whole cents, and INSUFFICIENT_FUNDS when the source's own balance is
+     * below `amount` (a transfer never overdraws an account).
+     */
+    transferAssetFunds(
+      actorId: number,
+      sourceAccountId: number,
+      targetAccountId: number,
+      amount: number,
+      options?: AssetTransferOptions,
+    ): Promise<JournalEntry[]>;
+    /**
+     * The council's balance sheet from every posted entry (BalanceSheet): total assets, physical property included,
+     * against liabilities plus equity and the current surplus, compared to the penny.
+     */
+    getLatestBalanceSheet(actorId: number, councilId: number): Promise<BalanceSheet>;
+    /**
+     * Reads a bank statement CSV (parseBankStatementCsv) and flags each journal entry it matches IsBankReconciled, in
+     * one transaction (matchBankStatement). A deposit matches a debit of the same amount and a withdrawal a credit,
+     * among the council's unreconciled entries on its non-virtual Asset accounts (or on options.glAccountId alone). A
+     * row with a check number matches only an entry with that check number; any other row matches the entry dated
+     * closest to it within BANK_MATCH_WINDOW_DAYS. Each entry is matched once. Rows that match nothing are returned,
+     * not rejected. Rejects INVALID_INPUT for a file without a Date column and an Amount (or Withdrawal and Deposit)
+     * column, a malformed date or amount, no data rows, more than BANK_STATEMENT_MAX_ROWS rows, or an
+     * options.glAccountId that is not a non-virtual Asset account of the council.
+     */
+    uploadBankStatementReconciliation(
+      actorId: number,
+      csvFileData: string,
+      options?: BankReconciliationOptions,
+    ): Promise<BankReconciliationResult>;
   };
 
   feedback: {

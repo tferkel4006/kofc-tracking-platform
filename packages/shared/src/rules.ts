@@ -99,7 +99,9 @@ export type BusinessRuleCode =
   | 'DUAL_SIGNATURE_CONFLICT'
   | 'EXPENSE_WINDOW_NOT_OPEN'
   | 'EXPENSE_WINDOW_CLOSED'
-  | 'NO_ELIGIBLE_MEETING';
+  | 'NO_ELIGIBLE_MEETING'
+  | 'UNBALANCED_TRANSACTION'
+  | 'INSUFFICIENT_FUNDS';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -1117,7 +1119,12 @@ export function assertMayDisburseCharity(actor: MemberWriteActor, councilId: num
 export const mayDisburseCharity = (actor: MemberWriteActor, councilId: number): boolean =>
   disbursementDenial(actor, councilId, 'record charity checks') === null;
 
-function disbursementDenial(actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null {
+function disbursementDenial(
+  actor: MemberWriteActor,
+  councilId: number,
+  action: string,
+  why = "a council's checks are issued only by its own finance officers",
+): SecurityPrivilegeError | null {
   if (hasSuperAdminRights(actor)) return null;
   if (!(actor.active && holdsFinanceRole(actor.roles))) {
     return new SecurityPrivilegeError(
@@ -1129,7 +1136,7 @@ function disbursementDenial(actor: MemberWriteActor, councilId: number, action: 
   if (actor.councilId === councilId) return null;
   return new SecurityPrivilegeError(
     'COUNCIL_ACCESS_DENIED',
-    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; a council's checks are issued only by its own finance officers.`,
+    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; ${why}.`,
     { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
   );
 }
@@ -1425,17 +1432,54 @@ export function assertMayApproveBudget(actor: MemberWriteActor, councilId: numbe
  * Super Admin. The same guard covers reports.missionAreaFootprint. `action` completes "cannot ...".
  */
 export function assertMayReviewBudgetPerformance(actor: MemberWriteActor, councilId: number, action: string): void {
-  if (isCouncilExecutive(actor, councilId) || (actor.active && actor.officer && actor.councilId === councilId)) return;
+  const denial = executiveReadDenial(actor, councilId, action, "a council's budget performance is reviewed only by its own leadership");
+  if (denial) throw denial;
+}
+
+/**
+ * finance.listChartOfAccounts and finance.getLatestBalanceSheet (Sprint 5Z-7): the council's books are read by the
+ * executive dashboard's audience (assertMayReviewBudgetPerformance) - its Active Admins and officers, the Financial
+ * Secretary and Treasurer among them, and any Active Super Admin. `action` completes "cannot ...".
+ */
+export function assertMayReadGeneralLedger(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = executiveReadDenial(actor, councilId, action, "a council's books are read only by its own leadership");
+  if (denial) throw denial;
+}
+
+/** assertMayReadGeneralLedger as a yes/no. */
+export const mayReadGeneralLedger = (actor: MemberWriteActor, councilId: number): boolean =>
+  executiveReadDenial(actor, councilId, 'read the general ledger', '') === null;
+
+/**
+ * finance.logDoubleEntryTransaction, transferAssetFunds and uploadBankStatementReconciliation (Sprint 5Z-7): posting to
+ * the books and reconciling them is finance-officer work, like issuing checks (assertMayDisburseCouncilExpenses) - an
+ * Active Financial Secretary or Treasurer of the council, or an Active Super Admin for any council
+ * (FINANCE_OFFICER_REQUIRED, COUNCIL_ACCESS_DENIED). `action` completes "cannot ...".
+ */
+export function assertMayPostGeneralLedger(actor: MemberWriteActor, councilId: number, action: string): void {
+  const denial = disbursementDenial(actor, councilId, action, "a council's books are kept only by its own finance officers");
+  if (denial) throw denial;
+}
+
+/** assertMayPostGeneralLedger as a yes/no. */
+export const mayPostGeneralLedger = (actor: MemberWriteActor, councilId: number): boolean =>
+  disbursementDenial(actor, councilId, 'post to the general ledger') === null;
+
+/**
+ * The executive dashboard's readers (Sprint 5Z-2.5): the council's Grand Knight, Deputy Grand Knight and every other
+ * Active officer, then council leadership (councilLeadershipDenial). `why` explains a cross-council refusal.
+ */
+function executiveReadDenial(actor: MemberWriteActor, councilId: number, action: string, why: string): SecurityPrivilegeError | null {
+  if (isCouncilExecutive(actor, councilId) || (actor.active && actor.officer && actor.councilId === councilId)) return null;
   // An officer of another council is refused for the council, not for lacking a seat.
   if (actor.active && (actor.officer || holdsExecutiveRole(actor.roles)) && !hasAdminRights(actor) && !holdsFinanceRole(actor.roles)) {
-    throw new SecurityPrivilegeError(
+    return new SecurityPrivilegeError(
       'COUNCIL_ACCESS_DENIED',
-      `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; a council's budget performance is reviewed only by its own leadership.`,
+      `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} in council ${councilId}; ${why}.`,
       { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
     );
   }
-  const denial = councilLeadershipDenial(actor, councilId, action, "a council's budget performance is reviewed only by its own leadership");
-  if (denial) throw denial;
+  return councilLeadershipDenial(actor, councilId, action, why);
 }
 
 /**

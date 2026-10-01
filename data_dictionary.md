@@ -218,6 +218,7 @@ Multi-day calendar activities managed by councils.
 •	IsAnnual (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y: the event recurs every fraternal year. budget.prePopulateNextYear gives each annual event of the council a budget line; a copied (twin) annual event stays annual.
 •	IsMultiDay (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y-5: the event spans more than one day. Sprint 5Y-6: set by the event form's Multi-Day Assembly / Extended Event box through events.create and events.update; unticked, the form ends the event the day it starts. A copied (twin) multi-day event stays multi-day.
 •	MissionAreaID (INTEGER, NULL) — Sprint 5Z-1: Foreign Key references CouncilMissionArea(id). The council mission area (Faith, Family, Community, Life) the event is filed under; NULL while unfiled.
+•	IntakeSessionStatus (VARCHAR(50), NOT NULL, DEFAULT 'Inactive') — Sprint 5Z-7: Inactive or Active (EVENT_INTAKE_SESSION_STATUSES; rules layer, no CHECK). Gates the phone's high-speed intake screens for the event. Appended by ALTER TABLE (schema version 26).
 [EventCouncils]
 Bridge table mapping event participation and cross-visibility among affiliated councils.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -557,4 +558,29 @@ A motion queued for a meeting's floor. charities.routeRequestToNextEligibleAgend
 •	PresenterMemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). Who presents the motion; the Knight Shepherd for a routed request.
 •	AllocatedMinutes (INTEGER, NOT NULL, DEFAULT 5) — Floor time set aside for the motion.
 •	VoteResult (VARCHAR(50), NOT NULL, DEFAULT 'Pending') — Pending, Passed, Failed or Tabled (PROPOSED_MOTION_VOTE_RESULTS; rules layer, no CHECK).
+________________________________________
+# 14. Double-Entry General Ledger and Balance Sheet (Sprint 5Z-7)
+Schema version 26. Both tables are council-scoped and block deleting their council (RECORD_IN_USE). Every money column is summed in whole cents, so the books balance to the penny. The council's Active Admins and officers (the executive dashboard's audience) and any Active Super Admin read the books (finance.listChartOfAccounts, finance.getLatestBalanceSheet; assertMayReadGeneralLedger). Only an Active Financial Secretary or Treasurer of the council, or an Active Super Admin, posts to them or reconciles them (finance.logDoubleEntryTransaction, transferAssetFunds, uploadBankStatementReconciliation; assertMayPostGeneralLedger, FINANCE_OFFICER_REQUIRED).
+[GLAccount]
+A council's chart of accounts. Seed.sql's baseline gives Council 15295 its standard chart (ids 1-14): the Asset accounts Operating Checking, Goal Account #1 and Goal Account #2 (virtual goals under Operating Checking), General Savings, Charity Savings and Physical Assets; the Revenue accounts Member Dues Collections, Parking Fundraising, General Fundraising and General Donations; and the Expense accounts Charitable Disbursements, Event Operational Costs, Council Operational Costs and Supreme Assessments. finance.listChartOfAccounts returns the accounts as a tree, each with its own balance and its balance rolled up with its descendants.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	AccountName (VARCHAR(100), NOT NULL) — The account's name; one per council (a unique index on CouncilID, AccountName).
+•	AccountType (VARCHAR(50), NOT NULL) — Asset, Liability, Equity, Revenue or Expense (GL_ACCOUNT_TYPES; rules layer, no CHECK). Asset and Expense balances grow with debits; Liability, Equity and Revenue balances grow with credits.
+•	ParentAccountID (INTEGER, NULL) — Foreign Key references GLAccount(id). The account this one is nested under, in the same council; NULL for a top-level account.
+•	IsVirtualGoal (BIT, NOT NULL, DEFAULT 0) — The account is an earmark inside its parent asset account, not a bank account of its own: money moved into it (finance.transferAssetFunds) is still held by the parent's bank account, so bank reconciliation never matches its entries.
+•	TargetGoalAmount (DECIMAL(18,2), NOT NULL, DEFAULT 0.00) — What a virtual goal is saving toward; 0.00 until leadership sets it.
+[JournalEntry]
+One line of a posted double-entry transaction. finance.logDoubleEntryTransaction posts two to 100 lines (JOURNAL_MAX_LINES) at once, all to accounts of one council, and only when their debits equal their credits to the cent (UNBALANCED_TRANSACTION otherwise); finance.transferAssetFunds posts a debit to the target Asset account and a credit to the source, and refuses to move more than the source's own balance (INSUFFICIENT_FUNDS). finance.getLatestBalanceSheet totals every entry: Assets (physical property and virtual goals included) against Liabilities plus Equity plus the current surplus of Revenue over Expenses, and reports whether they balance to the penny.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). Always the account's council.
+•	GLAccountID (INTEGER, NOT NULL) — Foreign Key references GLAccount(id).
+•	DateLogged (DATETIME, NOT NULL) — 'YYYY-MM-DD HH:MM:SS'. A date alone is stored as midnight; omitted, it is stamped now (UTC, like the platform's other DATETIME stamps).
+•	Description (TEXT, NOT NULL) — What the line records; at most 2000 characters (JOURNAL_DESCRIPTION_MAX_LENGTH). A transfer defaults to 'Transfer from <source> to <target>'.
+•	DebitAmount (DECIMAL(18,2), NOT NULL, DEFAULT 0.00) — Exactly one of DebitAmount and CreditAmount is above 0, in whole cents.
+•	CreditAmount (DECIMAL(18,2), NOT NULL, DEFAULT 0.00) — See DebitAmount.
+•	LinkedEventID (INTEGER, NULL) — Foreign Key references Event(id). An event linked to the line's council (INVALID_INPUT otherwise).
+•	LinkedMeetingID (INTEGER, NULL) — Foreign Key references Meeting(id). A meeting of the line's council (INVALID_INPUT otherwise).
+•	IsBankReconciled (BIT, NOT NULL, DEFAULT 0) — Set by finance.uploadBankStatementReconciliation when a bank statement row matches the line. The statement is a CSV with a header row: a Date column (YYYY-MM-DD or MM/DD/YYYY) and a signed Amount column or Withdrawal and Deposit columns, with optional Description and Check Number columns. A deposit matches a debit of the same amount and a withdrawal a credit, among the council's unreconciled lines on Asset accounts that are not virtual goals (or on one such account the caller names). A row with a check number matches only a line with that check number; any other row matches the line dated closest to it within 5 days (BANK_MATCH_WINDOW_DAYS). Each line is matched once; unmatched rows are reported back, not rejected.
+•	CheckNumber (VARCHAR(50), NULL) — The check that moved the money, when there was one.
 ________________________________________

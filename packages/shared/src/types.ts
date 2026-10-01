@@ -143,7 +143,15 @@ export interface Event {
   IsMultiDay?: number;
   /** The council mission area (CouncilMissionArea, Sprint 5Z-1) the event is filed under; null while unfiled. */
   MissionAreaID?: number | null;
+  /**
+   * VARCHAR(50) (Sprint 5Z-7): whether the phone's high-speed intake screens are open for the event; see
+   * EVENT_INTAKE_SESSION_STATUSES. Default 'Inactive'.
+   */
+  IntakeSessionStatus?: EventIntakeSessionStatus;
 }
+
+/** Event.IntakeSessionStatus values (Sprint 5Z-7). */
+export type EventIntakeSessionStatus = 'Inactive' | 'Active';
 
 
 export interface EventCouncils {
@@ -693,4 +701,39 @@ export interface CharitableRequest {
   PaymentOrderId?: number | null; // the CharitableDisbursementLedger check that paid it
   MissionAreaID?: number | null; // Sprint 5Z-2: CouncilMissionArea of the same council, chosen on the intake form
   TargetBudgetLineID?: number | null; // Sprint 5Z-2: the CouncilBudgetForecast line the vetter would pay it from
+}
+
+/** GLAccount.AccountType (Sprint 5Z-7); see GL_ACCOUNT_TYPES. */
+export type GLAccountType = 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense';
+
+/**
+ * One account of a council's chart of accounts (Sprint 5Z-7). A virtual goal is an earmark inside its parent asset
+ * account, saving toward TargetGoalAmount.
+ */
+export interface GLAccount {
+  id: number;
+  CouncilID: number;
+  AccountName: string; // VARCHAR(100), unique per council
+  AccountType: GLAccountType;
+  ParentAccountID?: number | null; // another GLAccount of the same council
+  IsVirtualGoal: number; // BIT, default 0
+  TargetGoalAmount: number; // DECIMAL(18,2), default 0.00
+}
+
+/**
+ * One line of a posted double-entry transaction (Sprint 5Z-7): exactly one of DebitAmount and CreditAmount is above
+ * zero, and the lines posted together balance to the cent.
+ */
+export interface JournalEntry {
+  id: number;
+  CouncilID: number;
+  GLAccountID: number;
+  DateLogged: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS'
+  Description: string; // TEXT
+  DebitAmount: number; // DECIMAL(18,2), default 0.00
+  CreditAmount: number; // DECIMAL(18,2), default 0.00
+  LinkedEventID?: number | null;
+  LinkedMeetingID?: number | null;
+  IsBankReconciled: number; // BIT, default 0; set by finance.uploadBankStatementReconciliation
+  CheckNumber?: string | null; // VARCHAR(50)
 }

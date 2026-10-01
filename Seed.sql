@@ -247,6 +247,28 @@ Insert Into [CouncilCadenceConfig] ([CouncilID], [MeetingTypeID], [CadencePatter
 Values
 (1, 1, 'First Tuesday', '19:30', 'Parish Hall');
 GO
+
+-- ==============================================================================
+-- Sprint 5Z-7: Council 15295's standard chart of accounts (GLAccount ids 1-14). The two virtual goal accounts are
+-- earmarks inside Operating Checking (ParentAccountID 1); their targets start at 0.00 until leadership sets them.
+-- ==============================================================================
+Insert Into [GLAccount] ([CouncilID], [AccountName], [AccountType], [ParentAccountID], [IsVirtualGoal], [TargetGoalAmount])
+Values
+(1, 'Operating Checking', 'Asset', NULL, 0, 0.00),
+(1, 'Goal Account #1', 'Asset', 1, 1, 0.00),
+(1, 'Goal Account #2', 'Asset', 1, 1, 0.00),
+(1, 'General Savings', 'Asset', NULL, 0, 0.00),
+(1, 'Charity Savings', 'Asset', NULL, 0, 0.00),
+(1, 'Physical Assets', 'Asset', NULL, 0, 0.00),
+(1, 'Member Dues Collections', 'Revenue', NULL, 0, 0.00),
+(1, 'Parking Fundraising', 'Revenue', NULL, 0, 0.00),
+(1, 'General Fundraising', 'Revenue', NULL, 0, 0.00),
+(1, 'General Donations', 'Revenue', NULL, 0, 0.00),
+(1, 'Charitable Disbursements', 'Expense', NULL, 0, 0.00),
+(1, 'Event Operational Costs', 'Expense', NULL, 0, 0.00),
+(1, 'Council Operational Costs', 'Expense', NULL, 0, 0.00),
+(1, 'Supreme Assessments', 'Expense', NULL, 0, 0.00);
+GO
 -- @presentation-data
 -- Everything below this marker is presentation data. The apps load it (presentationData: true); the automated
 -- tests keep the minimal baseline above, so their fixture ids, vacant seats and empty ledgers stay stable.

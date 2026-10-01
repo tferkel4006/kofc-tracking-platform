@@ -275,6 +275,19 @@ import {
   eventExpenseSpan,
   isInvitationReleased,
   meetingExpenseSpan,
+  accountBalance,
+  assertJournalLinks,
+  assertMayPostGeneralLedger,
+  assertMayReadGeneralLedger,
+  buildBalanceSheet,
+  buildChartOfAccounts,
+  cleanJournalLines,
+  journalCouncilOf,
+  matchBankStatement,
+  parseBankStatementCsv,
+  planAssetTransfer,
+  reconcilableAccountIds,
+  type CleanJournalLine,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -335,6 +348,9 @@ import type {
   LookupTableName,
   LookupValues,
   Meeting,
+  BankReconciliationResult,
+  GLAccount,
+  JournalEntry,
   MeetingInvites,
   MeetingResponseStatus,
   CouncilMeetingType,
@@ -420,8 +436,9 @@ const DB_NAME = 'kofc.db';
  *     (Sprint 5Z-3).
  * 24: CouncilCadenceConfig and ProposedMotion (Sprint 5Z-5).
  * 25: Meeting.InviteReleaseDate and CouncilCadenceConfig.DefaultRecipientGroup (Sprint 5Z-6).
+ * 26: GLAccount, JournalEntry and Event.IntakeSessionStatus (Sprint 5Z-7).
  */
-const SCHEMA_VERSION = 25;
+const SCHEMA_VERSION = 26;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -4386,6 +4403,121 @@ export class SqliteDataService implements DataService {
        SELECT [CheckNumber] FROM [CharitableDisbursementLedger] WHERE [CouncilID] = ?`,
       [councilId, councilId],
     );
+  }
+
+  finance: DataService['finance'] = {
+    listChartOfAccounts: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayReadGeneralLedger(await this.memberWriteActor(db, actorId), councilId, `read the chart of accounts of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return buildChartOfAccounts(councilId, await this.glAccounts(db, councilId), await this.journalEntries(db, councilId));
+    },
+
+    logDoubleEntryTransaction: async (actorId, linesData) => {
+      const lines = cleanJournalLines(linesData, this.now());
+      const db = await this.ready();
+      let ids: number[] = [];
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const named = await selectIn<GLAccount>(db, (m) => `SELECT * FROM [GLAccount] WHERE [id] IN (${m})`, [...new Set(lines.map((l) => l.GLAccountID))]);
+        const councilId = journalCouncilOf(lines, named);
+        assertMayPostGeneralLedger(actor, councilId, `post to the general ledger of council ${councilId}`);
+        for (const line of lines) {
+          const eventId = line.LinkedEventID;
+          const event = eventId === null ? null : await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Event] WHERE [id] = ?', [eventId]);
+          assertJournalLinks(
+            line,
+            councilId,
+            event ? await this.councilIdsOf(db, event.id) : null,
+            line.LinkedMeetingID === null
+              ? null
+              : await db.getFirstAsync<Pick<Meeting, 'CouncilID'>>('SELECT [CouncilID] FROM [Meeting] WHERE [id] = ?', [line.LinkedMeetingID]),
+          );
+        }
+        ids = await this.insertJournalLines(db, councilId, lines);
+      });
+      return this.journalEntriesById(db, ids);
+    },
+
+    transferAssetFunds: async (actorId, sourceAccountId, targetAccountId, amount, options = {}) => {
+      const db = await this.ready();
+      let ids: number[] = [];
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const source = await this.glAccount(db, sourceAccountId);
+        const target = await this.glAccount(db, targetAccountId);
+        if (source) assertMayPostGeneralLedger(actor, source.CouncilID, `transfer funds in council ${source.CouncilID}`);
+        const sourceBalance = source
+          ? accountBalance(
+              source,
+              await db.getAllAsync<JournalEntry>('SELECT * FROM [JournalEntry] WHERE [GLAccountID] = ?', [source.id]),
+            )
+          : 0;
+        const plan = planAssetTransfer(source, target, amount, sourceBalance, this.now(), options);
+        ids = await this.insertJournalLines(db, plan.councilId, plan.lines);
+      });
+      return this.journalEntriesById(db, ids);
+    },
+
+    getLatestBalanceSheet: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayReadGeneralLedger(await this.memberWriteActor(db, actorId), councilId, `read the balance sheet of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return buildBalanceSheet(councilId, await this.glAccounts(db, councilId), await this.journalEntries(db, councilId), this.now());
+    },
+
+    uploadBankStatementReconciliation: async (actorId, csvFileData, options = {}) => {
+      const rows = parseBankStatementCsv(csvFileData);
+      const db = await this.ready();
+      let result: BankReconciliationResult | null = null;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const councilId = options.councilId ?? actor.councilId;
+        assertMayPostGeneralLedger(actor, councilId, `reconcile the bank statements of council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        const bankIds = reconcilableAccountIds(await this.glAccounts(db, councilId), options.glAccountId);
+        const candidates = (
+          await db.getAllAsync<JournalEntry>('SELECT * FROM [JournalEntry] WHERE [CouncilID] = ? AND [IsBankReconciled] = 0 ORDER BY [id]', [councilId])
+        ).filter((e) => bankIds.has(e.GLAccountID));
+        const { matched, unmatched } = matchBankStatement(rows, candidates);
+        const reconciledEntryIds = matched.map((m) => m.journalEntryId).sort((a, b) => a - b);
+        for (const id of reconciledEntryIds) await db.runAsync('UPDATE [JournalEntry] SET [IsBankReconciled] = 1 WHERE [id] = ?', [id]);
+        result = { councilId, glAccountId: options.glAccountId ?? null, statementRows: rows.length, matched, unmatched, reconciledEntryIds };
+      });
+      return result!;
+    },
+  };
+
+  private glAccounts(db: SQLite.SQLiteDatabase, councilId: number): Promise<GLAccount[]> {
+    return db.getAllAsync<GLAccount>('SELECT * FROM [GLAccount] WHERE [CouncilID] = ? ORDER BY [id]', [councilId]);
+  }
+
+  private glAccount(db: SQLite.SQLiteDatabase, accountId: number): Promise<GLAccount | null> {
+    return db.getFirstAsync<GLAccount>('SELECT * FROM [GLAccount] WHERE [id] = ?', [accountId]);
+  }
+
+  private journalEntries(db: SQLite.SQLiteDatabase, councilId: number): Promise<JournalEntry[]> {
+    return db.getAllAsync<JournalEntry>('SELECT * FROM [JournalEntry] WHERE [CouncilID] = ? ORDER BY [id]', [councilId]);
+  }
+
+  /** The stored lines with these ids, in the order given. */
+  private async journalEntriesById(db: SQLite.SQLiteDatabase, ids: readonly number[]): Promise<JournalEntry[]> {
+    const rows = new Map((await selectIn<JournalEntry>(db, (m) => `SELECT * FROM [JournalEntry] WHERE [id] IN (${m})`, ids)).map((r) => [r.id, r]));
+    return ids.map((id) => rows.get(id)!);
+  }
+
+  /** Stores a balanced transaction's lines for the council, unreconciled; resolves to their ids in the order given. */
+  private async insertJournalLines(db: SQLite.SQLiteDatabase, councilId: number, lines: readonly CleanJournalLine[]): Promise<number[]> {
+    const ids: number[] = [];
+    for (const l of lines) {
+      const res = await db.runAsync(
+        `INSERT INTO [JournalEntry] ([CouncilID], [GLAccountID], [DateLogged], [Description], [DebitAmount], [CreditAmount], [LinkedEventID], [LinkedMeetingID], [IsBankReconciled], [CheckNumber])
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+        [councilId, l.GLAccountID, l.DateLogged, l.Description, l.DebitAmount, l.CreditAmount, l.LinkedEventID, l.LinkedMeetingID, l.CheckNumber],
+      );
+      ids.push(res.lastInsertRowId);
+    }
+    return ids;
   }
 
   feedback: DataService['feedback'] = {

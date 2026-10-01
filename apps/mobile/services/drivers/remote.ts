@@ -204,6 +204,13 @@ export function createRemoteDataService(): DataService {
       getHistoricalKPIs: notImplemented('budget.getHistoricalKPIs'),
       getPriorYearBaselines: notImplemented('budget.getPriorYearBaselines'),
     },
+    finance: {
+      listChartOfAccounts: notImplemented('finance.listChartOfAccounts'),
+      logDoubleEntryTransaction: notImplemented('finance.logDoubleEntryTransaction'),
+      transferAssetFunds: notImplemented('finance.transferAssetFunds'),
+      getLatestBalanceSheet: notImplemented('finance.getLatestBalanceSheet'),
+      uploadBankStatementReconciliation: notImplemented('finance.uploadBankStatementReconciliation'),
+    },
     supreme: {
       previewReport: notImplemented('supreme.previewReport'),
       syncAlchemerReport: notImplemented('supreme.syncAlchemerReport'),
