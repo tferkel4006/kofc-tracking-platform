@@ -294,12 +294,13 @@ Volunteer time records logged directly against open activities without signup co
 ________________________________________
 # 6. Asynchronous Messaging Infrastructure
 [DistributionLists]
-Custom recipient groups assembled by administrators for bulk communication.
+Custom recipient groups. Since Sprint 5Z-10.8 a list is council-wide (assembled by the council's Admins or a Super Admin for bulk communication, seen by every member) or private (any Active member's own segment of fellow members of their council, seen, changed and deleted by its creator alone; another member, Admins included, gets RECORD_NOT_FOUND). distributionLists.listForMember returns the council-wide lists and the caller's own private ones; listByCouncil only the council-wide lists. Names are unique ignoring case among the council's council-wide lists, and among each member's private lists.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
 •	ListName (VARCHAR(100), NULL) — Group reference name (e.g., 'Officers Distribution List').
 •	CouncilID (INTEGER, NULL) — Foreign Key references Council(id).
 •	CreatedBy (INTEGER, NULL) — Foreign Key references Member(id) (Tracks list author).
 •	CreatedAt (DATETIME, DEFAULT GETDATE()) — Initialization creation timestamp.
+•	IsCouncilWide (BIT, NOT NULL, DEFAULT 1) — Sprint 5Z-10.8: 1 for a council-wide list, 0 for a private one. distributionLists.create makes a private list unless IsCouncilWide is asked for, which needs Admin rights in the council (assertMayCreateDistributionList); lists made before this column were all Admins' and stay council-wide. Only the creator may take a council-wide list private, and publishing a private list needs Admin rights too (assertMayChangeDistributionList). Appended by ALTER TABLE (schema version 29).
 [DistributionListMembers]
 Many-to-many relationship mapping members into target distribution lists.
 •	ListID (INTEGER, NOT NULL) — Composite Primary Key / Foreign Key references DistributionLists(id).

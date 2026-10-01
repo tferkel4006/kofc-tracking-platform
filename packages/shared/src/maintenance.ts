@@ -18,7 +18,17 @@ import type {
   NewPastor,
   RecordChanges,
 } from './contract';
-import { assertInteger, assertText, BusinessRuleError, optionalText } from './rules';
+import {
+  assertInteger,
+  assertMayMaintainCouncilRecords,
+  assertText,
+  BusinessRuleError,
+  describeActor,
+  hasSuperAdminRights,
+  optionalText,
+  SecurityPrivilegeError,
+  type MemberWriteActor,
+} from './rules';
 
 export type MaintainedTable =
   | 'Council'
@@ -196,6 +206,13 @@ export function cleanCouncilDonationMethod(input: { DonationMethodID?: unknown; 
   };
 }
 
+/** The council-wide switch: a boolean, or undefined when not given. */
+function cleanCouncilWide(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') throw invalid(`Council-wide must be true or false; received ${JSON.stringify(value)}.`, { field: 'IsCouncilWide' });
+  return value;
+}
+
 export const cleanListName = (name: unknown): string => assertText(name ?? '', 'List name', 100);
 
 /** Whole-number member ids, duplicates removed, ascending. Existence and council are checked by the driver. */
@@ -205,17 +222,21 @@ export function cleanMemberIds(ids: unknown): number[] {
 }
 
 export function cleanNewDistributionList(input: NewDistributionList): NewDistributionList {
-  assertKnownFields(input, ['ListName', 'CouncilID', 'memberIds'], 'DistributionLists');
+  assertKnownFields(input, ['ListName', 'CouncilID', 'memberIds', 'IsCouncilWide'], 'DistributionLists');
   return {
     ListName: cleanListName(input.ListName),
     CouncilID: assertInteger(input.CouncilID, 'Council', 1),
     memberIds: cleanMemberIds(input.memberIds ?? []),
+    // Sprint 5Z-10.8: private unless asked for; only Admins may ask (assertMayCreateDistributionList).
+    IsCouncilWide: cleanCouncilWide(input.IsCouncilWide) ?? false,
   };
 }
 
 export function cleanDistributionListChanges(changes: DistributionListChanges): DistributionListChanges {
-  assertKnownFields(changes, ['ListName', 'memberIds'], 'DistributionLists');
+  assertKnownFields(changes, ['ListName', 'memberIds', 'IsCouncilWide'], 'DistributionLists');
+  const councilWide = cleanCouncilWide(changes.IsCouncilWide);
   return {
+    ...(councilWide === undefined ? {} : { IsCouncilWide: councilWide }),
     ...(changes.ListName === undefined ? {} : { ListName: cleanListName(changes.ListName) }),
     ...(changes.memberIds === undefined ? {} : { memberIds: cleanMemberIds(changes.memberIds) }),
   };
@@ -276,3 +297,69 @@ export function assertRecordUnused(
     { table, id, usage: used.map(({ table: t, column, count }) => ({ table: t, column, count })) },
   );
 }
+
+// ---- personal and council-wide distribution lists (Sprint 5Z-10.8) ------------------------
+//
+// A council-wide list (IsCouncilWide = 1) is public to the council and kept by its Admins (and any Super Admin), as
+// before. A private list is one member's own segment: any Active member may build one in their own council, and only
+// its creator (CreatedBy) sees it, changes it or deletes it - an id of someone else's private list reads as not found.
+
+type StoredList = { id: number; CouncilID: number; CreatedBy: number | null; IsCouncilWide: boolean };
+
+/** A list row's flag as stored (BIT; rows from before Sprint 5Z-10.8 default to council-wide). */
+export const isCouncilWideList = (row: { IsCouncilWide?: number | boolean | null }): boolean => row.IsCouncilWide == null || row.IsCouncilWide === 1 || row.IsCouncilWide === true;
+
+/** The lists `viewerId` may see among a council's rows: every council-wide list and the viewer's own private ones. */
+export const isListVisibleTo = (row: { IsCouncilWide?: number | boolean | null; CreatedBy?: number | null }, viewerId: number): boolean =>
+  isCouncilWideList(row) || row.CreatedBy === viewerId;
+
+export const distributionListNotFound = (id: number): BusinessRuleError =>
+  new BusinessRuleError('RECORD_NOT_FOUND', `Distribution list ${id} does not exist.`, { table: 'DistributionLists', id });
+
+/**
+ * distributionLists.create: a council-wide list needs the council's Admin rights (assertMayMaintainCouncilRecords); a
+ * private one any Active member of the council, or an Active Super Admin for any council.
+ */
+export function assertMayCreateDistributionList(actor: MemberWriteActor, councilId: number, councilWide: boolean): void {
+  if (councilWide) return assertMayMaintainCouncilRecords(actor, councilId, 'create council-wide distribution lists');
+  if (hasSuperAdminRights(actor) || (actor.active && actor.councilId === councilId)) return;
+  throw new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Only active members of council ${councilId} can build distribution lists there; member ${actor.memberId} is ${describeActor(actor)} of council ${actor.councilId}.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
+  );
+}
+
+/**
+ * distributionLists.update and remove. A private list answers only to its Active creator; anyone else gets
+ * RECORD_NOT_FOUND, so ids reveal nothing. A council-wide list needs the council's Admin rights. `makeCouncilWide`
+ * (update only) publishes a private list - the creator must also hold Admin rights - or takes a council-wide list
+ * private, which only its creator may do (INVALID_INPUT otherwise, since the list would vanish from them).
+ */
+export function assertMayChangeDistributionList(actor: MemberWriteActor, list: StoredList, action: string, makeCouncilWide?: boolean): void {
+  if (!list.IsCouncilWide) {
+    if (!(actor.active && list.CreatedBy === actor.memberId)) throw distributionListNotFound(list.id);
+    if (makeCouncilWide === true) assertMayMaintainCouncilRecords(actor, list.CouncilID, `make distribution list ${list.id} council-wide`);
+    return;
+  }
+  assertMayMaintainCouncilRecords(actor, list.CouncilID, action);
+  if (makeCouncilWide === false && list.CreatedBy !== actor.memberId) {
+    throw invalid(`Only the member who created distribution list ${list.id} can make it private.`, { listId: list.id });
+  }
+}
+
+/** The rows a list's name must differ from: the council's council-wide lists, or the creator's own private lists. */
+export function distributionListNameSiblings<T extends { CouncilID?: number | null; CreatedBy?: number | null; IsCouncilWide?: number | boolean | null }>(
+  rows: readonly T[],
+  councilId: number,
+  councilWide: boolean,
+  ownerId: number,
+): T[] {
+  return rows.filter((r) => r.CouncilID === councilId && (councilWide ? isCouncilWideList(r) : !isCouncilWideList(r) && r.CreatedBy === ownerId));
+}
+
+/** How the list builder names a list's reach. */
+export const listScopeLabel = (councilWide: boolean): string => (councilWide ? 'Council-wide' : 'Private');
+
+/** The member created the list (CreatedBy). */
+export const ownsDistributionList = (actor: { memberId: number }, list: { CreatedBy?: number | null }): boolean => list.CreatedBy === actor.memberId;

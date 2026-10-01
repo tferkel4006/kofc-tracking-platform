@@ -44,6 +44,8 @@ export function RecordGrid<T extends { id: number }>({
   blank,
   toDraft,
   canEdit,
+  canEditRow,
+  canCreate = canEdit,
   onSave,
   onRemove,
   selected,
@@ -63,6 +65,10 @@ export function RecordGrid<T extends { id: number }>({
   toDraft: (row: T) => Draft;
   /** False shows the rows read-only and hides add, save and delete. */
   canEdit: boolean;
+  /** Per-row edit rights, overriding canEdit for an existing row (e.g. a member's own private list). */
+  canEditRow?: (row: T) => boolean;
+  /** Whether "Add" is offered; default canEdit. */
+  canCreate?: boolean;
   /** Creates (`row` null) or updates the row; resolves to the saved row, which becomes the selection. */
   onSave: (draft: Draft, row: T | null) => Promise<T>;
   onRemove: (row: T) => Promise<void>;
@@ -89,7 +95,7 @@ export function RecordGrid<T extends { id: number }>({
     <div className="grid grid-cols-[minmax(0,1fr)_30rem] items-start gap-4">
       <Panel
         title={`${title} (${shown.length}${query.trim() ? ` of ${rows?.length ?? 0}` : ''})`}
-        actions={canEdit ? <Button size="sm" onClick={() => select('new')}>Add {noun}</Button> : null}
+        actions={canCreate ? <Button size="sm" onClick={() => select('new')}>Add {noun}</Button> : null}
       >
         {error ? <Notice tone="error">{error}</Notice> : null}
         {matches ? (
@@ -98,7 +104,7 @@ export function RecordGrid<T extends { id: number }>({
           </Field>
         ) : null}
         {rows && shown.length === 0 ? (
-          <Empty>{rows.length === 0 ? `No ${noun} records yet.${canEdit ? ` Use “Add ${noun}” to create the first.` : ''}` : 'Nothing matches the search.'}</Empty>
+          <Empty>{rows.length === 0 ? `No ${noun} records yet.${canCreate ? ` Use “Add ${noun}” to create the first.` : ''}` : 'Nothing matches the search.'}</Empty>
         ) : null}
         {shown.length > 0 ? (
           <Table caption={title} head={columns.map((c) => c.label)}>
@@ -142,7 +148,7 @@ export function RecordGrid<T extends { id: number }>({
             heading={current ? rowLabel(current) : `Add ${noun}`}
             fields={fields}
             initial={current ? toDraft(current) : blank()}
-            canEdit={canEdit}
+            canEdit={current ? (canEditRow ? canEditRow(current) : canEdit) : canCreate}
             report={setMessage}
             onSave={async (draft) => onSelect((await onSave(draft, current)).id)}
             onRemove={
@@ -157,7 +163,7 @@ export function RecordGrid<T extends { id: number }>({
           />
         ) : (
           <Empty>
-            Choose a {noun} to view{canEdit ? ` or change it, or add a new one` : ''}.
+            Choose a {noun} to view{canCreate ? ` or change it, or add a new one` : ''}.
           </Empty>
         )}
         {current ? aside : null}

@@ -435,12 +435,16 @@ export interface NewDistributionList {
   CouncilID: number;
   /** Members of the list's council; duplicates are ignored. */
   memberIds: number[];
+  /** Sprint 5Z-10.8: true for a council-wide list (Admins only); omitted or false makes a private list. */
+  IsCouncilWide?: boolean;
 }
 
 /** A list keeps its council for life; omit `memberIds` to keep the members, pass [] to clear them. */
 export interface DistributionListChanges {
   ListName?: string;
   memberIds?: number[];
+  /** Sprint 5Z-10.8: publish a private list (its creator, with Admin rights) or take a council-wide list private (its creator). */
+  IsCouncilWide?: boolean;
 }
 
 /** One distribution list with its members' ids, ascending. */
@@ -1653,16 +1657,29 @@ export interface DataService {
     listSummaries(councilId: number): Promise<ActivitySummary[]>;
   };
 
+  /**
+   * Sprint 5Z-10.8: a list is council-wide (IsCouncilWide 1: public to the council, kept by its Admins and any Super
+   * Admin; assertMayMaintainCouncilRecords) or private (one member's own segment: any Active member builds them in their
+   * own council, and only the creator sees, changes or deletes one - someone else's private list reads RECORD_NOT_FOUND).
+   * See assertMayCreateDistributionList and assertMayChangeDistributionList.
+   */
   distributionLists: {
-    /** The council's lists with their members, ordered by name. */
+    /** The council's council-wide lists with their members, ordered by name. Private lists are never listed here. */
     listByCouncil(councilId: number): Promise<DistributionListSummary[]>;
     /**
-     * Creates a list owned by the actor (CreatedBy) with its members, all or nothing. Rejects INVALID_INPUT
-     * for a bad name, a name already used in the council (ignoring case), or a member who does not exist or
-     * belongs to another council.
+     * Sprint 5Z-10.8: what `actorId` may see in the council - its council-wide lists and the actor's own private ones -
+     * ordered by name. Rejects MEMBER_NOT_FOUND for an unknown actor.
+     */
+    listForMember(actorId: number, councilId: number): Promise<DistributionListSummary[]>;
+    /**
+     * Creates a list owned by the actor (CreatedBy) with its members, all or nothing; private unless
+     * IsCouncilWide is true, which needs Admin rights (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT
+     * for a bad name, a name already used (ignoring case) by another council-wide list of the council or, for a
+     * private list, by another of the creator's private lists, or a member who does not exist or belongs to another
+     * council.
      */
     create(actorId: number, list: NewDistributionList): Promise<DistributionListSummary>;
-    /** Renames the list and/or replaces its members, all or nothing, validated as in `create`. */
+    /** Renames the list, replaces its members and/or changes its reach, all or nothing, validated as in `create`. */
     update(actorId: number, id: number, changes: DistributionListChanges): Promise<DistributionListSummary>;
     /** Deletes the list and its member entries together. Messages already sent keep their read receipts. */
     remove(actorId: number, id: number): Promise<void>;

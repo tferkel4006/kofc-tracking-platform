@@ -311,6 +311,12 @@ import {
   proposedMotionNotFound,
   tallyBallots,
   assertIntakeSessionStatus,
+  assertMayChangeDistributionList,
+  assertMayCreateDistributionList,
+  distributionListNameSiblings,
+  distributionListNotFound,
+  isCouncilWideList,
+  isListVisibleTo,
   assertMayRunEventIntake,
   type CleanJournalLine,
 } from '@kofc/shared';
@@ -1179,22 +1185,30 @@ export class MemoryDataService implements DataService {
   distributionLists: DataService['distributionLists'] = {
     listByCouncil: async (councilId) => {
       const s = await this.ready();
-      return s
-        .rows('DistributionLists')
-        .filter((l) => l.CouncilID === councilId)
-        .map((l) => this.listSummary(s, l))
-        .sort((a, b) => (a.list.ListName ?? '').localeCompare(b.list.ListName ?? '') || a.list.id - b.list.id);
+      return this.sortedLists(s, (l) => l.CouncilID === councilId && isCouncilWideList(l));
+    },
+
+    listForMember: async (actorId, councilId) => {
+      const s = await this.ready();
+      this.requireMember(s, actorId);
+      return this.sortedLists(s, (l) => l.CouncilID === councilId && isListVisibleTo(l, actorId));
     },
 
     create: async (actorId, list) => {
       const clean = cleanNewDistributionList(list);
+      const councilWide = clean.IsCouncilWide ?? false;
       const s = await this.ready();
-      assertMayMaintainCouncilRecords(this.memberWriteActor(s, actorId), clean.CouncilID, 'create distribution lists');
+      assertMayCreateDistributionList(this.memberWriteActor(s, actorId), clean.CouncilID, councilWide);
       const row = s.transaction(() => {
         this.assertCouncilsExist(s, [clean.CouncilID]);
-        this.assertListNameUnique(s, clean.CouncilID, clean.ListName);
+        this.assertListNameUnique(s, clean.CouncilID, clean.ListName, councilWide, actorId);
         this.assertListMembers(s, clean.CouncilID, clean.memberIds);
-        const created = s.insert('DistributionLists', { ListName: clean.ListName, CouncilID: clean.CouncilID, CreatedBy: actorId });
+        const created = s.insert('DistributionLists', {
+          ListName: clean.ListName,
+          CouncilID: clean.CouncilID,
+          CreatedBy: actorId,
+          IsCouncilWide: councilWide ? 1 : 0,
+        });
         for (const memberId of clean.memberIds) s.insert('DistributionListMembers', { ListID: created.id, MemberID: memberId });
         return created;
       });
@@ -1204,19 +1218,20 @@ export class MemoryDataService implements DataService {
     update: async (actorId, id, changes) => {
       const s = await this.ready();
       const actor = this.memberWriteActor(s, actorId);
-      const row = this.requireRecord(s, 'DistributionLists', id);
-      const councilId = (row.CouncilID as number | null) ?? 0;
-      assertMayMaintainCouncilRecords(actor, councilId, `change distribution list ${id}`);
+      const row = this.storedList(s, id);
       const clean = cleanDistributionListChanges(changes);
+      assertMayChangeDistributionList(actor, row, `change distribution list ${id}`, clean.IsCouncilWide);
       const saved = s.transaction(() => {
         // Inside a transaction the store works on copied rows, so change the copy, not `row`.
         const current = this.requireRecord(s, 'DistributionLists', id);
-        if (clean.ListName !== undefined) {
-          this.assertListNameUnique(s, councilId, clean.ListName, id);
-          current.ListName = clean.ListName;
+        const councilWide = clean.IsCouncilWide ?? row.IsCouncilWide;
+        if (clean.ListName !== undefined || clean.IsCouncilWide !== undefined) {
+          this.assertListNameUnique(s, row.CouncilID, clean.ListName ?? String(current.ListName ?? ''), councilWide, row.CreatedBy ?? actorId, id);
         }
+        if (clean.ListName !== undefined) current.ListName = clean.ListName;
+        if (clean.IsCouncilWide !== undefined) current.IsCouncilWide = clean.IsCouncilWide ? 1 : 0;
         if (clean.memberIds !== undefined) {
-          this.assertListMembers(s, councilId, clean.memberIds);
+          this.assertListMembers(s, row.CouncilID, clean.memberIds);
           s.remove('DistributionListMembers', (m) => m.ListID === id);
           for (const memberId of clean.memberIds) s.insert('DistributionListMembers', { ListID: id, MemberID: memberId });
         }
@@ -1228,14 +1243,28 @@ export class MemoryDataService implements DataService {
     remove: async (actorId, id) => {
       const s = await this.ready();
       const actor = this.memberWriteActor(s, actorId);
-      const row = this.requireRecord(s, 'DistributionLists', id);
-      assertMayMaintainCouncilRecords(actor, (row.CouncilID as number | null) ?? 0, `delete distribution list ${id}`);
+      assertMayChangeDistributionList(actor, this.storedList(s, id), `delete distribution list ${id}`);
       s.transaction(() => {
         s.remove('DistributionListMembers', (m) => m.ListID === id);
         s.remove('DistributionLists', (l) => l.id === id);
       });
     },
   };
+
+  private sortedLists(s: MemoryStore, keep: (row: Row) => boolean): DistributionListSummary[] {
+    return s
+      .rows('DistributionLists')
+      .filter(keep)
+      .map((l) => this.listSummary(s, l))
+      .sort((a, b) => (a.list.ListName ?? '').localeCompare(b.list.ListName ?? '') || a.list.id - b.list.id);
+  }
+
+  /** A list as the access rules read it; an unknown id rejects RECORD_NOT_FOUND. */
+  private storedList(s: MemoryStore, id: number): { id: number; CouncilID: number; CreatedBy: number | null; IsCouncilWide: boolean } {
+    const row = s.rows('DistributionLists').find((l) => l.id === id);
+    if (!row) throw distributionListNotFound(id);
+    return { id, CouncilID: (row.CouncilID as number | null) ?? 0, CreatedBy: (row.CreatedBy as number | null) ?? null, IsCouncilWide: isCouncilWideList(row) };
+  }
 
   private listSummary(s: MemoryStore, row: Row): DistributionListSummary {
     const memberIds = s
@@ -1246,9 +1275,10 @@ export class MemoryDataService implements DataService {
     return { list: { ...row } as unknown as DistributionLists, memberIds };
   }
 
-  private assertListNameUnique(s: MemoryStore, councilId: number, name: string, ignoreId?: number): void {
-    const siblings = s.rows('DistributionLists').filter((l) => l.CouncilID === councilId);
-    assertRecordValueUnique('DistributionLists', siblings, 'ListName', name, `in council ${councilId}`, ignoreId);
+  /** A council-wide list's name is unique among the council's council-wide lists; a private one among its creator's. */
+  private assertListNameUnique(s: MemoryStore, councilId: number, name: string, councilWide: boolean, ownerId: number, ignoreId?: number): void {
+    const siblings = distributionListNameSiblings(s.rows('DistributionLists'), councilId, councilWide, ownerId);
+    assertRecordValueUnique('DistributionLists', siblings, 'ListName', name, councilWide ? `among council ${councilId}'s lists` : 'among your private lists', ignoreId);
   }
 
   /** Every list member must exist and belong to the list's council. */

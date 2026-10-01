@@ -1,5 +1,5 @@
 'use client';
-// The portal frame: navy header (logo, the calling council's number and name, the Messaging and Help shortcuts, the alert bell, and the member menu with
+// The portal frame: navy header (logo, the calling council's number and name, the Messaging menu and Help shortcut, the alert bell, and the member menu with
 // the avatar that opens My Profile), the navy left Sidebar (Sidebar.tsx, Sprint 5Z-10) and a white content area. Nothing renders behind the sign-in gate.
 import Image from 'next/image';
 import Link from 'next/link';
@@ -45,22 +45,78 @@ function EnvelopeIcon() {
   );
 }
 
-/** The header's Messaging shortcut to the Communications Hub, just left of the Help shortcut (Sprint 5X). */
-function MessagingLink({ current }: { current: boolean }) {
-  const { href, label, hint } = NAV.messages;
+/** The links of the header's Messaging menu (Sprint 5Z-10.8), open to every signed-in member. */
+const MESSAGING_MENU = ['messages', 'distribution-lists'] as const;
+
+/**
+ * The header's Messaging menu, just left of the Help shortcut: the envelope opens a dropdown with Council Messages & Alerts
+ * (/messages) and My Distribution Lists (/distribution-lists), both open to every signed-in member (Sprint 5Z-10.8;
+ * a single shortcut since Sprint 5X). Escape, a click elsewhere or following a link closes it.
+ */
+function MessagingMenu({ pathname }: { pathname: string }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const current = MESSAGING_MENU.some((item) => NAV[item].href === pathname);
+  useEffect(() => setOpen(false), [pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
   return (
-    <Link
-      href={href}
-      title={`${label}: ${hint.toLowerCase()}`}
-      aria-current={current ? 'page' : undefined}
-      className={cx(
-        'flex items-center gap-1.5 rounded px-2 py-2 text-sm font-bold text-white hover:bg-white/10',
-        current && 'bg-white/10 underline decoration-gold decoration-2 underline-offset-4',
-      )}
-    >
-      <EnvelopeIcon />
-      Messaging
-    </Link>
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls="messaging-menu"
+        onClick={() => setOpen((o) => !o)}
+        className={cx(
+          'flex items-center gap-1.5 rounded px-2 py-2 text-sm font-bold text-white hover:bg-white/10',
+          current && 'bg-white/10 underline decoration-gold decoration-2 underline-offset-4',
+        )}
+      >
+        <EnvelopeIcon />
+        Messaging
+        <span aria-hidden="true" className="text-gold">
+          {open ? '▴' : '▾'}
+        </span>
+      </button>
+      {open ? (
+        <div
+          id="messaging-menu"
+          role="menu"
+          aria-label="Messaging"
+          className="absolute right-0 z-20 mt-2 w-72 overflow-hidden rounded border-2 border-navy border-t-4 border-t-gold bg-white text-navy shadow-xl"
+        >
+          {MESSAGING_MENU.map((item, i) => {
+            const { href, label, hint } = NAV[item];
+            const here = pathname === href;
+            return (
+              <Link
+                key={item}
+                role="menuitem"
+                href={href}
+                aria-current={here ? 'page' : undefined}
+                className={cx('block border-l-8 px-4 py-2 hover:underline', i > 0 && 'border-t border-t-line', here ? 'border-l-gold' : 'border-l-transparent')}
+              >
+                <span className="block text-sm font-bold">{label}</span>
+                <span className="block text-xs text-muted">{hint}</span>
+              </Link>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -204,7 +260,7 @@ function Frame({ children }: { children: ReactNode }) {
           <p className="font-serif text-xl font-bold leading-tight">Knights of Columbus</p>
           <p className="text-sm">{council.data ? councilLabel(council.data) : ' '}</p>
         </div>
-        <MessagingLink current={pathname === NAV.messages.href} />
+        <MessagingMenu pathname={pathname} />
         <HelpLink current={pathname === '/help'} />
         <AlertBell />
         <MemberMenu />

@@ -35,6 +35,8 @@ import {
   canViewExecutiveDashboard,
   portalAreas,
   portalNavGroups,
+  canEditDistributionList,
+  canPublishDistributionList,
   portalSidebar,
   PORTAL_NAV_GROUPS,
 } from '@kofc/shared';
@@ -112,7 +114,6 @@ describe('portal permissions', () => {
       'meetings/cadence',
       'meetings/live',
       'elections',
-      'distribution-lists',
       'donations',
       'ledger',
       'expenses',
@@ -133,6 +134,7 @@ describe('portal permissions', () => {
       'supreme-sync',
       'financials/budget',
       'messages',
+      'distribution-lists',
       'profile',
     ]);
     expect(portalAreas(admin)).toEqual([
@@ -148,7 +150,6 @@ describe('portal permissions', () => {
       'meetings/cadence',
       'meetings/live',
       'elections',
-      'distribution-lists',
       'donations',
       'ledger',
       'expenses',
@@ -167,10 +168,11 @@ describe('portal permissions', () => {
       'supreme-sync',
       'financials/budget',
       'messages',
+      'distribution-lists',
       'profile',
     ]);
-    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'profile']);
-    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'financials/budget', 'messages', 'profile']);
+    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
+    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
   });
 
   it('gives every member their own expense reports, leadership the audit queue, and only finance officers and Super Admins the check ledger', () => {
@@ -191,17 +193,17 @@ describe('portal permissions', () => {
   describe('sidebar accordion groups (Sprint 5S, election desks Sprint 5U, high-intent directories Sprint 5Z-10)', () => {
     const shape = (u: Parameters<typeof portalNavGroups>[0]) => portalNavGroups(u).map((g) => [g.label, g.items]);
 
-    it('files every area but the profile and messages into exactly one group; help (5W) and messaging (5X) live in the header', () => {
+    it('files every area but the profile and the Messaging menu into exactly one group; help (5W) and messaging (5X, 5Z-10.8) live in the header', () => {
       const filed = PORTAL_NAV_GROUPS.flatMap((g) => g.items);
       expect(new Set(filed).size).toBe(filed.length);
       expect(filed as string[]).not.toContain('help');
       expect(filed as string[]).not.toContain('messages');
-      const everyArea = portalAreas(superAdmin).filter((a) => a !== 'profile' && a !== 'messages');
+      expect(filed as string[]).not.toContain('distribution-lists');
+      const everyArea = portalAreas(superAdmin).filter((a) => a !== 'profile' && a !== 'messages' && a !== 'distribution-lists');
       expect([...everyArea].sort()).toEqual([...filed].sort());
       // Sprint 5Z-10: the high-intent directories.
       expect(PORTAL_NAV_GROUPS.map((g) => [g.label, g.collapsible, g.showLocked])).toEqual([
         ['Self-Service Hub', false, false],
-        ['Communications Hub', true, false],
         ['Executive Action Desks', true, true],
         ['Fraternal Analytics Hub', true, false],
         ['Fraternal Scheduler', true, false],
@@ -217,11 +219,22 @@ describe('portal permissions', () => {
       }
     });
 
-    it('files the Distribution List Builder under the Communications Hub for Admins only (Sprint 5Z-10.7)', () => {
-      const hub = (u: Parameters<typeof portalNavGroups>[0]) => portalNavGroups(u).find((g) => g.id === 'communications')?.items;
-      for (const u of [superAdmin, admin]) expect(hub(u)).toEqual(['distribution-lists']);
-      for (const u of [officer, member]) expect(hub(u)).toBeUndefined();
-      for (const g of PORTAL_NAV_GROUPS.filter((x) => x.id !== 'communications')) expect(g.items).not.toContain('distribution-lists');
+    it("opens the distribution lists to every member from the header's Messaging menu, never the sidebar (Sprint 5Z-10.8)", () => {
+      for (const u of [superAdmin, admin, officer, member]) {
+        expect(portalAreas(u)).toContain('distribution-lists');
+        expect(portalNavGroups(u).flatMap((g) => g.items as string[])).not.toContain('distribution-lists');
+      }
+    });
+
+    it('keeps the council-wide switch with the council Admins and Super Admins (Sprint 5Z-10.8)', () => {
+      expect([superAdmin, admin, officer, member].map((u) => canPublishDistributionList(u, 1))).toEqual([true, true, false, false]);
+      expect(canPublishDistributionList(admin, 2)).toBe(false);
+      const privateList = { CouncilID: 1, CreatedBy: 10, IsCouncilWide: 0 };
+      const councilWide = { CouncilID: 1, CreatedBy: 77, IsCouncilWide: 1 };
+      expect(canEditDistributionList(member, privateList)).toBe(true);
+      expect(canEditDistributionList(actor({ memberId: 11, memberType: 'Admin' }), privateList)).toBe(false);
+      expect(canEditDistributionList(member, councilWide)).toBe(false);
+      expect(canEditDistributionList(admin, councilWide)).toBe(true);
     });
 
     it("keeps the messages out of the sidebar for every role; the header's Messaging shortcut opens them (Sprint 5X, 5Z-10.6)", () => {
@@ -234,7 +247,6 @@ describe('portal permissions', () => {
     it('shows a Super Admin every group in full', () => {
       expect(shape(superAdmin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose', 'charities/intake']],
-        ['Communications Hub', ['distribution-lists']],
         ['Executive Action Desks', ['expenses/audit', 'expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live']],
         ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
         ['Fraternal Scheduler', ['calendar', 'events', 'meetings', 'activities', 'ledger', 'elections', 'gallery', 'lessons-registry']],
@@ -246,7 +258,6 @@ describe('portal permissions', () => {
     it('shows a council Admin everything but the global tables, councils and the check ledger', () => {
       expect(shape(admin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose', 'charities/intake']],
-        ['Communications Hub', ['distribution-lists']],
         ['Executive Action Desks', ['expenses/audit', 'expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live']],
         ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
         ['Fraternal Scheduler', ['calendar', 'events', 'meetings', 'activities', 'ledger', 'elections', 'gallery', 'lessons-registry']],
@@ -456,10 +467,11 @@ describe('portal permissions', () => {
         'supreme-sync',
         'financials/budget',
         'messages',
+        'distribution-lists',
         'profile',
       ]);
     }
-    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'profile']);
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
   });
 
   it('gives council leadership the Supreme sync and the alert dispatch, each for their own council (Sprint 5T)', () => {

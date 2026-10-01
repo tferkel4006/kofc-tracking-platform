@@ -1809,3 +1809,13 @@ CREATE UNIQUE INDEX [LiveAttendance_Meeting_Member_Idx] ON [LiveAttendance] ([Me
 GO
 CREATE UNIQUE INDEX [BallotVote_Motion_Hash_Idx] ON [BallotVote] ([ProposedMotionID], [AnonymousBallotHash]);
 GO
+
+-- =========================================================================
+-- Sprint 5Z-10.8: PERSONAL DISTRIBUTION LISTS
+-- DistributionLists.IsCouncilWide splits the council's public lists, which its Admins (and Super Admins) keep, from a
+-- member's private segments: any Active member may build lists of fellow members for their own use, seen and changed
+-- by their creator (CreatedBy) alone. Lists made before this sprint were all built by Admins, so they stay council-wide
+-- (DEFAULT 1); distributionLists.create makes a private list unless an Admin asks for a council-wide one.
+-- =========================================================================
+ALTER TABLE [DistributionLists] ADD [IsCouncilWide] BIT NOT NULL DEFAULT 1;
+GO

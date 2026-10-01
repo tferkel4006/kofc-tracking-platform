@@ -145,6 +145,16 @@ export const canMaintainCouncilRecords = (u: Actor, councilId: number): boolean 
 /** Admins and Super Admins schedule events and shifts. */
 export const canPlanEvents = (u: Actor): boolean => isAdmin(u);
 
+/**
+ * Making a distribution list council-wide (Sprint 5Z-10.8), mirroring assertMayCreateDistributionList: the council's Admins
+ * and any Super Admin. Everyone else builds private lists only.
+ */
+export const canPublishDistributionList = (u: Actor, councilId: number): boolean => canMaintainCouncilRecords(u, councilId);
+
+/** Changing a list (Sprint 5Z-10.8): a council-wide list by the council's Admins, a private one by its creator alone. */
+export const canEditDistributionList = (u: Actor, list: { CouncilID?: number; CreatedBy?: number | null; IsCouncilWide?: number | null }): boolean =>
+  list.IsCouncilWide === 0 ? list.CreatedBy === u.memberId : canMaintainCouncilRecords(u, list.CouncilID ?? 0);
+
 /** Admins, Super Admins and any officer of the council schedule meetings, invite members and upload minutes. */
 export const canManageMeetings = (u: Actor, councilId: number): boolean =>
   canAdministerCouncil(u, councilId) || (u.isOfficer && u.councilId === councilId);
@@ -437,7 +447,6 @@ export function portalAreas(u: Actor): PortalArea[] {
   if (isAdmin(u) || u.isOfficer) areas.push('meetings/live');
   // Every member may put a brother Knight up for office (the drivers check they are Active).
   areas.push('elections');
-  if (isAdmin(u)) areas.push('distribution-lists');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('donations');
   // Every member files their own expense reports; the council's leadership reviews and returns them; the Financial
   // Secretary issues the written order and the Grand Knight counter-signs (Sprint 5Z-4; Admins read both desks); only
@@ -459,19 +468,21 @@ export function portalAreas(u: Actor): PortalArea[] {
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('supreme-sync');
   // Every member may read the council's annual budget (Sprint 5Y-3 transparency); canManageBudgetForecast decides editing.
   areas.push('financials/budget');
-  areas.push('messages', 'profile');
+  // Sprint 5Z-10.8: every member builds their own private distribution lists from the header's Messaging menu; council-wide
+  // lists stay with Admins (canPublishDistributionList).
+  areas.push('messages', 'distribution-lists', 'profile');
   return areas;
 }
 
 /**
- * A sidebar link: a portal area, except the profile, which the header's member menu opens, and the Communications Hub,
- * which the header's Messaging shortcut opens (Sprint 5X). The help center is the header's Help shortcut, not a sidebar
+ * A sidebar link: a portal area, except the profile, which the header's member menu opens, and the Communications Hub and
+ * the distribution lists, which the header's Messaging menu opens (Sprint 5X; the menu since Sprint 5Z-10.8). The help center is the header's Help shortcut, not a sidebar
  * link (Sprint 5W).
  */
-export type PortalNavItem = Exclude<PortalArea, 'profile' | 'messages'>;
+export type PortalNavItem = Exclude<PortalArea, 'profile' | 'messages' | 'distribution-lists'>;
 
 export interface PortalNavGroup {
-  id: 'self-service' | 'communications' | 'executive' | 'analytics' | 'scheduler' | 'finance' | 'admin';
+  id: 'self-service' | 'executive' | 'analytics' | 'scheduler' | 'finance' | 'admin';
   label: string;
   /** The Self-Service Hub is always open; the other groups fold. */
   collapsible: boolean;
@@ -485,12 +496,11 @@ export interface PortalNavGroup {
 
 /**
  * Every sidebar link in its group, in display order (Sprint 5S; regrouped into high-intent directories in Sprint 5Z-10).
- * Each PortalArea but 'profile' and 'messages' appears exactly once. Sprint 5Z-10.7: the Communications Hub group (under a
- * gold envelope) holds the Distribution List Builder; the messages themselves stay the header's Messaging shortcut.
+ * Each PortalArea but 'profile', 'messages' and 'distribution-lists' (the header's Messaging menu, Sprint 5Z-10.8) appears
+ * exactly once.
  */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
   { id: 'self-service', label: 'Self-Service Hub', collapsible: false, showLocked: false, items: ['member-actions', 'expenses', 'charities/propose', 'charities/intake'] },
-  { id: 'communications', label: 'Communications Hub', collapsible: true, showLocked: false, items: ['distribution-lists'] },
   {
     id: 'executive',
     label: 'Executive Action Desks',

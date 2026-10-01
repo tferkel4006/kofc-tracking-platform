@@ -223,6 +223,8 @@ export interface DistributionLists {
   CouncilID?: number;
   CreatedBy?: number;
   CreatedAt?: string;
+  /** BIT (Sprint 5Z-10.8): 1 for a council-wide list kept by Admins, 0 for a member's private list. Default 1. */
+  IsCouncilWide?: number;
 }
 
 export interface DistributionListMembers {

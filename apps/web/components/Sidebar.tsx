@@ -1,12 +1,12 @@
 'use client';
 // The portal's left sidebar (Sprint 5Z-10 redesign): a navy column of high-intent directories from portalSidebar -
-// the Self-Service Hub, the Communications Hub (Sprint 5Z-10.7, under a gold envelope), Executive Action Desks, the Fraternal Analytics Hub, the Fraternal Scheduler, Financial Ledgers
+// the Self-Service Hub, Executive Action Desks, the Fraternal Analytics Hub, the Fraternal Scheduler, Financial Ledgers
 // and Administrative Lookups. The Self-Service Hub is always open; the others fold under a header button (▸ closed,
 // ▾ open), the group holding the current page opens itself, and the viewer's choices are remembered in this browser.
 // The Executive Action Desks list every desk: one the viewer may not open is shown with a gold lock badge and says who
 // holds it, instead of a link. The current page carries a gold marker.
 import Link from 'next/link';
-import { useEffect, useState, type ReactElement } from 'react';
+import { useEffect, useState } from 'react';
 import { portalSidebar, type PortalNavGroup, type PortalNavItem, type SessionUser } from '@kofc/shared';
 import { cx } from '@/components/ui';
 
@@ -19,12 +19,12 @@ export interface NavEntry {
 }
 
 /**
- * Every sidebar link's route, label and tooltip. 'profile' is reached from the header's member menu, 'messages' from
- * the header's Messaging shortcut, and the help center from the header's Help shortcut, not the sidebar.
+ * Every sidebar link's route, label and tooltip. 'profile' is reached from the header's member menu, 'messages' and
+ * 'distribution-lists' from the header's Messaging menu, and the help center from the header's Help shortcut, not the sidebar.
  */
-export const NAV: Record<PortalNavItem | 'profile' | 'messages', NavEntry> = {
+export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-lists', NavEntry> = {
   'member-actions': { href: '/member-actions', label: 'Member Actions Hub', hint: 'My shifts, sign-ups, roster, hours' },
-  messages: { href: '/messages', label: 'Communications Hub', hint: 'Message threads and replies' },
+  messages: { href: '/messages', label: 'Council Messages & Alerts', hint: 'Message threads, trade-team messages and alerts' },
   calendar: { href: '/calendar', label: 'Visual Master Calendar', hint: 'Events, shifts and meetings by date' },
   activities: { href: '/activities', label: 'Standalone Activities', hint: 'Standing council activities' },
   members: { href: '/members', label: 'Affiliated Roster', hint: 'Members, types and skills' },
@@ -46,7 +46,7 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages', NavEntry> = {
   gallery: { href: '/gallery', label: 'Fraternal Photo Gallery', hint: 'Event photos and slideshows' },
   ledger: { href: '/ledger', label: 'Post-event Ledger', hint: 'Spend, funds raised, hours, lessons' },
   'lessons-registry': { href: '/lessons-registry', label: 'Lessons Registry', hint: 'Lessons learned across councils' },
-  'distribution-lists': { href: '/distribution-lists', label: 'Distribution List Builder', hint: 'Member lists for council blasts' },
+  'distribution-lists': { href: '/distribution-lists', label: 'My Distribution Lists', hint: 'Your private member segments and the council-wide lists' },
   dashboard: { href: '/dashboard', label: 'Executive Dashboard', hint: 'Faith-in-Action, monthly hours, members and funds' },
   'finance/dashboard': { href: '/finance/dashboard', label: 'Financial Dashboard', hint: 'Liquidity tanks, balance scale, transfers, bank audits' },
   'finance/ledger': { href: '/finance/ledger', label: 'General Ledger Spreadsheet', hint: 'Chart of accounts with every posting' },
@@ -120,29 +120,6 @@ function LockIcon() {
   );
 }
 
-/** An envelope drawn in currentColor: the Communications Hub's heading (Sprint 5Z-10.7). */
-function EnvelopeIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="m3 7 9 6 9-6" />
-    </svg>
-  );
-}
-
-/** Group headings that carry an icon. */
-const GROUP_ICONS: Partial<Record<PortalNavGroup['id'], () => ReactElement>> = { communications: EnvelopeIcon };
-
-/** The heading icon of a group, in gold, or nothing. */
-function GroupIcon({ id }: { id: PortalNavGroup['id'] }) {
-  const Icon = GROUP_ICONS[id];
-  return Icon ? (
-    <span className="text-gold">
-      <Icon />
-    </span>
-  ) : null;
-}
-
 /** One dense sidebar link: the label only, with its description as the tooltip; gold marker when current. */
 function NavLink({ item, current }: { item: PortalNavItem; current: boolean }) {
   const { href, label, hint } = NAV[item];
@@ -209,10 +186,7 @@ export function Sidebar({ user, pathname }: { user: SessionUser; pathname: strin
                   onClick={() => toggle(group.id)}
                   className="flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-xs font-bold uppercase tracking-wide hover:underline"
                 >
-                  <span className="flex items-center gap-2">
-                    <GroupIcon id={group.id} />
-                    {group.label}
-                  </span>
+                  <span>{group.label}</span>
                   <span aria-hidden="true" className="flex items-center gap-1.5 text-gold">
                     {lockedCount > 0 && lockedCount === group.entries.length ? <LockIcon /> : null}
                     {expanded ? '▾' : '▸'}

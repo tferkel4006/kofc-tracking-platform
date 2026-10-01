@@ -1,14 +1,23 @@
 'use client';
-// Distribution lists broadcast builder: named lists of the council's members for council blasts
-// (Specifications: "Allow creation of distribution lists by admin or super admin"). The form carries a
-// searchable, multi-select member picker. Admins work on their own council, Super Admins pick any; the
-// drivers enforce the same rules (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED) and refuse members of other councils.
-// Deleting a list removes its member entries with it; messages already sent keep their read receipts.
+// My Distribution Lists (Sprint 5Z-10.8; the header's Messaging menu): named lists of the council's members. Every member
+// builds private segments for their own use, seen and changed by them alone; the council-wide lists for council blasts
+// (Specifications: "Allow creation of distribution lists by admin or super admin") are shown to everyone but kept by
+// the council's Admins and Super Admins. Only they see the Reach control that makes a list council-wide
+// (canPublishDistributionList); anyone else's new lists are private, and the drivers enforce the same
+// (assertMayCreateDistributionList, assertMayChangeDistributionList). The form carries a searchable, multi-select member
+// picker. Deleting a list removes its member entries with it; messages already sent keep their read receipts.
 import { useState } from 'react';
-import { canMaintainCouncilRecords, type DistributionListSummary, type Member } from '@kofc/shared';
+import {
+  canEditDistributionList,
+  canPublishDistributionList,
+  isCouncilWideList,
+  listScopeLabel,
+  type DistributionListSummary,
+  type Member,
+} from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { RecordGrid, type Draft, type Selection } from '@/components/RecordGrid';
-import { Button, cx, Input, PageTitle } from '@/components/ui';
+import { Button, cx, Input, Notice, PageTitle, Pill } from '@/components/ui';
 import { formatPersonName } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -66,35 +75,50 @@ function DistributionLists() {
   const user = useUser();
   const scope = useCouncilScope();
   const lists = useLoad(
-    async () => (await db.distributionLists.listByCouncil(scope.councilId)).map((s): ListRow => ({ ...s, id: s.list.id })),
-    [scope.councilId],
+    async () => (await db.distributionLists.listForMember(user.memberId, scope.councilId)).map((s): ListRow => ({ ...s, id: s.list.id })),
+    [user.memberId, scope.councilId],
   );
   const members = useLoad(() => db.members.listByCouncil(scope.councilId), [scope.councilId]);
   const [selected, setSelected] = useState<Selection>(null);
-  const canEdit = canMaintainCouncilRecords(user, scope.councilId);
+  // The council-wide switch exists only for the council's Admins and Super Admins; everyone else builds private lists.
+  const canPublish = canPublishDistributionList(user, scope.councilId);
   const memberName = new Map((members.data ?? []).map((m) => [m.id, formatPersonName(m.MemberFirstName, m.MemberLastName)]));
 
   const save = async (d: Draft, row: ListRow | null): Promise<ListRow> => {
     const memberIds = parseIds(d.memberIds);
+    // Without publishing rights the reach is never sent: new lists are private and existing ones keep theirs.
+    const reach = canPublish ? { IsCouncilWide: d.reach === 'council' } : {};
     const saved = row
-      ? await db.distributionLists.update(user.memberId, row.id, { ListName: d.ListName, memberIds })
-      : await db.distributionLists.create(user.memberId, { ListName: d.ListName, CouncilID: scope.councilId, memberIds });
+      ? await db.distributionLists.update(user.memberId, row.id, { ListName: d.ListName, memberIds, ...reach })
+      : await db.distributionLists.create(user.memberId, { ListName: d.ListName, CouncilID: scope.councilId, memberIds, ...reach });
     await lists.reload();
     return { ...saved, id: saved.list.id };
   };
 
   return (
     <>
-      <PageTitle actions={<CouncilSelect scope={scope} />}>Distribution lists</PageTitle>
+      <PageTitle actions={<CouncilSelect scope={scope} />}>My Distribution Lists</PageTitle>
+      <div className="mb-4">
+        <Notice tone="info">
+          {canPublish
+            ? 'Private lists are yours alone. Set Reach to Council-wide to share a list with the whole council for council blasts.'
+            : 'Lists you build here are private: only you can see or change them. Council-wide lists are kept by the council\x27s Admins.'}
+        </Notice>
+      </div>
       <RecordGrid
         key={scope.councilId}
         noun="list"
         title="Distribution lists"
         rows={lists.data}
         error={lists.error ?? members.error}
-        canEdit={canEdit}
+        canEdit
+        canEditRow={(r) => canEditDistributionList(user, r.list)}
         columns={[
           { label: 'List', render: (r) => r.list.ListName ?? '(unnamed)' },
+          {
+            label: 'Reach',
+            render: (r) => <Pill tone={isCouncilWideList(r.list) ? 'navy' : 'outline'}>{listScopeLabel(isCouncilWideList(r.list))}</Pill>,
+          },
           { label: 'Members', render: (r) => r.memberIds.length, className: 'text-right' },
           {
             label: 'Recipients',
@@ -108,6 +132,19 @@ function DistributionLists() {
         ]}
         fields={[
           { key: 'ListName', label: 'List name', maxLength: 100, wide: true },
+          // Sprint 5Z-10.8 safety lock: the council-wide option is not rendered for anyone without publishing rights.
+          ...(canPublish
+            ? [
+                {
+                  key: 'reach',
+                  label: 'Reach',
+                  options: [
+                    { value: 'private', label: 'Private (only me)' },
+                    { value: 'council', label: 'Council-wide (public to the council)' },
+                  ],
+                },
+              ]
+            : []),
           {
             key: 'memberIds',
             label: 'Members',
@@ -115,8 +152,8 @@ function DistributionLists() {
             render: (value, set, disabled) => <MemberPicker members={members.data ?? []} value={value} onChange={set} disabled={disabled} />,
           },
         ]}
-        blank={() => ({ ListName: '', memberIds: '' })}
-        toDraft={(r) => ({ ListName: r.list.ListName ?? '', memberIds: joinIds(r.memberIds) })}
+        blank={() => ({ ListName: '', memberIds: '', reach: 'private' })}
+        toDraft={(r) => ({ ListName: r.list.ListName ?? '', memberIds: joinIds(r.memberIds), reach: isCouncilWideList(r.list) ? 'council' : 'private' })}
         rowLabel={(r) => r.list.ListName ?? 'Distribution list'}
         matches={(r, q) => (r.list.ListName ?? '').toLowerCase().includes(q)}
         onSave={save}

@@ -314,6 +314,12 @@ import {
   proposedMotionNotFound,
   tallyBallots,
   assertIntakeSessionStatus,
+  assertMayChangeDistributionList,
+  assertMayCreateDistributionList,
+  distributionListNameSiblings,
+  distributionListNotFound,
+  isCouncilWideList,
+  isListVisibleTo,
   assertMayRunEventIntake,
   type CleanJournalLine,
 } from '@kofc/shared';
@@ -472,8 +478,9 @@ const DB_NAME = 'kofc.db';
  * 26: GLAccount, JournalEntry and Event.IntakeSessionStatus (Sprint 5Z-7).
  * 27: JournalEntry.TransactionID and the Opening Balance Equity account (Sprint 5Z-8).
  * 28: the live meeting columns on Meeting, ProposedMotion.BallotOpenedAt, LiveAttendance and BallotVote (Sprint 5Z-9).
+ * 29: DistributionLists.IsCouncilWide - private member lists (Sprint 5Z-10.8).
  */
-const SCHEMA_VERSION = 28;
+const SCHEMA_VERSION = 29;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -1246,32 +1253,30 @@ export class SqliteDataService implements DataService {
   distributionLists: DataService['distributionLists'] = {
     listByCouncil: async (councilId) => {
       const db = await this.ready();
-      const lists = await db.getAllAsync<DistributionLists>(
-        'SELECT * FROM [DistributionLists] WHERE [CouncilID] = ? ORDER BY [ListName] COLLATE NOCASE, [id]',
-        [councilId],
-      );
-      const members = await db.getAllAsync<{ ListID: number; MemberID: number }>(
-        `SELECT m.[ListID], m.[MemberID] FROM [DistributionListMembers] m
-           JOIN [DistributionLists] l ON l.[id] = m.[ListID]
-          WHERE l.[CouncilID] = ? ORDER BY m.[MemberID]`,
-        [councilId],
-      );
-      return lists.map((list) => ({ list, memberIds: members.filter((m) => m.ListID === list.id).map((m) => m.MemberID) }));
+      return this.sortedLists(db, '[CouncilID] = ? AND [IsCouncilWide] = 1', [councilId]);
+    },
+
+    listForMember: async (actorId, councilId) => {
+      const db = await this.ready();
+      await this.requireMember(db, actorId);
+      return this.sortedLists(db, '[CouncilID] = ? AND ([IsCouncilWide] = 1 OR [CreatedBy] = ?)', [councilId, actorId]);
     },
 
     create: async (actorId, list) => {
       const clean = cleanNewDistributionList(list);
+      const councilWide = clean.IsCouncilWide ?? false;
       const db = await this.ready();
-      assertMayMaintainCouncilRecords(await this.memberWriteActor(db, actorId), clean.CouncilID, 'create distribution lists');
+      assertMayCreateDistributionList(await this.memberWriteActor(db, actorId), clean.CouncilID, councilWide);
       let id = 0;
       await db.withTransactionAsync(async () => {
         await this.assertCouncilsExist(db, [clean.CouncilID]);
-        await this.assertListNameUnique(db, clean.CouncilID, clean.ListName);
+        await this.assertListNameUnique(db, clean.CouncilID, clean.ListName, councilWide, actorId);
         await this.assertListMembers(db, clean.CouncilID, clean.memberIds);
-        const res = await db.runAsync('INSERT INTO [DistributionLists] ([ListName], [CouncilID], [CreatedBy]) VALUES (?, ?, ?)', [
+        const res = await db.runAsync('INSERT INTO [DistributionLists] ([ListName], [CouncilID], [CreatedBy], [IsCouncilWide]) VALUES (?, ?, ?, ?)', [
           clean.ListName,
           clean.CouncilID,
           actorId,
+          councilWide ? 1 : 0,
         ]);
         id = res.lastInsertRowId;
         await this.insertListMembers(db, id, clean.memberIds);
@@ -1283,16 +1288,19 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
         const actor = await this.memberWriteActor(db, actorId);
-        const row = await this.requireRecord(db, 'DistributionLists', id);
-        const councilId = (row.CouncilID as number | null) ?? 0;
-        assertMayMaintainCouncilRecords(actor, councilId, `change distribution list ${id}`);
+        const row = await this.storedList(db, id);
         const clean = cleanDistributionListChanges(changes);
-        if (clean.ListName !== undefined) {
-          await this.assertListNameUnique(db, councilId, clean.ListName, id);
-          await db.runAsync('UPDATE [DistributionLists] SET [ListName] = ? WHERE [id] = ?', [clean.ListName, id]);
+        assertMayChangeDistributionList(actor, row, `change distribution list ${id}`, clean.IsCouncilWide);
+        const councilWide = clean.IsCouncilWide ?? row.IsCouncilWide;
+        if (clean.ListName !== undefined || clean.IsCouncilWide !== undefined) {
+          await this.assertListNameUnique(db, row.CouncilID, clean.ListName ?? row.ListName, councilWide, row.CreatedBy ?? actorId, id);
+        }
+        if (clean.ListName !== undefined) await db.runAsync('UPDATE [DistributionLists] SET [ListName] = ? WHERE [id] = ?', [clean.ListName, id]);
+        if (clean.IsCouncilWide !== undefined) {
+          await db.runAsync('UPDATE [DistributionLists] SET [IsCouncilWide] = ? WHERE [id] = ?', [clean.IsCouncilWide ? 1 : 0, id]);
         }
         if (clean.memberIds !== undefined) {
-          await this.assertListMembers(db, councilId, clean.memberIds);
+          await this.assertListMembers(db, row.CouncilID, clean.memberIds);
           await db.runAsync('DELETE FROM [DistributionListMembers] WHERE [ListID] = ?', [id]);
           await this.insertListMembers(db, id, clean.memberIds);
         }
@@ -1304,13 +1312,33 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
         const actor = await this.memberWriteActor(db, actorId);
-        const row = await this.requireRecord(db, 'DistributionLists', id);
-        assertMayMaintainCouncilRecords(actor, (row.CouncilID as number | null) ?? 0, `delete distribution list ${id}`);
+        assertMayChangeDistributionList(actor, await this.storedList(db, id), `delete distribution list ${id}`);
         await db.runAsync('DELETE FROM [DistributionListMembers] WHERE [ListID] = ?', [id]);
         await db.runAsync('DELETE FROM [DistributionLists] WHERE [id] = ?', [id]);
       });
     },
   };
+
+  /** Lists matching `where` (fixed SQL only, never user text), ordered by name, with their members. */
+  private async sortedLists(db: SQLite.SQLiteDatabase, where: string, params: Bind[]): Promise<DistributionListSummary[]> {
+    const lists = await db.getAllAsync<DistributionLists>(`SELECT * FROM [DistributionLists] WHERE ${where} ORDER BY [ListName] COLLATE NOCASE, [id]`, params);
+    const members = await selectIn<{ ListID: number; MemberID: number }>(
+      db,
+      (m) => `SELECT [ListID], [MemberID] FROM [DistributionListMembers] WHERE [ListID] IN (${m}) ORDER BY [MemberID]`,
+      lists.map((l) => l.id),
+    );
+    return lists.map((list) => ({ list, memberIds: members.filter((m) => m.ListID === list.id).map((m) => m.MemberID) }));
+  }
+
+  /** A list as the access rules read it; an unknown id rejects RECORD_NOT_FOUND. */
+  private async storedList(
+    db: SQLite.SQLiteDatabase,
+    id: number,
+  ): Promise<{ id: number; CouncilID: number; CreatedBy: number | null; IsCouncilWide: boolean; ListName: string }> {
+    const row = await db.getFirstAsync<DistributionLists>('SELECT * FROM [DistributionLists] WHERE [id] = ?', [id]);
+    if (!row) throw distributionListNotFound(id);
+    return { id, CouncilID: row.CouncilID ?? 0, CreatedBy: row.CreatedBy ?? null, IsCouncilWide: isCouncilWideList(row), ListName: row.ListName ?? '' };
+  }
 
   private async listSummary(db: SQLite.SQLiteDatabase, id: number): Promise<DistributionListSummary> {
     const list = (await db.getFirstAsync<DistributionLists>('SELECT * FROM [DistributionLists] WHERE [id] = ?', [id]))!;
@@ -1321,12 +1349,21 @@ export class SqliteDataService implements DataService {
     return { list, memberIds: members.map((m) => m.MemberID) };
   }
 
-  private async assertListNameUnique(db: SQLite.SQLiteDatabase, councilId: number, name: string, ignoreId?: number): Promise<void> {
-    const siblings = await db.getAllAsync<Record<string, unknown>>(
-      'SELECT [id], [ListName] FROM [DistributionLists] WHERE [CouncilID] = ?',
+  /** A council-wide list's name is unique among the council's council-wide lists; a private one among its creator's. */
+  private async assertListNameUnique(
+    db: SQLite.SQLiteDatabase,
+    councilId: number,
+    name: string,
+    councilWide: boolean,
+    ownerId: number,
+    ignoreId?: number,
+  ): Promise<void> {
+    const rows = await db.getAllAsync<{ id: number; ListName: string | null; CouncilID: number; CreatedBy: number | null; IsCouncilWide: number }>(
+      'SELECT [id], [ListName], [CouncilID], [CreatedBy], [IsCouncilWide] FROM [DistributionLists] WHERE [CouncilID] = ?',
       [councilId],
     );
-    assertRecordValueUnique('DistributionLists', siblings, 'ListName', name, `in council ${councilId}`, ignoreId);
+    const siblings = distributionListNameSiblings(rows, councilId, councilWide, ownerId);
+    assertRecordValueUnique('DistributionLists', siblings, 'ListName', name, councilWide ? `among council ${councilId}'s lists` : 'among your private lists', ignoreId);
   }
 
   /** Every list member must exist and belong to the list's council. */

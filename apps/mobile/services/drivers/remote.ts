@@ -59,6 +59,7 @@ export function createRemoteDataService(): DataService {
     },
     distributionLists: {
       listByCouncil: notImplemented('distributionLists.listByCouncil'),
+      listForMember: notImplemented('distributionLists.listForMember'),
       create: notImplemented('distributionLists.create'),
       update: notImplemented('distributionLists.update'),
       remove: notImplemented('distributionLists.remove'),

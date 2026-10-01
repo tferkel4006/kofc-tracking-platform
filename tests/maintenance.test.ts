@@ -402,14 +402,15 @@ describe.each(drivers)('$name driver: activities', (d) => {
 });
 
 describe.each(drivers)('$name driver: distribution lists', (d) => {
-  it('creates a list owned by the Admin, then renames it and replaces its members', async () => {
+  it('creates a council-wide list owned by the Admin, then renames it and replaces its members', async () => {
     const db = await d.make();
     const created = await db.distributionLists.create(MEMBER.admin, {
       ListName: ' Fish Fry Crew ',
       CouncilID: OWN,
       memberIds: [MEMBER.member, MEMBER.superAdmin, MEMBER.member],
+      IsCouncilWide: true,
     });
-    expect(created.list).toMatchObject({ ListName: 'Fish Fry Crew', CouncilID: OWN, CreatedBy: MEMBER.admin });
+    expect(created.list).toMatchObject({ ListName: 'Fish Fry Crew', CouncilID: OWN, CreatedBy: MEMBER.admin, IsCouncilWide: 1 });
     expect(created.memberIds).toEqual([MEMBER.superAdmin, MEMBER.member]);
 
     const renamed = await db.distributionLists.update(MEMBER.admin, created.list.id, { ListName: 'Fish Fry Volunteers' });
@@ -435,7 +436,7 @@ describe.each(drivers)('$name driver: distribution lists', (d) => {
     expect(d.count(db, 'DistributionLists')).toBe(0);
     expect(d.count(db, 'DistributionListMembers')).toBe(0);
 
-    const list = await db.distributionLists.create(MEMBER.admin, { ListName: 'Officers', CouncilID: OWN, memberIds: [MEMBER.member] });
+    const list = await db.distributionLists.create(MEMBER.admin, { ListName: 'Officers', CouncilID: OWN, memberIds: [MEMBER.member], IsCouncilWide: true });
     await expectRule(db.distributionLists.update(MEMBER.admin, list.list.id, { ListName: 'Renamed', memberIds: [otherAdmin] }), 'INVALID_INPUT');
     const [kept] = await db.distributionLists.listByCouncil(OWN);
     expect(kept).toMatchObject({ list: { ListName: 'Officers' }, memberIds: [MEMBER.member] });
@@ -449,11 +450,11 @@ describe.each(drivers)('$name driver: distribution lists', (d) => {
     expect(d.count(db, 'DistributionLists')).toBe(1);
   });
 
-  it('confines Admins to their council and refuses Members', async () => {
+  it('confines Admins to their council and keeps council-wide lists from Members', async () => {
     const db = await d.make();
-    const list = await db.distributionLists.create(MEMBER.admin, { ListName: 'Officers', CouncilID: OWN, memberIds: [MEMBER.member] });
+    const list = await db.distributionLists.create(MEMBER.admin, { ListName: 'Officers', CouncilID: OWN, memberIds: [MEMBER.member], IsCouncilWide: true });
     const otherAdmin = await otherCouncilAdmin(db);
-    await expectPrivilege(db.distributionLists.create(MEMBER.member, { ListName: 'Mine', CouncilID: OWN, memberIds: [] }), 'ADMIN_REQUIRED');
+    await expectPrivilege(db.distributionLists.create(MEMBER.member, { ListName: 'Mine', CouncilID: OWN, memberIds: [], IsCouncilWide: true }), 'ADMIN_REQUIRED');
     await expectPrivilege(db.distributionLists.create(MEMBER.admin, { ListName: 'Theirs', CouncilID: OTHER, memberIds: [] }), 'COUNCIL_ACCESS_DENIED');
     await expectPrivilege(db.distributionLists.update(otherAdmin, list.list.id, { memberIds: [] }), 'COUNCIL_ACCESS_DENIED');
     await expectPrivilege(db.distributionLists.remove(otherAdmin, list.list.id), 'COUNCIL_ACCESS_DENIED');
@@ -468,11 +469,57 @@ describe.each(drivers)('$name driver: distribution lists', (d) => {
 
   it('deletes a list together with its member entries', async () => {
     const db = await d.make();
-    const keep = await db.distributionLists.create(MEMBER.admin, { ListName: 'Keep', CouncilID: OWN, memberIds: [MEMBER.admin] });
-    const drop = await db.distributionLists.create(MEMBER.admin, { ListName: 'Drop', CouncilID: OWN, memberIds: [MEMBER.member, MEMBER.newMember] });
+    const keep = await db.distributionLists.create(MEMBER.admin, { ListName: 'Keep', CouncilID: OWN, memberIds: [MEMBER.admin], IsCouncilWide: true });
+    const drop = await db.distributionLists.create(MEMBER.admin, { ListName: 'Drop', CouncilID: OWN, memberIds: [MEMBER.member, MEMBER.newMember], IsCouncilWide: true });
     await db.distributionLists.remove(MEMBER.admin, drop.list.id);
     expect(d.count(db, 'DistributionListMembers')).toBe(1);
     expect((await db.distributionLists.listByCouncil(OWN)).map((l) => l.list.id)).toEqual([keep.list.id]);
     await expectRule(db.distributionLists.remove(MEMBER.admin, drop.list.id), 'RECORD_NOT_FOUND');
+  });
+
+  // Sprint 5Z-10.8: personal distribution lists.
+  it('lets any Active member build private lists that only they can see or change', async () => {
+    const db = await d.make();
+    const mine = await db.distributionLists.create(MEMBER.member, { ListName: 'My Fish Fry Team', CouncilID: OWN, memberIds: [MEMBER.admin] });
+    expect(mine.list).toMatchObject({ CreatedBy: MEMBER.member, IsCouncilWide: 0 });
+    const shared = await db.distributionLists.create(MEMBER.admin, { ListName: 'Officers', CouncilID: OWN, memberIds: [], IsCouncilWide: true });
+
+    // The owner sees their private list beside the council-wide ones; nobody else sees it, Admins included.
+    const names = async (actorId: number) => (await db.distributionLists.listForMember(actorId, OWN)).map((l) => l.list.ListName);
+    expect(await names(MEMBER.member)).toEqual(['My Fish Fry Team', 'Officers']);
+    expect(await names(MEMBER.admin)).toEqual(['Officers']);
+    expect((await db.distributionLists.listByCouncil(OWN)).map((l) => l.list.id)).toEqual([shared.list.id]);
+    await expectRule(db.distributionLists.listForMember(9999, OWN), 'MEMBER_NOT_FOUND');
+
+    // Only the owner changes it; to anyone else its id does not exist.
+    expect((await db.distributionLists.update(MEMBER.member, mine.list.id, { memberIds: [MEMBER.admin, MEMBER.superAdmin] })).memberIds).toEqual([MEMBER.superAdmin, MEMBER.admin]);
+    await expectRule(db.distributionLists.update(MEMBER.admin, mine.list.id, { ListName: 'Taken' }), 'RECORD_NOT_FOUND');
+    await expectRule(db.distributionLists.remove(MEMBER.superAdmin, mine.list.id), 'RECORD_NOT_FOUND');
+    // A member cannot touch a council-wide list, nor publish their own.
+    await expectPrivilege(db.distributionLists.update(MEMBER.member, shared.list.id, { ListName: 'Mine now' }), 'ADMIN_REQUIRED');
+    await expectPrivilege(db.distributionLists.update(MEMBER.member, mine.list.id, { IsCouncilWide: true }), 'ADMIN_REQUIRED');
+    await db.distributionLists.remove(MEMBER.member, mine.list.id);
+    expect(d.count(db, 'DistributionLists')).toBe(1);
+  });
+
+  it('keeps private list names apart per member, and lets an Admin publish or withdraw their own list', async () => {
+    const db = await d.make();
+    await db.distributionLists.create(MEMBER.member, { ListName: 'Team', CouncilID: OWN, memberIds: [] });
+    // Another member's private list of the same name is no clash; the owner's own duplicate is.
+    const admins = await db.distributionLists.create(MEMBER.admin, { ListName: 'Team', CouncilID: OWN, memberIds: [] });
+    await expectRule(db.distributionLists.create(MEMBER.member, { ListName: 'TEAM', CouncilID: OWN, memberIds: [] }), 'INVALID_INPUT');
+    await expectPrivilege(db.distributionLists.create(MEMBER.member, { ListName: 'Elsewhere', CouncilID: OTHER, memberIds: [] }), 'COUNCIL_ACCESS_DENIED');
+
+    const published = await db.distributionLists.update(MEMBER.admin, admins.list.id, { IsCouncilWide: true });
+    expect(published.list.IsCouncilWide).toBe(1);
+    expect((await db.distributionLists.listForMember(MEMBER.member, OWN)).map((l) => [l.list.ListName, l.list.CreatedBy])).toEqual([
+      // Same name: the older list (the member's) first.
+      ['Team', MEMBER.member],
+      ['Team', MEMBER.admin],
+    ]);
+    // Another Admin of the council may keep the published list but not take it private from its creator.
+    await expectRule(db.distributionLists.update(MEMBER.superAdmin, admins.list.id, { IsCouncilWide: false }), 'INVALID_INPUT');
+    expect((await db.distributionLists.update(MEMBER.admin, admins.list.id, { IsCouncilWide: false })).list.IsCouncilWide).toBe(0);
+    await expectRule(db.distributionLists.create(MEMBER.admin, { ListName: 'Team', CouncilID: OWN, memberIds: [], IsCouncilWide: 'yes' as never }), 'INVALID_INPUT');
   });
 });

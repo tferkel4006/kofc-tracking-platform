@@ -1606,6 +1606,16 @@ export const TABLES: Record<string, TableMeta> = {
         "default": {
           "kind": "now"
         }
+      },
+      {
+        "name": "IsCouncilWide",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 1
+        }
       }
     ],
     "foreignKeys": [],
