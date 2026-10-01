@@ -76,6 +76,7 @@ import type {
   WorkingStatus,
 } from './types';
 import type { BudgetAlert, BudgetWindowState } from './budget';
+import type { CadenceConfigInput } from './meetings';
 import type { DistributionGroup } from './messaging';
 
 // 1. LOOKUPS
@@ -1036,6 +1037,13 @@ export interface CadencePopulationResult {
   skippedDates: string[];
 }
 
+/** One proposed motion with its floor presenter's name (Sprint 5Z-6), for the meeting's agenda view. */
+export interface ProposedMotionDetail {
+  motion: ProposedMotion;
+  presenterFirstName: string;
+  presenterLastName: string;
+}
+
 /** Where charities.routeRequestToNextEligibleAgenda put a request (Sprint 5Z-5). */
 export interface AgendaRoutingResult {
   /** The new 'Pending' motion carrying the request. */
@@ -1750,7 +1758,8 @@ export interface DataService {
     /**
      * Meetings still running on or after `fromDate` (default: today, local time; a multi-day meeting counts through its
      * EndDate), soonest first.
-     * With `memberId`, only meetings that member is invited to.
+     * With `memberId`, only meetings that member is invited to whose invitations are released (Sprint 5Z-6:
+     * isInvitationReleased; a drip-release meeting stays off a member's list until its InviteReleaseDate).
      */
     listUpcoming(
       councilId: number,
@@ -1758,7 +1767,8 @@ export interface DataService {
     ): Promise<Meeting[]>;
     /**
      * The council's meetings on or after `fromDate` (default: today), soonest first, split into the ones `memberId`
-     * is invited to and all of them. Rejects MEMBER_NOT_FOUND for an unknown member.
+     * is invited to and all of them. Invitations not yet released (Sprint 5Z-6, InviteReleaseDate after today) count
+     * as no invitation. Rejects MEMBER_NOT_FOUND for an unknown member.
      */
     listSchedules(councilId: number, memberId: number, options?: { fromDate?: string }): Promise<MeetingSchedules>;
     /**
@@ -1798,7 +1808,7 @@ export interface DataService {
      * `status` ('NoResponse', 'Accepted' or 'Declined'; see MEETING_RESPONSE_STATUSES) and resolves to the updated
      * invitation. Resending the current status is allowed. Rejects INVALID_INPUT for any other status,
      * MEMBER_NOT_FOUND for an unknown member, MEETING_NOT_FOUND for an unknown meeting and NOT_INVITED when the
-     * member has no invitation to it. Nothing is written when it rejects.
+     * member has no invitation to it, or one not released yet (Sprint 5Z-6). Nothing is written when it rejects.
      */
     rsvpToInvite(actorId: number, meetingId: number, status: MeetingResponseStatus): Promise<MeetingInvites>;
     /**
@@ -1819,16 +1829,42 @@ export interface DataService {
      * Sprint 5Z-5), server side and all or nothing: one meeting per month, July of the year's first calendar year
      * through June of its second, on the day CadencePattern names ('First Tuesday', 'Last Thursday'), from
      * DefaultStartTime for CADENCE_MEETING_MINUTES at DefaultLocation. Each meeting is filed under the config's
-     * MeetingTypeID (and the global MeetingType of the same name), named cadenceMeetingName(TypeName), has no owner
-     * and no invitations, and starts from the council's agenda template for the type ('' when it has none). A date
-     * on which the council already has a meeting of that type is skipped and listed in skippedDates, so running it
-     * again creates only what is missing. `actorId` is the signed-in member: an Active Admin or Grand Knight of the
-     * council, or any Active Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects MEMBER_NOT_FOUND for an
-     * unknown actor, INVALID_INPUT for an unknown council, a fraternal year that is not 'YYYY-YYYY' with consecutive
-     * years, or a stored pattern or start time that cannot be read, and RECORD_NOT_FOUND for a config that is not
-     * the council's.
+     * MeetingTypeID (and the global MeetingType of the same name), named cadenceMeetingName(TypeName), has no owner,
+     * and starts from the council's agenda template for the type ('' when it has none). Sprint 5Z-6 drip release: each
+     * meeting invites the config's DefaultRecipientGroup (cadenceInviteMode) at once, but carries InviteReleaseDate =
+     * Date - CADENCE_INVITE_LEAD_DAYS, and members' feeds ignore those invitations until that day. A date on which the
+     * council already has a meeting of that type is skipped and listed in skippedDates, so running it again creates
+     * only what is missing. `actorId` is the signed-in member: an Active Admin or Grand Knight of the council, or any
+     * Active Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects MEMBER_NOT_FOUND for an unknown actor,
+     * INVALID_INPUT for an unknown council, a fraternal year that is not 'YYYY-YYYY' with consecutive years, or a stored
+     * pattern or start time that cannot be read, and RECORD_NOT_FOUND for a config that is not the council's.
      */
     populateAnnualCadence(actorId: number, councilId: number, configId: number, fraternalYear: string): Promise<CadencePopulationResult>;
+    /**
+     * The council's standing meeting cadences (CouncilCadenceConfig, Sprint 5Z-6), by id. Another council's never
+     * appear. Rejects INVALID_INPUT for an unknown council.
+     */
+    listCadenceConfigs(councilId: number): Promise<CouncilCadenceConfig[]>;
+    /**
+     * Creates or replaces the council's cadence for one of its meeting types (Sprint 5Z-6; one per council and type)
+     * and resolves to it. The input is cleaned by cleanCadenceConfigInput: the pattern stored as 'First Tuesday', the
+     * start time as 'HH:MM', a location of at most CADENCE_LOCATION_MAX_LENGTH characters and a recipient group of
+     * CADENCE_RECIPIENT_GROUPS (default 'all_members'). Meetings already laid down are not changed. Same keepers as
+     * populateAnnualCadence (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects MEMBER_NOT_FOUND for an unknown actor and
+     * INVALID_INPUT for a bad field or a meeting type that is not the council's own. Nothing is written when it rejects.
+     */
+    saveCadenceConfig(actorId: number, councilId: number, input: CadenceConfigInput): Promise<CouncilCadenceConfig>;
+    /**
+     * Removes one of the council's cadences (Sprint 5Z-6). The meetings it laid down stay on the calendar. Same keepers
+     * as populateAnnualCadence. Rejects RECORD_NOT_FOUND for a config that is not the council's.
+     */
+    removeCadenceConfig(actorId: number, councilId: number, configId: number): Promise<void>;
+    /**
+     * The motions queued for a meeting's floor (ProposedMotion, Sprint 5Z-6) with their presenters' names, in the order
+     * they were added (id). Readable by every member, like the meeting itself. Rejects MEETING_NOT_FOUND for an
+     * unknown meeting.
+     */
+    listProposedMotions(meetingId: number): Promise<ProposedMotionDetail[]>;
   };
 
   /** Shift helpers behind the automatic hour-reporting defaults (Sprint 5Y-5). */

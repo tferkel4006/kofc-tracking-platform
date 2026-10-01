@@ -1624,3 +1624,17 @@ CREATE UNIQUE INDEX [CouncilCadenceConfig_Council_MeetingType_Idx] ON [CouncilCa
 GO
 CREATE INDEX [ProposedMotion_Meeting_Idx] ON [ProposedMotion] ([TargetMeetingID]);
 GO
+
+-- =========================================================================
+-- Sprint 5Z-6: DRIP-RELEASE INVITATIONS AND CADENCE RECIPIENTS
+-- Meeting.InviteReleaseDate holds a meeting's invitations back from members' own feeds until that day: the invitation
+-- rows exist from the start (so the meeting's managers see who will be invited), but listUpcoming for a member,
+-- listSchedules and rsvpToInvite ignore them before it. NULL means released at once (every hand-scheduled meeting).
+-- meetings.populateAnnualCadence sets it to five calendar days before the meeting's Date. CouncilCadenceConfig.
+-- DefaultRecipientGroup names who those meetings invite: 'all_members', 'active_officers' or 'none' (rules layer, no
+-- CHECK).
+-- =========================================================================
+ALTER TABLE [Meeting] ADD [InviteReleaseDate] DATE NULL;
+GO
+ALTER TABLE [CouncilCadenceConfig] ADD [DefaultRecipientGroup] VARCHAR(50) NOT NULL DEFAULT 'all_members';
+GO

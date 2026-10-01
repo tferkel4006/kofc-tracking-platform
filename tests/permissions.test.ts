@@ -108,6 +108,7 @@ describe('portal permissions', () => {
       'activities',
       'events',
       'meetings',
+      'meetings/cadence',
       'elections',
       'distribution-lists',
       'donations',
@@ -139,6 +140,7 @@ describe('portal permissions', () => {
       'activities',
       'events',
       'meetings',
+      'meetings/cadence',
       'elections',
       'distribution-lists',
       'donations',
@@ -212,7 +214,7 @@ describe('portal permissions', () => {
     it('shows a Super Admin every group in full', () => {
       expect(shape(superAdmin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose', 'charities/intake']],
-        ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
+        ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'meetings/cadence', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
         ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'expenses/disbursements', 'charities/vetting', 'charities/queue', 'financials/budget']],
         ['Administrative Lookups', ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils']],
       ]);
@@ -221,7 +223,7 @@ describe('portal permissions', () => {
     it('shows a council Admin everything but the global tables, councils and the check ledger', () => {
       expect(shape(admin)).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose', 'charities/intake']],
-        ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
+        ['Volunteer Operations', ['calendar', 'activities', 'members', 'events', 'meetings', 'meetings/cadence', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists']],
         ['Financial Ledgers', ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'charities/vetting', 'financials/budget']],
         ['Administrative Lookups', ['council-lookups', 'charities/registry', 'supreme-sync', 'parishes']],
       ]);
@@ -239,7 +241,7 @@ describe('portal permissions', () => {
     it('files the Council Lookups (agenda templates, Sprint 5Y-6) and the Appointed Leadership Matrix under Administrative Lookups for a Grand Knight who is a plain Member', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual([
         ['Self-Service Hub', ['member-actions', 'charities/propose', 'charities/intake']],
-        ['Volunteer Operations', ['calendar', 'meetings', 'elections', 'gallery', 'ledger']],
+        ['Volunteer Operations', ['calendar', 'meetings', 'meetings/cadence', 'elections', 'gallery', 'ledger']],
         ['Financial Ledgers', ['dashboard', 'expenses', 'expenses/authorize', 'charities/vetting', 'financials/budget']],
         ['Administrative Lookups', ['council-lookups', 'elections/appointments']],
       ]);

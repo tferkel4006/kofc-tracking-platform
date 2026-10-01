@@ -267,6 +267,13 @@ import {
   nextEligibleAgendaMeeting,
   noEligibleAgendaMeeting,
   PROPOSED_MOTION_DEFAULT_MINUTES,
+  assertIsoDate,
+  cadenceInviteMode,
+  cadenceInviteReleaseDate,
+  cleanCadenceConfigInput,
+  eventExpenseSpan,
+  isInvitationReleased,
+  meetingExpenseSpan,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -1731,9 +1738,11 @@ export class MemoryDataService implements DataService {
           eventId !== null && s.rows('Event').some((e) => e.id === eventId) ? this.councilIdsOf(s, eventId) : null,
           (s.rows('Meeting').find((m) => m.id === clean.LinkedMeetingID) as unknown as Meeting | undefined) ?? null,
         );
+        const linkedEvent = eventId === null ? undefined : (s.rows('Event').find((e) => e.id === eventId) as unknown as Event | undefined);
+        const linkedMeeting = s.rows('Meeting').find((m) => m.id === clean.LinkedMeetingID) as unknown as Meeting | undefined;
         assertExpenseSubmissionWindow(
           clean.Status,
-          eventId === null ? null : (s.rows('Event').find((e) => e.id === eventId) as unknown as Event),
+          [...(linkedEvent ? [eventExpenseSpan(linkedEvent)] : []), ...(linkedMeeting ? [meetingExpenseSpan(linkedMeeting)] : [])],
           this.now(),
         );
         const fields = { Status: clean.Status, LinkedEventID: clean.LinkedEventID, LinkedMeetingID: clean.LinkedMeetingID };
@@ -2455,9 +2464,16 @@ export class MemoryDataService implements DataService {
         options?.memberId === undefined
           ? null
           : new Set(s.rows('MeetingInvites').filter((i) => i.MemberID === options.memberId).map((i) => i.MeetingID));
+      // A member's own list leaves out drip-release invitations until their release day (Sprint 5Z-6).
+      const today = toIsoDate(this.now());
       const rows = s
         .rows('Meeting')
-        .filter((m) => m.CouncilID === councilId && meetingLastDate(m as unknown as Meeting) >= from && (!invitedTo || invitedTo.has(m.id)))
+        .filter(
+          (m) =>
+            m.CouncilID === councilId &&
+            meetingLastDate(m as unknown as Meeting) >= from &&
+            (!invitedTo || (invitedTo.has(m.id) && isInvitationReleased(m as unknown as Meeting, today))),
+        )
         .map((m) => ({ ...m })) as unknown as Meeting[];
       return rows.sort(
         (a, b) => a.Date.localeCompare(b.Date) || a['Time Start'].localeCompare(b['Time Start']) || a.id - b.id,
@@ -2472,7 +2488,8 @@ export class MemoryDataService implements DataService {
         s.rows('MeetingInvites').filter((i) => i.MemberID === memberId).map((i) => [i.MeetingID as number, i.ResponseStatus as MeetingResponseStatus]),
       );
       const allSchedules = await this.meetings.listUpcoming(councilId, { fromDate });
-      const myInvites = allSchedules.filter((m) => responses.has(m.id));
+      const today = toIsoDate(this.now());
+      const myInvites = allSchedules.filter((m) => responses.has(m.id) && isInvitationReleased(m, today));
       return { myInvites, allSchedules, myResponses: Object.fromEntries(myInvites.map((m) => [m.id, responses.get(m.id)!])) };
     },
 
@@ -2553,11 +2570,13 @@ export class MemoryDataService implements DataService {
       const s = await this.ready();
       return s.transaction(() => {
         this.requireMember(s, actorId);
-        if (!s.rows('Meeting').some((m) => m.id === meetingId)) {
+        const meeting = s.rows('Meeting').find((m) => m.id === meetingId);
+        if (!meeting) {
           throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
         }
         const invite = s.rows('MeetingInvites').find((i) => i.MeetingID === meetingId && i.MemberID === actorId);
-        if (!invite) {
+        // An invitation still held back by the drip release (Sprint 5Z-6) cannot be answered yet.
+        if (!invite || !isInvitationReleased(meeting as unknown as Meeting, toIsoDate(this.now()))) {
           throw new BusinessRuleError('NOT_INVITED', `Member ${actorId} is not invited to meeting ${meetingId}.`, { meetingId, memberId: actorId });
         }
         (invite as Row).ResponseStatus = response;
@@ -2629,12 +2648,68 @@ export class MemoryDataService implements DataService {
             OwnerID: null,
             IsMultiDay: 0,
             EndDate: null,
+            InviteReleaseDate: cadenceInviteReleaseDate(date),
           };
-          createdIds.push(this.insertMeeting(meeting, 'none'));
+          createdIds.push(this.insertMeeting(meeting, cadenceInviteMode(config.DefaultRecipientGroup)));
         }
         const created = createdIds.map((id) => ({ ...s.rows('Meeting').find((m) => m.id === id)! }) as unknown as Meeting);
         return { config: { ...config }, fraternalYear: year, created, skippedDates };
       });
+    },
+
+    listCadenceConfigs: async (councilId) => {
+      const s = await this.ready();
+      this.assertCouncilsExist(s, [councilId]);
+      return s
+        .rows('CouncilCadenceConfig')
+        .filter((c) => c.CouncilID === councilId)
+        .map((c) => ({ ...c }))
+        .sort((a, b) => (a.id as number) - (b.id as number)) as unknown as CouncilCadenceConfig[];
+    },
+
+    saveCadenceConfig: async (actorId, councilId, input) => {
+      const clean = cleanCadenceConfigInput(input);
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayScheduleCouncilCadence(this.memberWriteActor(s, actorId), councilId);
+        this.assertCouncilsExist(s, [councilId]);
+        this.requireCouncilMeetingType(s, councilId, clean.MeetingTypeID);
+        const existing = s.rows('CouncilCadenceConfig').find((c) => c.CouncilID === councilId && c.MeetingTypeID === clean.MeetingTypeID);
+        if (existing) {
+          Object.assign(existing, clean);
+          return { ...existing } as unknown as CouncilCadenceConfig;
+        }
+        return { ...s.insert('CouncilCadenceConfig', { CouncilID: councilId, ...clean }) } as unknown as CouncilCadenceConfig;
+      });
+    },
+
+    removeCadenceConfig: async (actorId, councilId, configId) => {
+      const s = await this.ready();
+      s.transaction(() => {
+        assertMayScheduleCouncilCadence(this.memberWriteActor(s, actorId), councilId);
+        if (s.remove('CouncilCadenceConfig', (c) => c.id === configId && c.CouncilID === councilId) === 0) {
+          throw cadenceConfigNotFound(configId, councilId);
+        }
+      });
+    },
+
+    listProposedMotions: async (meetingId) => {
+      const s = await this.ready();
+      if (!s.rows('Meeting').some((m) => m.id === meetingId)) {
+        throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
+      }
+      return s
+        .rows('ProposedMotion')
+        .filter((p) => p.TargetMeetingID === meetingId)
+        .sort((a, b) => (a.id as number) - (b.id as number))
+        .map((p) => {
+          const presenter = s.rows('Member').find((m) => m.id === p.PresenterMemberID);
+          return {
+            motion: { ...p } as unknown as ProposedMotion,
+            presenterFirstName: (presenter?.MemberFirstName as string | undefined) ?? '',
+            presenterLastName: (presenter?.MemberLastName as string | undefined) ?? '',
+          };
+        });
     },
   };
 
@@ -2679,6 +2754,7 @@ export class MemoryDataService implements DataService {
       Agenda: m.Agenda ?? '', // Agenda and MinutesURL are NOT NULL in Schema.sql: '' means "none yet"
       MinutesURL: m.MinutesURL ?? '',
       MeetingType: m.MeetingType,
+      InviteReleaseDate: m.InviteReleaseDate == null ? null : assertIsoDate(m.InviteReleaseDate, 'Invitation release date'),
     });
     const meetingId = row.id as number;
     this.insertInvites(meetingId, this.resolveInvitees(m.CouncilID, invite));

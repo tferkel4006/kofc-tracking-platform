@@ -4,10 +4,14 @@
 // validates the value again.
 // Sprint 5Y-6: choosing a shift with no hours logged yet fills the picker with the shift's own length
 // (shifts.getShiftDefaultLength, rounded to 0.25), so a member who worked the whole shift just taps Save.
+// Sprint 5Z-6: the fiscal timeline rule reaches this screen too. A shift whose event has not started, or ended more than
+// 30 days ago (expenseWindowState), is padlocked and grayed, and Save stays disabled while it is chosen.
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
   addDays,
+  eventExpenseSpan,
+  expenseWindowLockMessage,
   formatHours,
   formatShiftWhen,
   hoursToPicker,
@@ -112,7 +116,10 @@ export default function LogScreen() {
 
   const hours = pickerResult(picker.hours, picker.minutes);
   const target = mode === 'shift' ? shiftId : activityId;
-  const canSave = target !== null && 'hours' in hours && !busy;
+  const lockOf = (event: Parameters<typeof eventExpenseSpan>[0]) => (data ? expenseWindowLockMessage(eventExpenseSpan(event), data.today) : null);
+  const chosenShift = data?.shifts.find((s) => s.shift.id === shiftId);
+  const locked = mode === 'shift' && chosenShift ? lockOf(chosenShift.event) : null;
+  const canSave = target !== null && 'hours' in hours && !busy && locked === null;
 
   const save = async () => {
     const result = pickerResult(picker.hours, picker.minutes);
@@ -157,14 +164,22 @@ export default function LogScreen() {
           ) : (
             data.shifts.map(({ shift, event, hoursLogged }) => {
               const selected = shift.id === shiftId;
+              const lock = lockOf(event);
               return (
                 <Pressable key={shift.id} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => pickShift(shift.id)}>
                   <Card accent={selected ? color.gold : color.line}>
-                    <AppText variant="title">{shift.ShiftName}</AppText>
+                    <AppText variant="title" tone={lock ? 'muted' : 'navy'}>
+                      {lock ? '🔒 ' : ''}
+                      {shift.ShiftName}
+                    </AppText>
                     <AppText variant="small" tone="muted">
                       {event.EventName} · {formatShiftWhen(shift)}
                     </AppText>
-                    {hoursLogged === null ? (
+                    {lock ? (
+                      <AppText variant="small" tone="muted">
+                        {lock}
+                      </AppText>
+                    ) : hoursLogged === null ? (
                       <AppText variant="label" tone="red">
                         NO TIME LOGGED YET
                       </AppText>
@@ -211,7 +226,7 @@ export default function LogScreen() {
           <Field label="NOTES (OPTIONAL)">
             <AppInput value={notes} onChangeText={setNotes} multiline style={{ minHeight: 72, textAlignVertical: 'top', paddingTop: space.md }} maxLength={255} />
           </Field>
-          <Button title="Save time" busy={busy} disabled={!canSave} onPress={() => void save()} />
+          <Button title={locked ? '🔒 Reporting locked' : 'Save time'} busy={busy} disabled={!canSave} onPress={() => void save()} />
         </>
       ) : null}
     </Screen>

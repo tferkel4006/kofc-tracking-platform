@@ -154,6 +154,10 @@ export function createRemoteDataService(): DataService {
       getAgendaTemplate: notImplemented('meetings.getAgendaTemplate'),
       saveAgendaTemplate: notImplemented('meetings.saveAgendaTemplate'),
       populateAnnualCadence: notImplemented('meetings.populateAnnualCadence'),
+      listCadenceConfigs: notImplemented('meetings.listCadenceConfigs'),
+      saveCadenceConfig: notImplemented('meetings.saveCadenceConfig'),
+      removeCadenceConfig: notImplemented('meetings.removeCadenceConfig'),
+      listProposedMotions: notImplemented('meetings.listProposedMotions'),
     },
     shifts: { getShiftDefaultLength: notImplemented('shifts.getShiftDefaultLength') },
     notifications: {

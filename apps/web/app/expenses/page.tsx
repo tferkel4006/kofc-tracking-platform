@@ -4,6 +4,8 @@
 // was spent on, saves it as a draft or submits it to the council's leadership, and follows it through Submitted,
 // Approved and Reimbursed (with the check that paid it). A sheet leadership returned comes back as a draft with a
 // red banner quoting their reason until it is resubmitted. The drivers show a member only their own sheets.
+// Sprint 5Z-6: a sheet naming an event or meeting outside its submission window (from the day it starts through 30 days
+// after it ends) shows a padlock and its submit button is disabled; it can still be saved as a draft.
 import { useMemo, useRef, useState } from 'react';
 import {
   blankExpenseLine,
@@ -14,6 +16,8 @@ import {
   expenseReferenceChoices,
   expenseReferenceKey,
   expenseReferenceLabel,
+  expenseReferenceSpan,
+  expenseWindowLockMessage,
   listExpenseReferences,
   parseExpenseReferenceKey,
   toIsoDate,
@@ -62,6 +66,8 @@ function ExpenseSheetForm({
   const [busy, setBusy] = useState<'Draft' | 'Submitted' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const choices = useMemo(() => expenseReferenceChoices(refs), [refs]);
+  const span = expenseReferenceSpan(reference, refs);
+  const locked = span ? expenseWindowLockMessage(span, today) : null;
 
   const setCell = (key: number, field: keyof ExpenseLineDraft, value: string) =>
     setRows((now) => now.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
@@ -89,7 +95,7 @@ function ExpenseSheetForm({
       className="flex flex-col gap-4"
       onSubmit={(e) => {
         e.preventDefault();
-        void save('Submitted');
+        if (!locked) void save('Submitted');
       }}
     >
       {detail?.report.RejectionReason ? (
@@ -187,9 +193,15 @@ function ExpenseSheetForm({
         </p>
       </div>
 
+      {locked ? (
+        <p role="status" className="flex items-center gap-2 rounded border-2 border-navy px-3 py-2 text-sm font-bold">
+          <span aria-hidden="true">🔒</span>
+          {locked}
+        </p>
+      ) : null}
       <div className="flex flex-wrap gap-2 border-t border-line pt-3">
-        <Button type="submit" disabled={busy !== null}>
-          {busy === 'Submitted' ? 'Submitting…' : 'Submit for approval'}
+        <Button type="submit" disabled={busy !== null || locked !== null} title={locked ?? undefined}>
+          {locked ? '🔒 Submission locked' : busy === 'Submitted' ? 'Submitting…' : 'Submit for approval'}
         </Button>
         <Button variant="secondary" disabled={busy !== null} onClick={() => void save('Draft')}>
           {busy === 'Draft' ? 'Saving…' : 'Save draft'}

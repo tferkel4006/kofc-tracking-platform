@@ -34,6 +34,7 @@ export type PortalArea =
   | 'activities'
   | 'events'
   | 'meetings'
+  | 'meetings/cadence'
   | 'elections'
   | 'elections/appointments'
   | 'distribution-lists'
@@ -86,6 +87,12 @@ export const canManageAgendaTemplates = (u: Actor, councilId: number): boolean =
  * The council lookups screen: Admins and Super Admins, finance officers for the donation lookups, and the Grand Knight
  * for the agenda templates (Sprint 5Y-6).
  */
+/**
+ * The Cadence Engine panel (Sprint 5Z-6), mirroring assertMayScheduleCouncilCadence (activity status is checked there):
+ * the council's Admins and Grand Knight, and any Super Admin - the same keepers as the agenda templates.
+ */
+export const canManageCouncilCadence = (u: Actor, councilId: number): boolean => canManageAgendaTemplates(u, councilId);
+
 export const canOpenCouncilLookups = (u: Actor): boolean => isAdmin(u) || isFinanceOfficer(u) || (u.roles ?? []).includes(GRAND_KNIGHT_ROLE);
 
 /** The council lookup tables `u` may open for `councilId`, in tab order; a finance officer gets only the donation lookups. */
@@ -399,8 +406,11 @@ export function portalAreas(u: Actor): PortalArea[] {
   if (canAppointOfficers(u)) areas.push('elections/appointments');
   if (isAdmin(u)) areas.push('parishes', 'members', 'activities');
   if (canPlanEvents(u)) areas.push('events');
+  areas.push('meetings');
+  // Sprint 5Z-6: the Cadence Engine belongs to the agenda-template keepers - Admins, the Grand Knight, Super Admins.
+  if (isAdmin(u) || isGrandKnight(u)) areas.push('meetings/cadence');
   // Every member may put a brother Knight up for office (the drivers check they are Active).
-  areas.push('meetings', 'elections');
+  areas.push('elections');
   if (isAdmin(u)) areas.push('distribution-lists');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('donations');
   // Every member files their own expense reports; the council's leadership reviews and returns them; the Financial
@@ -447,7 +457,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
     id: 'volunteer',
     label: 'Volunteer Operations',
     collapsible: true,
-    items: ['calendar', 'activities', 'members', 'events', 'meetings', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
+    items: ['calendar', 'activities', 'members', 'events', 'meetings', 'meetings/cadence', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
   },
   { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'donations', 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'expenses/disbursements', 'charities/vetting', 'charities/queue', 'financials/budget'] },
   { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'] },

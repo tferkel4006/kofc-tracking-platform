@@ -8,6 +8,8 @@
 //     claimed request too (canOverrideVettingClaim).
 //   - Four-Eyes Principle: on a request the viewer carries as its Knight Shepherd every control is replaced by a
 //     padlocked "Sponsor Restriction" (isSponsorRestricted; the data service refuses it too, SELF_VETTING_BLOCKED).
+//   - Sprint 5Z-6: an advanced request still awaiting its vote carries "Place on next agenda"
+//     (charities.routeRequestToNextEligibleAgenda): a Proposed Motion on the soonest Monthly meeting at least 10 days out.
 import { useState } from 'react';
 import {
   CHARITABLE_REQUEST_MAX_TIER,
@@ -157,11 +159,13 @@ function RowAction({
   busy,
   onClaim,
   onOpen,
+  onRoute,
 }: {
   detail: CharitableRequestDetail;
   busy: boolean;
   onClaim: () => void;
   onOpen: () => void;
+  onRoute: () => void;
 }) {
   const user = useUser();
   const r = detail.request;
@@ -182,7 +186,18 @@ function RowAction({
       <span className="text-xs text-muted">Held by its vetter</span>
     );
   }
-  return <span className="text-xs text-muted">{r.VettedDate ? `Vetted ${formatFullDate(r.VettedDate)}` : 'Vetted'}</span>;
+  const vetted = <span className="block text-xs text-muted">{r.VettedDate ? `Vetted ${formatFullDate(r.VettedDate)}` : 'Vetted'}</span>;
+  if (r.RequestStatus === 'Advanced' && r.VoteStatus === 'Pending') {
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <Button size="sm" onClick={onRoute} disabled={busy} className="whitespace-nowrap">
+          📅 Place on next agenda
+        </Button>
+        {vetted}
+      </div>
+    );
+  }
+  return vetted;
 }
 
 function VettingDesk() {
@@ -204,6 +219,19 @@ function VettingDesk() {
       await db.charities.triageRequestStatus(user.memberId, detail.request.id, { action: 'claim' });
       await queue.reload();
       setOpenId(detail.request.id);
+    } catch (err) {
+      setMessage({ tone: 'error', text: describeError(err) });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const route = async (detail: CharitableRequestDetail) => {
+    setBusyId(detail.request.id);
+    setMessage(null);
+    try {
+      const { meeting } = await db.charities.routeRequestToNextEligibleAgenda(user.memberId, detail.request.id);
+      setMessage({ tone: 'info', text: `Request #${detail.request.id} is a Proposed Motion for ${meeting['Meeting Name']} on ${formatFullDate(meeting.Date)}.` });
     } catch (err) {
       setMessage({ tone: 'error', text: describeError(err) });
     } finally {
@@ -269,7 +297,7 @@ function VettingDesk() {
                       <RequestStatusPill detail={d} />
                     </Td>
                     <Td>
-                      <RowAction detail={d} busy={busyId === r.id} onClaim={() => void claim(d)} onOpen={() => setOpenId(r.id)} />
+                      <RowAction detail={d} busy={busyId === r.id} onClaim={() => void claim(d)} onOpen={() => setOpenId(r.id)} onRoute={() => void route(d)} />
                     </Td>
                   </tr>
                 );

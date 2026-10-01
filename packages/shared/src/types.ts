@@ -287,6 +287,11 @@ export interface Meeting {
   EndDate?: string | null;
   /** The council mission area (CouncilMissionArea, Sprint 5Z-1) the meeting is filed under; null while unfiled. */
   MissionAreaID?: number | null;
+  /**
+   * DATE (Sprint 5Z-6): the day the meeting's invitations reach members' own feeds (drip release); null when released
+   * at once. populateAnnualCadence sets it CADENCE_INVITE_LEAD_DAYS before Date.
+   */
+  InviteReleaseDate?: string | null;
 }
 
 /** An invitee's RSVP (Sprint 5Y-5); see MEETING_RESPONSE_STATUSES. */
@@ -327,7 +332,11 @@ export interface CouncilCadenceConfig {
   CadencePattern: string; // VARCHAR(100): 'First Tuesday' ... 'Fourth Saturday', or 'Last Thursday'
   DefaultStartTime: string; // VARCHAR(50): 24-hour 'HH:MM' or 'HH:MM:SS'
   DefaultLocation: string; // TEXT
+  DefaultRecipientGroup: CadenceRecipientGroup; // Sprint 5Z-6: who the cadence meetings invite; default 'all_members'
 }
+
+/** Who a cadence's meetings invite (Sprint 5Z-6): a built-in distribution group, or nobody; see CADENCE_RECIPIENT_GROUPS. */
+export type CadenceRecipientGroup = 'all_members' | 'active_officers' | 'none';
 
 /** Where a proposed motion came from; see PROPOSED_MOTION_SOURCE_TYPES. */
 export type ProposedMotionSourceType = 'CharitableRequest' | 'GeneralMember';

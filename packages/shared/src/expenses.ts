@@ -7,6 +7,7 @@
 // shared by the web portal and the phone app (Sprint 5R-2).
 // =========================================================================
 import type { DataService, DisbursementCheckDetails, ExpenseLineItemInput, ExpenseReportDetail, ExpenseReportInput } from './contract';
+import { meetingLastDate } from './meetings';
 import { addDays } from './planning';
 import { formatDate } from './presentation';
 import { assertIsoDate, assertMoney, assertText, BusinessRuleError, optionalText, toIsoDate } from './rules';
@@ -123,38 +124,82 @@ export function assertExpenseLinks(
   }
 }
 
-/** How many days after a linked event's EndDate its expense sheets may still be submitted (Sprint 5Z-5). */
+/** How many days after a linked event or meeting ends its expense sheets may still be submitted (Sprint 5Z-5). */
 export const EXPENSE_SUBMISSION_GRACE_DAYS = 30;
 
 /**
- * expenses.submitReport timeline rule (Sprint 5Z-5): a sheet linked to an event may be submitted only from the event's
- * StartDate through EXPENSE_SUBMISSION_GRACE_DAYS days after its EndDate, both inclusive, by the local calendar date
- * of `now`. Earlier rejects EXPENSE_WINDOW_NOT_OPEN, later EXPENSE_WINDOW_CLOSED. Drafts may be saved at any time, and
- * a sheet with no linked event is not limited. `event` is the linked event's row; call after assertExpenseLinks.
+ * The days a linked event or meeting spans, for the expense submission window: an event runs StartDate - EndDate, a
+ * meeting Date - its last day (EndDate for a multi-day meeting).
  */
-export function assertExpenseSubmissionWindow(
-  status: 'Draft' | 'Submitted',
-  event: Pick<Event, 'id' | 'StartDate' | 'EndDate'> | null,
-  now: Date,
-): void {
-  if (status !== 'Submitted' || event === null) return;
+export interface ExpenseWindowSpan {
+  kind: 'event' | 'meeting';
+  id: number;
+  start: string;
+  end: string;
+}
+
+export const eventExpenseSpan = (e: Pick<Event, 'id' | 'StartDate' | 'EndDate'>): ExpenseWindowSpan => ({
+  kind: 'event',
+  id: e.id,
+  start: String(e.StartDate).slice(0, 10),
+  end: String(e.EndDate).slice(0, 10),
+});
+
+export const meetingExpenseSpan = (m: Pick<Meeting, 'id' | 'Date'> & Partial<Pick<Meeting, 'IsMultiDay' | 'EndDate'>>): ExpenseWindowSpan => ({
+  kind: 'meeting',
+  id: m.id,
+  start: String(m.Date).slice(0, 10),
+  end: String(meetingLastDate(m)).slice(0, 10),
+});
+
+/** Where `today` falls against a span's submission window. */
+export type ExpenseWindowState = 'not-open' | 'open' | 'closed';
+
+/** The last day a span's expenses may be submitted: EXPENSE_SUBMISSION_GRACE_DAYS after it ends. */
+export const expenseWindowCloses = (span: ExpenseWindowSpan): string => addDays(span.end, EXPENSE_SUBMISSION_GRACE_DAYS);
+
+/** 'not-open' before the span starts, 'closed' after expenseWindowCloses, otherwise 'open' (both ends inclusive). */
+export function expenseWindowState(span: ExpenseWindowSpan, today: string): ExpenseWindowState {
+  if (today < span.start) return 'not-open';
+  if (today > expenseWindowCloses(span)) return 'closed';
+  return 'open';
+}
+
+/** The lock line the forms show beside a span outside its window, or null when it is open. */
+export function expenseWindowLockMessage(span: ExpenseWindowSpan, today: string): string | null {
+  const state = expenseWindowState(span, today);
+  if (state === 'open') return null;
+  if (state === 'not-open') return `Submission opens ${formatDate(span.start)}, when the ${span.kind} starts. Save a draft until then.`;
+  return `Submission closed ${formatDate(expenseWindowCloses(span))}, ${EXPENSE_SUBMISSION_GRACE_DAYS} days after the ${span.kind} ended.`;
+}
+
+/**
+ * expenses.submitReport timeline rule (Sprint 5Z-5; meetings too since Sprint 5Z-6): a sheet linked to an event or a
+ * meeting may be submitted only from the day it starts through EXPENSE_SUBMISSION_GRACE_DAYS days after it ends, both
+ * inclusive, by the local calendar date of `now`. Earlier rejects EXPENSE_WINDOW_NOT_OPEN, later EXPENSE_WINDOW_CLOSED.
+ * Every linked span must be open. Drafts may be saved at any time, and a sheet linking nothing is not limited. Call after
+ * assertExpenseLinks.
+ */
+export function assertExpenseSubmissionWindow(status: 'Draft' | 'Submitted', spans: readonly ExpenseWindowSpan[], now: Date): void {
+  if (status !== 'Submitted') return;
   const today = toIsoDate(now);
-  const start = String(event.StartDate).slice(0, 10);
-  const end = String(event.EndDate).slice(0, 10);
-  if (today < start) {
-    throw new BusinessRuleError(
-      'EXPENSE_WINDOW_NOT_OPEN',
-      `Expenses for event ${event.id} can be submitted from the day it starts (${start}); save the sheet as a draft until then.`,
-      { eventId: event.id, startDate: start, today },
-    );
-  }
-  const closes = addDays(end, EXPENSE_SUBMISSION_GRACE_DAYS);
-  if (today > closes) {
-    throw new BusinessRuleError(
-      'EXPENSE_WINDOW_CLOSED',
-      `Expenses for event ${event.id} had to be submitted within ${EXPENSE_SUBMISSION_GRACE_DAYS} days of its end (${end}); the window closed on ${closes}.`,
-      { eventId: event.id, endDate: end, closesOn: closes, today },
-    );
+  for (const span of spans) {
+    const state = expenseWindowState(span, today);
+    const details = { kind: span.kind, id: span.id, startDate: span.start, endDate: span.end, today };
+    if (state === 'not-open') {
+      throw new BusinessRuleError(
+        'EXPENSE_WINDOW_NOT_OPEN',
+        `Expenses for ${span.kind} ${span.id} can be submitted from the day it starts (${span.start}); save the sheet as a draft until then.`,
+        details,
+      );
+    }
+    if (state === 'closed') {
+      throw new BusinessRuleError(
+        'EXPENSE_WINDOW_CLOSED',
+        `Expenses for ${span.kind} ${span.id} had to be submitted within ${EXPENSE_SUBMISSION_GRACE_DAYS} days of its end (${span.end}); the window closed on ${expenseWindowCloses(span)}.`,
+        { ...details, closesOn: expenseWindowCloses(span) },
+      );
+    }
   }
 }
 
@@ -444,3 +489,17 @@ export function expenseLinesFromDrafts(lines: readonly ExpenseLineDraft[]): Expe
 /** The running total of the rows' amounts, ignoring any that are blank or not yet a number. */
 export const expenseDraftTotal = (lines: readonly ExpenseLineDraft[]): number =>
   sumAmounts(lines.map((l) => Number(l.Amount.trim().replace(/[$,\s]/g, ''))).filter((n) => Number.isFinite(n)));
+
+/** The event or meeting a form's reference key names, as an expense window span; null for '' or an unknown id. */
+export function expenseReferenceSpan(key: string, refs: ExpenseReferenceOptions): ExpenseWindowSpan | null {
+  const { LinkedEventID, LinkedMeetingID } = parseExpenseReferenceKey(key);
+  if (LinkedEventID !== null) {
+    const event = refs.events.find((e) => e.id === LinkedEventID);
+    return event ? eventExpenseSpan(event) : null;
+  }
+  if (LinkedMeetingID !== null) {
+    const meeting = refs.meetings.find((m) => m.id === LinkedMeetingID);
+    return meeting ? meetingExpenseSpan(meeting) : null;
+  }
+  return null;
+}

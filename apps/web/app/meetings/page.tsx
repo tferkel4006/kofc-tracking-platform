@@ -8,6 +8,10 @@
 // Sprint 5Y-6: the schedule form offers the council's own meeting types (CouncilMeetingType, saved as MeetingTypeID);
 // picking one fills the agenda with the council's template for it (meetings.getAgendaTemplate), which stays editable.
 // A Multi-Day Assembly checkbox swaps the clock times for an End Date: the meeting then runs over whole days.
+//
+// Sprint 5Z-6: a meeting's detail shows its Proposed Motions (ProposedMotionsSection) and, for a cadence meeting whose
+// invitations are still held back by the drip release, the day they reach members' feeds. Cadences live at
+// /meetings/cadence (Cadence Engine).
 import { useEffect, useRef, useState } from 'react';
 import {
   canLinkMeetingDrive,
@@ -16,6 +20,7 @@ import {
   describeError,
   formatDate,
   formatMeetingWhen,
+  isInvitationReleased,
   globalMeetingTypeFor,
   meetingLastDate,
   toIsoDate,
@@ -27,6 +32,7 @@ import {
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { DriveButtons, DriveLinkEditor } from '@/components/DriveLinks';
+import { ProposedMotionsSection } from '@/components/MotionParts';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Td, Textarea } from '@/components/ui';
 import { minutesFileName } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -337,6 +343,14 @@ function MeetingDetail({ meetingId, councilId, onChanged }: { meetingId: number;
               <dd>{m['Meeting Description']}</dd>
             </>
           ) : null}
+          {!isInvitationReleased(m, toIsoDate(new Date())) && m.InviteReleaseDate ? (
+            <>
+              <dt className="font-bold">Invitations</dt>
+              <dd>
+                <Pill tone="gold">Drip release</Pill> Hidden from members&apos; feeds until {formatDate(m.InviteReleaseDate)}.
+              </dd>
+            </>
+          ) : null}
           {m.Agenda ? (
             <>
               <dt className="font-bold">Agenda</dt>
@@ -348,6 +362,8 @@ function MeetingDetail({ meetingId, councilId, onChanged }: { meetingId: number;
           <DriveButtons meeting={m} />
         </div>
       </Panel>
+
+      <ProposedMotionsSection meetingId={m.id} />
 
       {canLink ? (
         <Panel title="Google Drive files">

@@ -27,6 +27,7 @@ const NAV: Record<PortalNavItem | 'profile' | 'messages', { href: string; label:
   members: { href: '/members', label: 'Affiliated Roster', hint: 'Members, types and skills' },
   events: { href: '/events', label: 'Event Planner', hint: 'Events, shifts and councils' },
   meetings: { href: '/meetings', label: 'Meeting Center', hint: 'Meetings, invitations, minutes' },
+  'meetings/cadence': { href: '/meetings/cadence', label: 'Cadence Engine', hint: 'Standing meeting patterns and the annual calendar' },
   elections: { href: '/elections', label: 'Council Officer Nominations', hint: 'Nominate brother Knights for elected office' },
   gallery: { href: '/gallery', label: 'Fraternal Photo Gallery', hint: 'Event photos and slideshows' },
   ledger: { href: '/ledger', label: 'Post-event Ledger', hint: 'Spend, funds raised, lessons' },

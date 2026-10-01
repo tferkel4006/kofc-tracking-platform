@@ -618,6 +618,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "InviteReleaseDate",
+        "kind": "date",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -3973,6 +3980,16 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": true,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "DefaultRecipientGroup",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": "all_members"
+        }
       }
     ],
     "foreignKeys": [

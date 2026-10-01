@@ -2,7 +2,7 @@
 
 A governance guide for the council's trustees. It shows what each council rank may do in five parts of the Knights of Columbus tracking platform. Every entry below matches a rule the data service enforces, or the screen that offers the control. The notes name the rule so it can be checked in the code (`packages/shared/src/permissions.ts` for the screens, `rules.ts` and the module files for the data service).
 
-Current as of Sprint 5Z-2.5.
+Current as of Sprint 5Z-6.
 
 ## How to read this chart
 
@@ -105,6 +105,7 @@ The built-in groups are All Members and Active Officers (`DISTRIBUTION_GROUPS`).
 | Mark or clear anyone's no-show | — | — | — | — | ✅ | — |
 | Take meeting attendance and attach minutes | 👤 ⁵ | 👤 ⁵ | ✅ | ✅ | ✅ | ✅ |
 | Edit Meeting Agenda Templates (Council Lookups) | — | — | — | — | ✅ | ✅ |
+| Manage meeting cadences and populate the annual calendar (Cadence Engine) | — | — | — | — | ✅ | ✅ |
 | No-show and awaiting-hours audits (dashboard) | — | — | ✅ ⁷ | ✅ ⁷ | ✅ | ✅ ⁷ |
 | Monthly executive summary and Faith-in-Action mission tracking (dashboard) | — | — | ✅ | ✅ | ✅ | ✅ ⁷ |
 

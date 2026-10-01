@@ -3,6 +3,8 @@
 // copied into the app's media folder and its path saved as ReceiptPhotoURL), vendor, date, amount and description.
 // The member saves a draft or submits it to the council's leadership, then follows it through Submitted, Approved
 // and Reimbursed. A sheet leadership returned shows its reason in red until it is resubmitted. Opened from Home.
+// Sprint 5Z-6: a sheet naming an event or meeting that has not started, or ended more than 30 days ago, is outside its
+// submission window: the submit button grays out behind a padlock (drafts still save) and the draft card says why.
 import { useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import {
@@ -14,7 +16,9 @@ import {
   expenseReferenceChoices,
   expenseReferenceKey,
   expenseReferenceLabel,
+  expenseReferenceSpan,
   expenseStatusBadge,
+  expenseWindowLockMessage,
   formatDate,
   listExpenseReferences,
   parseExpenseReferenceKey,
@@ -30,7 +34,7 @@ import { NavStrip } from '@/components/NavStrip';
 import { ReceiptScanTile, SCAN_RECEIPT_TITLE } from '@/components/ReceiptScanTile';
 import { AppInput, AppText, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
-import { color, space } from '@/lib/theme';
+import { color, radius, space } from '@/lib/theme';
 import { describeError, useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
 
@@ -70,6 +74,10 @@ function ExpenseDraftForm({
     ],
     [refs],
   );
+
+  // Sprint 5Z-6: outside the linked event's or meeting's submission window the submit button is padlocked.
+  const span = expenseReferenceSpan(reference, refs);
+  const locked = span ? expenseWindowLockMessage(span, today) : null;
 
   const setCell = (key: number, field: keyof ExpenseLineDraft, value: string) =>
     setRows((now) => now.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
@@ -153,7 +161,13 @@ function ExpenseDraftForm({
           <AppText variant="heading">{money(expenseDraftTotal(rows))}</AppText>
         </View>
         {error ? <Notice tone="error" message={error} onDismiss={() => setError(null)} /> : null}
-        <Button title="Submit for approval" busy={busy === 'Submitted'} disabled={busy !== null} onPress={() => void save('Submitted')} />
+        {locked ? <WindowLock message={locked} /> : null}
+        <Button
+          title={locked ? '🔒 Submission locked' : 'Submit for approval'}
+          busy={busy === 'Submitted'}
+          disabled={busy !== null || locked !== null}
+          onPress={() => void save('Submitted')}
+        />
         <View style={{ flexDirection: 'row', gap: space.md }}>
           <Button title="Cancel" variant="secondary" style={{ flex: 1 }} disabled={busy !== null} onPress={onCancel} />
           <Button title="Save draft" variant="secondary" style={{ flex: 2 }} busy={busy === 'Draft'} disabled={busy !== null} onPress={() => void save('Draft')} />
@@ -163,11 +177,31 @@ function ExpenseDraftForm({
   );
 }
 
+/** A grayed padlock line beside an item outside its submission window (Sprint 5Z-6). */
+function WindowLock({ message }: { message: string }) {
+  return (
+    <View
+      accessibilityRole="text"
+      accessibilityLabel={`Locked. ${message}`}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderWidth: 1, borderColor: color.line, borderRadius: radius.sm, backgroundColor: color.white }}
+    >
+      <AppText variant="title" tone="muted">
+        🔒
+      </AppText>
+      <AppText variant="small" tone="muted" style={{ flex: 1 }}>
+        {message}
+      </AppText>
+    </View>
+  );
+}
+
 // ---- one sheet in the list ------------------------------------------------------------
 
-function ExpenseReportCard({ detail, refs, onEdit }: { detail: ExpenseReportDetail; refs: ExpenseReferenceOptions; onEdit?: () => void }) {
+function ExpenseReportCard({ detail, refs, today, onEdit }: { detail: ExpenseReportDetail; refs: ExpenseReferenceOptions; today: string; onEdit?: () => void }) {
   const { report, disbursement } = detail;
   const badge = expenseStatusBadge(report);
+  const span = report.Status === 'Draft' ? expenseReferenceSpan(expenseReferenceKey(report), refs) : null;
+  const locked = span ? expenseWindowLockMessage(span, today) : null;
   return (
     <Card accent={badge.tone === 'redOutline' ? color.red : report.Status === 'Submitted' ? color.gold : color.navy}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.md }}>
@@ -184,6 +218,7 @@ function ExpenseReportCard({ detail, refs, onEdit }: { detail: ExpenseReportDeta
           Paid by check {disbursement.CheckNumber} on {formatDate(disbursement.PayoutDate)}.
         </AppText>
       ) : null}
+      {locked ? <WindowLock message={locked} /> : null}
       {onEdit ? <Button title={report.RejectionReason ? 'Fix and resubmit' : 'Edit draft'} variant="secondary" onPress={onEdit} /> : null}
     </Card>
   );
@@ -257,7 +292,7 @@ export default function ExpensesScreen() {
               <EmptyState message="You have not filed any expense reports. Start one to be reimbursed for council purchases." />
             ) : (
               data.reports.map((d) => (
-                <ExpenseReportCard key={d.report.id} detail={d} refs={data.refs} onEdit={d.report.Status === 'Draft' ? () => setEditing(d) : undefined} />
+                <ExpenseReportCard key={d.report.id} detail={d} refs={data.refs} today={today} onEdit={d.report.Status === 'Draft' ? () => setEditing(d) : undefined} />
               ))
             )}
           </Section>

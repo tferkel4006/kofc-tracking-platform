@@ -268,6 +268,13 @@ import {
   nextEligibleAgendaMeeting,
   noEligibleAgendaMeeting,
   PROPOSED_MOTION_DEFAULT_MINUTES,
+  assertIsoDate,
+  cadenceInviteMode,
+  cadenceInviteReleaseDate,
+  cleanCadenceConfigInput,
+  eventExpenseSpan,
+  isInvitationReleased,
+  meetingExpenseSpan,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -412,8 +419,9 @@ const DB_NAME = 'kofc.db';
  * 23: ExpenseReport.FinancialSecretaryMemberID, FinancialSecretaryApprovedAt, GrandKnightMemberID and GrandKnightApprovedAt
  *     (Sprint 5Z-3).
  * 24: CouncilCadenceConfig and ProposedMotion (Sprint 5Z-5).
+ * 25: Meeting.InviteReleaseDate and CouncilCadenceConfig.DefaultRecipientGroup (Sprint 5Z-6).
  */
-const SCHEMA_VERSION = 24;
+const SCHEMA_VERSION = 25;
 
 /** Allow-list for the one place a table name is interpolated into SQL. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -1949,9 +1957,14 @@ export class SqliteDataService implements DataService {
             ? null
             : await db.getFirstAsync<Meeting>('SELECT [CouncilID] FROM [Meeting] WHERE [id] = ?', [clean.LinkedMeetingID]),
         );
+        const linkedEvent = eventId === null ? null : await db.getFirstAsync<Event>('SELECT [id], [StartDate], [EndDate] FROM [Event] WHERE [id] = ?', [eventId]);
+        const linkedMeeting =
+          clean.LinkedMeetingID === null
+            ? null
+            : await db.getFirstAsync<Meeting>('SELECT [id], [Date], [IsMultiDay], [EndDate] FROM [Meeting] WHERE [id] = ?', [clean.LinkedMeetingID]);
         assertExpenseSubmissionWindow(
           clean.Status,
-          eventId === null ? null : await db.getFirstAsync<Event>('SELECT [id], [StartDate], [EndDate] FROM [Event] WHERE [id] = ?', [eventId]),
+          [...(linkedEvent ? [eventExpenseSpan(linkedEvent)] : []), ...(linkedMeeting ? [meetingExpenseSpan(linkedMeeting)] : [])],
           this.now(),
         );
         const fields: Bind[] = [clean.Status, clean.LinkedEventID, clean.LinkedMeetingID];
@@ -2871,8 +2884,10 @@ export class SqliteDataService implements DataService {
       const params: (string | number)[] = [councilId, from];
       let invited = '';
       if (options?.memberId !== undefined) {
-        invited = ' AND [id] IN (SELECT [MeetingID] FROM [MeetingInvites] WHERE [MemberID] = ?)';
-        params.push(options.memberId);
+        // A member's own list leaves out drip-release invitations until their release day (Sprint 5Z-6).
+        invited = ` AND [id] IN (SELECT [MeetingID] FROM [MeetingInvites] WHERE [MemberID] = ?)
+                    AND ([InviteReleaseDate] IS NULL OR substr([InviteReleaseDate], 1, 10) <= ?)`;
+        params.push(options.memberId, toIsoDate(this.now()));
       }
       return db.getAllAsync<Meeting>(
         `SELECT * FROM [Meeting] WHERE [CouncilID] = ? AND COALESCE([EndDate], [Date]) >= ?${invited}
@@ -2892,7 +2907,8 @@ export class SqliteDataService implements DataService {
         [memberId, councilId, from],
       );
       const strip = ({ response: _response, ...meeting }: Meeting & { response: MeetingResponseStatus | null }): Meeting => meeting;
-      const invited = allSchedules.filter((m) => m.response !== null);
+      const today = toIsoDate(this.now());
+      const invited = allSchedules.filter((m) => m.response !== null && isInvitationReleased(m, today));
       return {
         myInvites: invited.map(strip),
         allSchedules: allSchedules.map(strip),
@@ -2988,14 +3004,16 @@ export class SqliteDataService implements DataService {
       let inviteId = 0;
       await db.withTransactionAsync(async () => {
         await this.requireMember(db, actorId);
-        if (!(await db.getFirstAsync('SELECT [id] FROM [Meeting] WHERE [id] = ?', [meetingId]))) {
+        const meeting = await db.getFirstAsync<Pick<Meeting, 'InviteReleaseDate'>>('SELECT [InviteReleaseDate] FROM [Meeting] WHERE [id] = ?', [meetingId]);
+        if (!meeting) {
           throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
         }
         const invite = await db.getFirstAsync<{ id: number }>(
           'SELECT [id] FROM [MeetingInvites] WHERE [MeetingID] = ? AND [MemberID] = ? ORDER BY [id]',
           [meetingId, actorId],
         );
-        if (!invite) {
+        // An invitation still held back by the drip release (Sprint 5Z-6) cannot be answered yet.
+        if (!invite || !isInvitationReleased(meeting, toIsoDate(this.now()))) {
           throw new BusinessRuleError('NOT_INVITED', `Member ${actorId} is not invited to meeting ${meetingId}.`, { meetingId, memberId: actorId });
         }
         inviteId = invite.id;
@@ -3087,12 +3105,73 @@ export class SqliteDataService implements DataService {
             OwnerID: null,
             IsMultiDay: 0,
             EndDate: null,
+            InviteReleaseDate: cadenceInviteReleaseDate(date),
           };
-          createdIds.push(await this.insertMeeting(db, meeting, 'none'));
+          createdIds.push(await this.insertMeeting(db, meeting, cadenceInviteMode(cadence.DefaultRecipientGroup)));
         }
       });
       const created = await selectIn<Meeting>(db, (m) => `SELECT * FROM [Meeting] WHERE [id] IN (${m}) ORDER BY [Date], [id]`, createdIds);
       return { config: config!, fraternalYear: year, created, skippedDates };
+    },
+
+    listCadenceConfigs: async (councilId) => {
+      const db = await this.ready();
+      await this.assertCouncilsExist(db, [councilId]);
+      return db.getAllAsync<CouncilCadenceConfig>('SELECT * FROM [CouncilCadenceConfig] WHERE [CouncilID] = ? ORDER BY [id]', [councilId]);
+    },
+
+    saveCadenceConfig: async (actorId, councilId, input) => {
+      const clean = cleanCadenceConfigInput(input);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayScheduleCouncilCadence(await this.memberWriteActor(db, actorId), councilId);
+        await this.assertCouncilsExist(db, [councilId]);
+        await this.requireCouncilMeetingType(db, councilId, clean.MeetingTypeID);
+        const fields: Bind[] = [clean.CadencePattern, clean.DefaultStartTime, clean.DefaultLocation, clean.DefaultRecipientGroup];
+        const res = await db.runAsync(
+          `UPDATE [CouncilCadenceConfig] SET [CadencePattern] = ?, [DefaultStartTime] = ?, [DefaultLocation] = ?, [DefaultRecipientGroup] = ?
+            WHERE [CouncilID] = ? AND [MeetingTypeID] = ?`,
+          [...fields, councilId, clean.MeetingTypeID],
+        );
+        if (res.changes === 0) {
+          await db.runAsync(
+            `INSERT INTO [CouncilCadenceConfig] ([CadencePattern], [DefaultStartTime], [DefaultLocation], [DefaultRecipientGroup], [CouncilID], [MeetingTypeID])
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [...fields, councilId, clean.MeetingTypeID],
+          );
+        }
+      });
+      return (await db.getFirstAsync<CouncilCadenceConfig>('SELECT * FROM [CouncilCadenceConfig] WHERE [CouncilID] = ? AND [MeetingTypeID] = ?', [
+        councilId,
+        clean.MeetingTypeID,
+      ]))!;
+    },
+
+    removeCadenceConfig: async (actorId, councilId, configId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayScheduleCouncilCadence(await this.memberWriteActor(db, actorId), councilId);
+        const res = await db.runAsync('DELETE FROM [CouncilCadenceConfig] WHERE [id] = ? AND [CouncilID] = ?', [configId, councilId]);
+        if (res.changes === 0) throw cadenceConfigNotFound(configId, councilId);
+      });
+    },
+
+    listProposedMotions: async (meetingId) => {
+      const db = await this.ready();
+      if (!(await db.getFirstAsync('SELECT [id] FROM [Meeting] WHERE [id] = ?', [meetingId]))) {
+        throw new BusinessRuleError('MEETING_NOT_FOUND', `No meeting with id ${meetingId}.`, { meetingId });
+      }
+      const rows = await db.getAllAsync<ProposedMotion & { presenterFirstName: string | null; presenterLastName: string | null }>(
+        `SELECT p.*, m.[MemberFirstName] AS presenterFirstName, m.[MemberLastName] AS presenterLastName
+           FROM [ProposedMotion] p LEFT JOIN [Member] m ON m.[id] = p.[PresenterMemberID]
+          WHERE p.[TargetMeetingID] = ? ORDER BY p.[id]`,
+        [meetingId],
+      );
+      return rows.map(({ presenterFirstName, presenterLastName, ...motion }) => ({
+        motion,
+        presenterFirstName: presenterFirstName ?? '',
+        presenterLastName: presenterLastName ?? '',
+      }));
     },
   };
 
@@ -3127,8 +3206,8 @@ export class SqliteDataService implements DataService {
     const res = await db.runAsync(
       `INSERT INTO [Meeting] ([CouncilID], [Meeting Name], [Meeting Description], [Date],
                               [Time Start], [Time End], [Location], [Agenda], [MinutesURL], [MeetingType], [OwnerID],
-                              [IsMultiDay], [EndDate], [MeetingTypeID])
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                              [IsMultiDay], [EndDate], [MeetingTypeID], [InviteReleaseDate])
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         m.CouncilID,
         m['Meeting Name'],
@@ -3144,6 +3223,7 @@ export class SqliteDataService implements DataService {
         span.IsMultiDay,
         span.EndDate,
         meetingTypeId,
+        m.InviteReleaseDate == null ? null : assertIsoDate(m.InviteReleaseDate, 'Invitation release date'),
       ],
     );
     const meetingId = res.lastInsertRowId;

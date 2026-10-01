@@ -11,6 +11,7 @@
 // =========================================================================
 import { assertFraternalYear } from './budget';
 import { GRAND_KNIGHT_ROLE } from './elections';
+import { addDays } from './planning';
 import { formatDate, formatTimeRange } from './presentation';
 import {
   assertIsoDate,
@@ -23,7 +24,7 @@ import {
   SecurityPrivilegeError,
   type MemberWriteActor,
 } from './rules';
-import type { Meeting, MeetingType, ProposedMotionSourceType, ProposedMotionVoteResult } from './types';
+import type { CadenceRecipientGroup, Meeting, MeetingType, ProposedMotionSourceType, ProposedMotionVoteResult } from './types';
 
 /** The Time Start and Time End stored on a multi-day meeting, which has no clock times. */
 export const MULTI_DAY_MEETING_TIME = '00:00:00';
@@ -211,3 +212,74 @@ export const PROPOSED_MOTION_SOURCE_TYPES: readonly ProposedMotionSourceType[] =
 export const PROPOSED_MOTION_VOTE_RESULTS: readonly ProposedMotionVoteResult[] = ['Pending', 'Passed', 'Failed', 'Tabled'];
 /** ProposedMotion.AllocatedMinutes default (the column's DEFAULT 5). */
 export const PROPOSED_MOTION_DEFAULT_MINUTES = 5;
+
+// ---- drip-release invitations and cadence recipients (Sprint 5Z-6) ---------------
+//
+// A cadence meeting is on the master calendar from the day populateAnnualCadence lays it down, and its invitation
+// rows exist from then too, but members' own feeds (listUpcoming for a member, listSchedules, rsvpToInvite) ignore
+// them until Meeting.InviteReleaseDate, CADENCE_INVITE_LEAD_DAYS calendar days before the meeting. That keeps a
+// year of monthly invitations from crowding the phone's meeting list.
+
+/** Calendar days before a cadence meeting that its invitations reach members' feeds. */
+export const CADENCE_INVITE_LEAD_DAYS = 5;
+
+/** Who a cadence's meetings may invite: the built-in distribution groups, or nobody (invite by hand later). */
+export const CADENCE_RECIPIENT_GROUPS: readonly { value: CadenceRecipientGroup; label: string }[] = [
+  { value: 'all_members', label: 'All Members' },
+  { value: 'active_officers', label: 'Active Officers' },
+  { value: 'none', label: 'Nobody (invite by hand)' },
+];
+
+export const cadenceRecipientLabel = (group: CadenceRecipientGroup): string =>
+  CADENCE_RECIPIENT_GROUPS.find((g) => g.value === group)?.label ?? group;
+
+/** The meetings.create invitation mode a recipient group stands for. */
+export function cadenceInviteMode(group: CadenceRecipientGroup): 'allActive' | 'officers' | 'none' {
+  if (group === 'all_members') return 'allActive';
+  if (group === 'active_officers') return 'officers';
+  return 'none';
+}
+
+/** The day a cadence meeting on `date` releases its invitations: CADENCE_INVITE_LEAD_DAYS days before. */
+export const cadenceInviteReleaseDate = (date: string): string => addDays(date, -CADENCE_INVITE_LEAD_DAYS);
+
+/** True once the meeting's invitations may appear in members' feeds on `today` (YYYY-MM-DD). */
+export const isInvitationReleased = (m: Partial<Pick<Meeting, 'InviteReleaseDate'>>, today: string): boolean =>
+  m.InviteReleaseDate == null || String(m.InviteReleaseDate).slice(0, 10) <= today;
+
+/** What meetings.saveCadenceConfig writes for one of the council's meeting types. */
+export interface CadenceConfigInput {
+  MeetingTypeID: number;
+  CadencePattern: string;
+  DefaultStartTime: string;
+  DefaultLocation: string;
+  DefaultRecipientGroup?: CadenceRecipientGroup;
+}
+
+/** Longest CouncilCadenceConfig.DefaultLocation; the column is TEXT, the cap matches Meeting.Location (VARCHAR(100)). */
+export const CADENCE_LOCATION_MAX_LENGTH = 100;
+
+/**
+ * meetings.saveCadenceConfig: the pattern stored in its canonical spelling ('first tuesday' -> 'First Tuesday'), the
+ * start time as 'HH:MM', a required location and a known recipient group (default 'all_members'). Rejects INVALID_INPUT.
+ */
+export function cleanCadenceConfigInput(input: CadenceConfigInput): Required<CadenceConfigInput> {
+  if (typeof input !== 'object' || input === null) throw new BusinessRuleError('INVALID_INPUT', 'A meeting cadence is required.');
+  if (!Number.isInteger(input.MeetingTypeID) || input.MeetingTypeID <= 0) {
+    throw new BusinessRuleError('INVALID_INPUT', `A meeting cadence needs one of the council's meeting types; received ${JSON.stringify(input.MeetingTypeID)}.`, {
+      field: 'MeetingTypeID',
+    });
+  }
+  const rule = parseCadencePattern(input.CadencePattern);
+  const group = input.DefaultRecipientGroup ?? 'all_members';
+  if (!CADENCE_RECIPIENT_GROUPS.some((g) => g.value === group)) {
+    throw new BusinessRuleError('INVALID_INPUT', `Unknown recipient group ${JSON.stringify(group)}.`, { field: 'DefaultRecipientGroup', value: group });
+  }
+  return {
+    MeetingTypeID: input.MeetingTypeID,
+    CadencePattern: `${rule.ordinal} ${rule.weekday}`,
+    DefaultStartTime: assertTimeOfDay(input.DefaultStartTime, 'Default start time').slice(0, 5),
+    DefaultLocation: assertText(input.DefaultLocation, 'Default location', CADENCE_LOCATION_MAX_LENGTH),
+    DefaultRecipientGroup: group,
+  };
+}

@@ -1,11 +1,19 @@
 // Sprint 5Z-5: parliamentary cadence (CouncilCadenceConfig, meetings.populateAnnualCadence), proposed motions and the
 // 10-day agenda rule (ProposedMotion, charities.routeRequestToNextEligibleAgenda), and the expense submission window
-// around a linked event (assertExpenseSubmissionWindow).
+// around a linked event (assertExpenseSubmissionWindow). Sprint 5Z-6: the same window for linked meetings, drip-release
+// invitations (Meeting.InviteReleaseDate), cadence config maintenance and the meeting's proposed-motion list.
 import { describe, expect, it } from 'vitest';
 import {
   assertExpenseSubmissionWindow,
   BusinessRuleError,
   cadenceDateInMonth,
+  cadenceInviteReleaseDate,
+  cleanCadenceConfigInput,
+  eventExpenseSpan,
+  expenseWindowLockMessage,
+  expenseWindowState,
+  isInvitationReleased,
+  meetingExpenseSpan,
   cadenceDatesForYear,
   cadenceMeetingTimes,
   charitableMotionText,
@@ -91,15 +99,48 @@ describe('agenda and expense window rules (pure)', () => {
   });
 
   it('accepts a submission from the event start through thirty days after its end', () => {
-    const event = (StartDate: string, EndDate: string) => ({ id: 1, StartDate, EndDate });
+    const event = (StartDate: string, EndDate: string) => [eventExpenseSpan({ id: 1, StartDate, EndDate })];
     expect(code(() => assertExpenseSubmissionWindow('Submitted', event('2026-09-21', '2026-09-21'), NOW))).toBe('EXPENSE_WINDOW_NOT_OPEN');
     expect(code(() => assertExpenseSubmissionWindow('Submitted', event('2026-09-20', '2026-09-22'), NOW))).toBeUndefined();
     expect(code(() => assertExpenseSubmissionWindow('Submitted', event('2026-08-01', '2026-08-21'), NOW))).toBeUndefined();
     expect(code(() => assertExpenseSubmissionWindow('Submitted', event('2026-08-01', '2026-08-20'), NOW))).toBe('EXPENSE_WINDOW_CLOSED');
-    // Drafts and sheets with no event are not limited.
+    // Drafts and sheets linking nothing are not limited.
     expect(code(() => assertExpenseSubmissionWindow('Draft', event('2027-01-01', '2027-01-01'), NOW))).toBeUndefined();
     expect(code(() => assertExpenseSubmissionWindow('Draft', event('2026-01-01', '2026-01-01'), NOW))).toBeUndefined();
-    expect(code(() => assertExpenseSubmissionWindow('Submitted', null, NOW))).toBeUndefined();
+    expect(code(() => assertExpenseSubmissionWindow('Submitted', [], NOW))).toBeUndefined();
+  });
+
+  it('holds meetings to the same window, counting a multi-day meeting through its last day (Sprint 5Z-6)', () => {
+    const meeting = (Date: string, EndDate: string | null = null) => meetingExpenseSpan({ id: 2, Date, IsMultiDay: EndDate ? 1 : 0, EndDate });
+    expect(expenseWindowState(meeting('2026-09-21'), TODAY)).toBe('not-open');
+    expect(expenseWindowState(meeting('2026-08-21'), TODAY)).toBe('open');
+    expect(expenseWindowState(meeting('2026-08-20'), TODAY)).toBe('closed');
+    expect(expenseWindowState(meeting('2026-08-10', '2026-08-22'), TODAY)).toBe('open');
+    expect(code(() => assertExpenseSubmissionWindow('Submitted', [meeting('2026-10-06')], NOW))).toBe('EXPENSE_WINDOW_NOT_OPEN');
+    expect(code(() => assertExpenseSubmissionWindow('Submitted', [meeting('2026-07-01')], NOW))).toBe('EXPENSE_WINDOW_CLOSED');
+    // Every linked span must be open.
+    const both = [eventExpenseSpan({ id: 1, StartDate: TODAY, EndDate: TODAY }), meeting('2026-07-01')];
+    expect(code(() => assertExpenseSubmissionWindow('Submitted', both, NOW))).toBe('EXPENSE_WINDOW_CLOSED');
+    expect(expenseWindowLockMessage(meeting('2026-07-01'), TODAY)).toMatch(/closed .*30 days after the meeting ended/);
+    expect(expenseWindowLockMessage(meeting('2026-08-21'), TODAY)).toBeNull();
+  });
+
+  it('releases cadence invitations five days ahead and cleans a cadence config', () => {
+    expect(cadenceInviteReleaseDate('2026-10-06')).toBe('2026-10-01');
+    expect(isInvitationReleased({ InviteReleaseDate: '2026-09-25' }, TODAY)).toBe(false);
+    expect(isInvitationReleased({ InviteReleaseDate: TODAY }, TODAY)).toBe(true);
+    expect(isInvitationReleased({ InviteReleaseDate: null }, TODAY)).toBe(true);
+    expect(cleanCadenceConfigInput({ MeetingTypeID: 1, CadencePattern: 'third  wednesday', DefaultStartTime: '19:00:00', DefaultLocation: ' Hall ' })).toEqual({
+      MeetingTypeID: 1,
+      CadencePattern: 'Third Wednesday',
+      DefaultStartTime: '19:00',
+      DefaultLocation: 'Hall',
+      DefaultRecipientGroup: 'all_members',
+    });
+    const base = { MeetingTypeID: 1, CadencePattern: 'First Tuesday', DefaultStartTime: '19:00', DefaultLocation: 'Hall' };
+    expect(code(() => cleanCadenceConfigInput({ ...base, DefaultRecipientGroup: 'trustees' as never }))).toBe('INVALID_INPUT');
+    expect(code(() => cleanCadenceConfigInput({ ...base, MeetingTypeID: 0 }))).toBe('INVALID_INPUT');
+    expect(code(() => cleanCadenceConfigInput({ ...base, DefaultLocation: '  ' }))).toBe('INVALID_INPUT');
   });
 });
 
@@ -145,9 +186,12 @@ describe.each(drivers)('$name driver: parliamentary cadence', (d) => {
       IsMultiDay: 0,
       EndDate: null,
       OwnerID: null,
+      InviteReleaseDate: '2026-07-02',
     });
     expect(d.count(db, 'Meeting')).toBe(before + 12);
-    expect(await db.meetings.listInvites(result.created[0].id)).toEqual([]);
+    // The config's recipient group (default All Members) is invited at once; the drip release hides it from feeds.
+    const active = (await db.members.listByCouncil(OWN, { activeOnly: true })).map((m) => m.id).sort((a, b) => a - b);
+    expect((await db.meetings.listInvites(result.created[0].id)).map((i) => i.MemberID).sort((a, b) => a - b)).toEqual(active);
 
     // Running it again creates only what is missing.
     const again = await db.meetings.populateAnnualCadence(MEMBER.superAdmin, OWN, CADENCE, '2026-2027');
@@ -239,5 +283,124 @@ describe.each(drivers)('$name driver: expense submission window', (d) => {
 
     const onTime = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted', LinkedEventID: lastDay }, [receipt()]);
     expect(onTime.report).toMatchObject({ Status: 'Submitted', LinkedEventID: lastDay });
+  });
+
+  it('holds sheets linked to a meeting to the same window (Sprint 5Z-6)', async () => {
+    const db = await d.make();
+    const type = (await db.lookups.list('MeetingType'))[0];
+    const meetingOn = async (Date: string) =>
+      (
+        await db.meetings.create({
+          OwnerID: null,
+          CouncilID: OWN,
+          'Meeting Name': `Fixture ${Date}`,
+          Date,
+          'Time Start': '19:00:00',
+          'Time End': '20:00:00',
+          Location: 'Hall',
+          MeetingType: type.id,
+        })
+      ).id;
+    const upcoming = await meetingOn('2026-10-06');
+    const stale = await meetingOn('2026-08-01');
+    const recent = await meetingOn('2026-09-01');
+    await expectRule(db.expenses.submitReport(MEMBER.member, { Status: 'Submitted', LinkedMeetingID: upcoming }, [receipt()]), 'EXPENSE_WINDOW_NOT_OPEN');
+    await expectRule(db.expenses.submitReport(MEMBER.member, { Status: 'Submitted', LinkedMeetingID: stale }, [receipt()]), 'EXPENSE_WINDOW_CLOSED');
+    expect((await db.expenses.submitReport(MEMBER.member, { Status: 'Draft', LinkedMeetingID: upcoming }, [receipt()])).report.Status).toBe('Draft');
+    expect((await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted', LinkedMeetingID: recent }, [receipt()])).report.Status).toBe('Submitted');
+  });
+});
+
+describe.each(drivers)('$name driver: drip-release invitations and cadence configs (Sprint 5Z-6)', (d) => {
+  it('keeps cadence invitations off member feeds until five days before each meeting', async () => {
+    const db = await d.make();
+    const { created } = await db.meetings.populateAnnualCadence(MEMBER.superAdmin, OWN, CADENCE, '2026-2027');
+    const october = created.find((m) => m.Date === '2026-10-06')!;
+    expect(october.InviteReleaseDate).toBe('2026-10-01');
+
+    // On the master calendar at once ...
+    expect((await db.meetings.listUpcoming(OWN, { fromDate: TODAY })).map((m) => m.id)).toContain(october.id);
+    // ... but not in the member's own feed before October 1 (NOW is September 20).
+    expect((await db.meetings.listUpcoming(OWN, { memberId: MEMBER.member, fromDate: TODAY })).map((m) => m.id)).not.toContain(october.id);
+    const schedules = await db.meetings.listSchedules(OWN, MEMBER.member, { fromDate: TODAY });
+    expect(schedules.allSchedules.map((m) => m.id)).toContain(october.id);
+    expect(schedules.myInvites.map((m) => m.id)).not.toContain(october.id);
+    expect(schedules.myResponses[october.id]).toBeUndefined();
+    await expectRule(db.meetings.rsvpToInvite(MEMBER.member, october.id, 'Accepted'), 'NOT_INVITED');
+
+    // A hand-scheduled meeting (no release date) reaches the feed at once.
+    const type = (await db.lookups.list('MeetingType'))[0];
+    const special = await db.meetings.create(
+      {
+        OwnerID: null,
+        CouncilID: OWN,
+        'Meeting Name': 'Special session',
+        Date: '2026-12-15',
+        'Time Start': '19:00:00',
+        'Time End': '20:00:00',
+        Location: 'Hall',
+        MeetingType: type.id,
+      },
+      'allActive',
+    );
+    expect(special.InviteReleaseDate ?? null).toBeNull();
+    expect((await db.meetings.listUpcoming(OWN, { memberId: MEMBER.member, fromDate: TODAY })).map((m) => m.id)).toContain(special.id);
+    expect((await db.meetings.rsvpToInvite(MEMBER.member, special.id, 'Accepted')).ResponseStatus).toBe('Accepted');
+  });
+
+  it('saves, lists and removes cadence configs for the council keepers only', async () => {
+    const db = await d.make();
+    const configs = await db.meetings.listCadenceConfigs(OWN);
+    expect(configs.map((c) => c.id)).toEqual([CADENCE]);
+    expect(configs[0].DefaultRecipientGroup).toBe('all_members');
+
+    const updated = await db.meetings.saveCadenceConfig(MEMBER.admin, OWN, {
+      MeetingTypeID: MONTHLY_TYPE,
+      CadencePattern: 'second thursday',
+      DefaultStartTime: '19:00',
+      DefaultLocation: 'Council Hall',
+      DefaultRecipientGroup: 'active_officers',
+    });
+    expect(updated).toMatchObject({
+      id: CADENCE,
+      CadencePattern: 'Second Thursday',
+      DefaultStartTime: '19:00',
+      DefaultLocation: 'Council Hall',
+      DefaultRecipientGroup: 'active_officers',
+    });
+    const officerType = (await db.meetings.listCouncilMeetingTypes(OWN)).find((t) => t.TypeName === 'Officer')!;
+    const added = await db.meetings.saveCadenceConfig(MEMBER.superAdmin, OWN, {
+      MeetingTypeID: officerType.id,
+      CadencePattern: 'Last Monday',
+      DefaultStartTime: '18:30',
+      DefaultLocation: 'Rectory',
+    });
+    expect((await db.meetings.listCadenceConfigs(OWN)).map((c) => c.id)).toEqual([CADENCE, added.id]);
+
+    // An officers-only cadence invites only the officers.
+    const { created } = await db.meetings.populateAnnualCadence(MEMBER.superAdmin, OWN, CADENCE, '2026-2027');
+    const invited = (await db.meetings.listInvites(created[0].id)).map((i) => i.MemberID);
+    expect(invited).toContain(MEMBER.superAdmin); // the Grand Knight
+    expect(invited).not.toContain(MEMBER.member);
+
+    const base = { MeetingTypeID: MONTHLY_TYPE, CadencePattern: 'First Tuesday', DefaultStartTime: '19:00', DefaultLocation: 'Hall' };
+    await expectRule(db.meetings.saveCadenceConfig(MEMBER.member, OWN, base), 'ADMIN_REQUIRED');
+    await expectRule(db.meetings.saveCadenceConfig(MEMBER.admin, OWN, { ...base, MeetingTypeID: 999 }), 'INVALID_INPUT');
+    await expectRule(db.meetings.removeCadenceConfig(MEMBER.member, OWN, added.id), 'ADMIN_REQUIRED');
+    await expectRule(db.meetings.removeCadenceConfig(MEMBER.admin, OWN, 999), 'RECORD_NOT_FOUND');
+    await db.meetings.removeCadenceConfig(MEMBER.admin, OWN, added.id);
+    expect((await db.meetings.listCadenceConfigs(OWN)).map((c) => c.id)).toEqual([CADENCE]);
+    await expectRule(db.meetings.listCadenceConfigs(9999), 'INVALID_INPUT');
+  });
+
+  it("lists a meeting's proposed motions with the Knight Shepherd as presenter", async () => {
+    const db = await d.make();
+    await db.meetings.populateAnnualCadence(MEMBER.superAdmin, OWN, CADENCE, '2026-2027');
+    const requestId = await advancedRequest(db);
+    const { meeting } = await db.charities.routeRequestToNextEligibleAgenda(MEMBER.superAdmin, requestId);
+    const [row, ...rest] = await db.meetings.listProposedMotions(meeting.id);
+    expect(rest).toEqual([]);
+    expect(row).toMatchObject({ presenterFirstName: 'Brother', presenterLastName: 'Knight', motion: { SourceRecordID: requestId, AllocatedMinutes: 5 } });
+    await expectRule(db.meetings.listProposedMotions(9999), 'MEETING_NOT_FOUND');
   });
 });
