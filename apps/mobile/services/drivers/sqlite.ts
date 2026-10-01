@@ -313,6 +313,8 @@ import {
   isMeetingLive,
   proposedMotionNotFound,
   tallyBallots,
+  assertIntakeSessionStatus,
+  assertMayRunEventIntake,
   type CleanJournalLine,
 } from '@kofc/shared';
 import type {
@@ -2574,6 +2576,18 @@ export class SqliteDataService implements DataService {
         }
         await db.runAsync('DELETE FROM [Shift] WHERE [id] = ?', [id]);
       });
+    },
+
+    setIntakeSessionStatus: async (actorId, eventId, status) => {
+      const next = assertIntakeSessionStatus(status);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        await this.requireEvent(db, eventId);
+        assertMayRunEventIntake(actor, eventId, await this.councilIdsOf(db, eventId));
+        await db.runAsync('UPDATE [Event] SET [IntakeSessionStatus] = ? WHERE [id] = ?', [next, eventId]);
+      });
+      return (await this.requireEvent(db, eventId)) as unknown as Event;
     },
   };
 

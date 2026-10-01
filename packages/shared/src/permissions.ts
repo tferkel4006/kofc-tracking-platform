@@ -35,6 +35,7 @@ export type PortalArea =
   | 'events'
   | 'meetings'
   | 'meetings/cadence'
+  | 'meetings/live'
   | 'elections'
   | 'elections/appointments'
   | 'distribution-lists'
@@ -147,6 +148,13 @@ export const canPlanEvents = (u: Actor): boolean => isAdmin(u);
 /** Admins, Super Admins and any officer of the council schedule meetings, invite members and upload minutes. */
 export const canManageMeetings = (u: Actor, councilId: number): boolean =>
   canAdministerCouncil(u, councilId) || (u.isOfficer && u.councilId === councilId);
+
+/**
+ * Running a meeting from the Live Meeting Console (Sprint 5Z-10), mirroring assertMayRunLiveAssembly: the meeting's owner,
+ * the council's Admins and officers (the Grand Knight and Recorder among them), and any Super Admin.
+ */
+export const canRunLiveAssembly = (u: Actor, meeting: Pick<Meeting, 'CouncilID' | 'OwnerID'>): boolean =>
+  meeting.OwnerID === u.memberId || canManageMeetings(u, meeting.CouncilID);
 
 /** One existing meeting's attendance, minutes and details: its owner (OwnerID) and anyone who manages the council's meetings. */
 export const canManageMeeting = (u: Actor, meeting: Pick<Meeting, 'CouncilID' | 'OwnerID'>): boolean =>
@@ -425,6 +433,8 @@ export function portalAreas(u: Actor): PortalArea[] {
   areas.push('meetings');
   // Sprint 5Z-6: the Cadence Engine belongs to the agenda-template keepers - Admins, the Grand Knight, Super Admins.
   if (isAdmin(u) || isGrandKnight(u)) areas.push('meetings/cadence');
+  // Sprint 5Z-10: the Live Meeting Console is the chair's desk - the council's Admins and officers (canRunLiveAssembly).
+  if (isAdmin(u) || u.isOfficer) areas.push('meetings/live');
   // Every member may put a brother Knight up for office (the drivers check they are Active).
   areas.push('elections');
   if (isAdmin(u)) areas.push('distribution-lists');
@@ -461,25 +471,82 @@ export function portalAreas(u: Actor): PortalArea[] {
 export type PortalNavItem = Exclude<PortalArea, 'profile' | 'messages'>;
 
 export interface PortalNavGroup {
-  id: 'self-service' | 'volunteer' | 'finance' | 'admin';
+  id: 'self-service' | 'executive' | 'analytics' | 'scheduler' | 'finance' | 'admin';
   label: string;
   /** The Self-Service Hub is always open; the other groups fold. */
   collapsible: boolean;
+  /**
+   * Sprint 5Z-10: list every link of the group, the ones the viewer may not open shown with a lock badge, so members see
+   * which desks exist and who holds them. Other groups list only what the viewer may open.
+   */
+  showLocked: boolean;
   items: PortalNavItem[];
 }
 
-/** Every sidebar link in its group, in display order (Sprint 5S). Each PortalArea but 'profile' and 'messages' appears exactly once. */
+/**
+ * Every sidebar link in its group, in display order (Sprint 5S; regrouped into high-intent directories in Sprint 5Z-10).
+ * Each PortalArea but 'profile' and 'messages' appears exactly once.
+ */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
-  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, items: ['member-actions', 'charities/propose', 'charities/intake'] },
+  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, showLocked: false, items: ['member-actions', 'expenses', 'charities/propose', 'charities/intake'] },
   {
-    id: 'volunteer',
-    label: 'Volunteer Operations',
+    id: 'executive',
+    label: 'Executive Action Desks',
     collapsible: true,
-    items: ['calendar', 'activities', 'members', 'events', 'meetings', 'meetings/cadence', 'elections', 'gallery', 'ledger', 'lessons-registry', 'distribution-lists'],
+    showLocked: true,
+    items: ['expenses/audit', 'expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live'],
   },
-  { id: 'finance', label: 'Financial Ledgers', collapsible: true, items: ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'donations', 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'expenses/disbursements', 'charities/vetting', 'charities/queue', 'financials/budget'] },
-  { id: 'admin', label: 'Administrative Lookups', collapsible: true, items: ['council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'] },
+  {
+    id: 'analytics',
+    label: 'Fraternal Analytics Hub',
+    collapsible: true,
+    showLocked: false,
+    items: ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet'],
+  },
+  {
+    id: 'scheduler',
+    label: 'Fraternal Scheduler',
+    collapsible: true,
+    showLocked: false,
+    items: ['calendar', 'events', 'meetings', 'activities', 'ledger', 'elections', 'gallery', 'lessons-registry'],
+  },
+  {
+    id: 'finance',
+    label: 'Financial Ledgers',
+    collapsible: true,
+    showLocked: false,
+    items: ['donations', 'expenses/queue', 'expenses/disbursements', 'charities/queue', 'financials/budget'],
+  },
+  {
+    id: 'admin',
+    label: 'Administrative Lookups',
+    collapsible: true,
+    showLocked: false,
+    items: ['members', 'distribution-lists', 'council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'],
+  },
 ];
+
+/** One sidebar entry (Sprint 5Z-10): the link, and whether the viewer may open it. */
+export interface PortalNavEntry {
+  item: PortalNavItem;
+  locked: boolean;
+}
+
+export interface PortalSidebarGroup extends Omit<PortalNavGroup, 'items'> {
+  entries: PortalNavEntry[];
+}
+
+/**
+ * The sidebar for `u` as the portal draws it (Sprint 5Z-10): the links portalAreas allows, plus - in groups that show
+ * locked links - every other link of the group with `locked` set. A group with no entries is dropped.
+ */
+export function portalSidebar(u: Actor): PortalSidebarGroup[] {
+  const allowed = new Set<string>(portalAreas(u));
+  return PORTAL_NAV_GROUPS.map(({ items, ...g }) => ({
+    ...g,
+    entries: items.filter((item) => g.showLocked || allowed.has(item)).map((item) => ({ item, locked: !allowed.has(item) })),
+  })).filter((g) => g.entries.length > 0);
+}
 
 /** The sidebar for `u`: each group holding only the links portalAreas allows; empty groups are dropped. */
 export function portalNavGroups(u: Actor): PortalNavGroup[] {

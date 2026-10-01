@@ -40,6 +40,7 @@ import type {
   EventTime,
   GLAccount,
   GLAccountType,
+  EventIntakeSessionStatus,
   JournalEntry,
   ExpenseDisbursement,
   ExpenseLineItem,
@@ -1482,6 +1483,8 @@ export interface LiveAssemblyState {
   /** The council's Active roster count locked when the console started (quorum base); null before it ever started. */
   rosterCount: number | null;
   checkedInCount: number;
+  /** Sprint 5Z-10: who is checked in, ascending, so the console marks them on its roster. Ballots never name voters. */
+  checkedInMemberIds: number[];
   activeItem: LiveAgendaItem | null;
   /** The reader is checked in, and so may vote. */
   viewerCheckedIn: boolean;
@@ -1937,6 +1940,13 @@ export interface DataService {
     updateShift(id: number, changes: ShiftChanges): Promise<Shift>;
     /** Rejects with SHIFT_HAS_SIGNUPS while anyone is signed up. */
     deleteShift(id: number): Promise<void>;
+    /**
+     * Sprint 5Z-10: opens ('Active') or closes ('Inactive') the event's high-speed gate intake (Event.IntakeSessionStatus);
+     * while it is Active the phones pinned to the event show the one-tap cash and card targets. Any Active member of a
+     * council linked to the event, or an Active Super Admin (assertMayRunEventIntake; COUNCIL_ACCESS_DENIED). Rejects
+     * MEMBER_NOT_FOUND, EVENT_NOT_FOUND and INVALID_INPUT for another status. Resolves to the event.
+     */
+    setIntakeSessionStatus(actorId: number, eventId: number, status: EventIntakeSessionStatus): Promise<Event>;
   };
 
   lessonsLearned: {

@@ -310,6 +310,8 @@ import {
   isMeetingLive,
   proposedMotionNotFound,
   tallyBallots,
+  assertIntakeSessionStatus,
+  assertMayRunEventIntake,
   type CleanJournalLine,
 } from '@kofc/shared';
 import type {
@@ -2207,6 +2209,18 @@ export class MemoryDataService implements DataService {
           );
         }
         s.remove('Shift', (sh) => sh.id === id);
+      });
+    },
+
+    setIntakeSessionStatus: async (actorId, eventId, status) => {
+      const next = assertIntakeSessionStatus(status);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const event = this.requireEvent(s, eventId);
+        assertMayRunEventIntake(actor, eventId, this.councilIdsOf(s, eventId));
+        event.IntakeSessionStatus = next;
+        return { ...event } as unknown as Event;
       });
     },
   };

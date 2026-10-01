@@ -97,7 +97,7 @@ The first entry in the navy sidebar, under **Self-Service Hub**, is **Member Act
 | **Fraternal roster** | Look up a Brother Knight's phone and email. |
 | **Hour ledger** | Report time and review your shift and activity history. |
 
-The **Self-Service Hub** group also holds **Communications Hub**. **Online Help Center** is the **Help** link (question-mark icon) at the top right of every page, just left of the alert bell. The other groups fold open when you select their heading: **Volunteer Operations** has the calendar, meetings, photo gallery and **Post-event Ledger** (for event owners), and **Financial Ledgers** has **My Expense Reports**. **My Profile** is not in the sidebar: select your name and photo at the top right, then **My Profile**.
+The **Self-Service Hub** group also holds **My Expense Reports**, **Propose Charity Grant** and **Charitable Intake Sheet**; **Communications Hub** is the **Messaging** link at the top right. **Online Help Center** is the **Help** link (question-mark icon) at the top right of every page, just left of the alert bell. The other groups fold open when you select their heading: **Fraternal Scheduler** has the calendar, meetings, nominations, photo gallery and **Post-event Ledger** (for event owners), and **Financial Ledgers** has the **Annual Budget Projections**. **Executive Action Desks** lists the officers' desks with a gold **Locked** badge, so you can see who runs each one. **My Profile** is not in the sidebar: select your name and photo at the top right, then **My Profile**.
 
 ![Image: Member Actions Hub]
 

@@ -11,9 +11,10 @@
 // donations are standalone again. State lives on this device only, so several
 // members can accept donations for the same event from different phones.
 // =========================================================================
-import type { DataService, NewDonation } from './contract';
-import { BusinessRuleError } from './rules';
-import type { Donation } from './types';
+import type { CouncilDonationOption, DataService, DonationMethodKind, NewDonation } from './contract';
+import { EVENT_INTAKE_SESSION_STATUSES } from './finance';
+import { BusinessRuleError, hasSuperAdminRights, SecurityPrivilegeError, type MemberWriteActor } from './rules';
+import type { Donation, DonationType, EventIntakeSessionStatus } from './types';
 
 /** Pre-filled values for each donation in the session; any of them can be overridden per donation. */
 export interface DonationDefaults {
@@ -121,4 +122,72 @@ export class DonationSessionController {
     for (const listener of this.listeners) listener(state);
     return state;
   }
+}
+
+// =========================================================================
+// HIGH-SPEED GATE INTAKE (Sprint 5Z-10)
+// While an event's IntakeSessionStatus is 'Active', the phone's donation screen covers itself with two giant one-tap
+// targets - cash and card - that record a donation at a preset amount with nothing typed. The phone must be pinned
+// to the event (DonationSessionController), so every tap is linked to it, stamped with the member and dated today.
+// =========================================================================
+
+/** The one-tap amounts the gate overlay offers when the session has no default amount. */
+export const GATE_INTAKE_AMOUNTS: readonly number[] = [5, 10, 20, 25, 50, 100];
+
+/** The overlay's two targets: which method kind each logs, and the description stamped on the donation. */
+export const GATE_INTAKE_TARGETS = {
+  cash: { kind: 'cash', label: '💵 Log Cash Transaction', description: 'Gate intake: cash' },
+  card: { kind: 'card', label: '💳 Log Stripe CC Swipe', description: 'Gate intake: Stripe card swipe' },
+} as const satisfies Record<string, { kind: DonationMethodKind; label: string; description: string }>;
+
+export type GateIntakeTarget = keyof typeof GATE_INTAKE_TARGETS;
+
+/** The council's first enabled method of the target's kind (Cash, Credit Card), or null when it has none enabled. */
+export const gateIntakeOption = (options: readonly CouncilDonationOption[], target: GateIntakeTarget): CouncilDonationOption | null =>
+  options.find((o) => o.kind === GATE_INTAKE_TARGETS[target].kind) ?? null;
+
+/**
+ * The donation one tap records: the target's method at `amount`, the session's default donation type (or the
+ * council's first type), and the target's description. Rejects INVALID_INPUT when the council has not enabled the
+ * method or has no donation types.
+ */
+export function gateIntakeEntry(
+  target: GateIntakeTarget,
+  amount: number,
+  options: readonly CouncilDonationOption[],
+  types: readonly Pick<DonationType, 'id'>[],
+  defaults: DonationDefaults,
+): DonationEntry {
+  const option = gateIntakeOption(options, target);
+  if (!option) {
+    throw new BusinessRuleError('INVALID_INPUT', `The council has not enabled a ${GATE_INTAKE_TARGETS[target].kind} donation method.`, { target });
+  }
+  const typeId = defaults.donationTypeId ?? types[0]?.id;
+  if (typeId === undefined) throw new BusinessRuleError('INVALID_INPUT', 'The council has no donation types yet.', { target });
+  return {
+    DonationMethodID: option.method.id,
+    DonationAmount: amount,
+    DonationTypeID: typeId,
+    Donor: null,
+    DonationDesciption: GATE_INTAKE_TARGETS[target].description,
+  };
+}
+
+/** Rejects INVALID_INPUT unless `value` is one of EVENT_INTAKE_SESSION_STATUSES. */
+export function assertIntakeSessionStatus(value: unknown): EventIntakeSessionStatus {
+  if ((EVENT_INTAKE_SESSION_STATUSES as readonly unknown[]).includes(value)) return value as EventIntakeSessionStatus;
+  throw new BusinessRuleError('INVALID_INPUT', `An intake session is Inactive or Active; received ${JSON.stringify(value)}.`, { status: value });
+}
+
+/**
+ * events.setIntakeSessionStatus: whoever takes the event's donations may open or close its gate intake - any Active
+ * member of a council the event is linked to (as at the donation table), or an Active Super Admin.
+ */
+export function assertMayRunEventIntake(actor: MemberWriteActor, eventId: number, eventCouncilIds: readonly number[]): void {
+  if (hasSuperAdminRights(actor) || (actor.active && eventCouncilIds.includes(actor.councilId))) return;
+  throw new SecurityPrivilegeError(
+    'COUNCIL_ACCESS_DENIED',
+    `Member ${actor.memberId} of council ${actor.councilId} cannot run the gate intake of event ${eventId}; only active members of its councils can.`,
+    { actorId: actor.memberId, actorCouncilId: actor.councilId, eventId },
+  );
 }

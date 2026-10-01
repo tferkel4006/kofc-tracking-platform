@@ -123,6 +123,7 @@ export function createRemoteDataService(): DataService {
       createShift: notImplemented('events.createShift'),
       updateShift: notImplemented('events.updateShift'),
       deleteShift: notImplemented('events.deleteShift'),
+      setIntakeSessionStatus: notImplemented('events.setIntakeSessionStatus'),
     },
     lessonsLearned: {
       list: notImplemented('lessonsLearned.list'),

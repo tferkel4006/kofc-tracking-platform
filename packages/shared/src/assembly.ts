@@ -249,6 +249,7 @@ export function buildLiveAssemblyState(input: {
     isLive: isMeetingLive(meeting),
     rosterCount: meeting.LiveQuorumRosterCount ?? null,
     checkedInCount: eligible,
+    checkedInMemberIds: [...checkedInMemberIds].sort((a, b) => a - b),
     activeItem: liveAgendaItem(meeting, input.now),
     viewerCheckedIn: checkedInMemberIds.includes(input.viewerId),
     motions,
@@ -261,3 +262,21 @@ export const ballotAlreadyCast = (motionId: number): BusinessRuleError =>
 
 /** A fresh ballot secret: 32 random bytes as hex. Drivers keep it outside the database. */
 export const formatBallotSecret = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+/**
+ * The live console's quick-pick topics (Sprint 5Z-10): one per non-blank line of the meeting's Agenda, with list
+ * numbering or bullets ('1.', '2)', '-', '•') removed, each cut to LIVE_AGENDA_ITEM_NAME_MAX_LENGTH.
+ */
+export function agendaTopics(agenda: string | null | undefined): string[] {
+  return (agenda ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, '').trim())
+    .filter((line) => line !== '')
+    .map((line) => line.slice(0, LIVE_AGENDA_ITEM_NAME_MAX_LENGTH));
+}
+
+/** mm:ss for the console's countdown; negative values read 00:00. */
+export function formatCountdown(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}

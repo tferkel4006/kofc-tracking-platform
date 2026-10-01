@@ -1,85 +1,19 @@
 'use client';
 // The portal frame: navy header (logo, the calling council's number and name, the Messaging and Help shortcuts, the alert bell, and the member menu with
-// the avatar that opens My Profile), a navy side navigation folded into accordion groups (portalNavGroups) with a gold marker
-// on the current section, and a white content area. Nothing renders behind the sign-in gate.
+// the avatar that opens My Profile), the navy left Sidebar (Sidebar.tsx, Sprint 5Z-10) and a white content area. Nothing renders behind the sign-in gate.
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { councilLabel, portalNavGroups, type PortalNavGroup, type PortalNavItem } from '@kofc/shared';
+import { councilLabel } from '@kofc/shared';
 import { AlertBell } from '@/components/AlertBell';
 import { MemberAvatar } from '@/components/MemberAvatar';
+import { NAV, Sidebar } from '@/components/Sidebar';
 import { Button, cx, Field, Input, Notice } from '@/components/ui';
 import { useSession } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 import emblem from './kofc-logo.png';
-
-/**
- * Every sidebar link's route, label and tooltip. 'profile' is reached from the header's member menu, 'messages' from
- * the header's Messaging shortcut, and the help center from the header's Help shortcut, not the sidebar.
- */
-const NAV: Record<PortalNavItem | 'profile' | 'messages', { href: string; label: string; hint: string }> = {
-  'member-actions': { href: '/member-actions', label: 'Member Actions Hub', hint: 'My shifts, sign-ups, roster, hours' },
-  messages: { href: '/messages', label: 'Communications Hub', hint: 'Message threads and replies' },
-  calendar: { href: '/calendar', label: 'Visual Master Calendar', hint: 'Events, shifts and meetings by date' },
-  activities: { href: '/activities', label: 'Standalone Activities', hint: 'Standing council activities' },
-  members: { href: '/members', label: 'Affiliated Roster', hint: 'Members, types and skills' },
-  events: { href: '/events', label: 'Event Planner', hint: 'Events, shifts and councils' },
-  meetings: { href: '/meetings', label: 'Meeting Center', hint: 'Meetings, invitations, minutes' },
-  'meetings/cadence': { href: '/meetings/cadence', label: 'Cadence Engine', hint: 'Standing meeting patterns and the annual calendar' },
-  elections: { href: '/elections', label: 'Council Officer Nominations', hint: 'Nominate brother Knights for elected office' },
-  gallery: { href: '/gallery', label: 'Fraternal Photo Gallery', hint: 'Event photos and slideshows' },
-  ledger: { href: '/ledger', label: 'Post-event Ledger', hint: 'Spend, funds raised, lessons' },
-  'lessons-registry': { href: '/lessons-registry', label: 'Lessons Registry', hint: 'Lessons learned across councils' },
-  'distribution-lists': { href: '/distribution-lists', label: 'Distribution Lists', hint: 'Member lists for council blasts' },
-  dashboard: { href: '/dashboard', label: 'Executive Dashboard Summaries', hint: 'Monthly hours, members and funds' },
-  'finance/dashboard': { href: '/finance/dashboard', label: 'Financial Management Center', hint: 'Liquidity, balance check, transfers, bank audits' },
-  'finance/ledger': { href: '/finance/ledger', label: 'General Ledger Spreadsheet', hint: 'Chart of accounts with every posting' },
-  'finance/balance-sheet': { href: '/finance/balance-sheet', label: 'Balance Sheet', hint: 'Assets against liabilities and equity' },
-  donations: { href: '/donations', label: 'Recorded Donations History', hint: 'Record and review council donations' },
-  expenses: { href: '/expenses', label: 'My Expense Reports', hint: 'Receipts and reimbursement status' },
-  'expenses/queue': { href: '/expenses/queue', label: 'Leadership Auditing Queue', hint: 'Track signatures and return reports' },
-  'expenses/audit': { href: '/expenses/audit', label: 'FS Audit Desk', hint: 'Issue written orders on submitted reports' },
-  'expenses/authorize': { href: '/expenses/authorize', label: 'GK Authorization Desk', hint: 'Counter-sign ordered reports' },
-  'expenses/disbursements': { href: '/expenses/disbursements', label: 'Bulk Check Disbursements', hint: 'Pay dual-signed reports by check' },
-  'charities/propose': { href: '/charities/propose', label: 'Propose Charity Grant', hint: 'Suggest a charity gift and follow it' },
-  'charities/registry': { href: '/charities/registry', label: 'Global Charities Registry', hint: 'Search, suggest and add charities' },
-  'charities/queue': { href: '/charities/queue', label: 'Charitable Disbursements Ledger', hint: 'Pay charity proposals by check' },
-  'charities/intake': { href: '/charities/intake', label: 'Charitable Intake Sheet', hint: "Shepherd an organization's request to the council" },
-  'charities/vetting': { href: '/charities/vetting', label: 'Pooled Vetting Desk', hint: 'Claim, audit and advance intake requests' },
-  'financials/budget': { href: '/budget', label: 'Annual Budget Projections', hint: 'Draft the council budget May 1 - June 30' },
-  'council-lookups': { href: '/council-lookups', label: 'Council Lookup Tables', hint: 'Activities, donation types, methods' },
-  'elections/appointments': { href: '/elections/appointments', label: 'Appointed Leadership Matrix', hint: "The Grand Knight's appointments and vacant seats" },
-  'supreme-sync': { href: '/supreme-sync', label: 'Supreme Council Sync', hint: 'Audit and file Forms 1728 and 1295' },
-  lookups: { href: '/lookups', label: 'Global Governance Matrices', hint: 'Maintain the global lookup tables' },
-  parishes: { href: '/parishes', label: 'Parish & Pastors Linkage', hint: 'Parishes and their pastors' },
-  councils: { href: '/councils', label: 'Councils', hint: 'Add, edit and delete councils' },
-  profile: { href: '/profile', label: 'My Profile', hint: 'Photo, biography, contact details, skills' },
-};
-
-/** Which collapsible groups the viewer has open, remembered per browser. Storage may be blocked; the sidebar works without it. */
-const NAV_STATE_KEY = 'kofc.nav.open';
-type OpenGroups = Partial<Record<PortalNavGroup['id'], boolean>>;
-
-function readOpenGroups(): OpenGroups {
-  try {
-    const raw = typeof window === 'undefined' ? null : window.localStorage.getItem(NAV_STATE_KEY);
-    return raw ? (JSON.parse(raw) as OpenGroups) : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeOpenGroups(open: OpenGroups): void {
-  try {
-    window.localStorage.setItem(NAV_STATE_KEY, JSON.stringify(open));
-  } catch {
-    // a private window or blocked storage: the choice lasts only for this page view
-  }
-}
-
-const isCurrent = (pathname: string, item: PortalNavItem): boolean => pathname === NAV[item].href;
 
 /**
  * The council-supplied Knights of Columbus emblem; decorative, since the title beside it names the order.
@@ -144,80 +78,6 @@ function HelpLink({ current }: { current: boolean }) {
       <HelpIcon />
       Help
     </Link>
-  );
-}
-
-/** One dense sidebar link: the label only, with its description as the tooltip; gold marker when current. */
-function NavLink({ item, current }: { item: PortalNavItem; current: boolean }) {
-  const { href, label, hint } = NAV[item];
-  return (
-    <li>
-      <Link
-        href={href}
-        title={hint}
-        aria-current={current ? 'page' : undefined}
-        className={cx('flex items-center gap-2 border-l-8 py-1.5 pl-6 pr-3 text-sm', current ? 'border-gold bg-white font-bold text-navy' : 'border-transparent hover:underline')}
-      >
-        {label}
-      </Link>
-    </li>
-  );
-}
-
-/**
- * The sidebar: one block per portalNavGroups group. The Self-Service Hub is always open; the others fold under a
- * header button (▸ closed, ▾ open). The group holding the current page opens itself, and the viewer's choices are
- * remembered in this browser.
- */
-function SideNav({ groups, pathname }: { groups: PortalNavGroup[]; pathname: string }) {
-  const [open, setOpen] = useState<OpenGroups>(readOpenGroups);
-  const currentGroup = groups.find((g) => g.items.some((item) => isCurrent(pathname, item)))?.id;
-  useEffect(() => {
-    if (currentGroup) setOpen((now) => (now[currentGroup] ? now : { ...now, [currentGroup]: true }));
-  }, [currentGroup]);
-  const toggle = (id: PortalNavGroup['id']) =>
-    setOpen((now) => {
-      const next = { ...now, [id]: !now[id] };
-      writeOpenGroups(next);
-      return next;
-    });
-
-  return (
-    <nav data-surface="navy" aria-label="Portal sections" className="w-60 shrink-0 bg-navy py-3 text-white">
-      {groups.map((group) => {
-        const expanded = !group.collapsible || !!open[group.id];
-        const listId = `nav-group-${group.id}`;
-        return (
-          <div key={group.id} className="border-t border-t-gold pb-2 pt-1 first:border-t-0 first:pt-0">
-            {group.collapsible ? (
-              <h2>
-                <button
-                  type="button"
-                  aria-expanded={expanded}
-                  aria-controls={listId}
-                  onClick={() => toggle(group.id)}
-                  className="flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-xs font-bold uppercase tracking-wide hover:underline"
-                >
-                  <span>{group.label}</span>
-                  <span aria-hidden="true" className="text-gold">
-                    {expanded ? '▾' : '▸'}
-                  </span>
-                </button>
-              </h2>
-            ) : (
-              <h2 className="px-4 py-2 text-xs font-bold uppercase tracking-wide">{group.label}</h2>
-            )}
-            {expanded ? (
-              <ul id={listId} className="flex flex-col">
-                {group.items.map((item) => (
-                  <NavLink key={item} item={item} current={isCurrent(pathname, item)} />
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        );
-      })}
-    </nav>
   );
 }
 
@@ -349,7 +209,7 @@ function Frame({ children }: { children: ReactNode }) {
         <MemberMenu />
       </header>
       <div className="flex flex-1">
-        <SideNav groups={portalNavGroups(user)} pathname={pathname} />
+        <Sidebar user={user} pathname={pathname} />
         <main className="min-w-0 flex-1 bg-white p-6">{children}</main>
       </div>
     </div>

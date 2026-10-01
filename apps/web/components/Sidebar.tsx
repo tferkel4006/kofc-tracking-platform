@@ -1,0 +1,211 @@
+'use client';
+// The portal's left sidebar (Sprint 5Z-10 redesign): a navy column of high-intent directories from portalSidebar -
+// the Self-Service Hub, Executive Action Desks, the Fraternal Analytics Hub, the Fraternal Scheduler, Financial Ledgers
+// and Administrative Lookups. The Self-Service Hub is always open; the others fold under a header button (▸ closed,
+// ▾ open), the group holding the current page opens itself, and the viewer's choices are remembered in this browser.
+// The Executive Action Desks list every desk: one the viewer may not open is shown with a gold lock badge and says who
+// holds it, instead of a link. The current page carries a gold marker.
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { portalSidebar, type PortalNavGroup, type PortalNavItem, type SessionUser } from '@kofc/shared';
+import { cx } from '@/components/ui';
+
+export interface NavEntry {
+  href: string;
+  label: string;
+  hint: string;
+  /** Who may open it, shown on a locked desk (Sprint 5Z-10). */
+  restrictedTo?: string;
+}
+
+/**
+ * Every sidebar link's route, label and tooltip. 'profile' is reached from the header's member menu, 'messages' from
+ * the header's Messaging shortcut, and the help center from the header's Help shortcut, not the sidebar.
+ */
+export const NAV: Record<PortalNavItem | 'profile' | 'messages', NavEntry> = {
+  'member-actions': { href: '/member-actions', label: 'Member Actions Hub', hint: 'My shifts, sign-ups, roster, hours' },
+  messages: { href: '/messages', label: 'Communications Hub', hint: 'Message threads and replies' },
+  calendar: { href: '/calendar', label: 'Visual Master Calendar', hint: 'Events, shifts and meetings by date' },
+  activities: { href: '/activities', label: 'Standalone Activities', hint: 'Standing council activities' },
+  members: { href: '/members', label: 'Affiliated Roster', hint: 'Members, types and skills' },
+  events: { href: '/events', label: 'Event Planner', hint: 'Events, shifts and councils' },
+  meetings: { href: '/meetings', label: 'Meeting Center', hint: 'Meetings, invitations, minutes' },
+  'meetings/cadence': {
+    href: '/meetings/cadence',
+    label: 'Annual Cadence Manager',
+    hint: 'Standing meeting patterns and the annual calendar',
+    restrictedTo: 'the Grand Knight and Admins',
+  },
+  'meetings/live': {
+    href: '/meetings/live',
+    label: 'Live Meeting Console',
+    hint: 'Run a meeting live: agenda, check-ins, secret ballots',
+    restrictedTo: 'council officers and Admins',
+  },
+  elections: { href: '/elections', label: 'Council Officer Nominations', hint: 'Nominate brother Knights for elected office' },
+  gallery: { href: '/gallery', label: 'Fraternal Photo Gallery', hint: 'Event photos and slideshows' },
+  ledger: { href: '/ledger', label: 'Post-event Ledger', hint: 'Spend, funds raised, hours, lessons' },
+  'lessons-registry': { href: '/lessons-registry', label: 'Lessons Registry', hint: 'Lessons learned across councils' },
+  'distribution-lists': { href: '/distribution-lists', label: 'Distribution Lists', hint: 'Member lists for council blasts' },
+  dashboard: { href: '/dashboard', label: 'Executive Dashboard', hint: 'Faith-in-Action, monthly hours, members and funds' },
+  'finance/dashboard': { href: '/finance/dashboard', label: 'Financial Dashboard', hint: 'Liquidity tanks, balance scale, transfers, bank audits' },
+  'finance/ledger': { href: '/finance/ledger', label: 'General Ledger Spreadsheet', hint: 'Chart of accounts with every posting' },
+  'finance/balance-sheet': { href: '/finance/balance-sheet', label: 'Balance Sheet', hint: 'Assets against liabilities and equity' },
+  donations: { href: '/donations', label: 'Recorded Donations History', hint: 'Record and review council donations' },
+  expenses: { href: '/expenses', label: 'My Expense Reports', hint: 'Receipts and reimbursement status' },
+  'expenses/queue': { href: '/expenses/queue', label: 'Leadership Auditing Queue', hint: 'Track signatures and return reports' },
+  'expenses/audit': {
+    href: '/expenses/audit',
+    label: 'FS Expense Audit',
+    hint: 'Issue written orders on submitted reports',
+    restrictedTo: 'the Financial Secretary and Admins',
+  },
+  'expenses/authorize': {
+    href: '/expenses/authorize',
+    label: 'GK Expense Authorize',
+    hint: 'Counter-sign ordered reports',
+    restrictedTo: 'the Grand Knight and Admins',
+  },
+  'expenses/disbursements': { href: '/expenses/disbursements', label: 'Bulk Check Disbursements', hint: 'Pay dual-signed reports by check' },
+  'charities/propose': { href: '/charities/propose', label: 'Propose Charity Grant', hint: 'Suggest a charity gift and follow it' },
+  'charities/registry': { href: '/charities/registry', label: 'Global Charities Registry', hint: 'Search, suggest and add charities' },
+  'charities/queue': { href: '/charities/queue', label: 'Charitable Disbursements Ledger', hint: 'Pay charity proposals by check' },
+  'charities/intake': { href: '/charities/intake', label: 'Charitable Intake Sheet', hint: "Shepherd an organization's request to the council" },
+  'charities/vetting': {
+    href: '/charities/vetting',
+    label: 'Charity Vetting Queue',
+    hint: 'Claim, audit and advance intake requests',
+    restrictedTo: 'council officers, Trustees and Admins',
+  },
+  'financials/budget': { href: '/budget', label: 'Annual Budget Projections', hint: 'Draft the council budget May 1 - June 30' },
+  'council-lookups': { href: '/council-lookups', label: 'Council Lookup Tables', hint: 'Activities, donation types, methods' },
+  'elections/appointments': { href: '/elections/appointments', label: 'Appointed Leadership Matrix', hint: "The Grand Knight's appointments and vacant seats" },
+  'supreme-sync': { href: '/supreme-sync', label: 'Supreme Council Sync', hint: 'Audit and file Forms 1728 and 1295' },
+  lookups: { href: '/lookups', label: 'Global Governance Matrices', hint: 'Maintain the global lookup tables' },
+  parishes: { href: '/parishes', label: 'Parish & Pastors Linkage', hint: 'Parishes and their pastors' },
+  councils: { href: '/councils', label: 'Councils', hint: 'Add, edit and delete councils' },
+  profile: { href: '/profile', label: 'My Profile', hint: 'Photo, biography, contact details, skills' },
+};
+
+/** Which collapsible groups the viewer has open, remembered per browser. Storage may be blocked; the sidebar works without it. */
+const NAV_STATE_KEY = 'kofc.nav.open';
+type OpenGroups = Partial<Record<PortalNavGroup['id'], boolean>>;
+
+function readOpenGroups(): OpenGroups {
+  try {
+    const raw = typeof window === 'undefined' ? null : window.localStorage.getItem(NAV_STATE_KEY);
+    return raw ? (JSON.parse(raw) as OpenGroups) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeOpenGroups(open: OpenGroups): void {
+  try {
+    window.localStorage.setItem(NAV_STATE_KEY, JSON.stringify(open));
+  } catch {
+    // a private window or blocked storage: the choice lasts only for this page view
+  }
+}
+
+const isCurrent = (pathname: string, item: PortalNavItem): boolean => pathname === NAV[item].href;
+
+/** A padlock drawn in currentColor. */
+function LockIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </svg>
+  );
+}
+
+/** One dense sidebar link: the label only, with its description as the tooltip; gold marker when current. */
+function NavLink({ item, current }: { item: PortalNavItem; current: boolean }) {
+  const { href, label, hint } = NAV[item];
+  return (
+    <li>
+      <Link
+        href={href}
+        title={hint}
+        aria-current={current ? 'page' : undefined}
+        className={cx('flex items-center gap-2 border-l-8 py-1.5 pl-6 pr-3 text-sm', current ? 'border-gold bg-white font-bold text-navy' : 'border-transparent hover:underline')}
+      >
+        {label}
+      </Link>
+    </li>
+  );
+}
+
+/** A desk the viewer may not open: its name, a gold lock badge (navy on gold, 6.4:1) and who holds it. Not a link. */
+function LockedEntry({ item }: { item: PortalNavItem }) {
+  const { label, restrictedTo } = NAV[item];
+  const who = restrictedTo ? `Restricted to ${restrictedTo}` : 'Restricted to authorized roles';
+  return (
+    <li>
+      <span aria-disabled="true" title={who} className="flex items-center justify-between gap-2 border-l-8 border-transparent py-1.5 pl-6 pr-3 text-sm">
+        <span>{label}</span>
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gold px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide text-navy">
+          <LockIcon />
+          Locked
+        </span>
+        <span className="sr-only">({who})</span>
+      </span>
+    </li>
+  );
+}
+
+export function Sidebar({ user, pathname }: { user: SessionUser; pathname: string }) {
+  const groups = portalSidebar(user);
+  const [open, setOpen] = useState<OpenGroups>(readOpenGroups);
+  const currentGroup = groups.find((g) => g.entries.some((e) => !e.locked && isCurrent(pathname, e.item)))?.id;
+  useEffect(() => {
+    if (currentGroup) setOpen((now) => (now[currentGroup] ? now : { ...now, [currentGroup]: true }));
+  }, [currentGroup]);
+  const toggle = (id: PortalNavGroup['id']) =>
+    setOpen((now) => {
+      const next = { ...now, [id]: !now[id] };
+      writeOpenGroups(next);
+      return next;
+    });
+
+  return (
+    <nav data-surface="navy" aria-label="Portal sections" className="w-64 shrink-0 bg-navy py-3 text-white">
+      {groups.map((group) => {
+        const expanded = !group.collapsible || !!open[group.id];
+        const listId = `nav-group-${group.id}`;
+        const lockedCount = group.entries.filter((e) => e.locked).length;
+        return (
+          <div key={group.id} className="border-t border-t-gold pb-2 pt-1 first:border-t-0 first:pt-0">
+            {group.collapsible ? (
+              <h2>
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls={listId}
+                  onClick={() => toggle(group.id)}
+                  className="flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-xs font-bold uppercase tracking-wide hover:underline"
+                >
+                  <span>{group.label}</span>
+                  <span aria-hidden="true" className="flex items-center gap-1.5 text-gold">
+                    {lockedCount > 0 && lockedCount === group.entries.length ? <LockIcon /> : null}
+                    {expanded ? '▾' : '▸'}
+                  </span>
+                </button>
+              </h2>
+            ) : (
+              <h2 className="px-4 py-2 text-xs font-bold uppercase tracking-wide">{group.label}</h2>
+            )}
+            {expanded ? (
+              <ul id={listId} className="flex flex-col">
+                {group.entries.map(({ item, locked }) =>
+                  locked ? <LockedEntry key={item} item={item} /> : <NavLink key={item} item={item} current={isCurrent(pathname, item)} />,
+                )}
+              </ul>
+            ) : null}
+          </div>
+        );
+      })}
+    </nav>
+  );
+}

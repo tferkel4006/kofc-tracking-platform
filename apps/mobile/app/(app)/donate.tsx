@@ -10,6 +10,9 @@
 //  3. The form is pre-filled from the session defaults; the member corrects the amount if the donor gave
 //     something different, then records it or cancels.
 // While a session is running, the event's donations from every phone are listed, newest first.
+// Sprint 5Z-10 high-speed gate intake: the pinned-event card carries the '🎬 Start Active Intake Session' switch
+// (events.setIntakeSessionStatus). While the event's intake is Active, a full-screen overlay offers two one-tap targets,
+// cash and card, that log a donation at a preset amount with nothing typed (components/GateIntake.tsx).
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import {
@@ -22,6 +25,7 @@ import {
 } from '@kofc/shared';
 import { DonationMethodGrid } from '@/components/DonationMethodGrid';
 import { DonationQr } from '@/components/DonationQr';
+import { GateIntakeOverlay, IntakeSessionSwitch } from '@/components/GateIntake';
 import { Dropdown } from '@/components/Dropdown';
 import { ReceiptScanTile, VERIFICATION_PHOTO_TITLE } from '@/components/ReceiptScanTile';
 import { AppInput, AppText, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section } from '@/components/ui';
@@ -244,6 +248,25 @@ export default function DonateScreen() {
     [user.councilId, pinnedEventId],
   );
 
+  // The pinned event's gate intake (Sprint 5Z-10), shared by every phone pinned to it.
+  const intake = useLoad(async () => (pinnedEventId === null ? null : db.events.get(pinnedEventId)), [pinnedEventId]);
+  const intakeActive = intake.data?.IntakeSessionStatus === 'Active';
+  const [intakeBusy, setIntakeBusy] = useState(false);
+  const [overlayHidden, setOverlayHidden] = useState(false);
+  const setIntake = async (on: boolean) => {
+    if (pinnedEventId === null) return;
+    setIntakeBusy(true);
+    try {
+      await db.events.setIntakeSessionStatus(user.memberId, pinnedEventId, on ? 'Active' : 'Inactive');
+      setOverlayHidden(false);
+      await intake.reload();
+    } catch (err) {
+      setMessage({ tone: 'error', text: describeError(err) });
+    } finally {
+      setIntakeBusy(false);
+    }
+  };
+
   // Leaving a half-filled form when the session changes would record against the wrong event.
   useEffect(() => setPicked(null), [pinnedEventId]);
 
@@ -292,6 +315,8 @@ export default function DonateScreen() {
                     .join(' · ')}
                 </AppText>
               ) : null}
+              <IntakeSessionSwitch active={intakeActive} busy={intakeBusy} onChange={(on) => void setIntake(on)} />
+              {intakeActive && overlayHidden ? <Button title="Show the one-tap intake overlay" onPress={() => setOverlayHidden(false)} /> : null}
               <Button
                 title="Stop accepting – the event is over"
                 variant="secondary"
@@ -337,6 +362,22 @@ export default function DonateScreen() {
               )}
             </Section>
           )}
+
+          {session.active ? (
+            <GateIntakeOverlay
+              visible={intakeActive && !overlayHidden}
+              eventName={session.eventName}
+              controller={controller}
+              options={data.methods}
+              types={data.types}
+              defaults={session.defaults}
+              recordedCount={session.recordedCount}
+              recordedTotal={session.recordedTotal}
+              onHide={() => setOverlayHidden(true)}
+              onClose={() => setIntake(false)}
+              onRecorded={() => void stream.reload()}
+            />
+          ) : null}
 
           {session.active ? (
             <Section title="Recorded for this event">
