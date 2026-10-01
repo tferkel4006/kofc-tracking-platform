@@ -38,7 +38,7 @@ The **Welcome, Brother Knight** card at the top of **Member Actions** shows thes
 
 | Zelle Cathedral Collection | Mobile App (Expo Go) | Member Sign-Up | Feedback Registry |
 |---|---|---|---|
-| ![Zelle Cathedral Collection QR code](../apps/web/public/assets/images/qr/zelle-cathedral-collection.svg) | ![Mobile App Expo Go Sync QR code](../apps/web/public/assets/images/qr/expo-go-sync.svg) | ![Member Sign-Up QR code](../apps/web/public/assets/images/qr/member-sign-up.svg) | ![Feedback Registry QR code](../apps/web/public/assets/images/qr/feedback-registry.svg) |
+| ![Zelle Cathedral Collection QR code](../apps/web/public/assets/images/qr/zelle-cathedral-collection.png) | ![Mobile App Expo Go Sync QR code](../apps/web/public/assets/images/qr/expo-go-sync.png) | ![Member Sign-Up QR code](../apps/web/public/assets/images/qr/member-sign-up.png) | ![Feedback Registry QR code](../apps/web/public/assets/images/qr/feedback-registry.png) |
 | Give to the cathedral collection through Zelle. | Open the phone app in Expo Go. | Ask to join the council. | Tell us what works and what does not. |
 
 ---

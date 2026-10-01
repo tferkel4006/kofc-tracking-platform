@@ -176,6 +176,9 @@ export const canManageMeeting = (u: Actor, meeting: Pick<Meeting, 'CouncilID' | 
  */
 export const calendarHidesEnded = (u: Actor): boolean => !isAdmin(u) && !u.isOfficer;
 
+/** Seated officers, Admins and Super Admins see the sidebar's Council Archive Vault link (Sprint 5Z-Demo-Final). */
+export const canOpenArchiveVault = (u: Actor): boolean => isAdmin(u) || u.isOfficer;
+
 /** Admins record post-event results for their councils' events, and the event's owner may too. */
 export const canRecordLedger = (u: Actor, event: Pick<Event, 'OwnerID'>, eventCouncilIds: readonly number[]): boolean =>
   event.OwnerID === u.memberId || eventCouncilIds.some((id) => canAdministerCouncil(u, id));

@@ -11,10 +11,10 @@ export interface ParishQr {
 export const QR_ASSET_DIR = '/assets/images/qr';
 
 export const PARISH_QR_CODES: readonly ParishQr[] = [
-  { file: 'zelle-cathedral-collection.svg', title: 'Zelle Cathedral Collection', caption: 'Give to the cathedral collection through Zelle.' },
-  { file: 'expo-go-sync.svg', title: 'Mobile App (Expo Go)', caption: 'Open the phone app in Expo Go.' },
-  { file: 'member-sign-up.svg', title: 'Member Sign-Up', caption: 'Ask to join the council.' },
-  { file: 'feedback-registry.svg', title: 'Feedback Registry', caption: 'Tell us what works and what does not.' },
+  { file: 'zelle-cathedral-collection.png', title: 'Zelle Cathedral Collection', caption: 'Give to the cathedral collection through Zelle.' },
+  { file: 'expo-go-sync.png', title: 'Mobile App (Expo Go)', caption: 'Open the phone app in Expo Go.' },
+  { file: 'member-sign-up.png', title: 'Member Sign-Up', caption: 'Ask to join the council.' },
+  { file: 'feedback-registry.png', title: 'Feedback Registry', caption: 'Tell us what works and what does not.' },
 ];
 
 export function QrWelcomeCard() {

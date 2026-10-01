@@ -517,12 +517,12 @@ Quick answers are also in the portal's **Online Help Center**.
 
 ## Appendix: Council Archive Vault and parish QR codes
 
-- **Council Archive Vault.** Open **Administrative Lookups** in the sidebar and select **📂 Council Archive Vault**. The council's shared Google Drive folder opens in a new browser tab. The link shows to everyone who sees the Administrative Lookups group, so Google Drive's own sharing settings decide who can open the folder.
+- **Council Archive Vault.** Open **Administrative Lookups** in the sidebar and select **📂 Council Archive Vault**. The council's shared Google Drive folder opens in a new browser tab. The link shows only to seated officers, Admins and Super Admins; regular members do not see it. Google Drive's own sharing settings still decide who can open the folder.
 - **Parish QR codes.** The **Welcome, Brother Knight** card on **Member Actions** shows four codes from `apps/web/public/assets/images/qr/`. To put a real code in place, replace the placeholder file and keep its name:
 
 | Code | File |
 |---|---|
-| ![Zelle Cathedral Collection QR code](../apps/web/public/assets/images/qr/zelle-cathedral-collection.svg) | `zelle-cathedral-collection.svg` |
-| ![Mobile App Expo Go Sync QR code](../apps/web/public/assets/images/qr/expo-go-sync.svg) | `expo-go-sync.svg` |
-| ![Member Sign-Up QR code](../apps/web/public/assets/images/qr/member-sign-up.svg) | `member-sign-up.svg` |
-| ![Feedback Registry QR code](../apps/web/public/assets/images/qr/feedback-registry.svg) | `feedback-registry.svg` |
+| ![Zelle Cathedral Collection QR code](../apps/web/public/assets/images/qr/zelle-cathedral-collection.png) | `zelle-cathedral-collection.png` |
+| ![Mobile App Expo Go Sync QR code](../apps/web/public/assets/images/qr/expo-go-sync.png) | `expo-go-sync.png` |
+| ![Member Sign-Up QR code](../apps/web/public/assets/images/qr/member-sign-up.png) | `member-sign-up.png` |
+| ![Feedback Registry QR code](../apps/web/public/assets/images/qr/feedback-registry.png) | `feedback-registry.png` |

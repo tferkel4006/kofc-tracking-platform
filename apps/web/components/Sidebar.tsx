@@ -7,7 +7,7 @@
 // holds it, instead of a link. The current page carries a gold marker.
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { portalSidebar, type PortalNavGroup, type PortalNavItem, type SessionUser } from '@kofc/shared';
+import { canOpenArchiveVault, portalSidebar, type PortalNavGroup, type PortalNavItem, type SessionUser } from '@kofc/shared';
 import { cx } from '@/components/ui';
 
 export interface NavEntry {
@@ -88,13 +88,15 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
 };
 
 /**
- * Links outside the portal, drawn after a group's own entries and opened in a new tab (Sprint 5Z-Demo-Assets). They show
- * to whoever sees the group; the destination's own sharing settings decide who can open it.
+ * Links outside the portal, drawn after a group's own entries and opened in a new tab (Sprint 5Z-Demo-Assets). A link with
+ * `visible` shows only to the viewers it allows (Sprint 5Z-Demo-Final); the destination's own sharing settings still
+ * decide who can open it.
  */
 interface ExternalNavEntry {
   href: string;
   label: string;
   hint: string;
+  visible?: (user: SessionUser) => boolean;
 }
 
 export const EXTERNAL_NAV: Partial<Record<PortalNavGroup['id'], ExternalNavEntry[]>> = {
@@ -103,12 +105,13 @@ export const EXTERNAL_NAV: Partial<Record<PortalNavGroup['id'], ExternalNavEntry
       href: 'https://drive.google.com/drive/u/3/folders/1ZGDjpkJG61hzWvDFRg4IZHI440ZYDjyH',
       label: '📂 Council Archive Vault',
       hint: "The council's shared Google Drive archive folder (opens in a new tab)",
+      visible: canOpenArchiveVault,
     },
   ],
 };
 
 /** A sidebar link to a site outside the portal, opened in a new browser tab. */
-function ExternalNavLink({ href, label, hint }: ExternalNavEntry) {
+function ExternalNavLink({ href, label, hint }: Omit<ExternalNavEntry, 'visible'>) {
   return (
     <li>
       <a
@@ -240,9 +243,11 @@ export function Sidebar({ user, pathname }: { user: SessionUser; pathname: strin
                 {group.entries.map(({ item, locked }) =>
                   locked ? <LockedEntry key={item} item={item} /> : <NavLink key={item} item={item} current={isCurrent(pathname, item)} />,
                 )}
-                {(EXTERNAL_NAV[group.id] ?? []).map((link) => (
-                  <ExternalNavLink key={link.href} {...link} />
-                ))}
+                {(EXTERNAL_NAV[group.id] ?? [])
+                  .filter((link) => !link.visible || link.visible(user))
+                  .map(({ href, label, hint }) => (
+                    <ExternalNavLink key={href} href={href} label={label} hint={hint} />
+                  ))}
               </ul>
             ) : null}
           </div>
