@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { councilLabel, isSuperAdmin, portalAreaHref, portalAreas, sortCouncils, type Council, type PortalArea } from '@kofc/shared';
 import { Field, Notice, Select } from '@/components/ui';
@@ -29,31 +30,49 @@ export function RequireArea({ area, children }: { area: PortalArea; children: Re
   );
 }
 
+/**
+ * The only routes where the council switcher appears: the root and Supreme Sync. Every council workspace
+ * (/finance, /meetings, /expenses, /charities, …) is pinned to the signed-in member's own council.
+ */
+const COUNCIL_SWITCHER_ROUTES = new Set(['/', '/supreme-sync']);
+
+export function showsCouncilSwitcher(pathname: string | null): boolean {
+  return COUNCIL_SWITCHER_ROUTES.has(pathname ?? '');
+}
+
 export interface CouncilScope {
   /** Every council, ascending by CouncilNumber. */
   councils: Council[];
   /** The council the page works on. */
   councilId: number;
   setCouncilId(id: number): void;
-  /** Only Super Admins choose; Admins and officers work on their own council. */
+  /** Only Super Admins choose, and only on the switcher routes; everyone else works on their own council. */
   canChoose: boolean;
+  /** False on council workspace routes, where the selector (and its read-only label) is not rendered. */
+  visible: boolean;
 }
 
 export function useCouncilScope(): CouncilScope {
   const user = useUser();
   const list = useLoad(() => db.councils.list(), []);
   const [chosen, setChosen] = useState<number | null>(null);
-  const canChoose = isSuperAdmin(user);
+  const visible = showsCouncilSwitcher(usePathname());
+  const canChoose = visible && isSuperAdmin(user);
   return {
     councils: sortCouncils(list.data ?? []),
     councilId: canChoose ? (chosen ?? user.councilId) : user.councilId,
     setCouncilId: setChosen,
     canChoose,
+    visible,
   };
 }
 
-/** Council drop-down in CouncilNumber order (Specifications: "User Interface Behaviors"); read-only text for non-Super-Admins. */
+/**
+ * Council drop-down in CouncilNumber order (Specifications: "User Interface Behaviors"); read-only text for non-Super-Admins.
+ * Hidden entirely on council workspace routes (Sprint 5Z-Tony-Montana).
+ */
 export function CouncilSelect({ scope }: { scope: CouncilScope }) {
+  if (!scope.visible) return null;
   const current = scope.councils.find((c) => c.id === scope.councilId);
   if (!scope.canChoose) {
     return <p className="text-sm font-bold">{current ? councilLabel(current) : ''}</p>;
