@@ -615,3 +615,28 @@ VALUES
 (2, 20),  -- Deputy Grand Knight
 (12, 21); -- Trustee 1 (Seed.sql has no plain 'Trustee' role)
 GO
+
+-- ==============================================================================
+-- Sprint 5Z-Meeting-Audit: the live demo meeting for the October 5, 2026 presentation (Meeting 1, CouncilID 1)
+-- Already live (IsLiveInProgress 1) so the console opens straight onto it and members can check in. The quorum
+-- roster is locked at 21, the council's Active members at seed time, the count startLiveAssemblyConsole would take.
+-- No agenda item is active yet: the presenter takes the first one live, so its countdown starts on stage.
+-- Tom (owner), David and Hector are invited and Accepted; Attended stays 0 until they check in.
+-- ==============================================================================
+INSERT INTO [Meeting] (
+    [CouncilID], [Meeting Name], [Meeting Description], [Date], [Time Start], [Time End], [Location], [Agenda],
+    [MinutesURL], [MeetingType], [OwnerID], [IsMultiDay], [MeetingTypeID], [IsLiveInProgress], [LiveQuorumRosterCount]
+)
+VALUES
+(1, 'October Business Meeting', 'Live demo assembly: check-ins, agenda countdown and secret smartphone ballots',
+ '2026-10-05', '19:30:00', '21:00:00', 'Parish Hall',
+ 'Opening prayer; Roll call of officers; Minutes of the September meeting; Treasurer''s report; Charitable funding requests; New business; Closing prayer',
+ '', 1, 19, 0, 1, 1, 21);
+GO
+
+INSERT INTO [MeetingInvites] ([MeetingID], [MemberID], [Attended], [ResponseStatus])
+VALUES
+(1, 19, 0, 'Accepted'),  -- Tom, Grand Knight
+(1, 20, 0, 'Accepted'),  -- David, Deputy Grand Knight
+(1, 21, 0, 'Accepted');  -- Hector, Trustee 1
+GO

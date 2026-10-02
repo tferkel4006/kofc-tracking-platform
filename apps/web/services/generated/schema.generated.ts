@@ -7565,5 +7565,50 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "MemberID": 21
       }
     ]
+  },
+  {
+    "table": "Meeting",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "Meeting Name": "October Business Meeting",
+        "Meeting Description": "Live demo assembly: check-ins, agenda countdown and secret smartphone ballots",
+        "Date": "2026-10-05",
+        "Time Start": "19:30:00",
+        "Time End": "21:00:00",
+        "Location": "Parish Hall",
+        "Agenda": "Opening prayer; Roll call of officers; Minutes of the September meeting; Treasurer's report; Charitable funding requests; New business; Closing prayer",
+        "MinutesURL": "",
+        "MeetingType": 1,
+        "OwnerID": 19,
+        "IsMultiDay": 0,
+        "MeetingTypeID": 1,
+        "IsLiveInProgress": 1,
+        "LiveQuorumRosterCount": 21
+      }
+    ]
+  },
+  {
+    "table": "MeetingInvites",
+    "rows": [
+      {
+        "MeetingID": 1,
+        "MemberID": 19,
+        "Attended": 0,
+        "ResponseStatus": "Accepted"
+      },
+      {
+        "MeetingID": 1,
+        "MemberID": 20,
+        "Attended": 0,
+        "ResponseStatus": "Accepted"
+      },
+      {
+        "MeetingID": 1,
+        "MemberID": 21,
+        "Attended": 0,
+        "ResponseStatus": "Accepted"
+      }
+    ]
   }
 ];
