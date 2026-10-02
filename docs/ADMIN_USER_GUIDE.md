@@ -518,7 +518,7 @@ Quick answers are also in the portal's **Online Help Center**.
 ## Appendix: Council Archive Vault and parish QR codes
 
 - **Council Archive Vault.** Open **Administrative Lookups** in the sidebar and select **📂 Council Archive Vault**. The council's shared Google Drive folder opens in a new browser tab. The link shows only to seated officers, Admins and Super Admins; regular members do not see it. Google Drive's own sharing settings still decide who can open the folder.
-- **App download keys.** The **Welcome, Brother Knight** card on **Member Actions**, which doubles as the hall projector's app download checkpoint, shows two codes from `apps/web/public/assets/images/qr/`.
+- **App download keys.** The two onboarding codes live in `apps/web/public/assets/images/qr/` for printing or projecting; the web portal no longer shows them.
 - **Collection QR codes.** On the phone's **Donate** screen, tapping Venmo, ParishSoft, Zeffy or Zelle opens a full-screen pop-up with only that channel's code. The phone shows the image link your council set under **Council Lookup Tables → Enabled donation methods** first. If there is none, or it cannot be loaded, it shows the code that comes with the app from `apps/mobile/assets/images/qr/`.
 
 To put a real code in place, replace the placeholder file and keep its name:

@@ -59,7 +59,7 @@ The cloud runner handles your project verification across three discrete pipelin
 ________________________________________
 
 📇 5. Parish QR Codes & Council Archive Vault
-The Member Actions welcome card (the hall projector's app download checkpoint) shows two onboarding codes from apps/web/public/assets/images/qr/. The phone's Donate screen opens each collection channel's code full screen, one at a time, from apps/mobile/assets/images/qr/. Each file is a placeholder until the council's real code replaces it under the same name.
+The two onboarding codes live in apps/web/public/assets/images/qr/ for printing or projecting; the web portal no longer shows them. The phone's Donate screen opens each collection channel's code full screen, one at a time, from apps/mobile/assets/images/qr/. Each file is a placeholder until the council's real code replaces it under the same name.
 | Mobile App Expo Go Sync | Member Sign-Up |
 |---|---|
 | ![Mobile App Expo Go Sync QR code](apps/web/public/assets/images/qr/expo-go-sync.png) | ![Member Sign-Up QR code](apps/web/public/assets/images/qr/member-sign-up.png) |

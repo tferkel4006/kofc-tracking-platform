@@ -34,7 +34,7 @@
 
 ### Get the app
 
-The **Welcome, Brother Knight** card at the top of **Member Actions** (also shown on the hall projector) carries two codes. Point your phone's camera at one to open it.
+Two codes get you started. Point your phone's camera at one to open it.
 
 | Mobile App (Expo Go) | Member Sign-Up |
 |---|---|
