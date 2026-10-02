@@ -81,7 +81,6 @@ import {
   assertPasswordAcceptable,
   assertRecordUnused,
   assertRecordValueUnique,
-  assertShiftHasRoom,
   assertShiftInsideEvent,
   assertShiftReportAllowed,
   assertText,
@@ -2265,17 +2264,8 @@ export class SqliteDataService implements DataService {
             { memberId, shiftId },
           );
         }
-        assertShiftHasRoom(shift);
-        // The WHERE clause re-checks the cap in the same statement, so two racing signups cannot both take the last seat.
-        const res = await db.runAsync(
-          `UPDATE [Shift] SET [NumberVolunteersSignedUp] = [NumberVolunteersSignedUp] + 1
-            WHERE [id] = ? AND [NumberVolunteersSignedUp] < [MinNumberVolunteers]`,
-          [shiftId],
-        );
-        if (res.changes === 0) {
-          assertShiftHasRoom(await this.requireShift(db, shiftId));
-          throw new Error(`Could not reserve a seat on shift ${shiftId}`);
-        }
+        // A full shift still takes honorary volunteers (Sprint 5Z-Final-Polish), so there is no cap check.
+        await db.runAsync('UPDATE [Shift] SET [NumberVolunteersSignedUp] = [NumberVolunteersSignedUp] + 1 WHERE [id] = ?', [shiftId]);
         const ins = await db.runAsync('INSERT INTO [EventSignup] ([ShiftID], [MemberID], [NoShow]) VALUES (?, ?, 0)', [
           shiftId,
           memberId,

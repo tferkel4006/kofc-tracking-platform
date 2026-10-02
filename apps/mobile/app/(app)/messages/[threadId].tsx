@@ -1,4 +1,5 @@
-// One conversation: nested replies (ParentMessageID), read/unread state, attachment placeholders and
+// One conversation as a flat chat log, oldest first by CreatedAt (Sprint 5Z-Final-Polish retired the nested reply
+// tree; a reply names the message it answers), with read/unread state, attachment placeholders and
 // a composer whose text is saved as a draft automatically.
 //
 // Opening a thread marks what was unread as read, but those messages keep a NEW marker for this visit,
@@ -7,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { flattenReplies, isUnread, preview, type MessageAttachment, type ThreadMessage } from '@kofc/shared';
+import { chronologicalThread, isUnread, preview, type MessageAttachment, type ThreadMessage } from '@kofc/shared';
 import { MessageNode } from '@/components/MessageNode';
 import { NavStrip } from '@/components/NavStrip';
 import { AppInput, AppText, Button, EmptyState, Loading, Notice } from '@/components/ui';
@@ -204,7 +205,7 @@ export default function ThreadScreen() {
   const previewAttachment = (a: MessageAttachment) =>
     setNotice({ tone: 'info', text: `Attachment previews are not available in this version. "${a.Filename}" stays with this message in the chat history.` });
 
-  const nodes = flattenReplies((state.data ?? []).filter((m) => !(m.message.IsDraft === 1 && m.message.id === draftId.current)));
+  const nodes = chronologicalThread((state.data ?? []).filter((m) => !(m.message.IsDraft === 1 && m.message.id === draftId.current)));
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: color.white }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -225,6 +226,7 @@ export default function ThreadScreen() {
         renderItem={({ item: node }) => (
           <MessageNode
             node={node}
+            replyTo={state.data?.find((m) => m.message.id === node.item.message.ParentMessageID && m.message.id !== node.item.message.id)}
             isNew={newIds.has(node.item.message.id)}
             onReply={() => setReplyTo(node.item)}
             onToggleRead={() => void toggleRead(node.item)}

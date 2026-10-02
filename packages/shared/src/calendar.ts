@@ -12,7 +12,7 @@ import type { CalendarEntry } from './contract';
 import { isMultiDayMeeting } from './meetings';
 import { addDays, daysBetween } from './planning';
 import { assertIsoDate, toIsoDate } from './rules';
-import type { Meeting, Shift } from './types';
+import type { Event, Meeting, Shift } from './types';
 
 export type CalendarView = 'month' | 'week' | 'day';
 export type CalendarTone = 'meeting' | 'urgent' | 'needs' | 'normal';
@@ -108,6 +108,27 @@ export const withoutEndedShifts = <T extends { shift: Pick<Shift, 'ShiftDate' | 
 
 export const withoutEndedMeetings = <T extends Pick<Meeting, 'Date' | 'Time Start' | 'Time End'>>(meetings: readonly T[], now: Date): T[] =>
   meetings.filter((m) => meetingEnd(m).getTime() > now.getTime());
+
+/** The phone's donation intake offers an event this many hours before it begins (Sprint 5Z-Final-Polish). */
+export const GATE_LEAD_HOURS = 2;
+
+/**
+ * True while an event is open at the gate: from GATE_LEAD_HOURS before it begins until it ends. It begins at its
+ * earliest shift, or at midnight on StartDate when it has no shifts, and ends at midnight after EndDate or when its
+ * last shift ends, whichever is later. Events further out and events already over are false.
+ */
+export function isEventAtGate(
+  event: Pick<Event, 'StartDate' | 'EndDate'>,
+  shifts: readonly Pick<Shift, 'ShiftDate' | 'StartTime' | 'EndTime'>[],
+  now: Date,
+): boolean {
+  const [sy, sm, sd] = parts(event.StartDate);
+  const [ey, em, ed] = parts(event.EndDate);
+  const begins = shifts.length > 0 ? Math.min(...shifts.map((s) => shiftStart(s).getTime())) : new Date(sy, sm - 1, sd).getTime();
+  const ends = Math.max(new Date(ey, em - 1, ed + 1).getTime(), ...shifts.map((s) => shiftEnd(s).getTime()));
+  const t = now.getTime();
+  return t >= begins - GATE_LEAD_HOURS * MS_PER_HOUR && t < ends;
+}
 
 /** True for a shift starting between now and URGENT_WITHIN_HOURS from now. */
 export function isShiftUrgent(shift: Pick<Shift, 'ShiftDate' | 'StartTime'>, now: Date): boolean {

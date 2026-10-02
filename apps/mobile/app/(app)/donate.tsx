@@ -16,10 +16,14 @@
 // Sprint 5Z-10 high-speed gate intake: the pinned-event card carries the '🎬 Start Active Intake Session' switch
 // (events.setIntakeSessionStatus). While the event's intake is Active, a full-screen overlay offers two one-tap targets,
 // cash and card, that log a donation at a preset amount with nothing typed (components/GateIntake.tsx).
+// Sprint 5Z-Final-Polish: the start card is a single bold heading, and the event dropdown offers only events at the
+// gate, under way or starting within GATE_LEAD_HOURS (isEventAtGate).
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import {
   formatDate,
+  GATE_LEAD_HOURS,
+  isEventAtGate,
   toIsoDate,
   type CouncilDonationOption,
   type DonationDefaults,
@@ -81,7 +85,11 @@ function StartSessionForm({
   const [busy, setBusy] = useState(false);
 
   if (events.length === 0) {
-    return <EmptyState message="No event of your council has started yet. Event donations are taken during or after an event; record a standalone donation instead." />;
+    return (
+      <EmptyState
+        message={`No event of your council is under way or starting within ${GATE_LEAD_HOURS} hours. Record a standalone donation instead.`}
+      />
+    );
   }
 
   const start = async () => {
@@ -253,14 +261,17 @@ export default function DonateScreen() {
   const pinnedEventId = session.active ? session.eventId : null;
 
   const setup = useLoad(async () => {
-    const today = toIsoDate(new Date());
+    const now = new Date();
     const [methods, types, events] = await Promise.all([
       db.donations.listMethods(user.councilId),
       db.donations.listTypes(user.councilId),
       db.events.listByCouncil(user.councilId),
     ]);
-    // Event donations are taken during or after the event, so only events that have started are offered.
-    return { methods, types, events: events.filter((e) => e.StartDate <= today) };
+    // Only events at the gate are offered: in progress, or starting within GATE_LEAD_HOURS (isEventAtGate). The
+    // date check keeps far-off and long-finished events from loading their shifts at all.
+    const nearby = events.filter((e) => e.StartDate <= toIsoDate(new Date(now.getTime() + 86_400_000)) && e.EndDate >= toIsoDate(new Date(now.getTime() - 86_400_000)));
+    const shifts = await Promise.all(nearby.map((e) => db.events.listShifts(e.id)));
+    return { methods, types, events: nearby.filter((e, i) => isEventAtGate(e, shifts[i], now)) };
   }, [user.councilId]);
 
   const stream = useLoad(
@@ -359,7 +370,9 @@ export default function DonateScreen() {
             />
           ) : (
             <Card accent={color.navy}>
-              <AppText>Donations are recorded as standalone. Collecting at an event? Pin it once and every donation is linked to it.</AppText>
+              <AppText variant="title" accessibilityRole="header">
+                Active Multi-Donation Event Intake
+              </AppText>
               <Button title="Start accepting for an event" onPress={() => setStarting(true)} />
             </Card>
           )}

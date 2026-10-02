@@ -1,12 +1,8 @@
 import { Pressable, View } from 'react-native';
-import { formatTimestamp, isUnread, type FlatReply, type MessageAttachment } from '@kofc/shared';
+import { formatTimestamp, isUnread, preview, type FlatReply, type MessageAttachment, type ThreadMessage } from '@kofc/shared';
 import { AttachmentChip } from '@/components/AttachmentChip';
 import { AppText, Pill } from '@/components/ui';
 import { color, space, touchTarget } from '@/lib/theme';
-
-/** Deep replies stop indenting here so a long chain still fits a phone; the nesting stays in the data. */
-const MAX_INDENT = 4;
-const INDENT_STEP = 14;
 
 const Action = ({ label, onPress, tone = 'navy' }: { label: string; onPress: () => void; tone?: 'navy' | 'red' }) => (
   <Pressable
@@ -22,6 +18,7 @@ const Action = ({ label, onPress, tone = 'navy' }: { label: string; onPress: () 
 
 export function MessageNode({
   node,
+  replyTo,
   isNew,
   onReply,
   onToggleRead,
@@ -30,6 +27,8 @@ export function MessageNode({
   onPreview,
 }: {
   node: FlatReply;
+  /** The message this one answers, named above the text since the chat log is flat (Sprint 5Z-Final-Polish). */
+  replyTo?: ThreadMessage;
   /** Unread when the thread was opened; keeps its marker for this visit even though opening marks it read. */
   isNew: boolean;
   onReply: () => void;
@@ -44,10 +43,9 @@ export function MessageNode({
   return (
     <View
       style={{
-        marginLeft: Math.min(node.depth, MAX_INDENT) * INDENT_STEP,
-        borderLeftWidth: node.depth === 0 ? 0 : 3,
-        borderLeftColor: isNew ? color.gold : color.line,
-        paddingLeft: node.depth === 0 ? 0 : space.md,
+        borderLeftWidth: isNew ? 3 : 0,
+        borderLeftColor: color.gold,
+        paddingLeft: isNew ? space.md : 0,
         gap: space.xs,
       }}
     >
@@ -59,6 +57,11 @@ export function MessageNode({
           {formatTimestamp(message.CreatedAt)}
         </AppText>
       </View>
+      {replyTo ? (
+        <AppText variant="small" tone="muted" numberOfLines={1}>
+          ↳ Replying to {replyTo.senderName}: {preview(replyTo.message.MessageText, 60)}
+        </AppText>
+      ) : null}
       <AppText>{message.MessageText}</AppText>
       {attachments.map((a) => (
         <AttachmentChip key={a.id} attachment={a} onPress={onPreview} />

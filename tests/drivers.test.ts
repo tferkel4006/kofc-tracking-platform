@@ -51,7 +51,7 @@ describe.each(drivers)('$name driver: auth', (d) => {
   });
 });
 
-describe.each(drivers)('$name driver: shift signup and the capacity lock', (d) => {
+describe.each(drivers)('$name driver: shift signup and honorary capacity', (d) => {
   it('registers a volunteer and increments NumberVolunteersSignedUp', async () => {
     const db = await d.make();
     const shift = await shiftByName(db, 'Sorting Shift'); // min 3, none signed up
@@ -73,25 +73,22 @@ describe.each(drivers)('$name driver: shift signup and the capacity lock', (d) =
     expect(d.count(db, 'EventSignup')).toBe(signupsBefore);
   });
 
-  it('locks the shift the moment Signed reaches Min', async () => {
+  it('keeps taking honorary signups once Signed reaches Min', async () => {
     const db = await d.make();
     const shift = await shiftByName(db, 'Packing Shift'); // min 2, 1 signed up
     const signupsBefore = d.count(db, 'EventSignup');
 
     await db.events.signupForShift(MEMBER.member, shift.id); // takes the last seat: 2 of 2
-    expect((await db.events.getShift(shift.id))?.NumberVolunteersSignedUp).toBe(2);
-
-    const err = await expectRule(db.events.signupForShift(MEMBER.admin, shift.id), 'SHIFT_LOCKED');
-    expect(err.message).toMatch(/"Packing Shift".*2 of 2/);
-    expect((await db.events.getShift(shift.id))?.NumberVolunteersSignedUp).toBe(2);
-    expect(d.count(db, 'EventSignup')).toBe(signupsBefore + 1); // only the first signup was written
+    await db.events.signupForShift(MEMBER.admin, shift.id); // honorary: 3 of 2
+    expect((await db.events.getShift(shift.id))?.NumberVolunteersSignedUp).toBe(3);
+    expect(d.count(db, 'EventSignup')).toBe(signupsBefore + 2);
   });
 
-  it('refuses a shift that is already locked', async () => {
+  it('accepts a signup on a shift that was already full', async () => {
     const db = await d.make();
     const shift = await shiftByName(db, 'Delivery Shift'); // min 1, 1 signed up
-    await expectRule(db.events.signupForShift(MEMBER.member, shift.id), 'SHIFT_LOCKED');
-    expect((await db.events.getShift(shift.id))?.NumberVolunteersSignedUp).toBe(1);
+    await db.events.signupForShift(MEMBER.member, shift.id);
+    expect((await db.events.getShift(shift.id))?.NumberVolunteersSignedUp).toBe(2);
   });
 
   it('rejects unknown shifts and members', async () => {

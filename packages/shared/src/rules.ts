@@ -225,23 +225,6 @@ export function assertShiftReportAllowed(shiftDate: string, now: Date, shiftId?:
   }
 }
 
-/** A shift is locked once NumberVolunteersSignedUp reaches MinNumberVolunteers. */
-export function assertShiftHasRoom(
-  shift: Pick<Shift, 'id' | 'ShiftName' | 'MinNumberVolunteers' | 'NumberVolunteersSignedUp'>,
-): void {
-  if (shift.NumberVolunteersSignedUp >= shift.MinNumberVolunteers) {
-    throw new BusinessRuleError(
-      'SHIFT_LOCKED',
-      `Shift "${shift.ShiftName}" (id ${shift.id}) is locked: ${shift.NumberVolunteersSignedUp} of ${shift.MinNumberVolunteers} volunteers are already signed up.`,
-      {
-        shiftId: shift.id,
-        signedUp: shift.NumberVolunteersSignedUp,
-        limit: shift.MinNumberVolunteers,
-      },
-    );
-  }
-}
-
 export function assertPasswordAcceptable(password: unknown): string {
   if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
     throw new BusinessRuleError(

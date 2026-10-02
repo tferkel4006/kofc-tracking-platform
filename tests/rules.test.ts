@@ -3,7 +3,6 @@ import {
   assertActivityDateAllowed,
   assertIsoDate,
   assertPasswordAcceptable,
-  assertShiftHasRoom,
   assertShiftReportAllowed,
   assertValidHours,
   BusinessRuleError,
@@ -76,22 +75,6 @@ describe('history windows (today is 2026-09-20)', () => {
   );
 });
 
-describe('assertShiftHasRoom (Signed >= Min locks the shift)', () => {
-  const shift = (signed: number, min: number) => ({
-    id: 5,
-    ShiftName: 'Packing',
-    NumberVolunteersSignedUp: signed,
-    MinNumberVolunteers: min,
-  });
-
-  it('allows a signup while below the limit', () => expect(() => assertShiftHasRoom(shift(1, 2))).not.toThrow());
-  it('locks when signed up equals the limit', () =>
-    expect(codeOf(() => assertShiftHasRoom(shift(2, 2)))).toBe('SHIFT_LOCKED'));
-  it('stays locked above the limit', () =>
-    expect(codeOf(() => assertShiftHasRoom(shift(3, 2)))).toBe('SHIFT_LOCKED'));
-  it('says which shift and how full it is', () =>
-    expect(() => assertShiftHasRoom(shift(2, 2))).toThrow(/"Packing" \(id 5\).*2 of 2/));
-});
 
 describe('passwords', () => {
   it('requires 8 characters', () => {

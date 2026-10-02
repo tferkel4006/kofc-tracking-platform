@@ -5,7 +5,7 @@
 // hour/minute picker, reply-tree flattening and date/time formatting.
 // =========================================================================
 import type { ShiftFeedItem, ThreadMessage } from './contract';
-import { daysBetween } from './planning';
+import { addDays, daysBetween } from './planning';
 import { assertValidHours, BusinessRuleError, HOURS_STEP, subtractMonths, toIsoDate } from './rules';
 import type { Council, Event, Member, Shift } from './types';
 
@@ -15,6 +15,8 @@ export const URGENT_WITHIN_DAYS = 2;
 export const PRIORITY_WITHIN_DAYS = 7;
 /** The signup feed looks this far ahead. */
 export const FEED_HORIZON_MONTHS = 6;
+/** The phone's Signup Desk looks this many calendar days ahead (Sprint 5Z-Final-Polish). */
+export const SIGNUP_HORIZON_DAYS = 30;
 /** The no-show badge counts this many months back. */
 export const NO_SHOW_WINDOW_MONTHS = 12;
 
@@ -40,6 +42,12 @@ export const feedWindow = (today: Date): { fromDate: string; toDate: string } =>
   fromDate: toIsoDate(today),
   toDate: addMonths(today, FEED_HORIZON_MONTHS),
 });
+
+/** [today, today + 30 days], the range the phone's Signup Desk covers. */
+export const signupWindow = (today: Date): { fromDate: string; toDate: string } => {
+  const fromDate = toIsoDate(today);
+  return { fromDate, toDate: addDays(fromDate, SIGNUP_HORIZON_DAYS) };
+};
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -88,6 +96,10 @@ export function shiftStatus(
   const close = daysUntil(shift.ShiftDate, today) <= PRIORITY_WITHIN_DAYS;
   return { status: shift.NumberVolunteersSignedUp === 0 || close ? 'priority' : 'open', remaining };
 }
+
+/** True once NumberVolunteersSignedUp has reached MinNumberVolunteers; further signups are honorary. */
+export const isShiftFull = (shift: Pick<Shift, 'MinNumberVolunteers' | 'NumberVolunteersSignedUp'>): boolean =>
+  shift.NumberVolunteersSignedUp >= shift.MinNumberVolunteers;
 
 /**
  * Applies the council dropdown and the "show full shifts" switch. Full shifts the member already
@@ -185,6 +197,16 @@ export function flattenReplies(messages: readonly ThreadMessage[]): FlatReply[] 
   // A cycle (A replies to B, B replies to A) has no root; surface those messages rather than hide them.
   for (const m of messages) if (!seen.has(m.message.id)) out.push({ item: m, depth: 0 });
   return out;
+}
+
+/**
+ * Orders a thread as one flat chat log (Sprint 5Z-Final-Polish): every message at depth 0, oldest first by
+ * CreatedAt, ties (and messages without a timestamp) broken by id, so replies sit where they were sent.
+ */
+export function chronologicalThread(messages: readonly ThreadMessage[]): FlatReply[] {
+  return [...messages]
+    .sort((a, b) => (a.message.CreatedAt ?? '').localeCompare(b.message.CreatedAt ?? '') || a.message.id - b.message.id)
+    .map((item) => ({ item, depth: 0 }));
 }
 
 /** True when a message the member received has not been read. */

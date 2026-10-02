@@ -84,7 +84,6 @@ import {
   assertPasswordAcceptable,
   assertRecordUnused,
   assertRecordValueUnique,
-  assertShiftHasRoom,
   assertShiftInsideEvent,
   assertText,
   assertValidHours,
@@ -1989,7 +1988,7 @@ export class MemoryDataService implements DataService {
             { memberId, shiftId },
           );
         }
-        assertShiftHasRoom(shift as unknown as Shift);
+        // A full shift still takes honorary volunteers (Sprint 5Z-Final-Polish), so there is no cap check.
         const row = s.insert('EventSignup', { ShiftID: shiftId, MemberID: memberId, NoShow: 0 });
         (shift as Row).NumberVolunteersSignedUp = (shift.NumberVolunteersSignedUp as number) + 1;
         return { ...row } as unknown as EventSignup;

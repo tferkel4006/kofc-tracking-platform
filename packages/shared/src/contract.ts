@@ -1879,8 +1879,8 @@ export interface DataService {
     /**
      * Registers a volunteer for a shift and increments NumberVolunteersSignedUp, all or nothing.
      * Rejects (BusinessRuleError, nothing written) when the shift or member does not exist, the
-     * member is already signed up (ALREADY_SIGNED_UP), or NumberVolunteersSignedUp has reached
-     * MinNumberVolunteers, which locks the shift (SHIFT_LOCKED).
+     * member is already signed up (ALREADY_SIGNED_UP). A shift that has reached MinNumberVolunteers still takes
+     * honorary signups (Sprint 5Z-Final-Polish), so NumberVolunteersSignedUp may exceed it.
      */
     signupForShift(memberId: number, shiftId: number): Promise<EventSignup>;
 
