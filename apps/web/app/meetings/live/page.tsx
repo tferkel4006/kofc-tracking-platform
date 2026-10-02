@@ -89,7 +89,11 @@ function CountdownRing({ remaining, total }: { remaining: number; total: number 
   );
 }
 
-/** The giant navy top bar: what the floor is on now, and its countdown. */
+/** The Sprint 5Z-Clean-Shell welcome for the executive demo logins seeded in Seed.sql (Credentials 19-21). */
+const DEMO_ROSTER_WELCOME =
+  'Welcome Worthy Grand Knight Tom, Worthy Deputy Grand Knight David, and Worthy Trustee Hector! St. Jude Council 15295 Assembly Console is Fully Operational.';
+
+/** The giant navy top bar: the officer greeting, what the floor is on now, and its countdown. */
 function TopicBar({ state, remaining }: { state: LiveAssemblyState; remaining: number | null }) {
   const item = state.activeItem;
   return (
@@ -98,6 +102,7 @@ function TopicBar({ state, remaining }: { state: LiveAssemblyState; remaining: n
       aria-label="Active agenda item"
       className="flex flex-wrap items-center justify-between gap-6 rounded border-b-8 border-gold bg-navy px-8 py-6 text-white"
     >
+      <p className="w-full border-b border-white/20 pb-3 text-center text-sm font-bold text-gold">{DEMO_ROSTER_WELCOME}</p>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           {state.isLive ? (
