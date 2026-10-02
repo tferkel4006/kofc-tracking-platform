@@ -5,8 +5,11 @@
 // and Reimbursed. A sheet leadership returned shows its reason in red until it is resubmitted. Opened from Home.
 // Sprint 5Z-6: a sheet naming an event or meeting that has not started, or ended more than 30 days ago, is outside its
 // submission window: the submit button grays out behind a padlock (drafts still save) and the draft card says why.
+// Sprint 5Z-Mobile-Clean: "Spent for" is two steps. A toggle picks Event, Meeting or General council expense, then a
+// dropdown lists only that category's items whose submission window is open today. A draft already naming an item
+// outside its window keeps it in the list, so the padlock can explain why.
 import { useMemo, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import {
   addDays,
   blankExpenseLine,
@@ -18,12 +21,14 @@ import {
   expenseReferenceLabel,
   expenseReferenceSpan,
   expenseStatusBadge,
+  expenseWindowState,
   expenseWindowLockMessage,
   formatDate,
   listExpenseReferences,
   parseExpenseReferenceKey,
   toIsoDate,
   EXPENSE_DESCRIPTION_MAX_LENGTH,
+  EXPENSE_SUBMISSION_GRACE_DAYS,
   EXPENSE_VENDOR_MAX_LENGTH,
   type ExpenseLineDraft,
   type ExpenseReferenceOptions,
@@ -34,7 +39,7 @@ import { NavStrip } from '@/components/NavStrip';
 import { ReceiptScanTile, SCAN_RECEIPT_TITLE } from '@/components/ReceiptScanTile';
 import { AppInput, AppText, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
-import { color, radius, space } from '@/lib/theme';
+import { color, radius, space, touchTarget } from '@/lib/theme';
 import { describeError, useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
 
@@ -42,6 +47,17 @@ const money = (n: number) => `$${n.toFixed(2)}`;
 const multiline = { minHeight: 72, textAlignVertical: 'top' as const, paddingTop: space.md };
 
 type Row = ExpenseLineDraft & { key: number };
+
+type SpentFor = 'event' | 'meeting' | 'general';
+
+const SPENT_FOR: { key: SpentFor; label: string }[] = [
+  { key: 'event', label: 'Event' },
+  { key: 'meeting', label: 'Meeting' },
+  { key: 'general', label: 'General' },
+];
+
+const spentForOf = (reference: string): SpentFor =>
+  reference.startsWith('event:') ? 'event' : reference.startsWith('meeting:') ? 'meeting' : 'general';
 
 // ---- the draft form ------------------------------------------------------------------
 
@@ -62,18 +78,25 @@ function ExpenseDraftForm({
   const nextKey = useRef(0);
   const keyed = (line: ExpenseLineDraft): Row => ({ ...line, key: nextKey.current++ });
   const [reference, setReference] = useState(() => (detail ? expenseReferenceKey(detail.report) : ''));
+  const [spentFor, setSpentFor] = useState<SpentFor>(() => spentForOf(reference));
   const [rows, setRows] = useState<Row[]>(() =>
     detail && detail.lineItems.length > 0 ? detail.lineItems.map((li) => keyed(expenseLineDraftFrom(li))) : [keyed(blankExpenseLine(today))],
   );
   const [busy, setBusy] = useState<'Draft' | 'Submitted' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const options = useMemo(
-    () => [
-      { value: '', label: 'General council expense' },
-      ...expenseReferenceChoices(refs).map((c) => ({ value: c.key, label: `${c.group === 'Events' ? 'Event' : 'Meeting'}: ${c.label}` })),
-    ],
-    [refs],
-  );
+  // The chosen category's items whose submission window is open today, plus the draft's own pick if it is not.
+  const options = useMemo(() => {
+    if (spentFor === 'general') return [];
+    const group = spentFor === 'event' ? 'Events' : 'Meetings';
+    return expenseReferenceChoices(refs)
+      .filter((c) => c.group === group)
+      .filter((c) => {
+        const span = expenseReferenceSpan(c.key, refs);
+        return c.key === reference || (span !== null && expenseWindowState(span, today) === 'open');
+      })
+      .map((c) => ({ value: c.key, label: c.label }));
+  }, [refs, spentFor, reference, today]);
+  const needsPick = spentFor !== 'general' && reference === '';
 
   // Sprint 5Z-6: outside the linked event's or meeting's submission window the submit button is padlocked.
   const span = expenseReferenceSpan(reference, refs);
@@ -101,8 +124,48 @@ function ExpenseDraftForm({
         <AppText variant="title">{detail ? `Draft #${detail.report.id}` : 'New expense report'}</AppText>
         {detail?.report.RejectionReason ? <Notice tone="error" message={`Returned by council leadership: ${detail.report.RejectionReason}`} /> : null}
         <Field label="SPENT FOR">
-          <Dropdown title="Event or meeting" value={reference} options={options} onChange={setReference} />
+          <View accessibilityRole="tablist" style={{ flexDirection: 'row', borderWidth: 2, borderColor: color.navy, borderRadius: radius.md, overflow: 'hidden' }}>
+            {SPENT_FOR.map(({ key, label }) => {
+              const selected = spentFor === key;
+              return (
+                <Pressable
+                  key={key}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected }}
+                  onPress={() => {
+                    if (selected) return;
+                    setSpentFor(key);
+                    setReference('');
+                  }}
+                  style={{ flex: 1, minHeight: touchTarget, alignItems: 'center', justifyContent: 'center', backgroundColor: selected ? color.navy : color.white }}
+                >
+                  <AppText variant="label" tone={selected ? 'white' : 'navy'}>
+                    {label}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
         </Field>
+        {spentFor === 'general' ? (
+          <AppText variant="small" tone="muted">
+            A general council expense is not tied to an event or meeting.
+          </AppText>
+        ) : options.length === 0 ? (
+          <EmptyState
+            message={`No ${spentFor}s are open for expense filing today. Filing opens when the ${spentFor} starts and closes ${EXPENSE_SUBMISSION_GRACE_DAYS} days after it ends.`}
+          />
+        ) : (
+          <Field label={spentFor === 'event' ? 'WHICH EVENT?' : 'WHICH MEETING?'}>
+            <Dropdown
+              title={spentFor === 'event' ? 'Event' : 'Meeting'}
+              placeholder={spentFor === 'event' ? 'Choose an event…' : 'Choose a meeting…'}
+              value={reference === '' ? null : reference}
+              options={options}
+              onChange={setReference}
+            />
+          </Field>
+        )}
       </Card>
 
       {rows.map((row, i) => (
@@ -162,15 +225,20 @@ function ExpenseDraftForm({
         </View>
         {error ? <Notice tone="error" message={error} onDismiss={() => setError(null)} /> : null}
         {locked ? <WindowLock message={locked} /> : null}
+        {needsPick ? (
+          <AppText variant="small" tone="muted">
+            Choose the {spentFor} this report is for, or switch to General.
+          </AppText>
+        ) : null}
         <Button
           title={locked ? '🔒 Submission locked' : 'Submit for approval'}
           busy={busy === 'Submitted'}
-          disabled={busy !== null || locked !== null}
+          disabled={busy !== null || locked !== null || needsPick}
           onPress={() => void save('Submitted')}
         />
         <View style={{ flexDirection: 'row', gap: space.md }}>
           <Button title="Cancel" variant="secondary" style={{ flex: 1 }} disabled={busy !== null} onPress={onCancel} />
-          <Button title="Save draft" variant="secondary" style={{ flex: 2 }} busy={busy === 'Draft'} disabled={busy !== null} onPress={() => void save('Draft')} />
+          <Button title="Save draft" variant="secondary" style={{ flex: 2 }} busy={busy === 'Draft'} disabled={busy !== null || needsPick} onPress={() => void save('Draft')} />
         </View>
       </Card>
     </View>
