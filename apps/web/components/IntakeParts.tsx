@@ -1,8 +1,8 @@
 'use client';
-// Charitable intake pieces shared by the Charitable Intake Sheet and the Pooled Vetting Desk (Sprint 5Z-2): the request's
-// pipeline chip, the Four-Eyes "Sponsor Restriction" lock, and the read-only summary of a filed intake form.
+// Charitable intake pieces shared by Propose Charity Grant and the Pooled Vetting Desk (Sprint 5Z-2): the request's
+// pipeline chip, the Shepherd's 3-step track, the Four-Eyes "Sponsor Restriction" lock, and the read-only summary of a filed intake form.
 import type { ReactNode } from 'react';
-import type { CharitableRequestDetail } from '@kofc/shared';
+import { CHARITABLE_TRACKING_STEPS, charitableTrackingPosition, type CharitableRequestDetail } from '@kofc/shared';
 import { Pill } from '@/components/ui';
 import { formatFullDate, formatMoney, formatPhone } from '@/lib/format';
 
@@ -19,6 +19,30 @@ export function RequestStatusPill({ detail }: { detail: CharitableRequestDetail 
     case 'Declined':
       return <Pill tone="redOutline">Declined</Pill>;
   }
+}
+
+/**
+ * The Shepherd's 3-step track (Sprint 5Z-Member-Charity): Vetting, Presentation, Disbursement. Finished steps are navy,
+ * the current one gold, one the request stopped in (declined or voted down) outlined in red, later steps outlined.
+ */
+export function TrackingSteps({ request }: { request: CharitableRequestDetail['request'] }) {
+  const { stepIndex, stopped } = charitableTrackingPosition(request);
+  return (
+    <ol className="flex flex-wrap items-center gap-1" aria-label="Tracking steps">
+      {CHARITABLE_TRACKING_STEPS.map((step, i) => {
+        const tone = i < stepIndex ? 'navy' : i > stepIndex ? 'outline' : stopped ? 'redOutline' : 'gold';
+        const state = i < stepIndex ? 'done' : i > stepIndex ? 'not started' : stopped ? 'stopped here' : 'current step';
+        return (
+          <li key={step} title={`${step}: ${state}`}>
+            <Pill tone={tone}>
+              {i + 1}. {step}
+            </Pill>
+            <span className="sr-only">({state})</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
 }
 
 /** Padlock drawn in currentColor. */

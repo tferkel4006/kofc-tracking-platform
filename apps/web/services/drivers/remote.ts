@@ -201,6 +201,7 @@ export function createRemoteDataService(): DataService {
       listCouncilMissionAreas: notImplemented('charities.listCouncilMissionAreas'),
       listCharitableRequestsQueue: notImplemented('charities.listCharitableRequestsQueue'),
       submitCharitableRequest: notImplemented('charities.submitCharitableRequest'),
+      listMyCharitableRequests: notImplemented('charities.listMyCharitableRequests'),
       triageRequestStatus: notImplemented('charities.triageRequestStatus'),
       routeRequestToNextEligibleAgenda: notImplemented('charities.routeRequestToNextEligibleAgenda'),
       listApprovedFundingQueue: notImplemented('charities.listApprovedFundingQueue'),

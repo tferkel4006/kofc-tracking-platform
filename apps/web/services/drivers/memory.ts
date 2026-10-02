@@ -3633,6 +3633,12 @@ export class MemoryDataService implements DataService {
       return this.charitableRequestDetails(s, (r) => r.CouncilID === councilId);
     },
 
+    listMyCharitableRequests: async (actorId) => {
+      const s = await this.ready();
+      this.requireMember(s, actorId);
+      return this.charitableRequestDetails(s, (r) => r.ShepherdMemberID === actorId).sort((a, b) => b.request.id - a.request.id);
+    },
+
     submitCharitableRequest: async (actorId, requestData) => {
       const clean = cleanCharitableRequest(requestData);
       const s = await this.ready();

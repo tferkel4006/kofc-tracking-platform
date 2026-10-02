@@ -677,6 +677,88 @@ export function buildCharitableRequestDetails(
   });
 }
 
+// ---- the Shepherd's 3-step tracking notice and Trustee follow-up (Sprint 5Z-Member-Charity) ----
+
+/** The three steps a filed request moves through, as the Shepherd's tracking notice and My requests table name them. */
+export const CHARITABLE_TRACKING_STEPS = ['Vetting', 'Presentation', 'Disbursement'] as const;
+export type CharitableTrackingStep = (typeof CHARITABLE_TRACKING_STEPS)[number];
+/** Months after SubmittedAt when the council's Trustees are prompted for the request's status report. */
+export const CHARITABLE_TRUSTEE_FOLLOWUP_MONTHS = 6;
+
+/**
+ * Where a request stands on the 3-step track. `stepIndex` is the CHARITABLE_TRACKING_STEPS index the request is in, or
+ * CHARITABLE_TRACKING_STEPS.length once its check is paid. `stopped` marks a request that ended in that step: declined
+ * at Vetting or voted down at Presentation.
+ */
+export function charitableTrackingPosition(
+  request: Pick<CharitableRequest, 'RequestStatus' | 'VoteStatus' | 'PaymentOrderId'>,
+): { stepIndex: number; stopped: boolean } {
+  if (request.RequestStatus === 'Declined') return { stepIndex: 0, stopped: true };
+  if (request.RequestStatus !== 'Advanced') return { stepIndex: 0, stopped: false };
+  if (request.VoteStatus === 'Rejected') return { stepIndex: 1, stopped: true };
+  if (request.VoteStatus !== 'Approved') return { stepIndex: 1, stopped: false };
+  return { stepIndex: request.PaymentOrderId == null ? 2 : CHARITABLE_TRACKING_STEPS.length, stopped: false };
+}
+
+/** The YYYY-MM-DD date `months` calendar months after `date` (YYYY-MM-DD...), clamped to the last day of a short month. */
+export function addCalendarMonths(date: string, months: number): string {
+  const [y, m, d] = assertIsoDate(date.slice(0, 10), 'Date').split('-').map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, lastDay));
+  return target.toISOString().slice(0, 10);
+}
+
+/** The day the Trustees are prompted for a request's status report: CHARITABLE_TRUSTEE_FOLLOWUP_MONTHS after SubmittedAt. */
+export const charitableTrusteeFollowUpDate = (request: Pick<CharitableRequest, 'SubmittedAt'>): string =>
+  addCalendarMonths(request.SubmittedAt, CHARITABLE_TRUSTEE_FOLLOWUP_MONTHS);
+
+/** The tracking message a Shepherd's profile log receives the moment their intake form is saved. */
+export interface CharitableTrackingNotice {
+  kind: 'charitable-tracking';
+  /** Stable dedupe key, e.g. "charitable:request:12:filed". */
+  key: string;
+  /** The Shepherd: the signed-in member who saved the form. */
+  memberId: number;
+  requestId: number;
+  steps: readonly CharitableTrackingStep[];
+  /** When the Trustees are prompted for a status report (YYYY-MM-DD). */
+  trusteeFollowUpDate: string;
+  text: string;
+}
+
+export function buildCharitableTrackingNotice(detail: Pick<CharitableRequestDetail, 'request' | 'shepherdFirstName'>): CharitableTrackingNotice {
+  const { request } = detail;
+  const followUp = charitableTrusteeFollowUpDate(request);
+  return {
+    kind: 'charitable-tracking',
+    key: `charitable:request:${request.id}:filed`,
+    memberId: request.ShepherdMemberID,
+    requestId: request.id,
+    steps: CHARITABLE_TRACKING_STEPS,
+    trusteeFollowUpDate: followUp,
+    text:
+      `KofC: Thank you, ${detail.shepherdFirstName}. Request #${request.id} for ${request.OrganizationName} ($${request.AmountRequested.toFixed(2)}) is filed. ` +
+      `Step 1, Vetting: an officer or Trustee other than you audits it. ` +
+      `Step 2, Presentation: it goes on a Monthly meeting agenda for the council's vote. ` +
+      `Step 3, Disbursement: the Financial Secretary or Treasurer issues the check. ` +
+      `The Trustees will ask for a status report on ${followUp}.`,
+  };
+}
+
+/**
+ * Builds the tracking notice for a request that was just saved and logs it. No SMS gateway or profile-log table exists
+ * yet, so, like the hours reminders, the packet goes to `log` (console.log by default). Returns the packet.
+ */
+export function dispatchCharitableTrackingNotice(
+  detail: Pick<CharitableRequestDetail, 'request' | 'shepherdFirstName'>,
+  log: (...args: unknown[]) => void = console.log,
+): CharitableTrackingNotice {
+  const notice = buildCharitableTrackingNotice(detail);
+  log('[charitable-tracking]', JSON.stringify(notice, null, 2));
+  return notice;
+}
+
 // ---- Faith-in-Action mission footprint (Sprint 5Z-2) -------------------------
 
 const sumCents = (values: readonly number[]): number => values.reduce((total, v) => total + Math.round(v * 100), 0) / 100;

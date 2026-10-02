@@ -1,10 +1,17 @@
 // Sprint 5Z-1: normalized charitable intake - council relationship types and mission areas, the Knight Shepherd's
 // intake form (charities.submitCharitableRequest), the shared vetting queue and its triage (claim, note, advance) with
 // independent vetting, and Seed.sql's presentation data loading cleanly into both drivers. Sprint 5Z-2: mission areas on
-// the form, target budget lines, declines and the Faith-in-Action mission footprint.
+// the form, target budget lines, declines and the Faith-in-Action mission footprint. Sprint 5Z-Member-Charity: the
+// Shepherd's 3-step tracking notice, the 6-month Trustee follow-up and charities.listMyCharitableRequests.
 import { describe, expect, it } from 'vitest';
 import {
+  addCalendarMonths,
   assertIndependentVetter,
+  buildCharitableTrackingNotice,
+  CHARITABLE_TRACKING_STEPS,
+  charitableTrackingPosition,
+  charitableTrusteeFollowUpDate,
+  dispatchCharitableTrackingNotice,
   assertMayVetCharitableRequests,
   awaitsWrittenOrder,
   buildMissionAreaFootprint,
@@ -455,5 +462,72 @@ describe.each(drivers)('$name driver: Grand Knight and Deputy Grand Knight execu
     // The Four-Eyes Principle still binds them on their own requests.
     const own = await db.charities.submitCharitableRequest(MEMBER.member, form({ OrganizationName: 'My own' }));
     await expectRule(db.charities.triageRequestStatus(MEMBER.member, own.request.id, { action: 'claim' }), 'SELF_VETTING_BLOCKED');
+  });
+});
+
+describe("the Shepherd's 3-step track and Trustee follow-up (pure, Sprint 5Z-Member-Charity)", () => {
+  it('places a request on Vetting, Presentation or Disbursement', () => {
+    const at = (RequestStatus: string, VoteStatus = 'Pending', PaymentOrderId: number | null = null) =>
+      charitableTrackingPosition({ RequestStatus, VoteStatus, PaymentOrderId } as never);
+    expect(CHARITABLE_TRACKING_STEPS).toEqual(['Vetting', 'Presentation', 'Disbursement']);
+    expect(at('Submitted')).toEqual({ stepIndex: 0, stopped: false });
+    expect(at('Claimed by Trustee')).toEqual({ stepIndex: 0, stopped: false });
+    expect(at('Declined')).toEqual({ stepIndex: 0, stopped: true });
+    expect(at('Advanced')).toEqual({ stepIndex: 1, stopped: false });
+    expect(at('Advanced', 'Rejected')).toEqual({ stepIndex: 1, stopped: true });
+    expect(at('Advanced', 'Approved')).toEqual({ stepIndex: 2, stopped: false });
+    expect(at('Advanced', 'Approved', 7)).toEqual({ stepIndex: 3, stopped: false });
+  });
+
+  it('schedules the Trustee follow-up six calendar months after filing, clamped to short months', () => {
+    expect(addCalendarMonths('2026-10-02', 6)).toBe('2027-04-02');
+    expect(addCalendarMonths('2026-08-31', 6)).toBe('2027-02-28');
+    expect(addCalendarMonths('2027-08-31', 6)).toBe('2028-02-29');
+    expect(addCalendarMonths('2026-12-15', 1)).toBe('2027-01-15');
+    expect(charitableTrusteeFollowUpDate({ SubmittedAt: '2026-09-20 19:00:00' })).toBe('2027-03-20');
+    expect(() => addCalendarMonths('10/02/2026', 6)).toThrow();
+  });
+
+  it("builds the Shepherd's tracking notice and logs it on save", () => {
+    const detail = {
+      shepherdFirstName: 'Pat',
+      request: { id: 12, ShepherdMemberID: 3, OrganizationName: 'St. Jude Youth Ministry', AmountRequested: 800, SubmittedAt: '2026-10-02 15:00:00' },
+    } as never;
+    const notice = buildCharitableTrackingNotice(detail);
+    expect(notice).toMatchObject({
+      kind: 'charitable-tracking',
+      key: 'charitable:request:12:filed',
+      memberId: 3,
+      requestId: 12,
+      steps: ['Vetting', 'Presentation', 'Disbursement'],
+      trusteeFollowUpDate: '2027-04-02',
+    });
+    expect(notice.text).toMatch(/^KofC: Thank you, Pat\. Request #12 for St\. Jude Youth Ministry \(\$800\.00\) is filed\./);
+    expect(notice.text.indexOf('Vetting')).toBeLessThan(notice.text.indexOf('Presentation'));
+    expect(notice.text.indexOf('Presentation')).toBeLessThan(notice.text.indexOf('Disbursement'));
+    expect(notice.text).toMatch(/status report on 2027-04-02\.$/);
+
+    const logged: unknown[][] = [];
+    expect(dispatchCharitableTrackingNotice(detail, (...args) => logged.push(args))).toEqual(notice);
+    expect(logged).toEqual([['[charitable-tracking]', JSON.stringify(notice, null, 2)]]);
+  });
+});
+
+describe.each(drivers)('$name driver: My requests on Propose Charity Grant (Sprint 5Z-Member-Charity)', (d) => {
+  it("lists only the actor's own intake requests, newest first, in every status", async () => {
+    const db = await d.make();
+    expect(await db.charities.listMyCharitableRequests(MEMBER.member)).toEqual([]);
+    const first = await db.charities.submitCharitableRequest(MEMBER.member, form({ OrganizationName: 'First' }));
+    await db.charities.submitCharitableRequest(MEMBER.admin, form({ OrganizationName: 'Not mine' }));
+    const second = await db.charities.submitCharitableRequest(MEMBER.member, form({ OrganizationName: 'Second' }));
+    // Filed without a tier, as the member form does: every request starts at tier 1.
+    expect(second.request.RequestTier).toBe(1);
+    await db.charities.triageRequestStatus(MEMBER.admin, first.request.id, { action: 'claim' });
+
+    const mine = await db.charities.listMyCharitableRequests(MEMBER.member);
+    expect(mine.map((r) => r.request.OrganizationName)).toEqual(['Second', 'First']);
+    expect(mine[1].request).toMatchObject({ RequestStatus: 'Claimed by Trustee', ShepherdMemberID: MEMBER.member });
+    expect(mine[1]).toMatchObject({ vetterFirstName: expect.any(String) });
+    await expectRule(db.charities.listMyCharitableRequests(9999), 'MEMBER_NOT_FOUND');
   });
 });

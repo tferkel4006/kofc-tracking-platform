@@ -50,11 +50,12 @@ Every permission also requires an **Active** membership status. Inactive members
 | Record a donation (phone donation desk) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Change or delete a donation | 👤 ² | 👤 ² | ✅ | ✅ | ✅ | 👤 ² |
 | Pay a charity check | — | — | ✅ | ✅ | — | — |
-| Propose a charity gift | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Propose a charity grant (Knight Shepherd, Propose Charity Grant page) ⁴ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 1. **Nobody** signs or pays a report they submitted (`SELF_APPROVAL_BLOCKED`, `SELF_PAYOUT_BLOCKED`), including a Super Admin. Checks pay only reports carrying both signatures (Sprint 5Z-4). Rules: `assertMayIssueExpenseOrder`, `assertMayAuthorizeExpenseOrder`, `assertMayAuditCouncilExpenses`, `assertMayDisburseCouncilExpenses`, `assertDualSigned`.
 2. A member may change a donation they recorded, or one on an event they own (`canChangeDonation`).
 3. **Collusion Guard:** the officer who issued a report's written order may not also counter-sign it (`DUAL_SIGNATURE_CONFLICT`). This matters for a Super Admin, who may sign either line. 👁️ means the Admin can open the desk to follow the work but cannot sign.
+4. Sprint 5Z-Member-Charity: Propose Charity Grant is the **only** entry path for an organization's request; there is no public intake page. The signed-in member is always the Knight Shepherd. Saving sends the Shepherd a 3-step tracking message (Vetting, Presentation, Disbursement), and the Trustees are prompted for a status report 6 months after filing.
 
 ## 2. Annual Budgets
 

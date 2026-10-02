@@ -2445,6 +2445,12 @@ export interface DataService {
      */
     submitCharitableRequest(actorId: number, requestData: NewCharitableRequest): Promise<CharitableRequestDetail>;
     /**
+     * Sprint 5Z-Member-Charity: the intake requests the actor shepherds (ShepherdMemberID = actorId) in every status,
+     * newest (highest id) first, for the Propose Charity Grant page's tracking table. Open to every member; rejects
+     * MEMBER_NOT_FOUND for an unknown actor.
+     */
+    listMyCharitableRequests(actorId: number): Promise<CharitableRequestDetail[]>;
+    /**
      * Claims, annotates, advances or declines (Sprint 5Z-2) a request (CharitableTriageInput). Vetting authority of the request's council, as
      * for listCharitableRequestsQueue, and independent of the request: its Shepherd may never vet it
      * (SELF_VETTING_BLOCKED, Super Admins included). Only the claiming vetter, or an Active Admin of the council or

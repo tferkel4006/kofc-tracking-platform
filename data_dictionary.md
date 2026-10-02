@@ -516,7 +516,7 @@ A Knight Shepherd's intake form for an outside organization asking the council f
 •	ContactEmail (VARCHAR(255), NULL) — The contact's email address.
 •	AmountRequested (DECIMAL(18,2), NOT NULL) — The sum asked for, more than 0, to the cent.
 •	RequestStatus (VARCHAR(50), NOT NULL, DEFAULT 'Submitted') — Submitted, Claimed by Trustee, then Advanced or (Sprint 5Z-2) Declined, in that order only. Enforced by the shared rules layer (no CHECK).
-•	SubmittedAt (DATETIME, NOT NULL, DEFAULT getdate()) — When the Shepherd filed the form (UTC). The queue lists requests by stage, then oldest first.
+•	SubmittedAt (DATETIME, NOT NULL, DEFAULT getdate()) — When the Shepherd filed the form (UTC). The queue lists requests by stage, then oldest first. The Trustees' status-report prompt falls 6 calendar months later (charitableTrusteeFollowUpDate).
 •	ShepherdMemberID (INTEGER, NOT NULL, DEFAULT 0) — Foreign Key references Member(id). The Knight Shepherd who carries the request; always the member who submitted it.
 •	MailingAddress (TEXT, NULL) — Where a check would be mailed.
 •	RelationshipTypeID (INTEGER, NULL) — Foreign Key references CouncilRelationshipType(id). Must be one of the council's own types (INVALID_INPUT).
@@ -529,7 +529,7 @@ A Knight Shepherd's intake form for an outside organization asking the council f
 •	SpecificUse (TEXT, NULL) — What the money will buy; at most 2,000 characters.
 •	TargetBeneficiary (TEXT, NULL) — Who the gift will help; at most 2,000 characters.
 •	AccountabilityPlan (TEXT, NULL) — How the organization will report back to the council; at most 2,000 characters.
-•	RequestTier (INTEGER, NOT NULL, DEFAULT 1) — The request's review tier, 1 to 3 (CHARITABLE_REQUEST_MAX_TIER); the Shepherd sets it and the vetter may change it.
+•	RequestTier (INTEGER, NOT NULL, DEFAULT 1) — The request's review tier, 1 to 3 (CHARITABLE_REQUEST_MAX_TIER). Sprint 5Z-Member-Charity: the member form no longer offers it, so every request is filed at tier 1 and the vetter sets the tier.
 •	VetterMemberID (INTEGER, NULL) — Foreign Key references Member(id). The officer or Trustee who claimed the request; NULL while it is Submitted.
 •	VettingNotes (TEXT, NULL) — The vetter's notes; at most 2,000 characters (CHARITABLE_VETTING_NOTES_MAX_LENGTH).
 •	VettedDate (DATETIME, NULL) — When the request was advanced to the vote (UTC).
@@ -538,6 +538,7 @@ A Knight Shepherd's intake form for an outside organization asking the council f
 •	VoteStatus (VARCHAR(50), NOT NULL, DEFAULT 'Pending') — The council's vote on an advanced request: Pending, Approved or Rejected. Sprint 5Z-9: meetings.finalizeProposedMotionVote records it from the motion carrying the request - Passed sets Approved with AmountApproved = AmountRequested (the request then joins the Financial Secretary's funding queue, charities.listApprovedFundingQueue, until a check pays it), Failed sets Rejected, Tabled leaves it Pending.
 •	AmountApproved (DECIMAL(18,2), NOT NULL, DEFAULT 0.00) — The sum the council voted; 0.00 until the vote.
 •	PaymentOrderId (INTEGER, NULL) — Foreign Key references CharitableDisbursementLedger(id). The check that paid the request.
+Workflow rule (Sprint 5Z-Member-Charity). A request enters only through the members-only Propose Charity Grant page (/charities/propose); there is no public intake form or route. The Shepherd is never typed: the data service records the signed-in member as ShepherdMemberID. Saving the form MUST dispatch the Shepherd's tracking notice (dispatchCharitableTrackingNotice) naming the three steps the request moves through - Vetting (Submitted, Claimed by Trustee), Presentation (Advanced, the council's vote at a Monthly meeting) and Disbursement (Approved, until the Financial Secretary or Treasurer pays the check) - and MUST schedule the Trustees' status-report prompt CHARITABLE_TRUSTEE_FOLLOWUP_MONTHS (6) calendar months after SubmittedAt, clamped to the last day of a short month. No SMS gateway or profile-log table exists yet, so, like the hours reminders, the notice is printed with console.log; the follow-up date is derived from SubmittedAt rather than stored. charities.listMyCharitableRequests gives the Shepherd their own requests, newest first, and charitableTrackingPosition places each on the track.
 •	MissionAreaID (INTEGER, NULL) — Sprint 5Z-2: Foreign Key references CouncilMissionArea(id). The mission area the Shepherd files the request under on the intake form; must be one of the council's own (INVALID_INPUT).
 •	TargetBudgetLineID (INTEGER, NULL) — Sprint 5Z-2: Foreign Key references CouncilBudgetForecast(id). The budget line the vetter would pay the gift from, set from the Pooled Vetting Desk (triageRequestStatus); must be a line of the request's council (INVALID_INPUT).
 Seed.sql's presentation data (loaded by the apps, not by the automated tests) puts five requests in the pipeline for Council 15295: two Submitted, two Claimed by Trustee and one Advanced.

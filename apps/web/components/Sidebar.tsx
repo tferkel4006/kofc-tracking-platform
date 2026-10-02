@@ -67,10 +67,9 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
     restrictedTo: 'the Grand Knight and Admins',
   },
   'expenses/disbursements': { href: '/expenses/disbursements', label: 'Bulk Check Disbursements', hint: 'Pay dual-signed reports by check' },
-  'charities/propose': { href: '/charities/propose', label: 'Propose Charity Grant', hint: 'Suggest a charity gift and follow it' },
+  'charities/propose': { href: '/charities/propose', label: 'Propose Charity Grant', hint: "Shepherd an organization's request to the council and follow it" },
   'charities/registry': { href: '/charities/registry', label: 'Global Charities Registry', hint: 'Search, suggest and add charities' },
   'charities/queue': { href: '/charities/queue', label: 'Charitable Disbursements Ledger', hint: 'Pay charity proposals by check' },
-  'charities/intake': { href: '/charities/intake', label: 'Charitable Intake Sheet', hint: "Shepherd an organization's request to the council" },
   'charities/vetting': {
     href: '/charities/vetting',
     label: 'Charity Vetting Queue',

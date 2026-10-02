@@ -267,7 +267,7 @@ function VettingDesk() {
           {queue.loading && !queue.data ? (
             <p className="text-sm text-muted">Loading the queue…</p>
           ) : rows.length === 0 ? (
-            <Empty>No intake requests yet. Members file them from the Charitable Intake Sheet.</Empty>
+            <Empty>No intake requests yet. Members file them from Propose Charity Grant.</Empty>
           ) : (
             <Table
               caption="Charitable intake requests in pipeline order: unassigned, under review, advanced, declined"

@@ -1368,6 +1368,11 @@ GO
 -- vote. RequestStatus runs Submitted -> Claimed by Trustee -> Advanced; VoteStatus records the council's vote
 -- (Pending until voted). Both are enforced by the shared rules layer (no CHECK). Event.MissionAreaID and
 -- Meeting.MissionAreaID file an event or meeting under one of the council's mission areas (NULL while unfiled).
+-- Sprint 5Z-Member-Charity rule (no structural change; schema version stays 29): requests enter only through the
+-- members-only Propose Charity Grant page, never a public form; ShepherdMemberID is always the signed-in member who
+-- saves it. Saving MUST dispatch the Shepherd's 3-step tracking notice (Vetting -> Presentation -> Disbursement) to
+-- that member, and the Trustees' status-report prompt falls CHARITABLE_TRUSTEE_FOLLOWUP_MONTHS (6) months after
+-- SubmittedAt (charitableTrusteeFollowUpDate). RequestTier is set by the vetter; the form no longer offers it.
 -- =========================================================================
 CREATE TABLE [CouncilRelationshipType] (
 	[id] INTEGER NOT NULL IDENTITY,

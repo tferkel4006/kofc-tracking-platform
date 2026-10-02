@@ -48,7 +48,6 @@ export type PortalArea =
   | 'charities/propose'
   | 'charities/registry'
   | 'charities/queue'
-  | 'charities/intake'
   | 'charities/vetting'
   | 'lessons-registry'
   | 'donations'
@@ -454,9 +453,9 @@ export function portalAreas(u: Actor): PortalArea[] {
   // Every member files their own expense reports; the council's leadership reviews and returns them; the Financial
   // Secretary issues the written order and the Grand Knight counter-signs (Sprint 5Z-4; Admins read both desks); only
   // its finance officers (or a Super Admin) pay them.
-  // Every member may propose a charity grant (Sprint 5V).
-  // Every member may carry an outside organization's request to the council as its Knight Shepherd (Sprint 5Z-2).
-  areas.push('ledger', 'expenses', 'charities/propose', 'charities/intake');
+  // Every member may carry an organization's grant request to the council as its Knight Shepherd from Propose Charity
+  // Grant (Sprint 5Z-2; the separate intake sheet folded into it in Sprint 5Z-Member-Charity, so there is no other entry path).
+  areas.push('ledger', 'expenses', 'charities/propose');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/queue');
   if (isAdmin(u) || isFinancialSecretary(u)) areas.push('expenses/audit');
   if (isAdmin(u) || isGrandKnight(u)) areas.push('expenses/authorize');
@@ -503,7 +502,7 @@ export interface PortalNavGroup {
  * exactly once.
  */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
-  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, showLocked: false, items: ['member-actions', 'expenses', 'charities/propose', 'charities/intake'] },
+  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, showLocked: false, items: ['member-actions', 'expenses', 'charities/propose'] },
   {
     id: 'executive',
     label: 'Executive Action Desks',

@@ -118,7 +118,6 @@ describe('portal permissions', () => {
       'ledger',
       'expenses',
       'charities/propose',
-      'charities/intake',
       'expenses/queue',
       'expenses/audit',
       'expenses/authorize',
@@ -154,7 +153,6 @@ describe('portal permissions', () => {
       'ledger',
       'expenses',
       'charities/propose',
-      'charities/intake',
       'expenses/queue',
       'expenses/audit',
       'expenses/authorize',
@@ -171,8 +169,8 @@ describe('portal permissions', () => {
       'distribution-lists',
       'profile',
     ]);
-    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
-    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
+    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
+    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
   });
 
   it('gives every member their own expense reports, leadership the audit queue, and only finance officers and Super Admins the check ledger', () => {
@@ -246,7 +244,7 @@ describe('portal permissions', () => {
 
     it('shows a Super Admin every group in full', () => {
       expect(shape(superAdmin)).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose', 'charities/intake']],
+        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
         ['Executive Action Desks', ['expenses/audit', 'expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live']],
         ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
         ['Fraternal Scheduler', ['calendar', 'events', 'meetings', 'activities', 'ledger', 'elections', 'gallery', 'lessons-registry']],
@@ -257,7 +255,7 @@ describe('portal permissions', () => {
 
     it('shows a council Admin everything but the global tables, councils and the check ledger', () => {
       expect(shape(admin)).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose', 'charities/intake']],
+        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
         ['Executive Action Desks', ['expenses/audit', 'expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live']],
         ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
         ['Fraternal Scheduler', ['calendar', 'events', 'meetings', 'activities', 'ledger', 'elections', 'gallery', 'lessons-registry']],
@@ -268,7 +266,7 @@ describe('portal permissions', () => {
 
     it('shows a Treasurer the full financial ledgers and the donation lookups', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Treasurer'] }))).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose', 'charities/intake']],
+        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
         ['Executive Action Desks', ['charities/vetting', 'meetings/live']],
         ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
         ['Fraternal Scheduler', ['calendar', 'meetings', 'ledger', 'elections', 'gallery']],
@@ -279,7 +277,7 @@ describe('portal permissions', () => {
 
     it('files the Council Lookups (agenda templates, Sprint 5Y-6) and the Appointed Leadership Matrix under Administrative Lookups for a Grand Knight who is a plain Member', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose', 'charities/intake']],
+        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
         ['Executive Action Desks', ['expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live']],
         ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
         ['Fraternal Scheduler', ['calendar', 'meetings', 'ledger', 'elections', 'gallery']],
@@ -290,7 +288,7 @@ describe('portal permissions', () => {
 
     it('drops the Administrative Lookups group for plain members and other officers', () => {
       expect(shape(officer)).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose', 'charities/intake']],
+        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
         // Sprint 5Z-2: officers (Trustees included) vet charitable requests; Sprint 5Z-10: they run the live console.
         ['Executive Action Desks', ['charities/vetting', 'meetings/live']],
         // Sprint 5Z-2.5 and 5Z-8: officers read the executive and financial dashboards.
@@ -299,7 +297,7 @@ describe('portal permissions', () => {
         ['Financial Ledgers', ['financials/budget']],
       ]);
       expect(shape(member)).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose', 'charities/intake']],
+        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
         ['Fraternal Scheduler', ['calendar', 'meetings', 'ledger', 'elections', 'gallery']],
         ['Financial Ledgers', ['financials/budget']],
       ]);
@@ -453,8 +451,7 @@ describe('portal permissions', () => {
         'ledger',
         'expenses',
         'charities/propose',
-        'charities/intake',
-        'expenses/queue',
+          'expenses/queue',
         // Sprint 5Z-4: the Financial Secretary alone issues written orders on the audit desk.
         ...(role === 'Financial Secretary' ? ['expenses/audit'] : []),
         'expenses/disbursements',
@@ -471,7 +468,7 @@ describe('portal permissions', () => {
         'profile',
       ]);
     }
-    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/intake', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
   });
 
   it('gives council leadership the Supreme sync and the alert dispatch, each for their own council (Sprint 5T)', () => {

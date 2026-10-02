@@ -4267,6 +4267,12 @@ export class SqliteDataService implements DataService {
       return this.charitableRequestDetails(db, '[CouncilID] = ?', [councilId]);
     },
 
+    listMyCharitableRequests: async (actorId) => {
+      const db = await this.ready();
+      await this.requireMember(db, actorId);
+      return (await this.charitableRequestDetails(db, '[ShepherdMemberID] = ?', [actorId])).sort((a, b) => b.request.id - a.request.id);
+    },
+
     submitCharitableRequest: async (actorId, requestData) => {
       const clean = cleanCharitableRequest(requestData);
       const db = await this.ready();
