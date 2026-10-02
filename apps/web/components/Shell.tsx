@@ -246,6 +246,10 @@ function SignIn() {
   );
 }
 
+/** The Sprint 5Z-Demo-Roster welcome for the executive demo logins seeded in Seed.sql (Credentials 19-21). */
+export const DEMO_ROSTER_WELCOME =
+  'Welcome Worthy Grand Knight Tom, Worthy Deputy Grand Knight David, and Worthy Trustee Hector! St. Jude Council 15295 Enterprise Flight Deck is Fully Operational.';
+
 function Frame({ children }: { children: ReactNode }) {
   const { user } = useSession();
   const pathname = usePathname();
@@ -265,6 +269,8 @@ function Frame({ children }: { children: ReactNode }) {
         <AlertBell />
         <MemberMenu />
       </header>
+      {/* Sprint 5Z-Demo-Roster: executive demo greeting, navy on gold under the header. */}
+      <p className="bg-gold px-6 py-2 text-center text-sm font-bold text-navy">{DEMO_ROSTER_WELCOME}</p>
       <div className="flex flex-1">
         <Sidebar user={user} pathname={pathname} />
         <main className="min-w-0 flex-1 bg-white p-6">{children}</main>

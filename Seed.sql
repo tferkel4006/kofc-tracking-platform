@@ -583,3 +583,35 @@ VALUES
 (1, 4, '2026-09-15 00:00:00', 'Transfer from Operating Checking to General Savings', 1000.00, 0.00, NULL, NULL, 0, NULL, 'seed-txn-0014'),
 (1, 1, '2026-09-15 00:00:00', 'Transfer from Operating Checking to General Savings', 0.00, 1000.00, NULL, NULL, 0, NULL, 'seed-txn-0014');
 GO
+
+-- ==============================================================================
+-- Sprint 5Z-Demo-Roster: executive demo logins for Council 15295 (CouncilID 1)
+-- Credentials 19-21 / Member 19-21, dev password dev-pass-secure-9912 (hashed by the drivers at load, like every
+-- other seed login). Plain members (MemberTypeID 3): their access comes from their seats, per the Sprint 5Z-2.5
+-- executive-officer rule. They share their seats with the baseline holders (Super Admin is Grand Knight, Michael
+-- O'Connor is Deputy Grand Knight, William Schmidt holds Trustee 1). Last names are placeholders.
+-- ==============================================================================
+INSERT INTO [Credentials] ([Username], [Password])
+VALUES
+('tom.gk@kofc15295.org', 'dev-pass-secure-9912'),          -- ID 19
+('david.dgk@kofc15295.org', 'dev-pass-secure-9912'),        -- ID 20
+('hector.trustee@kofc15295.org', 'dev-pass-secure-9912');  -- ID 21
+GO
+
+INSERT INTO [Member] (
+    [CouncilID], [MemberNumber], [MemberFirstName], [MemberLastName],
+    [Phone], [StreetAddress1], [City], [State], [ZipCode], [Email],
+    [DateOfBirth], [StatusID], [DegreeID], [MemberTypeID], [CredentialID]
+)
+VALUES
+(1, 9900019, 'Tom', 'Demo', '503-555-0119', '100 Parish Way', 'Portland', 'OR', '97201', 'tom.gk@kofc15295.org', '1970-01-01', 1, 4, 3, 19),
+(1, 9900020, 'David', 'Demo', '503-555-0120', '100 Parish Way', 'Portland', 'OR', '97201', 'david.dgk@kofc15295.org', '1975-01-01', 1, 3, 3, 20),
+(1, 9900021, 'Hector', 'Demo', '503-555-0121', '100 Parish Way', 'Portland', 'OR', '97201', 'hector.trustee@kofc15295.org', '1965-01-01', 1, 4, 3, 21);
+GO
+
+INSERT INTO [MemberRoles] ([RoleID], [MemberID])
+VALUES
+(1, 19),  -- Grand Knight
+(2, 20),  -- Deputy Grand Knight
+(12, 21); -- Trustee 1 (Seed.sql has no plain 'Trustee' role)
+GO

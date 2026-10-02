@@ -7475,5 +7475,95 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "TransactionID": "seed-txn-0014"
       }
     ]
+  },
+  {
+    "table": "Credentials",
+    "rows": [
+      {
+        "Username": "tom.gk@kofc15295.org",
+        "Password": "dev-pass-secure-9912"
+      },
+      {
+        "Username": "david.dgk@kofc15295.org",
+        "Password": "dev-pass-secure-9912"
+      },
+      {
+        "Username": "hector.trustee@kofc15295.org",
+        "Password": "dev-pass-secure-9912"
+      }
+    ]
+  },
+  {
+    "table": "Member",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "MemberNumber": 9900019,
+        "MemberFirstName": "Tom",
+        "MemberLastName": "Demo",
+        "Phone": "503-555-0119",
+        "StreetAddress1": "100 Parish Way",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97201",
+        "Email": "tom.gk@kofc15295.org",
+        "DateOfBirth": "1970-01-01",
+        "StatusID": 1,
+        "DegreeID": 4,
+        "MemberTypeID": 3,
+        "CredentialID": 19
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 9900020,
+        "MemberFirstName": "David",
+        "MemberLastName": "Demo",
+        "Phone": "503-555-0120",
+        "StreetAddress1": "100 Parish Way",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97201",
+        "Email": "david.dgk@kofc15295.org",
+        "DateOfBirth": "1975-01-01",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 20
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 9900021,
+        "MemberFirstName": "Hector",
+        "MemberLastName": "Demo",
+        "Phone": "503-555-0121",
+        "StreetAddress1": "100 Parish Way",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97201",
+        "Email": "hector.trustee@kofc15295.org",
+        "DateOfBirth": "1965-01-01",
+        "StatusID": 1,
+        "DegreeID": 4,
+        "MemberTypeID": 3,
+        "CredentialID": 21
+      }
+    ]
+  },
+  {
+    "table": "MemberRoles",
+    "rows": [
+      {
+        "RoleID": 1,
+        "MemberID": 19
+      },
+      {
+        "RoleID": 2,
+        "MemberID": 20
+      },
+      {
+        "RoleID": 12,
+        "MemberID": 21
+      }
+    ]
   }
 ];
