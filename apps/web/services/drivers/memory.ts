@@ -428,7 +428,6 @@ import {
   buildDevExtraEvents,
   buildDevMeetings,
   buildDevMessaging,
-  DEV_ACTIVITY,
   DEV_AFFILIATED_COUNCIL,
   DEV_COUNCIL_DONATION_METHODS,
   DEV_COUNCIL_NUMBER,
@@ -629,7 +628,7 @@ export class MemoryDataService implements DataService {
       const stored = cred.Password as string;
       if (stored !== UNREGISTERED_PASSWORD && !isSha256Hex(stored)) (cred as Row).Password = await sha256Hex(stored);
     }
-    this.seedDevMemberAndActivity();
+    this.seedDevMember();
 
     const council = this.store.rows('Council').find((c) => c.CouncilNumber === DEV_COUNCIL_NUMBER);
     if (!council) throw new Error(`Seed.sql did not create Council ${DEV_COUNCIL_NUMBER}`);
@@ -653,8 +652,8 @@ export class MemoryDataService implements DataService {
     for (const c of this.store.rows('Council')) this.backfillLeadershipHistory(this.store, c.id as number);
   }
 
-  /** A pre-provisioned member with a placeholder Credentials row, plus one council activity. */
-  private seedDevMemberAndActivity(): void {
+  /** A pre-provisioned member with a placeholder Credentials row. Council activities come from Seed.sql. */
+  private seedDevMember(): void {
     const council = this.store.rows('Council').find((c) => c.CouncilNumber === DEV_COUNCIL_NUMBER);
     const template = this.store.rows('Member').find((m) => m.CouncilID === council?.id);
     if (!council || !template) throw new Error(`Seed.sql did not create Council ${DEV_COUNCIL_NUMBER} with members`);
@@ -669,11 +668,6 @@ export class MemoryDataService implements DataService {
       DegreeID: template.DegreeID,
       MemberTypeID: this.store.rows('MemberType').find((t) => t.Type === 'Member')?.id,
       CredentialID: cred.id,
-    });
-    this.store.insert('Activities', {
-      ...DEV_ACTIVITY,
-      CategoryID: this.store.rows('Category').find((c) => c.Category === 'Service')?.id,
-      CouncilID: council.id,
     });
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LOOKUP_META, LOOKUP_TABLE_ORDER, SecurityPrivilegeError, type DataService } from '@kofc/shared';
-import { drivers, expectRule, MEMBER, shiftByName } from './helpers';
+import { COUNCIL_ACTIVITIES, drivers, expectRule, MEMBER, shiftByName } from './helpers';
 
 // Dev seed, relative to 2026-09-20 (see helpers.ts). Council ids: 1 = 15295 (own), 2 = 1024 (affiliated),
 // 3 = 3311 (unaffiliated). Parish Food Drive runs 09-22..09-26 for the own council only.
@@ -132,7 +132,7 @@ describe.each(drivers)('$name driver: councils and activities', (d) => {
 
   it('lists a council’s own activities only', async () => {
     const db = await d.make();
-    expect((await db.activities.listByCouncil(OWN)).map((a) => a.ActivityName)).toEqual(['Highway Cleanup']);
+    expect((await db.activities.listByCouncil(OWN)).map((a) => a.ActivityName)).toEqual([...COUNCIL_ACTIVITIES]);
     expect(await db.activities.listByCouncil(AFFILIATED)).toEqual([]);
   });
 });

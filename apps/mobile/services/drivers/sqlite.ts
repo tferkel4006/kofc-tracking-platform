@@ -434,7 +434,6 @@ import {
   buildDevExtraEvents,
   buildDevMeetings,
   buildDevMessaging,
-  DEV_ACTIVITY,
   DEV_AFFILIATED_COUNCIL,
   DEV_COUNCIL_DONATION_METHODS,
   DEV_COUNCIL_NUMBER,
@@ -629,7 +628,7 @@ export class SqliteDataService implements DataService {
       for (const statement of SEED_STATEMENTS) await db.execAsync(statement);
       if (this.presentationData) for (const statement of PRESENTATION_SEED_STATEMENTS) await db.execAsync(statement);
       await this.hashSeededPasswords(db);
-      await this.seedDevMemberAndActivity(db);
+      await this.seedDevMember(db);
       await this.seedDevMeetings(db);
       await this.seedDevEvents(db);
       await this.seedDevExtras(db);
@@ -662,8 +661,8 @@ export class SqliteDataService implements DataService {
     }
   }
 
-  /** A pre-provisioned member with a placeholder Credentials row, plus one council activity. */
-  private async seedDevMemberAndActivity(db: SQLite.SQLiteDatabase): Promise<void> {
+  /** A pre-provisioned member with a placeholder Credentials row. Council activities come from Seed.sql. */
+  private async seedDevMember(db: SQLite.SQLiteDatabase): Promise<void> {
     const council = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Council] WHERE [CouncilNumber] = ?', [
       DEV_COUNCIL_NUMBER,
     ]);
@@ -701,11 +700,6 @@ export class SqliteDataService implements DataService {
         template.DegreeID,
         cred.lastInsertRowId,
       ],
-    );
-    await db.runAsync(
-      `INSERT INTO [Activities] ([ActivityName], [ActivityDescription], [CategoryID], [CouncilID])
-       VALUES (?, ?, (SELECT [id] FROM [Category] WHERE [Category] = 'Service'), ?)`,
-      [DEV_ACTIVITY.ActivityName, DEV_ACTIVITY.ActivityDescription, council.id],
     );
   }
 

@@ -249,6 +249,26 @@ Values
 GO
 
 -- ==============================================================================
+-- Sprint 5Z-Activity-Registry: the standing operational activities of Council 15295 (CouncilID 1) only, ids 1-11 in
+-- name order. Members log unscheduled hours against them; every other council defines its own. CategoryID: 1
+-- Fellowship, 2 Service, 4 Parish Community, 5 Fundraising.
+-- ==============================================================================
+Insert Into [Activities] ([ActivityName], [ActivityDescription], [CategoryID], [CouncilID])
+Values
+('Bedding drive', 'Collecting blankets, sheets and pillows for families in need', 2, 1),
+('Coats for kids', 'Collecting and distributing winter coats for local children', 2, 1),
+('Food drive', 'Collecting and sorting food for the parish pantry', 2, 1),
+('Greeting', 'Welcoming parishioners at the church doors before Mass', 4, 1),
+('Meal delivery', 'Preparing and delivering meals to homebound and grieving families', 2, 1),
+('Planning', 'Council planning and committee work outside scheduled meetings', 1, 1),
+('Poop/Garbage patrol', 'Picking up litter and pet waste around the parish grounds', 2, 1),
+('Socials', 'Hosting and staffing council and parish social gatherings', 1, 1),
+('Transporting', 'Driving parishioners to Mass, appointments and council events', 2, 1),
+('Ultrasound', 'Supporting the Ultrasound Initiative for local pregnancy centers', 5, 1),
+('Ushering', 'Ushering and taking up the collection at Mass', 4, 1);
+GO
+
+-- ==============================================================================
 -- Sprint 5Z-7: Council 15295's standard chart of accounts (GLAccount ids 1-14). The two virtual goal accounts are
 -- earmarks inside Operating Checking (ParentAccountID 1). Sprint 5Z-8 targets: Goal #1 $4,000.00, Goal #2 $1,500.00.
 -- ==============================================================================

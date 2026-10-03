@@ -67,3 +67,18 @@ export async function shiftByName(db: DataService, name: string): Promise<Shift>
 
 // Dev seed member ids: 1 super admin, 2 admin, 3 member, 4 newly enrolled (no password yet).
 export const MEMBER = { superAdmin: 1, admin: 2, member: 3, newMember: 4 } as const;
+
+/** Council 15295's operational activities from Seed.sql, ids 1-11 in name order. */
+export const COUNCIL_ACTIVITIES = [
+  'Bedding drive',
+  'Coats for kids',
+  'Food drive',
+  'Greeting',
+  'Meal delivery',
+  'Planning',
+  'Poop/Garbage patrol',
+  'Socials',
+  'Transporting',
+  'Ultrasound',
+  'Ushering',
+] as const;

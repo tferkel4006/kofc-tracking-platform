@@ -5092,6 +5092,77 @@ export const SEED_DATA: readonly SeedTable[] = [
     ]
   },
   {
+    "table": "Activities",
+    "rows": [
+      {
+        "ActivityName": "Bedding drive",
+        "ActivityDescription": "Collecting blankets, sheets and pillows for families in need",
+        "CategoryID": 2,
+        "CouncilID": 1
+      },
+      {
+        "ActivityName": "Coats for kids",
+        "ActivityDescription": "Collecting and distributing winter coats for local children",
+        "CategoryID": 2,
+        "CouncilID": 1
+      },
+      {
+        "ActivityName": "Food drive",
+        "ActivityDescription": "Collecting and sorting food for the parish pantry",
+        "CategoryID": 2,
+        "CouncilID": 1
+      },
+      {
+        "ActivityName": "Greeting",
+        "ActivityDescription": "Welcoming parishioners at the church doors before Mass",
+        "CategoryID": 4,
+        "CouncilID": 1
+      },
+      {
+        "ActivityName": "Meal delivery",
+        "ActivityDescription": "Preparing and delivering meals to homebound and grieving families",
+        "CategoryID": 2,
+        "CouncilID": 1
+      },
+      {
+        "ActivityName": "Planning",
+        "ActivityDescription": "Council planning and committee work outside scheduled meetings",
+        "CategoryID": 1,
+        "CouncilID": 1
+      },
+      {
+        "ActivityName": "Poop/Garbage patrol",
+        "ActivityDescription": "Picking up litter and pet waste around the parish grounds",
+        "CategoryID": 2,
+        "CouncilID": 1
+      },
+      {
+        "ActivityName": "Socials",
+        "ActivityDescription": "Hosting and staffing council and parish social gatherings",
+        "CategoryID": 1,
+        "CouncilID": 1
+      },
+      {
+        "ActivityName": "Transporting",
+        "ActivityDescription": "Driving parishioners to Mass, appointments and council events",
+        "CategoryID": 2,
+        "CouncilID": 1
+      },
+      {
+        "ActivityName": "Ultrasound",
+        "ActivityDescription": "Supporting the Ultrasound Initiative for local pregnancy centers",
+        "CategoryID": 5,
+        "CouncilID": 1
+      },
+      {
+        "ActivityName": "Ushering",
+        "ActivityDescription": "Ushering and taking up the collection at Mass",
+        "CategoryID": 4,
+        "CouncilID": 1
+      }
+    ]
+  },
+  {
     "table": "GLAccount",
     "rows": [
       {

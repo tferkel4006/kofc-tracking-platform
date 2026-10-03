@@ -107,12 +107,6 @@ export const DEV_UNREGISTERED_MEMBER = {
   DateOfBirth: '1995-03-03',
 } as const;
 
-/** Dev council activity for logging unscheduled time (Specifications: "garbage collection"). */
-export const DEV_ACTIVITY = {
-  ActivityName: 'Highway Cleanup',
-  ActivityDescription: 'Adopt-a-highway litter pickup',
-} as const;
-
 export interface DevShift {
   shift: Omit<Shift, 'id' | 'EventID' | 'NumberVolunteersSignedUp'>;
   /** Emails of members already signed up; NumberVolunteersSignedUp is set to this count. */

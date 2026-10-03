@@ -12,7 +12,7 @@ import {
   type NewParish,
 } from '@kofc/shared';
 import { TABLES } from '../apps/web/services/generated/schema.generated';
-import { drivers, expectRule, MEMBER } from './helpers';
+import { COUNCIL_ACTIVITIES, drivers, expectRule, MEMBER } from './helpers';
 
 // Sprint 5G maintenance: councils are Super Admin only (SUPER_ADMIN_REQUIRED); parishes, pastors, activities and
 // distribution lists belong to their council's Admins and any Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED).
@@ -39,7 +39,7 @@ async function serviceCategory(db: DataService): Promise<number> {
   return (await db.lookups.list('Category')).find((c) => c.Category === 'Service')!.id;
 }
 
-async function activityFor(db: DataService, councilId: number, name = 'Coats for Kids'): Promise<NewActivity> {
+async function activityFor(db: DataService, councilId: number, name = 'Rosary Rally'): Promise<NewActivity> {
   return { ActivityName: name, ActivityDescription: 'Winter coat collection', CategoryID: await serviceCategory(db), CouncilID: councilId };
 }
 
@@ -215,7 +215,7 @@ describe.each(drivers)('$name driver: council maintenance', (d) => {
     const before = d.count(db, 'Council');
     const err = await expectRule(db.councils.remove(MEMBER.superAdmin, OWN), 'RECORD_IN_USE');
     expect(err.message).toMatch(/\d+ members/);
-    expect(err.message).toContain('1 activity');
+    expect(err.message).toContain('11 activities');
     expect(d.count(db, 'Council')).toBe(before);
 
     const fresh = await db.councils.create(MEMBER.superAdmin, { CouncilNumber: 8082, CouncilName: 'Parish Holder', State: 'OR' });
@@ -359,11 +359,13 @@ describe.each(drivers)('$name driver: activities', (d) => {
   it('lets a council Admin add, edit and delete an activity', async () => {
     const db = await d.make();
     const created = await db.activities.create(MEMBER.admin, await activityFor(db, OWN));
-    expect(created).toMatchObject({ ActivityName: 'Coats for Kids', CouncilID: OWN });
-    expect((await db.activities.listByCouncil(OWN)).map((a) => a.ActivityName)).toEqual(['Coats for Kids', 'Highway Cleanup']);
+    expect(created).toMatchObject({ ActivityName: 'Rosary Rally', CouncilID: OWN });
+    expect((await db.activities.listByCouncil(OWN)).map((a) => a.ActivityName)).toEqual(
+      [...COUNCIL_ACTIVITIES, 'Rosary Rally'].sort((a, b) => a.localeCompare(b)),
+    );
 
     expect(await db.activities.update(MEMBER.admin, created.id, { ActivityDescription: 'Coats for local schools' })).toMatchObject({
-      ActivityName: 'Coats for Kids',
+      ActivityName: 'Rosary Rally',
       ActivityDescription: 'Coats for local schools',
     });
     expect(await db.activities.get(created.id)).toMatchObject({ ActivityDescription: 'Coats for local schools' });
@@ -382,13 +384,13 @@ describe.each(drivers)('$name driver: activities', (d) => {
     await expectPrivilege(db.activities.update(otherAdmin, 1, { ActivityName: 'Hijacked' }), 'COUNCIL_ACCESS_DENIED');
     await expectPrivilege(db.activities.remove(otherAdmin, 1), 'COUNCIL_ACCESS_DENIED');
     expect(d.count(db, 'Activities')).toBe(before);
-    expect((await db.activities.get(1))?.ActivityName).toBe('Highway Cleanup');
+    expect((await db.activities.get(1))?.ActivityName).toBe('Bedding drive');
   });
 
   it('rejects an unknown category, a duplicate name and a blank description', async () => {
     const db = await d.make();
     await expectRule(db.activities.create(MEMBER.admin, { ...(await activityFor(db, OWN)), CategoryID: 999 }), 'INVALID_INPUT');
-    await expectRule(db.activities.create(MEMBER.admin, await activityFor(db, OWN, 'highway cleanup')), 'INVALID_INPUT');
+    await expectRule(db.activities.create(MEMBER.admin, await activityFor(db, OWN, 'coats FOR kids')), 'INVALID_INPUT');
     await expectRule(db.activities.update(MEMBER.admin, 1, { ActivityDescription: '' }), 'INVALID_INPUT');
   });
 

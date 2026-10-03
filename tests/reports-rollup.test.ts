@@ -27,7 +27,7 @@ import { openDatabases } from './shims/expo-sqlite';
 // Dev seed, relative to 2026-09-20 (see helpers.ts). Council 1 = 15295 (own), 2 = 1024 (affiliated).
 // Own-council events, all owned by the seeded Admin (member 2): Fall Grounds Cleanup (09-10, shift Leaf Raking,
 // member 3 signed up), Winter Coat Sort (08-31), Parish Food Drive (09-22). Neighborhood Blood Drive is the
-// affiliated council's only. Council 1 has every donation method enabled and one activity, Highway Cleanup.
+// affiliated council's only. Council 1 has every donation method enabled and the 11 Seed.sql activities.
 // Nothing seeds donations, EventTime or ActivityTime.
 const OWN = 1;
 const OTHER = 2;
@@ -506,10 +506,10 @@ describe.each(drivers)('$name driver: profile options and activity history', (d:
 
   it('moves an activity to history once time is logged and lists its entries with member names', async () => {
     const db = await d.make();
-    const [cleanup] = await db.activities.listByCouncil(OWN);
-    expect(await db.activities.listSummaries(OWN)).toEqual([
-      { activity: cleanup, entryCount: 0, totalHours: 0, lastLoggedOn: null, archived: false },
-    ]);
+    const activities = await db.activities.listByCouncil(OWN);
+    const cleanup = activities.find((a) => a.ActivityName === 'Poop/Garbage patrol')!;
+    const untouched = (a: (typeof activities)[number]) => ({ activity: a, entryCount: 0, totalHours: 0, lastLoggedOn: null, archived: false });
+    expect(await db.activities.listSummaries(OWN)).toEqual(activities.map(untouched));
     expect(await db.activityTime.listByActivity(cleanup.id)).toEqual({ activity: cleanup, entries: [], totalHours: 0 });
 
     const a = await db.activityTime.logHours(MEMBER.member, cleanup.id, 1.5, '2026-09-01', 'north exit');
@@ -525,9 +525,9 @@ describe.each(drivers)('$name driver: profile options and activity history', (d:
     expect(log.entries[0].firstName).toBe(log.entries[2].firstName);
     expect(log.entries[0].lastName).not.toBe('');
     expect(log.totalHours).toBe(4.5);
-    expect(await db.activities.listSummaries(OWN)).toEqual([
-      { activity: cleanup, entryCount: 3, totalHours: 4.5, lastLoggedOn: '2026-09-12', archived: true },
-    ]);
+    expect(await db.activities.listSummaries(OWN)).toEqual(
+      activities.map((a) => (a === cleanup ? { activity: a, entryCount: 3, totalHours: 4.5, lastLoggedOn: '2026-09-12', archived: true } : untouched(a))),
+    );
     await expectRule(db.activityTime.listByActivity(999), 'ACTIVITY_NOT_FOUND');
   });
 });
