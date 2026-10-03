@@ -57,7 +57,19 @@ Key points:
 - An **event's owner** may record that event's post-event results and lessons, even as an ordinary member.
 - These rules are enforced by the data service as well as the screens. A refused action shows a message and **changes nothing**.
 
-![Image: Admin Sidebar By Role]
+![Member Actions Hub with the role-filtered sidebar (/member-actions)](../generated/dashboard_visual_catalog/member-actions.png)
+
+**Expense desks**
+
+![My Expense Reports (/expenses)](../generated/dashboard_visual_catalog/expenses.png)
+
+![FS Audit Desk (/expenses/audit)](../generated/dashboard_visual_catalog/expenses_audit.png)
+
+![GK Authorization Desk (/expenses/authorize)](../generated/dashboard_visual_catalog/expenses_authorize.png)
+
+![Leadership Auditing Queue (/expenses/queue)](../generated/dashboard_visual_catalog/expenses_queue.png)
+
+![Bulk Check Disbursements (/expenses/disbursements)](../generated/dashboard_visual_catalog/expenses_disbursements.png)
 
 ---
 
@@ -117,7 +129,9 @@ Repeat for each day and time slot of a multi-day event.
 
 To change or remove a shift, use **Edit** (then **Save** or **Cancel**) or **Delete** (then **Confirm delete** or **Keep**). A shift that members have signed up for or logged time against cannot be deleted (see §13).
 
-![Image: Event Planner Split Screen]
+![Event Planner split screen (/events)](../generated/dashboard_visual_catalog/events.png)
+
+![Council calendar (/calendar)](../generated/dashboard_visual_catalog/calendar.png)
 
 ![Image: Shift Grid]
 
@@ -176,6 +190,8 @@ When a project needs specific trades (electricians, carpenters, cooks and so on)
 
 If the drawer says *"No member of this council has recorded a skill yet,"* ask members to add their skills under **My Profile**. You can also edit a member's skills and training for them from their record (**Skills & training**).
 
+![Affiliated Roster (/members)](../generated/dashboard_visual_catalog/members.png)
+
 ![Image: Skills Filter Drawer]
 
 ---
@@ -206,7 +222,17 @@ Each council keeps its own templates. The **Event** form has the same **Multi-Da
 
 For who may do what across the platform, see the [Role Permissions Matrix](ROLE_PERMISSIONS_MATRIX.md).
 
-![Image: Meeting Center]
+![Meeting Center (/meetings)](../generated/dashboard_visual_catalog/meetings.png)
+
+![Annual Cadence Manager (/meetings/cadence)](../generated/dashboard_visual_catalog/meetings_cadence.png)
+
+![Live Meeting Console (/meetings/live)](../generated/dashboard_visual_catalog/meetings_live.png)
+
+![Nominations and elections (/elections)](../generated/dashboard_visual_catalog/elections.png)
+
+![Appointed positions (/elections/appointments)](../generated/dashboard_visual_catalog/elections_appointments.png)
+
+![Photo gallery (/gallery)](../generated/dashboard_visual_catalog/gallery.png)
 
 ---
 
@@ -277,7 +303,9 @@ Search lessons across **every council**:
 - The newest events are listed first.
 - Lessons from your own council's events are **marked in gold**. You change them on the post-event ledger, not here.
 
-![Image: Post Event Ledger]
+![Post-event Ledger (/ledger)](../generated/dashboard_visual_catalog/ledger.png)
+
+![Lessons Registry (/lessons-registry)](../generated/dashboard_visual_catalog/lessons-registry.png)
 
 ---
 
@@ -299,7 +327,11 @@ Search lessons across **every council**:
 - Finance officers see only the two donation tabs and **Budget categories**.
 - A budget category cannot be deleted while budget lines are filed under it. Move those lines to another category first.
 
-![Image: Council Lookups]
+![Council Lookup Tables (/council-lookups)](../generated/dashboard_visual_catalog/council-lookups.png)
+
+![Activities catalog (/activities)](../generated/dashboard_visual_catalog/activities.png)
+
+![Parishes and pastors (/parishes)](../generated/dashboard_visual_catalog/parishes.png)
 
 ---
 
@@ -313,7 +345,7 @@ Search lessons across **every council**:
 - **Correcting or deleting a donation:** allowed for the member who recorded it, the event's owner, and the council's finance officers, Admins and any Super Admin. A donation's council and its recorder cannot be changed.
 - Event donations must be dated **on or after the event's start**.
 
-![Image: Donations Workspace]
+![Recorded Donations History (/donations)](../generated/dashboard_visual_catalog/donations.png)
 
 ---
 
@@ -353,7 +385,15 @@ Admins, Treasurers, Financial Secretaries and Super Admins see a **Budget tracki
 - **Unbudgeted spend** (one-off events, expenses not linked to an event or meeting, charities without a budget line) is shown under the gauges.
 - Until the council approves and finalizes the year's budget (§12.6) there are no caps, so the panel shows only the spend to date.
 
-![Image: Executive Scorecard]
+![Executive Dashboard Summaries (/dashboard)](../generated/dashboard_visual_catalog/dashboard.png)
+
+**Fraternal Analytics Hub.** The hub's other three pages, read by every seated officer:
+
+![Financial Dashboard (/finance/dashboard)](../generated/dashboard_visual_catalog/finance_dashboard.png)
+
+![General Ledger Spreadsheet (/finance/ledger)](../generated/dashboard_visual_catalog/finance_ledger.png)
+
+![Balance Sheet (/finance/balance-sheet)](../generated/dashboard_visual_catalog/finance_balance-sheet.png)
 
 ---
 
@@ -443,7 +483,7 @@ Admins, Treasurers, Financial Secretaries and Super Admins see a second tab, **H
 - A **Financial performance KPI** card heads the sheet with the year's allocation, actual spend (including unbudgeted spend), variance, fiscal efficiency and lines within budget.
 - A year the council never approved is listed but has no allocations to measure against.
 
-![Image: Annual Budget Projections]
+![Annual Budget Projections (/budget)](../generated/dashboard_visual_catalog/budget.png)
 
 ---
 
@@ -472,9 +512,17 @@ Values marked **Built in** (*"The application depends on this value"*) cannot be
 
 Members send feedback and bug reports from **Online Help Center → Submit System Feedback or Bug Report**. Super Admins see the **Feedback inbox** below that form on the same page. It lists each report newest first, with the sender's name, council, phone, email and the time it was submitted (UTC). No one else can read the inbox.
 
+![Online Help Center with the Feedback inbox (/help)](../generated/dashboard_visual_catalog/help.png)
+
 ### 13.3 Councils
 
 **Path:** sidebar → **Councils**. Only a Super Admin may add, edit or delete a council. Admins manage their council's parishes, pastors, activities and distribution lists instead.
+
+![Global Governance Matrices (/lookups)](../generated/dashboard_visual_catalog/lookups.png)
+
+![Councils (/councils)](../generated/dashboard_visual_catalog/councils.png)
+
+![Supreme sync (/supreme-sync)](../generated/dashboard_visual_catalog/supreme-sync.png)
 
 ---
 
@@ -522,6 +570,8 @@ This section lists every message the platform prepares on its own, who receives 
 
 > **Delivery in this version.** Emails and text messages are **prepared but not yet sent**: the council's email and text-message services are not connected yet. High-priority alerts are always recorded and appear in each recipient's **alert bell**, and they reach phones once push delivery is connected. Until then, use the screens in the **Where to follow it** column and remind members in person or through **Council Messages & Alerts**.
 
+> **Hybrid messaging rule.** Email and text messages are only an external **hook**: a short transactional nudge that tells a member something needs their attention (a shift tomorrow, hours to log, a welcome to the app) and points them back to the platform. They never carry the substance. Conversation notes and replies stay in **Council Messages & Alerts**; double-entry audit narratives stay in the **General Ledger** and on the expense and charity desks; status resolutions (approvals, returns, payments, vetting decisions) stay on the status tags and desks. All of these are reached only by signing in to the platform's private systems, so nothing that names a dollar amount, an audit finding or a member's reason travels over email or text.
+
 ### 🏛️ Charity Grant Proposals
 
 | Step | Message | Recipient | Where to follow it |
@@ -531,6 +581,14 @@ This section lists every message the platform prepares on its own, who receives 
 | 2. Presentation | No message. The request goes on a Monthly meeting at least 10 days out for the council's vote. | — | The meeting's agenda and the **Live Meeting Console**. |
 | 3. Disbursement | No message. The Financial Secretary or Treasurer issues the check. | — | The Shepherd's **My requests** shows the request as paid. |
 | **Six months (about 180 days)** after filing | The Trustees ask the Shepherd for a status report on how the gift was used. | The council's Trustees, who follow up with the Shepherd. | The date is calculated from the filing date and shown in the Shepherd's tracking message. The app does not yet send a reminder on that day, so Trustees should keep their own list. |
+
+![Propose Charity Grant (/charities/propose)](../generated/dashboard_visual_catalog/charities_propose.png)
+
+![Charity Vetting Queue (/charities/vetting)](../generated/dashboard_visual_catalog/charities_vetting.png)
+
+![Charity funding queue (/charities/queue)](../generated/dashboard_visual_catalog/charities_queue.png)
+
+![Global Charities Registry (/charities/registry)](../generated/dashboard_visual_catalog/charities_registry.png)
 
 ### 💸 Expense Report Tracking
 
@@ -556,6 +614,10 @@ The platform does **not** send messages when an expense report changes status. T
 | A member is added to the roster | Welcome email: what the app is, how to get it, how to sign in, and who the council Admin is. | The new member. | The confirmation *"A welcome email with sign-in instructions was queued."* (§5.2). |
 
 Reminders never change anyone's hours: members log their own time, and corrections follow §7 and §8.
+
+![Council Messages & Alerts (/messages)](../generated/dashboard_visual_catalog/messages.png)
+
+![My Distribution Lists (/distribution-lists)](../generated/dashboard_visual_catalog/distribution-lists.png)
 
 ---
 

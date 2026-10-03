@@ -176,6 +176,8 @@ The shift feed shows every shift over the **next 6 months** for your council **a
 
 ![Image: Shift Feed Filters]
 
+![Phone: open signups shift feed with council filter (placeholder)](../generated/mobile_visual_catalog/shift_feed.png)
+
 ---
 
 ## 6. Registering for assignments across councils
@@ -201,6 +203,8 @@ When a shift's sign-ups reach its **minimum number of volunteers**, it locks aut
 - If two members try to take the last place at the same moment, only one succeeds. The other sees a *shift is locked* message.
 
 ![Image: Registration Desk]
+
+![Phone: signing up for an open shift (placeholder)](../generated/mobile_visual_catalog/shift_signup.png)
 
 ---
 
@@ -275,6 +279,10 @@ If you signed up for a shift and have not logged hours:
 
 ![Image: Hour Ledger History]
 
+![Phone: Log time, a shift I worked (placeholder)](../generated/mobile_visual_catalog/log_time_shift.png)
+
+![Phone: Log time, an activity (placeholder)](../generated/mobile_visual_catalog/log_time_activity.png)
+
 ---
 
 ## 8. Logging on-screen QR donations
@@ -348,6 +356,10 @@ Contact your council's Treasurer, Financial Secretary or Admin. You may also cor
 - Attachments such as PDFs, spreadsheets and photos are listed on their message and stay in the thread for later reference. On the phone, attachment previews are not available in this version.
 - The **Messages** tab badge shows how many messages you haven't read yet.
 
+![Phone: Messages inbox with unread badge (placeholder)](../generated/mobile_visual_catalog/messages_inbox.png)
+
+![Phone: message thread with replies (placeholder)](../generated/mobile_visual_catalog/messages_thread.png)
+
 ### 9.2 Fraternal roster (portal)
 
 Open **Member Actions → Fraternal roster** and use **Search by name or number**. The roster lists active Brother Knights of your council and its sister councils, with their **phone and email**.
@@ -361,6 +373,8 @@ Open it from the member menu: select your name and photo at the top right of the
 - **Contact details:** update your phone, email and address, then select **Save contact details**. **Changing your email also changes your sign-in email.**
 - **Working status, skills and training:** record trade skills (for example electrician or carpenter) so Admins can find you when a project needs them.
 - Your name, member number, degree and member type are kept by your council's Admins. Ask them to correct these.
+
+![My Profile in the portal (/profile)](../generated/dashboard_visual_catalog/profile.png)
 
 ![Image: My Profile Skills]
 
@@ -397,6 +411,8 @@ In the portal, open **Online Help Center** and scroll to **Submit System Feedbac
 This section gathers in one place every message the app prepares for you on its own, and where to look for the same information on screen.
 
 > **Delivery in this version.** Emails and text messages are **prepared but not yet sent**: the council's email and text-message services are not connected yet. Until they are, rely on the screens named in the **Where to check** column. Alerts from your officers always appear under the **alert bell** at the top right of the portal.
+
+> **Hybrid messaging rule.** Email and text messages are only an external **hook**: a short nudge that tells you something needs your attention (a shift tomorrow, hours to log, your welcome to the app) and points you back to the app. They never carry the substance. Conversations and replies stay in **Messages** (on the phone) and **Council Messages & Alerts** (in the portal); audit notes on expenses and charity gifts, and every decision about them (approved, returned, paid, vetted), stay on the screens where they are made. You see them only after you sign in, so nothing private travels over email or text.
 
 ### 🏛️ Charity Grant Proposals
 
