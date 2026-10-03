@@ -24,6 +24,7 @@
 13. [Super Admin: system lookups and councils](#13-super-admin-system-lookups-and-councils)
 14. [Data protection rules](#14-data-protection-rules)
 15. [Administrator troubleshooting reference](#15-administrator-troubleshooting-reference)
+16. [Consolidated Automated Communications Matrix](#16-consolidated-automated-communications-matrix)
 
 ---
 
@@ -512,6 +513,49 @@ Members send feedback and bug reports from **Online Help Center → Submit Syste
 | New member cannot sign in | They have not onboarded, or their roster email is wrong. | Check the **Email (also the login)** field. They must create a password on the phone first. |
 
 Quick answers are also in the portal's **Online Help Center**.
+
+---
+
+## 16. Consolidated Automated Communications Matrix
+
+This section lists every message the platform prepares on its own, who receives it, and what officers and Admins can see about it.
+
+> **Delivery in this version.** Emails and text messages are **prepared but not yet sent**: the council's email and text-message services are not connected yet. High-priority alerts are always recorded and appear in each recipient's **alert bell**, and they reach phones once push delivery is connected. Until then, use the screens in the **Where to follow it** column and remind members in person or through **Council Messages & Alerts**.
+
+### 🏛️ Charity Grant Proposals
+
+| Step | Message | Recipient | Where to follow it |
+|---|---|---|---|
+| Request filed on **Propose Charity Grant** | Tracking message naming the 3 steps: **Vetting → Presentation → Disbursement**, and the follow-up date. | The member who filed it (the Knight Shepherd). | **Charity Vetting Queue**; the Shepherd sees **My requests**. |
+| 1. Vetting | No message. An officer or Trustee other than the Shepherd advances or declines the request. | — | **Charity Vetting Queue**. |
+| 2. Presentation | No message. The request goes on a Monthly meeting at least 10 days out for the council's vote. | — | The meeting's agenda and the **Live Meeting Console**. |
+| 3. Disbursement | No message. The Financial Secretary or Treasurer issues the check. | — | The Shepherd's **My requests** shows the request as paid. |
+| **Six months (about 180 days)** after filing | The Trustees ask the Shepherd for a status report on how the gift was used. | The council's Trustees, who follow up with the Shepherd. | The date is calculated from the filing date and shown in the Shepherd's tracking message. The app does not yet send a reminder on that day, so Trustees should keep their own list. |
+
+### 💸 Expense Report Tracking
+
+The platform does **not** send messages when an expense report changes status. The submitter follows the status tag on **My Expense Reports**; officers follow the desks.
+
+| Step | Who acts | Status tag the submitter sees |
+|---|---|---|
+| 1. Filed | The member submits the report with receipts. | **Submitted** |
+| 2. Written order | The **Financial Secretary** presses **📜 Issue Written Order** on the **FS Audit Desk**. | **Order Issued** |
+| 3. Authorized | The **Grand Knight** presses **✍️ Counter-Sign Voucher** on the **GK Authorization Desk**. | **Approved** |
+| 4. Paid | The **Financial Secretary** or **Treasurer** records the check under **Bulk Check Disbursements**. | **Reimbursed** |
+| Sent back | Leadership uses **Reject & Return** in the **Leadership Auditing Queue**. Signatures are cleared. | **Returned** (red), with the reason |
+
+### 👥 Volunteer Service Management
+
+| Trigger | Message | Recipient | Where to follow it |
+|---|---|---|---|
+| A shift starts in **24 hours** | Reminder email with an attached **calendar file** (shift, event, time, place). | Every volunteer signed up for the shift. | The event's shift roster. |
+| A meeting starts in **24 hours** | Reminder email with an attached **calendar file**, including the agenda. | Every invited member. | **Meetings**. Invitations held back by the drip release show a gold **Drip release** tag until their release day. |
+| **Day 5** after a shift with no hours logged | Text reminder to log hours. | The volunteer. | **Shifts awaiting hours** on the dashboard (§7.2) shows how many reminders have been due and the **log by** date. |
+| **Every 7 days** after that | Follow-up text. Stops once the shift is more than 3 months old. | The volunteer. | Same panel; the row shows **Closed** when the window ends. |
+| An officer sends a high-priority alert | Push alert plus an entry in the recipient's **alert bell** (kept 6 months). | Members holding the chosen skills or signed up for the chosen shifts, including volunteers from sister councils. | **Council Messages & Alerts → Dispatch High-Priority Push Notification Alert**. Only the **Financial Secretary**, **Treasurer** and council **Admins** see this tile. |
+| A member is added to the roster | Welcome email: what the app is, how to get it, how to sign in, and who the council Admin is. | The new member. | The confirmation *"A welcome email with sign-in instructions was queued."* (§5.2). |
+
+Reminders never change anyone's hours: members log their own time, and corrections follow §7 and §8.
 
 ---
 

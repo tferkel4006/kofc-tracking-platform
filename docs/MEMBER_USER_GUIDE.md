@@ -19,6 +19,7 @@
 8. [Logging on-screen QR donations](#8-logging-on-screen-qr-donations)
 9. [Messages, the fraternal roster and your profile](#9-messages-the-fraternal-roster-and-your-profile)
 10. [Troubleshooting quick reference](#10-troubleshooting-quick-reference)
+11. [Consolidated Automated Communications Matrix](#11-consolidated-automated-communications-matrix)
 
 ---
 
@@ -388,3 +389,46 @@ Still stuck? Select **Help** (the question-mark link at the top right of the por
 ### Sending feedback or reporting a bug
 
 In the portal, open **Online Help Center** and scroll to **Submit System Feedback or Bug Report**. Your name, council, phone and email are filled in for you and cannot be edited there (change them in **My Profile**). Describe what happened in the box, up to 2,000 characters, and select **Send feedback**. Reports go to the platform's Super Admins.
+
+---
+
+## 11. Consolidated Automated Communications Matrix
+
+This section gathers in one place every message the app prepares for you on its own, and where to look for the same information on screen.
+
+> **Delivery in this version.** Emails and text messages are **prepared but not yet sent**: the council's email and text-message services are not connected yet. Until they are, rely on the screens named in the **Where to check** column. Alerts from your officers always appear under the **alert bell** at the top right of the portal.
+
+### 🏛️ Charity Grant Proposals
+
+| When | What you receive | Where to check |
+|---|---|---|
+| You save a request on **Propose Charity Grant** | A tracking message naming the three steps: **1. Vetting** (an officer or Trustee other than you reviews it), **2. Presentation** (it goes on a Monthly meeting agenda for the council's vote), **3. Disbursement** (the Financial Secretary or Treasurer issues the check). The message also gives the follow-up date below. | The confirmation shown on screen when you save, and the **My requests** table, which shows which step each request is in. |
+| **Six months (about 180 days)** after you file | The council's **Trustees** ask for a status report on how the gift was used. As the request's Knight Shepherd, be ready to tell them. | The date is in your tracking message. The app does not yet send a separate reminder on that day. |
+
+A request that is declined at Vetting or voted down at Presentation stops at that step in **My requests**.
+
+### 💸 Expense Report Tracking
+
+The app does **not** send messages about expense reports. Instead, each report on **My Expense Reports** carries a status tag that moves through these steps:
+
+| Status tag | What it means |
+|---|---|
+| **Draft** | Saved but not yet filed. |
+| **Submitted** | Filed and waiting for the Financial Secretary's review. |
+| **Order Issued** | The Financial Secretary reviewed your receipts and signed the written order. It now waits for the Grand Knight. |
+| **Approved** | The Grand Knight counter-signed. The report is ready to be paid. |
+| **Reimbursed** | The Financial Secretary or Treasurer recorded your check. |
+| **Returned** (red) | Leadership sent it back to you. Read the reason, correct it and file it again. |
+
+### 👥 Volunteer Service Management
+
+| When | What you receive | Where to check |
+|---|---|---|
+| **24 hours before a shift** you signed up for | A reminder email with the shift, event, time and place, and an attached **calendar file** you can open to add the shift to your phone or computer calendar. | Your **dashboard** and the shift feed. |
+| **24 hours before a meeting** you are invited to | A reminder email with an attached **calendar file**, including the agenda when one is posted. | **Upcoming meetings** on your dashboard. |
+| **5 days after a shift** whose hours you have not logged | A friendly text reminder to log your hours (see [§7.6](#76-reminders)). | **Log time** on the phone, or **Hour ledger** in the portal. |
+| **Every 7 days** after that, while the hours are still missing | A follow-up text. Reminders stop once the shift is more than 3 months old. | Same as above. |
+| An officer sends a **high-priority alert** to your skill group or shift crew | A push alert on your phone (once your phone is registered) and an entry under the **alert bell**. | The **alert bell** at the top right of the portal keeps the last 6 months of alerts. Opening one marks it read. |
+| You are first added to the roster | A **welcome email** explaining the app, how to get it, how to sign in and who your council Admin is. | Ask your council Admin if you did not receive it. |
+
+Some meeting invitations are released a few days at a time. An invitation that has not been released yet does not appear in your feed until its release day.
