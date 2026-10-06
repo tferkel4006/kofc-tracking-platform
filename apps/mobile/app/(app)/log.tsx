@@ -2,13 +2,15 @@
 //   - Activities (the default): a high-contrast grid with one button per council activity. Each tap logs 15 minutes
 //     for today at once (activityTime.addQuarterHour), and another tap on the same button grows that day's entry by
 //     15 minutes more; a toast flashes the new total. Taps queue, so rapid taps never race each other's transaction.
+//     Sprint 6A patch: bigger tiles, and a pocket gate (lib/pocket-gate.ts) - a tap logs only after Face ID or a
+//     fingerprint passes; on a phone without biometrics, taps wait until the member drags Slide to Log Hours.
 //   - A shift I worked (only while the council keeps flag_complex_shifts on): pick a shift (up to 3 months back), then
 //     step the time in 15-minute steps and save. A shift with no hours logged yet starts at its own length
 //     (shifts.getShiftDefaultLength, Sprint 5Y-6).
 // Sprint 5Z-6: a shift whose event has not started, or ended more than 30 days ago (expenseWindowState), is padlocked
 // and grayed, and Save stays disabled while it is chosen.
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, View } from 'react-native';
+import { Animated, PanResponder, Pressable, View } from 'react-native';
 import {
   eventExpenseSpan,
   expenseWindowLockMessage,
@@ -23,6 +25,7 @@ import {
 } from '@kofc/shared';
 import { AppInput, AppText, Button, Card, EmptyState, Field, Loading, Notice, Screen, Section } from '@/components/ui';
 import { useFeatureFlags, useUser } from '@/lib/app-context';
+import { confirmTap, pocketGateMode, type PocketGateMode } from '@/lib/pocket-gate';
 import { color, radius, space, touchTarget } from '@/lib/theme';
 import { describeError, useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
@@ -89,34 +92,40 @@ function useToast() {
   return { show, view };
 }
 
-/** One activity's button: navy with white type and a gold edge (12.6:1), today's total underneath. */
-function ActivityTile({ activity, today, onPress }: { activity: Activities; today: number; onPress: () => void }) {
+/** One activity's button: navy with white type and a gold edge (12.6:1), today's total and any queued taps underneath. */
+function ActivityTile({ activity, today, queued, onPress }: { activity: Activities; today: number; queued: number; onPress: () => void }) {
+  const status = [today > 0 ? `${formatHours(today).toUpperCase()} TODAY` : null, queued > 0 ? `+${formatHours(queued * HOURS_STEP).toUpperCase()} QUEUED` : null]
+    .filter(Boolean)
+    .join(' · ');
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Log 15 minutes of ${activity.ActivityName}`}
-      accessibilityHint={today > 0 ? `${formatHours(today)} logged today` : 'Nothing logged today yet'}
+      accessibilityHint={status ? status.toLowerCase() : 'Nothing logged today yet'}
       onPress={onPress}
+      hitSlop={4}
       style={({ pressed }) => ({
-        flexBasis: '47%',
+        // Sprint 6A patch: large targets with a heavy edge, for members with less steady hands or eyesight.
+        flexBasis: '46%',
         flexGrow: 1,
-        minHeight: 88,
-        padding: space.md,
-        gap: space.xs,
+        minHeight: 128,
+        paddingVertical: space.xl,
+        paddingHorizontal: space.lg,
+        gap: space.sm,
         justifyContent: 'center',
         borderRadius: radius.md,
-        borderWidth: 3,
+        borderWidth: 5,
         borderColor: color.gold,
         backgroundColor: pressed ? color.gold : color.navy,
       })}
     >
       {({ pressed }) => (
         <>
-          <AppText variant="title" style={{ color: pressed ? color.navy : color.white }}>
+          <AppText variant="title" style={{ fontSize: 21, lineHeight: 27, color: pressed ? color.navy : color.white }}>
             {activity.ActivityName}
           </AppText>
-          <AppText variant="label" style={{ color: pressed ? color.navy : color.gold }}>
-            {today > 0 ? `${formatHours(today).toUpperCase()} TODAY` : '+15 MIN'}
+          <AppText variant="label" style={{ fontSize: 15, lineHeight: 20, color: pressed ? color.navy : color.gold }}>
+            {status || '+15 MIN'}
           </AppText>
         </>
       )}
@@ -124,8 +133,87 @@ function ActivityTile({ activity, today, onPress }: { activity: Activities; toda
   );
 }
 
-/** The rapid-tap grid: one tap, 15 minutes against the activity for today. */
-function ActivityGrid({ onToast }: { onToast: (toast: Toast) => void }) {
+/** The thumb of the slide bar, and how close to the end (in points) a release still counts as a full slide. */
+const THUMB = 64;
+const SLIDE_SLACK = 12;
+
+/**
+ * Slide to Log Hours: a navy bar with a gold thumb, pinned to the foot of the screen. Dragging the thumb to the far end
+ * commits the queued taps; letting go early springs it back and logs nothing. Screen readers activate it directly.
+ */
+function SlideToLog({ label, onConfirm, onClear }: { label: string; onConfirm: () => void; onClear: () => void }) {
+  const [width, setWidth] = useState(0);
+  const x = useRef(new Animated.Value(0)).current;
+  const travel = Math.max(0, width - THUMB - 2 * space.xs);
+  const travelRef = useRef(travel);
+  travelRef.current = travel;
+  const confirmRef = useRef(onConfirm);
+  confirmRef.current = onConfirm;
+  const responder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_, g) => x.setValue(Math.min(travelRef.current, Math.max(0, g.dx))),
+      onPanResponderRelease: (_, g) => {
+        if (travelRef.current > 0 && g.dx >= travelRef.current - SLIDE_SLACK) {
+          Animated.timing(x, { toValue: travelRef.current, duration: 80, useNativeDriver: false }).start(() => {
+            confirmRef.current();
+            x.setValue(0);
+          });
+        } else {
+          Animated.spring(x, { toValue: 0, useNativeDriver: false }).start();
+        }
+      },
+    }),
+  ).current;
+
+  return (
+    <View style={{ gap: space.sm, padding: space.lg, paddingTop: space.md, backgroundColor: color.white, borderTopWidth: 2, borderTopColor: color.navy }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
+        <AppText variant="title" style={{ flex: 1 }}>
+          {label}
+        </AppText>
+        <Button title="Clear" variant="secondary" onPress={onClear} />
+      </View>
+      <View
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={`Slide to log hours. ${label}`}
+        accessibilityActions={[{ name: 'activate', label: 'Log the queued hours' }]}
+        onAccessibilityAction={(e) => e.nativeEvent.actionName === 'activate' && onConfirm()}
+        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+        style={{ height: THUMB + 2 * space.xs, borderRadius: radius.pill, backgroundColor: color.navy, borderWidth: 3, borderColor: color.gold, justifyContent: 'center' }}
+      >
+        <AppText variant="title" tone="white" style={{ position: 'absolute', left: 0, right: 0, textAlign: 'center', fontSize: 19 }}>
+          Slide to Log Hours
+        </AppText>
+        <Animated.View
+          {...responder.panHandlers}
+          style={{
+            position: 'absolute',
+            left: space.xs - 3,
+            width: THUMB,
+            height: THUMB,
+            borderRadius: THUMB / 2,
+            backgroundColor: color.gold,
+            alignItems: 'center',
+            justifyContent: 'center',
+            transform: [{ translateX: x }],
+          }}
+        >
+          <AppText style={{ color: color.navy, fontSize: 28, lineHeight: 32, fontWeight: '700' }}>›</AppText>
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The rapid-tap tracker behind the grid: today's totals, the pocket gate and the taps queued for the slide bar.
+ * Every save goes through one queue, so taps and slides never race each other's transaction.
+ */
+function useActivityTracker(onToast: (toast: Toast) => void) {
   const user = useUser();
   const [today] = useState(() => toIsoDate(new Date()));
   const state = useLoad(async () => {
@@ -139,7 +227,7 @@ function ActivityGrid({ onToast }: { onToast: (toast: Toast) => void }) {
     );
     return { activities, totals };
   }, [user.memberId, user.councilId, today]);
-  // Today's totals per activity; the ref is the running count the queued taps add to, the state what is drawn.
+  // Today's totals per activity; the ref is the running count the queued saves add to, the state what is drawn.
   const [totals, setTotals] = useState<ReadonlyMap<number, number>>(new Map());
   const running = useRef(new Map<number, number>());
   useEffect(() => {
@@ -148,15 +236,47 @@ function ActivityGrid({ onToast }: { onToast: (toast: Toast) => void }) {
     setTotals(running.current);
   }, [state.data]);
 
-  // Taps run one after another, each in its own transaction, however fast they come.
-  const queue = useRef<Promise<void>>(Promise.resolve());
+  const [gate, setGate] = useState<PocketGateMode | null>(null);
+  useEffect(() => {
+    let live = true;
+    void pocketGateMode().then((m) => live && setGate(m));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // Taps waiting for the slide bar: quarter hours per activity.
+  const [queued, setQueued] = useState<ReadonlyMap<number, number>>(new Map());
+  const queuedRef = useRef(new Map<number, number>());
+  const setQueue = (next: Map<number, number>) => {
+    queuedRef.current = next;
+    setQueued(next);
+  };
+  const enqueue = (activity: Activities) => {
+    setQueue(new Map(queuedRef.current).set(activity.id, (queuedRef.current.get(activity.id) ?? 0) + 1));
+    onToast({ tone: 'info', text: `Queued +15 min · ${activity.ActivityName}. Slide below to log.` });
+  };
+
+  const saves = useRef<Promise<void>>(Promise.resolve());
+  const saveQuarter = async (activityId: number) => {
+    await db.activityTime.addQuarterHour(user.memberId, activityId, today);
+    const total = (running.current.get(activityId) ?? 0) + HOURS_STEP;
+    running.current = new Map(running.current).set(activityId, total);
+    setTotals(running.current);
+    return total;
+  };
+
   const tap = (activity: Activities) => {
-    queue.current = queue.current.then(async () => {
+    if (gate === 'slider') return enqueue(activity);
+    saves.current = saves.current.then(async () => {
+      const check = await confirmTap();
+      if (check === 'unavailable') {
+        setGate('slider');
+        return enqueue(activity);
+      }
+      if (check === 'refused') return onToast({ tone: 'error', text: 'Not logged: Face ID or fingerprint was not confirmed.' });
       try {
-        await db.activityTime.addQuarterHour(user.memberId, activity.id, today);
-        const total = (running.current.get(activity.id) ?? 0) + HOURS_STEP;
-        running.current = new Map(running.current).set(activity.id, total);
-        setTotals(running.current);
+        const total = await saveQuarter(activity.id);
         onToast({ tone: 'info', text: `+15 min · ${activity.ActivityName} (${formatHours(total)} today)` });
       } catch (err) {
         onToast({ tone: 'error', text: describeError(err) });
@@ -164,6 +284,43 @@ function ActivityGrid({ onToast }: { onToast: (toast: Toast) => void }) {
     });
   };
 
+  const commitQueued = () => {
+    const batch = queuedRef.current;
+    setQueue(new Map());
+    saves.current = saves.current.then(async () => {
+      let saved = 0;
+      const left = new Map<number, number>();
+      for (const [activityId, quarters] of batch) {
+        for (let i = 0; i < quarters; i++) {
+          try {
+            await saveQuarter(activityId);
+            saved++;
+          } catch (err) {
+            left.set(activityId, quarters - i);
+            onToast({ tone: 'error', text: describeError(err) });
+            break;
+          }
+        }
+      }
+      // A refused save stays queued, so nothing tapped is silently lost.
+      if (left.size > 0) {
+        const merged = new Map(queuedRef.current);
+        for (const [id, n] of left) merged.set(id, (merged.get(id) ?? 0) + n);
+        setQueue(merged);
+      }
+      if (saved > 0 && left.size === 0) onToast({ tone: 'info', text: `Logged ${formatHours(saved * HOURS_STEP)} for today.` });
+    });
+  };
+
+  const queuedQuarters = [...queued.values()].reduce((sum, n) => sum + n, 0);
+  return { state, totals, queued, queuedQuarters, gate, tap, commitQueued, clearQueued: () => setQueue(new Map()) };
+}
+
+type Tracker = ReturnType<typeof useActivityTracker>;
+
+/** The rapid-tap grid: one tap, 15 minutes against the activity for today, once the pocket gate lets it through. */
+function ActivityGrid({ tracker }: { tracker: Tracker }) {
+  const { state, totals, queued, gate, tap } = tracker;
   const { data } = state;
   return (
     <>
@@ -171,12 +328,17 @@ function ActivityGrid({ onToast }: { onToast: (toast: Toast) => void }) {
       {!data && state.loading ? <Loading /> : null}
       {data ? (
         <Section title="Tap an activity: 15 minutes per tap">
+          <AppText tone="muted">
+            {gate === 'slider'
+              ? 'Taps wait in a queue. When you are done, drag the Slide to Log Hours bar at the bottom to save them.'
+              : 'Each tap is confirmed with Face ID or your fingerprint, so a phone in a pocket cannot log time.'}
+          </AppText>
           {data.activities.length === 0 ? (
             <EmptyState message="Your council has no activities yet. An admin can add them." />
           ) : (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.md }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.lg }}>
               {data.activities.map((a) => (
-                <ActivityTile key={a.id} activity={a} today={totals.get(a.id) ?? 0} onPress={() => tap(a)} />
+                <ActivityTile key={a.id} activity={a} today={totals.get(a.id) ?? 0} queued={queued.get(a.id) ?? 0} onPress={() => tap(a)} />
               ))}
             </View>
           )}
@@ -321,18 +483,25 @@ export default function LogScreen() {
   const [chosen, setMode] = useState<Mode>('activity');
   const mode = shiftsOn ? chosen : 'activity';
   const toast = useToast();
+  const tracker = useActivityTracker(toast.show);
+  const slider = mode === 'activity' && tracker.queuedQuarters > 0;
 
   return (
-    <View style={{ flex: 1 }}>
-      <Screen>
-        <AppText variant="heading" accessibilityRole="header">
-          Report Hours
-        </AppText>
-        {shiftsOn ? <Segmented value={mode} onChange={setMode} /> : null}
-        {mode === 'activity' ? <ActivityGrid onToast={toast.show} /> : <ShiftReport onToast={toast.show} />}
-        <View style={{ height: 72 }} />
-      </Screen>
-      {toast.view}
+    <View style={{ flex: 1, backgroundColor: color.white }}>
+      <View style={{ flex: 1 }}>
+        <Screen>
+          <AppText variant="heading" accessibilityRole="header">
+            Report Hours
+          </AppText>
+          {shiftsOn ? <Segmented value={mode} onChange={setMode} /> : null}
+          {mode === 'activity' ? <ActivityGrid tracker={tracker} /> : <ShiftReport onToast={toast.show} />}
+          <View style={{ height: 72 }} />
+        </Screen>
+        {toast.view}
+      </View>
+      {slider ? (
+        <SlideToLog label={`${formatHours(tracker.queuedQuarters * HOURS_STEP)} queued`} onConfirm={tracker.commitQueued} onClear={tracker.clearQueued} />
+      ) : null}
     </View>
   );
 }

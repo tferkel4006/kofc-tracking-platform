@@ -479,8 +479,8 @@ const DB_NAME = 'kofc.db';
  * 27: JournalEntry.TransactionID and the Opening Balance Equity account (Sprint 5Z-8).
  * 28: the live meeting columns on Meeting, ProposedMotion.BallotOpenedAt, LiveAttendance and BallotVote (Sprint 5Z-9).
  * 29: DistributionLists.IsCouncilWide - private member lists (Sprint 5Z-10.8).
- * 30: Council feature flags flag_mobile_elections, flag_donations_hub, flag_complex_shifts and flag_meeting_management
- *     (Sprint 6A).
+ * 30: Council feature flags flag_mobile_elections, flag_fundraising_inflow, flag_charity_proposals, flag_complex_shifts
+ *     and flag_meeting_management (Sprint 6A; the patch split flag_donations_hub in two within version 30).
  */
 const SCHEMA_VERSION = 30;
 

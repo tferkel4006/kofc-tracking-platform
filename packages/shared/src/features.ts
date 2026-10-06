@@ -1,6 +1,6 @@
 // =========================================================================
 // COUNCIL FEATURE FLAGS (Sprint 6A)
-// Four on/off switches on the Council row. A flag that is off hides its module from the portal sidebar, its pages
+// Five on/off switches on the Council row. A flag that is off hides its module from the portal sidebar, its pages
 // (RequireArea), the phone's tab bar and the buttons that lead there, for every member of the council, leaving the
 // financial engine and the simple service logs. Only a Super Admin flips them (councils.setFeatureFlags). The data
 // behind a hidden module stays; switching the flag back on brings it all back.
@@ -9,7 +9,13 @@ import type { PortalArea } from './permissions';
 import { assertValidHours, BusinessRuleError, HOURS_STEP } from './rules';
 import type { Council } from './types';
 
-export const FEATURE_FLAG_NAMES = ['flag_mobile_elections', 'flag_donations_hub', 'flag_complex_shifts', 'flag_meeting_management'] as const;
+export const FEATURE_FLAG_NAMES = [
+  'flag_mobile_elections',
+  'flag_fundraising_inflow',
+  'flag_charity_proposals',
+  'flag_complex_shifts',
+  'flag_meeting_management',
+] as const;
 export type FeatureFlagName = (typeof FEATURE_FLAG_NAMES)[number];
 
 /** Whether each module is on for a council. */
@@ -18,7 +24,8 @@ export type FeatureFlags = Record<FeatureFlagName, boolean>;
 /** Every module on: the default for a council row that predates the flags or has not loaded yet. */
 export const ALL_FEATURES_ON: FeatureFlags = {
   flag_mobile_elections: true,
-  flag_donations_hub: true,
+  flag_fundraising_inflow: true,
+  flag_charity_proposals: true,
   flag_complex_shifts: true,
   flag_meeting_management: true,
 };
@@ -26,7 +33,11 @@ export const ALL_FEATURES_ON: FeatureFlags = {
 /** How the master admin portal names and explains each switch. */
 export const FEATURE_FLAG_LABELS: Record<FeatureFlagName, { label: string; hint: string }> = {
   flag_mobile_elections: { label: 'Officer elections', hint: 'Officer nominations and the appointed leadership matrix' },
-  flag_donations_hub: { label: 'Donations hub', hint: 'The recorded donations desk and the phone app Donate tab' },
+  flag_fundraising_inflow: {
+    label: 'Fundraising inflow',
+    hint: 'Recorded donations, the phone app Donate tab: event point-of-sale, card and QR collections, gate intake drawers',
+  },
+  flag_charity_proposals: { label: 'Charity proposals', hint: 'Member charity grant proposals and the vetting desk that tracks them' },
   flag_complex_shifts: { label: 'Event shifts', hint: 'The event planner, shift sign-ups and shift hour reports' },
   flag_meeting_management: { label: 'Meeting management', hint: 'Meeting center, cadence manager, live console and the phone app Meetings tab' },
 };
@@ -34,7 +45,8 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagName, { label: string; hint:
 /** The portal areas each flag hides when it is off. */
 export const FEATURE_FLAG_AREAS: Record<FeatureFlagName, readonly PortalArea[]> = {
   flag_mobile_elections: ['elections', 'elections/appointments'],
-  flag_donations_hub: ['donations'],
+  flag_fundraising_inflow: ['donations'],
+  flag_charity_proposals: ['charities/propose', 'charities/vetting'],
   flag_complex_shifts: ['events'],
   flag_meeting_management: ['meetings', 'meetings/cadence', 'meetings/live'],
 };
@@ -44,7 +56,9 @@ export type MobileTab = 'index' | 'shifts' | 'log' | 'meetings' | 'donate';
 export const FEATURE_FLAG_MOBILE_TABS: Record<FeatureFlagName, readonly MobileTab[]> = {
   // The phone app has no election screens; the flag only trims the portal.
   flag_mobile_elections: [],
-  flag_donations_hub: ['donate'],
+  flag_fundraising_inflow: ['donate'],
+  // The phone app has no charity proposal screens either.
+  flag_charity_proposals: [],
   flag_complex_shifts: ['shifts'],
   flag_meeting_management: ['meetings'],
 };

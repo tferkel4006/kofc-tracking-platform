@@ -340,7 +340,17 @@ export const TABLES: Record<string, TableMeta> = {
         }
       },
       {
-        "name": "flag_donations_hub",
+        "name": "flag_fundraising_inflow",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 1
+        }
+      },
+      {
+        "name": "flag_charity_proposals",
         "kind": "bit",
         "notNull": true,
         "identity": false,

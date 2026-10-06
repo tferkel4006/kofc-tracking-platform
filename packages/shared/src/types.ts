@@ -59,7 +59,8 @@ export interface Council {
   Email?: string;
   /** BIT feature flags (Sprint 6A, see features.ts): 0 hides the module for the council. Default 1. */
   flag_mobile_elections?: number;
-  flag_donations_hub?: number;
+  flag_fundraising_inflow?: number;
+  flag_charity_proposals?: number;
   flag_complex_shifts?: number;
   flag_meeting_management?: number;
 }

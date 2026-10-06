@@ -23,7 +23,8 @@
           "microphonePermission": false
         }
       ],
-      ["expo-notifications", { "color": "#002855" }]
+      ["expo-notifications", { "color": "#002855" }],
+      ["expo-local-authentication", { "faceIDPermission": "KofC Tracker uses Face ID to confirm it is you before logging service hours." }]
     ]
   }
 }

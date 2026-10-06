@@ -453,7 +453,7 @@ function DonateScreenBody() {
 
 export default function DonateScreen() {
   return (
-    <FeatureGate flag="flag_donations_hub">
+    <FeatureGate flag="flag_fundraising_inflow">
       <DonateScreenBody />
     </FeatureGate>
   );

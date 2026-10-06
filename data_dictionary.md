@@ -92,7 +92,8 @@ The core multi-tenant anchor entity representing individual local councils.
 •	Phone (VARCHAR(50), NULL) — Optional administrative contact line.
 •	Email (VARCHAR(100), NULL) — Optional shared council contact address.
 •	flag_mobile_elections (BIT, NOT NULL, DEFAULT 1) — Sprint 6A feature flag: 0 hides officer nominations and the appointed leadership matrix for the council. Appended by ALTER TABLE (schema version 30), like the three flags below.
-•	flag_donations_hub (BIT, NOT NULL, DEFAULT 1) — Sprint 6A feature flag: 0 hides the recorded donations desk and the phone app Donate tab.
+•	flag_fundraising_inflow (BIT, NOT NULL, DEFAULT 1) — Sprint 6A patch feature flag: 0 hides every public capital intake view - the recorded donations desk and the phone app Donate tab with its event point-of-sale grid, card and QR collections and gate intake drawers (parking, breakfasts, bingo and the like).
+•	flag_charity_proposals (BIT, NOT NULL, DEFAULT 1) — Sprint 6A patch feature flag: 0 hides Propose Charity Grant (the member grant form and its progress tracking) and the Charity Vetting Queue. The charities registry and the charitable disbursements ledger stay with the financial engine.
 •	flag_complex_shifts (BIT, NOT NULL, DEFAULT 1) — Sprint 6A feature flag: 0 hides the event planner, the shift tabs of Member Actions, shift hour reports, and the phone app Signup tab and My shifts list. Activity hours stay.
 •	flag_meeting_management (BIT, NOT NULL, DEFAULT 1) — Sprint 6A feature flag: 0 hides the meeting center, cadence manager and live console, and the phone app Mtgs tab. Only an Active Super Admin changes any flag (councils.setFeatureFlags, from the Councils page); councils.create and update never touch them. Hidden data stays and returns when the flag is set back to 1.
 [AffiliatedCouncils]

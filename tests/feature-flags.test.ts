@@ -14,12 +14,18 @@ import {
 import { drivers, expectRule, MEMBER } from './helpers';
 
 const superAdmin = { memberId: 1, councilId: 1, memberType: 'Super Admin' as const, isOfficer: true, roles: ['Grand Knight'] };
-const allOff: FeatureFlags = { flag_mobile_elections: false, flag_donations_hub: false, flag_complex_shifts: false, flag_meeting_management: false };
+const allOff: FeatureFlags = {
+  flag_mobile_elections: false,
+  flag_fundraising_inflow: false,
+  flag_charity_proposals: false,
+  flag_complex_shifts: false,
+  flag_meeting_management: false,
+};
 
 describe('feature flag rules', () => {
   it('reads a council row, treating missing columns as on', () => {
     expect(councilFeatureFlags(null)).toEqual(ALL_FEATURES_ON);
-    expect(councilFeatureFlags({ flag_donations_hub: 0, flag_meeting_management: 1 })).toEqual({ ...ALL_FEATURES_ON, flag_donations_hub: false });
+    expect(councilFeatureFlags({ flag_fundraising_inflow: 0, flag_meeting_management: 1 })).toEqual({ ...ALL_FEATURES_ON, flag_fundraising_inflow: false });
   });
 
   it('leaves every module in the portal while all flags are on', () => {
@@ -28,10 +34,10 @@ describe('feature flag rules', () => {
 
   it('hides each switched-off module but keeps the financial engine and the service logs', () => {
     const areas = portalAreas(superAdmin, allOff);
-    for (const gone of ['elections', 'elections/appointments', 'donations', 'events', 'meetings', 'meetings/cadence', 'meetings/live']) {
+    for (const gone of ['elections', 'elections/appointments', 'donations', 'charities/propose', 'charities/vetting', 'events', 'meetings', 'meetings/cadence', 'meetings/live']) {
       expect(areas).not.toContain(gone);
     }
-    for (const kept of ['member-actions', 'ledger', 'expenses', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'activities']) {
+    for (const kept of ['member-actions', 'ledger', 'expenses', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'activities', 'charities/queue']) {
       expect(areas).toContain(kept);
     }
   });
@@ -41,16 +47,24 @@ describe('feature flag rules', () => {
     const desks = (flags: FeatureFlags) => portalSidebar(member, flags).find((g) => g.id === 'executive')?.entries.map((e) => e.item) ?? [];
     expect(desks(ALL_FEATURES_ON)).toContain('meetings/live');
     expect(desks({ ...ALL_FEATURES_ON, flag_meeting_management: false })).not.toContain('meetings/live');
+    // The two donation flags are independent: proposals off leaves the donations desk, and the reverse.
+    expect(desks({ ...ALL_FEATURES_ON, flag_charity_proposals: false })).not.toContain('charities/vetting');
+    const inflowOnly = portalAreas(superAdmin, { ...ALL_FEATURES_ON, flag_charity_proposals: false });
+    expect(inflowOnly).toContain('donations');
+    expect(inflowOnly).not.toContain('charities/propose');
+    const proposalsOnly = portalAreas(superAdmin, { ...ALL_FEATURES_ON, flag_fundraising_inflow: false });
+    expect(proposalsOnly).not.toContain('donations');
+    expect(proposalsOnly).toContain('charities/propose');
   });
 
   it('hides the matching phone tabs and never Home or Report', () => {
     expect(['index', 'log', 'shifts', 'meetings', 'donate'].filter((t) => mobileTabEnabled(t as never, allOff))).toEqual(['index', 'log']);
-    expect(mobileTabEnabled('donate', { ...ALL_FEATURES_ON, flag_donations_hub: false })).toBe(false);
-    expect(mobileTabEnabled('shifts', { ...ALL_FEATURES_ON, flag_donations_hub: false })).toBe(true);
+    expect(mobileTabEnabled('donate', { ...ALL_FEATURES_ON, flag_fundraising_inflow: false })).toBe(false);
+    expect(mobileTabEnabled('shifts', { ...ALL_FEATURES_ON, flag_fundraising_inflow: false })).toBe(true);
   });
 
   it('accepts only known flags with boolean values', () => {
-    expect(cleanFeatureFlagChanges({ flag_complex_shifts: false, flag_donations_hub: true })).toEqual({ flag_complex_shifts: 0, flag_donations_hub: 1 });
+    expect(cleanFeatureFlagChanges({ flag_complex_shifts: false, flag_fundraising_inflow: true })).toEqual({ flag_complex_shifts: 0, flag_fundraising_inflow: 1 });
     expect(() => cleanFeatureFlagChanges({ flag_unknown: true } as never)).toThrow(/not a feature flag/);
     expect(() => cleanFeatureFlagChanges({ flag_complex_shifts: 0 } as never)).toThrow(/true or false/);
   });
@@ -79,8 +93,8 @@ describe.each(drivers)('$name driver: councils.setFeatureFlags', (d) => {
 
   it('refuses Admins and unknown councils, writing nothing', async () => {
     const db = await d.make();
-    await expectRule(db.councils.setFeatureFlags(MEMBER.admin, 1, { flag_donations_hub: false }), 'SUPER_ADMIN_REQUIRED');
-    await expectRule(db.councils.setFeatureFlags(MEMBER.superAdmin, 999, { flag_donations_hub: false }), 'RECORD_NOT_FOUND');
+    await expectRule(db.councils.setFeatureFlags(MEMBER.admin, 1, { flag_fundraising_inflow: false }), 'SUPER_ADMIN_REQUIRED');
+    await expectRule(db.councils.setFeatureFlags(MEMBER.superAdmin, 999, { flag_fundraising_inflow: false }), 'RECORD_NOT_FOUND');
     await expectRule(db.councils.setFeatureFlags(MEMBER.superAdmin, 1, { flag_bogus: false } as never), 'INVALID_INPUT');
     expect(councilFeatureFlags(await db.councils.get(1))).toEqual(ALL_FEATURES_ON);
   });
