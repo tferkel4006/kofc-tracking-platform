@@ -339,6 +339,24 @@ import {
   mayPostGeneralLedger,
   MOTION_LINE_SORT_BASE,
   summarizeLedgerTransactions,
+  assertAgendaSectionKey,
+  assertMayImportSupremeRoster,
+  cleanAgendaLineKey,
+  cleanRosterJoinDate,
+  cleanSupremeRosterRow,
+  describeError,
+  SecurityPrivilegeError,
+  enrollmentCodeExpiry,
+  enrollmentCodeHashInput,
+  enrollmentCodeInvalid,
+  formatEnrollmentCode,
+  buildSendGridMailRequest,
+  isEnrollmentTokenUsable,
+  logSendGridRequest,
+  nextAgendaSortOrder,
+  rosterMemberNumber,
+  type SendGridMailRequest,
+  type SupremeRosterSyncResult,
   type CleanJournalLine,
   type MeetingAgendaItem,
   type MeetingAgendaView,
@@ -503,8 +521,9 @@ const DB_NAME = 'kofc.db';
  * 30: Council feature flags flag_mobile_elections, flag_fundraising_inflow, flag_charity_proposals, flag_complex_shifts
  *     and flag_meeting_management (Sprint 6A; the patch split flag_donations_hub in two within version 30).
  * 31: MeetingAgendaItem and MotionHandTally - the St. Mary's live agenda and hand-vote tallies (Sprint 6B).
+ * 32: Meeting.ActiveAgendaLineKey, Member.DateJoinedCouncil and MemberEnrollmentToken (Sprint 6B Patch).
  */
-const SCHEMA_VERSION = 31;
+const SCHEMA_VERSION = 32;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -580,6 +599,11 @@ export interface SqliteDataServiceOptions {
   /** How supreme.syncAlchemerReport posts to Alchemer. Default: print the request with `log` (logAlchemerRequest). */
   postAlchemer?: (request: AlchemerRequest) => Promise<AlchemerResponse>;
   /**
+   * Sprint 6B Patch: how a welcome email is sent, as a SendGrid v3 mail/send request carrying the key placeholder. Default:
+   * print the request with `log` (logSendGridRequest); the real key belongs on a server, never on the phone.
+   */
+  sendEmail?: (request: SendGridMailRequest) => Promise<void>;
+  /**
    * Also load Seed.sql's presentation data (Sprint 5Z-1: officers, expense sheets, charity checks and intake requests)
    * right after the baseline rows when the database is first created. The app turns it on; tests keep the minimal
    * baseline. Default: false.
@@ -597,6 +621,7 @@ export class SqliteDataService implements DataService {
   private readonly now: () => Date;
   private readonly log: (...args: unknown[]) => void;
   private readonly postAlchemer: (request: AlchemerRequest) => Promise<AlchemerResponse>;
+  private readonly sendEmail: (request: SendGridMailRequest) => Promise<void>;
   private readonly presentationData: boolean;
   private ballotSecretValue: Promise<string> | null;
 
@@ -606,6 +631,7 @@ export class SqliteDataService implements DataService {
     this.now = options.now ?? (() => new Date());
     this.log = options.log ?? console.log;
     this.postAlchemer = options.postAlchemer ?? logAlchemerRequest((...args) => this.log(...args));
+    this.sendEmail = options.sendEmail ?? logSendGridRequest((...args) => this.log(...args));
   }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -786,9 +812,10 @@ export class SqliteDataService implements DataService {
       return this.buildSession(db, row);
     },
 
-    signUp: async (email, password) => {
+    signUp: async (email, password, enrollmentCode) => {
       assertPasswordAcceptable(password);
       const hash = await sha256Hex(password);
+      const codeHash = enrollmentCode == null || enrollmentCode.trim() === '' ? null : await sha256Hex(enrollmentCodeHashInput(enrollmentCode));
       const db = await this.ready();
       let credentialId = 0;
       await db.withTransactionAsync(async () => {
@@ -802,6 +829,16 @@ export class SqliteDataService implements DataService {
             `No member record has the email ${email.trim()}. Contact your council admin to be added.`,
             { email },
           );
+        }
+        if (codeHash !== null) {
+          // Sprint 6B Patch: the welcome email's setup code must be this member's, unspent and unexpired; it is spent here
+          // (inside the transaction, so a failed registration leaves it unspent).
+          const token = await db.getFirstAsync<{ id: number; ExpiresAt: string; ConsumedAt: string | null }>(
+            'SELECT [id], [ExpiresAt], [ConsumedAt] FROM [MemberEnrollmentToken] WHERE [MemberID] = ? AND [TokenHash] = ?',
+            [member.id, codeHash],
+          );
+          if (!token || !isEnrollmentTokenUsable(token, this.now())) throw enrollmentCodeInvalid();
+          await db.runAsync('UPDATE [MemberEnrollmentToken] SET [ConsumedAt] = ? WHERE [id] = ?', [toTimestamp(this.now()), token.id]);
         }
         // The WHERE clause makes claiming the placeholder atomic: a second signUp changes nothing.
         const res = await db.runAsync(
@@ -1600,9 +1637,21 @@ export class SqliteDataService implements DataService {
     if (clean.WorkingStatusID != null) await this.assertRowExists(db, 'WorkingStatus', clean.WorkingStatusID, 'working status');
   }
 
-  /** System hook after members.create commits: compiles the welcome email and logs it (no mail server yet). */
+  /**
+   * The post-insert hook after members.create or supreme.syncSupremeRoster stores a member: issues their one-time setup
+   * code (only its hash is kept), compiles the welcome email and sends it as a SendGrid request (sendEmail).
+   */
   private async sendWelcomeEmail(db: SQLite.SQLiteDatabase, member: Member): Promise<void> {
     try {
+      const code = formatEnrollmentCode(await Crypto.getRandomBytesAsync(20));
+      const issuedAt = this.now();
+      const expiresAt = enrollmentCodeExpiry(issuedAt);
+      await db.runAsync('INSERT INTO [MemberEnrollmentToken] ([MemberID], [TokenHash], [CreatedAt], [ExpiresAt]) VALUES (?, ?, ?, ?)', [
+        member.id,
+        await sha256Hex(enrollmentCodeHashInput(code)),
+        toTimestamp(issuedAt),
+        expiresAt,
+      ]);
       const council = (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [member.CouncilID]))!;
       const admin = await db.getFirstAsync<{ first: string; last: string; Email: string; Phone: string }>(
         `SELECT m.[MemberFirstName] AS first, m.[MemberLastName] AS last, m.[Email], m.[Phone] FROM [Member] m
@@ -1614,7 +1663,8 @@ export class SqliteDataService implements DataService {
       const details: CouncilAdminDetails | null = admin
         ? { name: `${admin.first} ${admin.last}`, email: admin.Email, phone: admin.Phone }
         : null;
-      this.log('[notification]', JSON.stringify(buildWelcomeEmail({ member, council, admin: details }), null, 2));
+      const packet = buildWelcomeEmail({ member, council, admin: details, enrollment: { code, expiresAt } });
+      await this.sendEmail(buildSendGridMailRequest(packet.email));
     } catch (err) {
       // The member is already saved; a failed notification must not undo or fail that.
       console.error('[notification] welcome email failed:', err);
@@ -2481,8 +2531,8 @@ export class SqliteDataService implements DataService {
 
     listTurnout: async (eventId) => {
       const db = await this.ready();
-      const rows = await db.getAllAsync<{ SignupID: number; MemberFirstName: string; MemberLastName: string; Hours: number | null }>(
-        `SELECT es.[id] AS SignupID, m.[MemberFirstName], m.[MemberLastName], et.[Hours]
+      const rows = await db.getAllAsync<{ SignupID: number; MemberFirstName: string; MemberLastName: string; DateJoinedCouncil: string | null; Hours: number | null }>(
+        `SELECT es.[id] AS SignupID, m.[MemberFirstName], m.[MemberLastName], m.[DateJoinedCouncil], et.[Hours]
            FROM [EventSignup] es
            JOIN [Shift] s ON s.[id] = es.[ShiftID]
            JOIN [Member] m ON m.[id] = es.[MemberID]
@@ -2514,6 +2564,7 @@ export class SqliteDataService implements DataService {
           shift,
           MemberFirstName: row.MemberFirstName,
           MemberLastName: row.MemberLastName,
+          DateJoinedCouncil: row.DateJoinedCouncil ?? null,
           hoursLogged: row.Hours ?? null,
         });
       }
@@ -3361,8 +3412,9 @@ export class SqliteDataService implements DataService {
       return this.liveAssemblyState(db, actorId, meetingId);
     },
 
-    advanceActiveAgendaItem: async (actorId, meetingId, itemName, allottedMinutes) => {
+    advanceActiveAgendaItem: async (actorId, meetingId, itemName, allottedMinutes, options = {}) => {
       const item = cleanLiveAgendaItem(itemName, allottedMinutes);
+      const lineKey = cleanAgendaLineKey(options.lineKey);
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
         const actor = await this.memberWriteActor(db, actorId);
@@ -3370,8 +3422,9 @@ export class SqliteDataService implements DataService {
         assertMayRunLiveAssembly(actor, meeting, `set the agenda of meeting ${meetingId}`);
         assertMeetingLive(meeting, 'take a new agenda item');
         await db.runAsync(
-          'UPDATE [Meeting] SET [ActiveAgendaItemName] = ?, [ActiveAgendaItemTimeRemaining] = ?, [ActiveAgendaItemStartedAt] = ? WHERE [id] = ?',
-          [item.name, item.minutes, toTimestamp(this.now()), meetingId],
+          `UPDATE [Meeting] SET [ActiveAgendaItemName] = ?, [ActiveAgendaItemTimeRemaining] = ?, [ActiveAgendaItemStartedAt] = ?,
+              [ActiveAgendaLineKey] = ? WHERE [id] = ?`,
+          [item.name, item.minutes, toTimestamp(this.now()), lineKey, meetingId],
         );
       });
       return this.liveAssemblyState(db, actorId, meetingId);
@@ -3507,7 +3560,7 @@ export class SqliteDataService implements DataService {
         assertNoBallotOpen(meetingId, await db.getAllAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [TargetMeetingID] = ?', [meetingId]));
         await db.runAsync(
           `UPDATE [Meeting] SET [IsLiveInProgress] = 0, [ActiveAgendaItemName] = NULL, [ActiveAgendaItemTimeRemaining] = NULL,
-              [ActiveAgendaItemStartedAt] = NULL WHERE [id] = ?`,
+              [ActiveAgendaItemStartedAt] = NULL, [ActiveAgendaLineKey] = NULL WHERE [id] = ?`,
           [meetingId],
         );
       });
@@ -3575,6 +3628,27 @@ export class SqliteDataService implements DataService {
         }
       });
       return this.meetingAgendaView(db, meetingId);
+    },
+
+    addAgendaLine: async (actorId, meetingId, sectionKey) => {
+      const section = assertAgendaSectionKey(sectionKey);
+      const db = await this.ready();
+      let itemId = 0;
+      await db.withTransactionAsync(async () => {
+        const meeting = await this.requireMeetingRow(db, meetingId);
+        assertMayEditLiveAgenda(await this.memberWriteActor(db, actorId), meeting, `add a line to the agenda of meeting ${meetingId}`);
+        const items = await db.getAllAsync<MeetingAgendaItem>('SELECT [SectionKey], [SortOrder] FROM [MeetingAgendaItem] WHERE [MeetingID] = ?', [meetingId]);
+        const motionIds = (await db.getAllAsync<{ id: number }>('SELECT [id] FROM [ProposedMotion] WHERE [TargetMeetingID] = ?', [meetingId])).map((m) => m.id);
+        const res = await db.runAsync(
+          `INSERT INTO [MeetingAgendaItem] ([CouncilID], [MeetingID], [SectionKey], [SortOrder], [LineMarkdown], [LastEditedByMemberID], [LastEditedAt])
+           VALUES (?, ?, ?, ?, '', ?, ?)`,
+          [meeting.CouncilID, meetingId, section, nextAgendaSortOrder(section, items, motionIds), actorId, toTimestamp(this.now())],
+        );
+        itemId = res.lastInsertRowId;
+      });
+      const agenda = await this.meetingAgendaView(db, meetingId);
+      const line = agenda.sections.flatMap((sec) => sec.lines).find((l) => l.key === `item:${itemId}`)!;
+      return { agenda, line };
     },
 
     recordHandBallotTally: async (actorId, motionId, approvedCount, deniedCount, options = {}) => {
@@ -3928,6 +4002,70 @@ export class SqliteDataService implements DataService {
       );
       const sync = (await db.getFirstAsync<SupremeReportingSync>('SELECT * FROM [SupremeReportingSync] WHERE [id] = ?', [res.lastInsertRowId]))!;
       return { sync, snapshot, request, error };
+    },
+
+    syncSupremeRoster: async (actorId, councilId, rows) => {
+      const db = await this.ready();
+      let result: SupremeRosterSyncResult = { created: [], updated: [], skipped: [] };
+      await db.withTransactionAsync(async () => {
+        assertMayImportSupremeRoster(await this.memberWriteActor(db, actorId), councilId);
+        await this.assertCouncilsExist(db, [councilId]);
+        const ids = {
+          activeStatusId: (await db.getFirstAsync<{ id: number }>("SELECT [id] FROM [MemberStatus] WHERE [Status] = 'Active'"))!.id,
+          memberTypeId: (await db.getFirstAsync<{ id: number }>("SELECT [id] FROM [MemberType] WHERE [Type] = 'Member'"))!.id,
+        };
+        const out: SupremeRosterSyncResult = { created: [], updated: [], skipped: [] };
+        const createdIds: number[] = [];
+        const seen = new Set<number>();
+        for (const row of Array.isArray(rows) ? rows : []) {
+          const memberNumber = rosterMemberNumber(row);
+          if (memberNumber === null) {
+            out.skipped.push({ memberNumber: null, reason: 'The row has no member number.' });
+            continue;
+          }
+          if (seen.has(memberNumber)) {
+            out.skipped.push({ memberNumber, reason: 'The member number appears twice in this roster.' });
+            continue;
+          }
+          seen.add(memberNumber);
+          try {
+            const existing = await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [CouncilID] = ? AND [MemberNumber] = ?', [councilId, memberNumber]);
+            if (existing) {
+              const joined = cleanRosterJoinDate(row.DateJoinedCouncil, this.now());
+              if ((existing.DateJoinedCouncil ?? null) !== joined) {
+                await db.runAsync('UPDATE [Member] SET [DateJoinedCouncil] = ? WHERE [id] = ?', [joined, existing.id]);
+                out.updated.push(withoutPushToken({ ...existing, DateJoinedCouncil: joined }));
+              }
+              continue;
+            }
+            const clean = cleanSupremeRosterRow(row, councilId, ids, this.now());
+            const taken = await db.getFirstAsync<{ n: number }>(
+              `SELECT (SELECT COUNT(*) FROM [Member] WHERE [Email] = ? COLLATE NOCASE)
+                    + (SELECT COUNT(*) FROM [Credentials] WHERE [Username] = ? COLLATE NOCASE) AS n`,
+              [clean.Email, clean.Email],
+            );
+            if ((taken?.n ?? 0) > 0) {
+              out.skipped.push({ memberNumber, reason: `The email ${clean.Email} already belongs to a member or login.` });
+              continue;
+            }
+            const cred = await db.runAsync('INSERT INTO [Credentials] ([Username], [Password]) VALUES (?, ?)', [clean.Email, UNREGISTERED_PASSWORD]);
+            const cols = MEMBER_COLUMNS.filter((c) => clean[c] != null);
+            const res = await db.runAsync(
+              `INSERT INTO [Member] (${cols.map((c) => `[${c}]`).join(', ')}, [CredentialID]) VALUES (${marks(cols.length + 1)})`,
+              [...cols.map((c) => clean[c] as Bind), cred.lastInsertRowId],
+            );
+            createdIds.push(res.lastInsertRowId);
+          } catch (err) {
+            if (!(err instanceof BusinessRuleError) || err instanceof SecurityPrivilegeError) throw err;
+            out.skipped.push({ memberNumber, reason: describeError(err) });
+          }
+        }
+        for (const id of createdIds) out.created.push(withoutPushToken((await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]))!));
+        result = out;
+      });
+      // The post-insert hook: every new member gets the welcome email the moment the batch is stored.
+      for (const member of result.created) await this.sendWelcomeEmail(db, member);
+      return result;
     },
 
     listSyncHistory: async (actorId, councilId) => {

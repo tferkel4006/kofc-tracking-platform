@@ -13,6 +13,7 @@ export default function SignInScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const [setupCode, setSetupCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -65,13 +66,23 @@ export default function SignInScreen() {
               <AppText variant="small" tone="muted">
                 At least 8 characters. You will stay signed in on this phone.
               </AppText>
+              <Field label="SETUP CODE FROM YOUR WELCOME EMAIL (OPTIONAL)">
+                <AppInput
+                  value={setupCode}
+                  onChangeText={setSetupCode}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  textContentType="oneTimeCode"
+                  placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
+                />
+              </Field>
               <Field label="PASSWORD">
                 <AppInput value={password} onChangeText={setPassword} secureTextEntry textContentType="newPassword" autoCapitalize="none" />
               </Field>
               <Field label="CONFIRM PASSWORD">
                 <AppInput value={confirmation} onChangeText={setConfirmation} secureTextEntry textContentType="newPassword" autoCapitalize="none" />
               </Field>
-              <Button title="Create password" busy={busy} disabled={!password} onPress={() => void run(() => submitPassword(password, confirmation))} />
+              <Button title="Create password" busy={busy} disabled={!password} onPress={() => void run(() => submitPassword(password, confirmation, setupCode))} />
             </>
           ) : null}
 

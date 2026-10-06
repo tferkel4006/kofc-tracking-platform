@@ -115,6 +115,8 @@ export interface Member {
   Biography?: string | null; // Sprint 5S: short personal fraternal biography (TEXT, capped at MEMBER_BIOGRAPHY_MAX_LENGTH)
   /** BIT (Sprint 5Y-3): an Admin delegated the council's budget preparation to this member. Default 0. */
   IsBudgetDirector?: number;
+  /** DATE (Sprint 6B Patch): the day the member joined the council, from Supreme's roster; drives the New Member badge. */
+  DateJoinedCouncil?: string | null;
 }
 
 export interface MemberRoles {
@@ -318,6 +320,8 @@ export interface Meeting {
   ActiveAgendaItemStartedAt?: string | null;
   /** Sprint 5Z-9: the council's Active roster count, locked when the live console started (the quorum base). */
   LiveQuorumRosterCount?: number | null;
+  /** Sprint 6B Patch: the agenda line on the floor ('item:12', 'motion:3', 'event:5'); null for a typed-in topic. */
+  ActiveAgendaLineKey?: string | null;
 }
 
 /** An invitee's RSVP (Sprint 5Y-5); see MEETING_RESPONSE_STATUSES. */
@@ -440,6 +444,19 @@ export interface MeetingAgendaItem {
   LinkedEventID?: number | null;
   LastEditedByMemberID?: number | null;
   LastEditedAt?: string | null; // DATETIME
+}
+
+/**
+ * A new member's one-time setup code (Sprint 6B Patch), sent in the welcome email. Only its SHA-256 is stored; it expires
+ * at ExpiresAt and is spent by auth.signUp.
+ */
+export interface MemberEnrollmentToken {
+  id: number;
+  MemberID: number;
+  TokenHash: string; // VARCHAR(64), SHA-256 hex
+  CreatedAt: string; // DATETIME
+  ExpiresAt: string; // DATETIME
+  ConsumedAt?: string | null; // DATETIME
 }
 
 /** The Recorder's show-of-hands count on a motion (Sprint 6B); one per motion. */

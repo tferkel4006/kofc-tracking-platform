@@ -24,3 +24,4 @@ export * from './finance';
 export * from './assembly';
 export * from './features';
 export * from './agenda';
+export * from './onboarding';

@@ -713,6 +713,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "ActiveAgendaLineKey",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -966,6 +973,13 @@ export const TABLES: Record<string, TableMeta> = {
           "kind": "literal",
           "value": 0
         }
+      },
+      {
+        "name": "DateJoinedCouncil",
+        "kind": "date",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -4778,6 +4792,67 @@ export const TABLES: Record<string, TableMeta> = {
         "ProposedMotionID"
       ]
     ]
+  },
+  "MemberEnrollmentToken": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "MemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "TokenHash",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "CreatedAt",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ExpiresAt",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ConsumedAt",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "MemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "TokenHash"
+      ]
+    ]
   }
 };
 
@@ -5653,7 +5728,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 4,
         "MemberTypeID": 3,
-        "CredentialID": 4
+        "CredentialID": 4,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5670,7 +5746,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 3,
         "MemberTypeID": 3,
-        "CredentialID": 5
+        "CredentialID": 5,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5687,7 +5764,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 3,
         "MemberTypeID": 3,
-        "CredentialID": 6
+        "CredentialID": 6,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5704,7 +5782,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 4,
         "MemberTypeID": 3,
-        "CredentialID": 7
+        "CredentialID": 7,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5721,7 +5800,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 3,
         "MemberTypeID": 3,
-        "CredentialID": 8
+        "CredentialID": 8,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5738,7 +5818,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 3,
         "MemberTypeID": 3,
-        "CredentialID": 9
+        "CredentialID": 9,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5755,7 +5836,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 2,
         "MemberTypeID": 3,
-        "CredentialID": 10
+        "CredentialID": 10,
+        "DateJoinedCouncil": "2025-11-20"
       },
       {
         "CouncilID": 1,
@@ -5772,7 +5854,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 1,
         "MemberTypeID": 3,
-        "CredentialID": 11
+        "CredentialID": 11,
+        "DateJoinedCouncil": "2026-05-01"
       },
       {
         "CouncilID": 1,
@@ -5789,7 +5872,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 4,
         "MemberTypeID": 3,
-        "CredentialID": 12
+        "CredentialID": 12,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5806,7 +5890,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 4,
         "MemberTypeID": 3,
-        "CredentialID": 13
+        "CredentialID": 13,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5823,7 +5908,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 3,
         "MemberTypeID": 3,
-        "CredentialID": 14
+        "CredentialID": 14,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5840,7 +5926,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 3,
         "MemberTypeID": 3,
-        "CredentialID": 15
+        "CredentialID": 15,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5857,7 +5944,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 3,
         "MemberTypeID": 3,
-        "CredentialID": 16
+        "CredentialID": 16,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5874,7 +5962,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 3,
         "MemberTypeID": 3,
-        "CredentialID": 17
+        "CredentialID": 17,
+        "DateJoinedCouncil": null
       },
       {
         "CouncilID": 1,
@@ -5891,7 +5980,8 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "StatusID": 1,
         "DegreeID": 2,
         "MemberTypeID": 3,
-        "CredentialID": 18
+        "CredentialID": 18,
+        "DateJoinedCouncil": "2026-07-15"
       }
     ]
   },

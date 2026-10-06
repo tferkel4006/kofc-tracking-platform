@@ -22,7 +22,7 @@ import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/Counci
 import { Drawer } from '@/components/Drawer';
 import { ProfileExtensionsEditor } from '@/components/ProfileExtensionsEditor';
 import { SkillFilterDrawer } from '@/components/SkillFilterDrawer';
-import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Td } from '@/components/ui';
+import { Button, cx, Empty, Field, Input, NewMemberBadge, Notice, PageTitle, Panel, Pill, Select, Table, Td } from '@/components/ui';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
@@ -74,6 +74,8 @@ const TEXT_FIELDS: { key: keyof Draft; label: string; type?: string; maxLength: 
   { key: 'Email', label: 'Email (also the login)', type: 'email', maxLength: 50 },
   { key: 'Phone', label: 'Phone', type: 'tel', maxLength: 50 },
   { key: 'DateOfBirth', label: 'Date of birth', type: 'date', maxLength: 10 },
+  // Sprint 6B Patch: from Supreme's roster; the New Member badge shows for 180 days from it.
+  { key: 'DateJoinedCouncil', label: 'Date joined council', type: 'date', maxLength: 10, optional: true },
   { key: 'StreetAddress1', label: 'Street address', maxLength: 255, wide: true },
   { key: 'StreetAddress2', label: 'Street address line 2', maxLength: 255, optional: true, wide: true },
   { key: 'City', label: 'City', maxLength: 50 },
@@ -98,6 +100,7 @@ function draftFrom(member: Member | null, councilId: number, lookups: Lookups): 
       ZipCode: '',
       Email: '',
       DateOfBirth: '',
+      DateJoinedCouncil: '',
       StatusID: idOf(lookups.statuses.find((s) => s.Status === 'Active') ?? lookups.statuses[0]),
       DegreeID: idOf(lookups.degrees[0]),
       MemberTypeID: idOf(lookups.types.find((t) => t.Type === 'Member') ?? lookups.types[0]),
@@ -117,6 +120,7 @@ function draftFrom(member: Member | null, councilId: number, lookups: Lookups): 
     ZipCode: member.ZipCode,
     Email: member.Email,
     DateOfBirth: member.DateOfBirth,
+    DateJoinedCouncil: text(member.DateJoinedCouncil),
     StatusID: text(member.StatusID),
     DegreeID: text(member.DegreeID),
     MemberTypeID: text(member.MemberTypeID),
@@ -137,6 +141,7 @@ function toNewMember(d: Draft, budgetDirector: boolean): NewMember {
     ZipCode: d.ZipCode,
     Email: d.Email,
     DateOfBirth: d.DateOfBirth,
+    DateJoinedCouncil: d.DateJoinedCouncil.trim() === '' ? null : d.DateJoinedCouncil,
     StatusID: Number(d.StatusID),
     DegreeID: Number(d.DegreeID),
     MemberTypeID: Number(d.MemberTypeID),
@@ -369,6 +374,7 @@ function Roster() {
                       <button type="button" aria-current={active ? 'true' : undefined} onClick={() => setSelected(m.id)} className="text-left font-bold underline">
                         {m.MemberLastName}, {m.MemberFirstName}
                       </button>
+                      <NewMemberBadge member={m} />
                     </Td>
                     <Td>{m.MemberNumber}</Td>
                     <Td>{degreeName.get(m.DegreeID) ?? ''}</Td>

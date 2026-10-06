@@ -59,11 +59,14 @@ function RsvpToggle({ status, onToggle }: MeetingRsvp) {
 export const MeetingCard = ({
   meeting,
   onAttendance,
+  onAgenda,
   badge,
   rsvp,
 }: {
   meeting: Meeting;
   onAttendance?: () => void;
+  /** Sprint 6B Patch: open the meeting's full agenda sheet. */
+  onAgenda?: () => void;
   badge?: ReactNode;
   rsvp?: MeetingRsvp;
 }) => (
@@ -79,9 +82,10 @@ export const MeetingCard = ({
         {meeting.Agenda}
       </AppText>
     ) : null}
-    {rsvp || onAttendance ? (
+    {rsvp || onAttendance || onAgenda ? (
       <View style={{ gap: space.sm }}>
         {rsvp ? <RsvpToggle {...rsvp} /> : null}
+        {onAgenda ? <Button title={meeting.IsLiveInProgress === 1 ? '● Follow the live agenda' : '📋 Full agenda'} variant="secondary" onPress={onAgenda} /> : null}
         {onAttendance ? <Button title="Take attendance" variant="secondary" onPress={onAttendance} /> : null}
       </View>
     ) : null}

@@ -6,7 +6,7 @@
 // Outside every window the page shows only the placeholder notice; the drivers refuse late nominations
 // (NOMINATIONS_WINDOW_CLOSED) whatever the screen shows.
 import { useState } from 'react';
-import { describeError, formatTimestamp, GRAND_KNIGHT_ROLE, type BallotSeat, type OfficerSeat } from '@kofc/shared';
+import { describeError, formatTimestamp, GRAND_KNIGHT_ROLE, withNewMemberBadge, type BallotSeat, type OfficerSeat } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { Button, cx, Field, Notice, PageTitle, Pill, Select } from '@/components/ui';
 import { formatPersonName } from '@/lib/format';
@@ -123,7 +123,7 @@ function NominationForm({ councilId, seat, onSaved }: { councilId: number; seat:
               <option value="">Choose a brother Knight…</option>
               {(members.data ?? []).map((m) => (
                 <option key={m.id} value={m.id} disabled={already.has(m.id)}>
-                  {formatPersonName(m.MemberFirstName, m.MemberLastName)}
+                  {withNewMemberBadge(formatPersonName(m.MemberFirstName, m.MemberLastName), m, new Date())}
                   {already.has(m.id) ? ' (already nominated)' : ''}
                 </option>
               ))}

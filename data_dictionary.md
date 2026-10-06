@@ -644,3 +644,18 @@ The Recorder's count of a show of hands on a motion, one per motion (a unique in
 •	RecordedAt (DATETIME, NOT NULL) — When ('YYYY-MM-DD HH:MM:SS' UTC).
 •	LinkedTransactionID (VARCHAR(50), NULL) — JournalEntry.TransactionID of the council's posting that released the passed motion's capital (no foreign key: TransactionID is shared by a posting's lines). Set when the tally is recorded or later by meetings.linkHandTallyTransaction (the editors or the council's finance officers); NULL unlinks. Refused on a motion that failed.
 ________________________________________
+# 17. Last-Minute Agenda Lines, Live Line Tracking and Supreme New-Member Onboarding (Sprint 6B Patch)
+Schema version 32. meetings.addAgendaLine stores a blank MeetingAgendaItem at the end of a section (after New Business's generated motion lines) for the agenda's editors to write; readers who are not editors never see a blank line. meetings.advanceActiveAgendaItem takes the agenda line it puts on the floor, so the phones' agenda sheet frames that exact line.
+[Meeting] (additional column)
+•	ActiveAgendaLineKey (VARCHAR(50), NULL) — The agenda line on the floor: 'item:N', 'motion:N' or 'event:N' (AgendaLineView.key; cleanAgendaLineKey). Set with the center bar by meetings.advanceActiveAgendaItem (options.lineKey), NULL for a topic typed in by hand, cleared by closeLiveAssemblyConsole. Returned to every reader as LiveAgendaItem.lineKey.
+[Member] (additional column)
+•	DateJoinedCouncil (DATE, NULL) — The day the member joined the council, from Supreme Headquarters' roster (supreme.syncSupremeRoster) or entered by an Admin; never in the future nor on or before the date of birth. The member wears the '[🆕 New Member]' badge on rosters, roll calls, shift rosters and member drop-downs for 180 days from it, the join day being day 1; it is gone on day 181 (isNewMember). NULL when not known (no badge).
+[MemberEnrollmentToken]
+A new member's one-time setup code, issued by the post-insert welcome email that follows members.create and supreme.syncSupremeRoster. The code itself (20 Crockford base-32 characters, 'XXXXX-XXXXX-XXXXX-XXXXX') appears only in the email; auth.signUp(email, password, code) checks it against this member's unspent, unexpired codes (ENROLLMENT_CODE_INVALID otherwise) and spends it. A sign-up without a code still works by email alone.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	MemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). The member the code was issued to.
+•	TokenHash (VARCHAR(64), NOT NULL) — SHA-256 hex of the normalised code (enrollmentCodeHashInput); the code is never stored. Unique index.
+•	CreatedAt (DATETIME, NOT NULL) — When it was issued ('YYYY-MM-DD HH:MM:SS' UTC).
+•	ExpiresAt (DATETIME, NOT NULL) — ENROLLMENT_CODE_LIFETIME_DAYS (14) after CreatedAt.
+•	ConsumedAt (DATETIME, NULL) — When auth.signUp spent it; NULL while unspent.
+________________________________________

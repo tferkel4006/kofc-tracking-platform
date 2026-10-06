@@ -94,15 +94,17 @@ export class OnboardingController {
   }
 
   /**
-   * On `createPassword`: registers the password (hashed by auth.signUp) and remembers the session.
+   * On `createPassword`: registers the password (hashed by auth.signUp) and remembers the session. Sprint 6B Patch:
+   * `setupCode` is the optional one-time code from the welcome email; given, auth.signUp spends it (a wrong, used or
+   * expired code is shown on the screen).
    * On `signIn`: checks the password against the stored hash.
    */
-  async submitPassword(password: string, confirmation?: string): Promise<OnboardingState> {
+  async submitPassword(password: string, confirmation?: string, setupCode?: string): Promise<OnboardingState> {
     const current = this.state;
     if (current.screen === 'createPassword') {
       if (password !== confirmation) return this.set({ ...current, error: 'The two passwords do not match.' });
       try {
-        return await this.finish(await this.deps.db.auth.signUp(current.email, password));
+        return await this.finish(await this.deps.db.auth.signUp(current.email, password, setupCode?.trim() || undefined));
       } catch (err) {
         if (err instanceof BusinessRuleError && err.code === 'ALREADY_REGISTERED') {
           return this.set({ screen: 'signIn', email: current.email });

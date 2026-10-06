@@ -1953,3 +1953,40 @@ CREATE INDEX [MeetingAgendaItem_Meeting_Idx] ON [MeetingAgendaItem] ([MeetingID]
 GO
 CREATE UNIQUE INDEX [MotionHandTally_Motion_Idx] ON [MotionHandTally] ([ProposedMotionID]);
 GO
+
+-- =========================================================================
+-- Sprint 6B Patch: LAST-MINUTE AGENDA LINES, LIVE LINE TRACKING AND SUPREME NEW-MEMBER ONBOARDING
+-- Meeting.ActiveAgendaLineKey names the agenda line the chair put on the floor ('item:12', 'motion:3' or 'event:5', as
+-- AgendaLineView.key), set by meetings.advanceActiveAgendaItem together with the center bar and cleared with it, so
+-- every phone following the meeting frames that exact line. A topic typed in by hand names no line (NULL).
+-- Member.DateJoinedCouncil is the day the member joined the council, as Supreme's roster gives it (or as an Admin
+-- enters it). For 180 days from that date, the join day being day 1, the member carries a 'New Member' badge on every
+-- roster, roll call and shift roster (isNewMember); it drops off on day 181. NULL for members whose date is not known.
+-- MemberEnrollmentToken is the one-time setup code in a new member's welcome email: only its SHA-256 (TokenHash) is
+-- stored, it expires at ExpiresAt (ENROLLMENT_CODE_LIFETIME_DAYS after it was issued) and ConsumedAt marks it used by
+-- auth.signUp. Issuing a new code (a later welcome email) leaves earlier unexpired codes valid until they expire.
+-- =========================================================================
+ALTER TABLE [Meeting] ADD [ActiveAgendaLineKey] VARCHAR(50) NULL;
+GO
+ALTER TABLE [Member] ADD [DateJoinedCouncil] DATE NULL;
+GO
+
+CREATE TABLE [MemberEnrollmentToken] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[MemberID] INTEGER NOT NULL,
+	[TokenHash] VARCHAR(64) NOT NULL,
+	[CreatedAt] DATETIME NOT NULL,
+	[ExpiresAt] DATETIME NOT NULL,
+	[ConsumedAt] DATETIME NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [MemberEnrollmentToken]
+ADD FOREIGN KEY([MemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [MemberEnrollmentToken_Hash_Idx] ON [MemberEnrollmentToken] ([TokenHash]);
+GO

@@ -150,11 +150,14 @@ export function cleanLiveAgendaItem(itemName: unknown, allottedMinutes: unknown)
 const stampMillis = (stamp: string): number => Date.parse(`${stamp.replace(' ', 'T')}Z`);
 
 /** The center bar's item with the seconds left at `now`, or null when no item is active. */
-export function liveAgendaItem(meeting: Pick<Meeting, 'ActiveAgendaItemName' | 'ActiveAgendaItemTimeRemaining' | 'ActiveAgendaItemStartedAt'>, now: Date) {
+export function liveAgendaItem(
+  meeting: Pick<Meeting, 'ActiveAgendaItemName' | 'ActiveAgendaItemTimeRemaining' | 'ActiveAgendaItemStartedAt' | 'ActiveAgendaLineKey'>,
+  now: Date,
+) {
   const { ActiveAgendaItemName: name, ActiveAgendaItemTimeRemaining: minutes, ActiveAgendaItemStartedAt: startedAt } = meeting;
   if (!name || minutes == null || !startedAt) return null;
   const elapsed = Math.max(0, Math.floor((now.getTime() - stampMillis(startedAt)) / 1000));
-  return { name, allottedMinutes: minutes, startedAt, secondsRemaining: Math.max(0, minutes * 60 - elapsed) };
+  return { name, allottedMinutes: minutes, startedAt, secondsRemaining: Math.max(0, minutes * 60 - elapsed), lineKey: meeting.ActiveAgendaLineKey ?? null };
 }
 
 // ---- secret ballots ----------------------------------------------------------------------

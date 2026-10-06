@@ -15,6 +15,7 @@ import {
   GRAND_KNIGHT_ROLE,
   isSuperAdmin,
   planConclusionFromSeats,
+  withNewMemberBadge,
   type FraternalYearConclusion,
   type Member,
   type OfficerSeat,
@@ -60,7 +61,7 @@ function MemberSelect({
       <option value="">Choose a brother Knight…</option>
       {members.map((m) => (
         <option key={m.id} value={m.id} disabled={exclude.has(m.id)}>
-          {formatPersonName(m.MemberFirstName, m.MemberLastName)}
+          {withNewMemberBadge(formatPersonName(m.MemberFirstName, m.MemberLastName), m, new Date())}
         </option>
       ))}
     </Select>

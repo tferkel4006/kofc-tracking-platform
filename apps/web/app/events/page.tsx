@@ -9,6 +9,7 @@ import {
   formatTimeRange,
   isUrgent,
   shiftStatus,
+  withNewMemberBadge,
   type Category,
   type Council,
   type Event,
@@ -188,7 +189,7 @@ function EventForm({
             <Select id={id} value={ownerId} onChange={(e) => setOwnerId(Number(e.target.value))}>
               {owners.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.MemberLastName}, {m.MemberFirstName}
+                  {withNewMemberBadge(`${m.MemberLastName}, ${m.MemberFirstName}`, m, new Date())}
                 </option>
               ))}
             </Select>

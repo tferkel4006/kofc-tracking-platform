@@ -26,7 +26,7 @@ interface AppContextValue {
   /** Re-reads the flags, e.g. on a pull-to-refresh after a Super Admin changed them. */
   refreshFeatures(): Promise<void>;
   submitEmail(email: string): Promise<void>;
-  submitPassword(password: string, confirmation?: string): Promise<void>;
+  submitPassword(password: string, confirmation?: string, setupCode?: string): Promise<void>;
   restart(): void;
   signOut(): Promise<void>;
 }
@@ -100,7 +100,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const submitEmail = useCallback(async (email: string) => setOnboarding(await controller.submitEmail(email)), [controller]);
   const submitPassword = useCallback(
-    async (password: string, confirmation?: string) => setOnboarding(await controller.submitPassword(password, confirmation)),
+    async (password: string, confirmation?: string, setupCode?: string) => setOnboarding(await controller.submitPassword(password, confirmation, setupCode)),
     [controller],
   );
   const restart = useCallback(() => setOnboarding(controller.restart()), [controller]);

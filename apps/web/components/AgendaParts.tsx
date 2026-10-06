@@ -8,6 +8,9 @@
 //   - Motion lines under New and Old Business carry the Recorder's 'Record Hand Ballot Tally' drawer
 //     (meetings.recordHandBallotTally): the split decides the motion, its status badge updates, and a motion that
 //     released capital is tied to its general-ledger posting (finance.listLedgerTransactions).
+//   - Sprint 6B Patch: each section header carries '[ ➕ Add Last-Minute Agenda Line ]' for the editors
+//     (meetings.addAgendaLine): a blank line is stored at once and opens for typing; every screen shows it on its next
+//     read. The line the chair put on the floor (LiveAgendaItem.lineKey) is framed in gold with an 'On the floor' tag.
 import { useEffect, useState, type KeyboardEvent } from 'react';
 import {
   AGENDA_LINE_MAX_LENGTH,
@@ -17,7 +20,9 @@ import {
   HAND_TALLY_MAX_COUNT,
   LEGISLATIVE_SECTION_KEYS,
   LIVE_AGENDA_ITEM_NAME_MAX_LENGTH,
+  locateActiveAgendaLine,
   parseAgendaMarkdown,
+  type AgendaSectionKey,
   type AgendaLineView,
   type MeetingAgendaView,
 } from '@kofc/shared';
@@ -91,6 +96,8 @@ function AgendaLine({
   canEdit,
   canPush,
   busy,
+  onFloor,
+  startEditing,
   onSave,
   onTally,
   onPush,
@@ -100,11 +107,16 @@ function AgendaLine({
   canEdit: boolean;
   canPush: boolean;
   busy: boolean;
+  /** The chair put this line on the floor. */
+  onFloor: boolean;
+  /** Open the editor straight away (a last-minute line just added from this screen). */
+  startEditing: boolean;
   onSave: (markdown: string) => Promise<boolean>;
   onTally: () => void;
   onPush: () => void;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string | null>(startEditing ? line.markdown : null);
+  const blank = line.markdown.trim() === '';
 
   const save = async () => {
     if (draft === null || draft.trim() === '') return;
@@ -124,9 +136,19 @@ function AgendaLine({
   const linkable = legislative && !!line.handTally && line.motion!.VoteResult === 'Passed' && !line.handTally.LinkedTransactionID;
 
   return (
-    <li className={cx('grid grid-cols-[2.25rem_1fr] gap-x-3 border-b border-line py-3 last:border-b-0', legislative && 'rounded border-l-8 border-l-gold bg-white pl-2')}>
+    <li
+      aria-current={onFloor ? 'step' : undefined}
+      className={cx(
+        'grid grid-cols-[2.25rem_1fr] gap-x-3 border-b border-line py-3 last:border-b-0',
+        legislative && !onFloor && 'rounded border-l-8 border-l-gold bg-white pl-2',
+        onFloor && 'rounded border-4 border-navy bg-gold px-2',
+      )}
+    >
       <span className="pt-0.5 text-right font-serif text-lg font-bold tabular-nums text-navy">{number}</span>
       <div className="flex min-w-0 flex-col gap-2">
+        {onFloor ? (
+          <span className="self-start rounded-full bg-navy px-3 py-0.5 text-xs font-bold uppercase tracking-wide text-white">On the floor</span>
+        ) : null}
         {draft === null ? (
           <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
             {canEdit ? (
@@ -136,7 +158,7 @@ function AgendaLine({
                 title="Click to correct this line"
                 className="min-w-0 flex-1 cursor-text rounded text-left text-lg leading-snug hover:bg-gold/20 focus-visible:bg-gold/20"
               >
-                <AgendaMarkdown text={line.markdown} />
+                {blank ? <span className="italic text-muted">Blank last-minute line - click to write it</span> : <AgendaMarkdown text={line.markdown} />}
               </button>
             ) : (
               <AgendaMarkdown text={line.markdown} className="min-w-0 flex-1 text-lg leading-snug" />
@@ -379,6 +401,7 @@ export function LiveAgendaBoard({
   canEdit,
   live,
   canPush,
+  activeLineKey,
   onPush,
   onChanged,
 }: {
@@ -387,7 +410,9 @@ export function LiveAgendaBoard({
   canEdit: boolean;
   live: boolean;
   canPush: boolean;
-  onPush: (topic: string) => void;
+  /** The line on the floor (LiveAgendaItem.lineKey), framed on the board. */
+  activeLineKey: string | null;
+  onPush: (topic: string, lineKey: string) => void;
   onChanged: () => void;
 }) {
   const user = useUser();
@@ -395,6 +420,22 @@ export function LiveAgendaBoard({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tallying, setTallying] = useState<AgendaLineView | null>(null);
+  /** The last-minute line this screen just added, opened for typing. */
+  const [addedKey, setAddedKey] = useState<string | null>(null);
+
+  const addLine = async (section: AgendaSectionKey) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { agenda, line } = await db.meetings.addAgendaLine(user.memberId, meetingId, section);
+      setView(agenda);
+      setAddedKey(line.key);
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -429,6 +470,7 @@ export function LiveAgendaBoard({
 
   if (!view) return error ? <Notice tone="error">{error}</Notice> : <p className="text-sm">Loading the agenda…</p>;
   const { meeting } = view;
+  const floorSection = locateActiveAgendaLine(view, activeLineKey)?.sectionIndex ?? -1;
   let numbered = 0;
 
   return (
@@ -466,10 +508,17 @@ export function LiveAgendaBoard({
         <div className="grid grid-cols-1 gap-x-10 gap-y-6 xl:grid-cols-2">
           {view.sections.map((s, si) => (
             <div key={s.key} className={cx('flex flex-col', s.key === 'opening' && 'xl:col-span-2')}>
-              <h3 className="flex items-baseline gap-3 border-b-4 border-gold pb-1 font-serif text-2xl font-bold text-navy">
-                <span className="tabular-nums">{ROMAN[si]}.</span>
-                {s.title}
-              </h3>
+              <div className="flex flex-wrap items-end justify-between gap-2 border-b-4 border-gold pb-1">
+                <h3 className={cx('flex items-baseline gap-3 font-serif text-2xl font-bold text-navy', floorSection === si && 'underline decoration-gold decoration-4')}>
+                  <span className="tabular-nums">{ROMAN[si]}.</span>
+                  {s.title}
+                </h3>
+                {canEdit ? (
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => void addLine(s.key)} aria-label={`Add a last-minute line to ${s.title}`}>
+                    [ ➕ Add Last-Minute Agenda Line ]
+                  </Button>
+                ) : null}
+              </div>
               {s.key === 'opening' && view.officers.length ? (
                 <ul aria-label="Officer array" className="mt-3 flex flex-wrap gap-2">
                   {view.officers.map((o) => (
@@ -483,6 +532,8 @@ export function LiveAgendaBoard({
               {s.lines.length ? (
                 <ol className="flex flex-col">
                   {s.lines.map((line) => {
+                    // A blank last-minute line is the editors' scratch space until it is written; nobody else sees it.
+                    if (!canEdit && line.markdown.trim() === '') return null;
                     numbered += 1;
                     return (
                       <AgendaLine
@@ -492,9 +543,11 @@ export function LiveAgendaBoard({
                         canEdit={canEdit}
                         canPush={canPush && live}
                         busy={busy}
+                        onFloor={line.key === activeLineKey}
+                        startEditing={line.key === addedKey}
                         onSave={(markdown) => run(() => db.meetings.editAgendaLine(user.memberId, meetingId, line.ref, markdown))}
                         onTally={() => setTallying(line)}
-                        onPush={() => onPush(plainTopic(line.markdown) || s.title)}
+                        onPush={() => onPush(plainTopic(line.markdown) || s.title, line.key)}
                       />
                     );
                   })}

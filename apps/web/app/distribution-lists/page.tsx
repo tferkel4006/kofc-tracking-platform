@@ -17,7 +17,7 @@ import {
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { RecordGrid, type Draft, type Selection } from '@/components/RecordGrid';
-import { Button, cx, Input, Notice, PageTitle, Pill } from '@/components/ui';
+import { Button, cx, Input, NewMemberBadge, Notice, PageTitle, Pill } from '@/components/ui';
 import { formatPersonName } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -61,7 +61,10 @@ function MemberPicker({ members, value, onChange, disabled }: { members: Member[
           <li key={m.id} className={cx('border-b border-line px-3 py-1 last:border-b-0', chosen.has(m.id) && 'bg-white font-bold')}>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={chosen.has(m.id)} disabled={disabled} onChange={() => toggle(m.id)} />
-              <span className="flex-1">{formatPersonName(m.MemberFirstName, m.MemberLastName)}</span>
+              <span className="flex-1">
+                {formatPersonName(m.MemberFirstName, m.MemberLastName)}
+                <NewMemberBadge member={m} />
+              </span>
               <span className="text-xs text-muted">{m.Email}</span>
             </label>
           </li>

@@ -453,3 +453,39 @@ export function parseAgendaMarkdown(text: string): AgendaMarkdownBlock[] {
       return bullet ? { kind: 'bullet' as const, spans: parseSpans(line.slice(bullet[0].length)) } : { kind: 'paragraph' as const, spans: parseSpans(line) };
     });
 }
+
+// ---- last-minute lines and the line on the floor (Sprint 6B Patch) ---------------------------------
+
+/** Rejects INVALID_INPUT unless `value` is one of AGENDA_SECTION_KEYS. */
+export function assertAgendaSectionKey(value: unknown): AgendaSectionKey {
+  if ((AGENDA_SECTION_KEYS as readonly unknown[]).includes(value)) return value as AgendaSectionKey;
+  throw invalid(`An agenda section is one of ${AGENDA_SECTION_KEYS.join(', ')}; received ${JSON.stringify(value)}.`, { section: value });
+}
+
+/**
+ * Where a last-minute line goes in `section`: after every line already there - its stored items and, in New Business,
+ * the generated motion lines (which sort at MOTION_LINE_SORT_BASE + motion id).
+ */
+export function nextAgendaSortOrder(
+  section: AgendaSectionKey,
+  items: readonly Pick<MeetingAgendaItem, 'SectionKey' | 'SortOrder'>[],
+  meetingMotionIds: readonly number[],
+): number {
+  const sorts = items.filter((i) => i.SectionKey === section).map((i) => i.SortOrder);
+  if (section === 'new_business') sorts.push(...meetingMotionIds.map((id) => MOTION_LINE_SORT_BASE + id));
+  return Math.max(0, ...sorts) + 1;
+}
+
+/** A line key for Meeting.ActiveAgendaLineKey: 'item:N', 'motion:N' or 'event:N', or null (INVALID_INPUT otherwise). */
+export function cleanAgendaLineKey(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  if (typeof value === 'string' && /^(?:item|motion|event):[1-9]\d{0,9}$/.test(value)) return value;
+  throw invalid(`An agenda line key is 'item:N', 'motion:N' or 'event:N'; received ${JSON.stringify(value)}.`, { lineKey: value });
+}
+
+/** The line on the floor and the section holding it, for the phones' focus frame; nulls when none is on the agenda. */
+export function locateActiveAgendaLine(view: Pick<MeetingAgendaView, 'sections'>, lineKey: string | null | undefined): { sectionIndex: number; lineKey: string } | null {
+  if (!lineKey) return null;
+  const sectionIndex = view.sections.findIndex((s) => s.lines.some((l) => l.key === lineKey));
+  return sectionIndex < 0 ? null : { sectionIndex, lineKey };
+}

@@ -12,6 +12,7 @@ import {
   type SelectHTMLAttributes,
 } from 'react';
 
+import { isNewMember, NEW_MEMBER_BADGE_LABEL, type Member } from '@kofc/shared';
 export const cx = (...parts: (string | false | null | undefined)[]): string => parts.filter(Boolean).join(' ');
 
 const control =
@@ -87,6 +88,22 @@ export function Button({
 }
 
 type PillTone = 'navy' | 'red' | 'redOutline' | 'gold' | 'outline';
+
+/**
+ * Sprint 6B Patch: '[🆕 New Member]' beside a member's name for their first 180 days on the council (isNewMember, from
+ * Member.DateJoinedCouncil); it drops off on day 181. Renders nothing otherwise.
+ */
+export function NewMemberBadge({ member }: { member: Pick<Member, 'DateJoinedCouncil'> | null | undefined }) {
+  if (!isNewMember(member, new Date())) return null;
+  return (
+    <span
+      title="Joined the council within the last 180 days"
+      className="ml-1.5 inline-block whitespace-nowrap rounded-full border border-navy bg-gold px-2 py-0.5 align-middle text-xs font-bold text-navy"
+    >
+      [{NEW_MEMBER_BADGE_LABEL}]
+    </span>
+  );
+}
 
 /** Status chip. Gold is a fill carrying navy text (6.4:1), never gold text on white. */
 export function Pill({ tone = 'navy', children }: { tone?: PillTone; children: ReactNode }) {

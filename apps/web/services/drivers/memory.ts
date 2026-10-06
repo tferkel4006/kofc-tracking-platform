@@ -336,6 +336,24 @@ import {
   mayPostGeneralLedger,
   MOTION_LINE_SORT_BASE,
   summarizeLedgerTransactions,
+  assertAgendaSectionKey,
+  assertMayImportSupremeRoster,
+  cleanAgendaLineKey,
+  cleanRosterJoinDate,
+  cleanSupremeRosterRow,
+  describeError,
+  SecurityPrivilegeError,
+  enrollmentCodeExpiry,
+  enrollmentCodeHashInput,
+  enrollmentCodeInvalid,
+  formatEnrollmentCode,
+  buildSendGridMailRequest,
+  isEnrollmentTokenUsable,
+  logSendGridRequest,
+  nextAgendaSortOrder,
+  rosterMemberNumber,
+  type SendGridMailRequest,
+  type SupremeRosterSyncResult,
   type CleanJournalLine,
   type MeetingAgendaItem,
   type MeetingAgendaView,
@@ -591,6 +609,11 @@ export interface MemoryDataServiceOptions {
   /** How supreme.syncAlchemerReport posts to Alchemer. Default: print the request with `log` (logAlchemerRequest). */
   postAlchemer?: (request: AlchemerRequest) => Promise<AlchemerResponse>;
   /**
+   * Sprint 6B Patch: how a welcome email is sent, as a SendGrid v3 mail/send request carrying the key placeholder. Default:
+   * print the request with `log` (logSendGridRequest); the real key belongs on a server, never in this client driver.
+   */
+  sendEmail?: (request: SendGridMailRequest) => Promise<void>;
+  /**
    * Also load Seed.sql's presentation data (Sprint 5Z-1: officers, expense sheets, charity checks and intake requests)
    * right after the baseline rows. The app turns it on; tests keep the minimal baseline. Default: false.
    */
@@ -609,6 +632,7 @@ export class MemoryDataService implements DataService {
   private readonly now: () => Date;
   private readonly log: (...args: unknown[]) => void;
   private readonly postAlchemer: (request: AlchemerRequest) => Promise<AlchemerResponse>;
+  private readonly sendEmail: (request: SendGridMailRequest) => Promise<void>;
   private readonly presentationData: boolean;
   private readonly ballotSecret: string;
 
@@ -618,6 +642,7 @@ export class MemoryDataService implements DataService {
     this.now = options.now ?? (() => new Date());
     this.log = options.log ?? console.log;
     this.postAlchemer = options.postAlchemer ?? logAlchemerRequest((...args) => this.log(...args));
+    this.sendEmail = options.sendEmail ?? logSendGridRequest((...args) => this.log(...args));
   }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -802,9 +827,10 @@ export class MemoryDataService implements DataService {
       return member ? this.sessionFor(s, member, cred) : null;
     },
 
-    signUp: async (email, password) => {
+    signUp: async (email, password, enrollmentCode) => {
       assertPasswordAcceptable(password);
       const hash = await sha256Hex(password); // hash first: the check-and-write below must not span an await
+      const codeHash = enrollmentCode == null || enrollmentCode.trim() === '' ? null : await sha256Hex(enrollmentCodeHashInput(enrollmentCode));
       const s = await this.ready();
       const member = s.rows('Member').find((m) => lower(m.Email) === email.trim().toLowerCase());
       if (!member) {
@@ -826,6 +852,12 @@ export class MemoryDataService implements DataService {
         throw new BusinessRuleError('ALREADY_REGISTERED', `${member.Email} has already registered. Sign in instead.`, {
           memberId: member.id,
         });
+      }
+      if (codeHash !== null) {
+        // Sprint 6B Patch: the welcome email's setup code must be this member's, unspent and unexpired; it is spent here.
+        const token = s.rows('MemberEnrollmentToken').find((t) => t.MemberID === member.id && t.TokenHash === codeHash);
+        if (!token || !isEnrollmentTokenUsable(token as unknown as { ExpiresAt: string; ConsumedAt: string | null }, this.now())) throw enrollmentCodeInvalid();
+        (token as Row).ConsumedAt = toTimestamp(this.now());
       }
       (cred as Row).Password = hash;
       (cred as Row).Username = member.Email;
@@ -1379,7 +1411,7 @@ export class MemoryDataService implements DataService {
         return s.insert('Member', values);
       });
       const created = withoutPushToken({ ...row }) as unknown as Member;
-      this.sendWelcomeEmail(s, created);
+      await this.sendWelcomeEmail(s, created);
       return created;
     },
 
@@ -1440,9 +1472,21 @@ export class MemoryDataService implements DataService {
     if (clean.WorkingStatusID != null) this.assertRowExists(s, 'WorkingStatus', clean.WorkingStatusID, 'working status');
   }
 
-  /** System hook after members.create commits: compiles the welcome email and logs it (no mail server yet). */
-  private sendWelcomeEmail(s: MemoryStore, member: Member): void {
+  /**
+   * The post-insert hook after members.create or supreme.syncSupremeRoster stores a member: issues their one-time setup
+   * code (only its hash is kept), compiles the welcome email and sends it as a SendGrid request (sendEmail).
+   */
+  private async sendWelcomeEmail(s: MemoryStore, member: Member): Promise<void> {
     try {
+      const code = formatEnrollmentCode(globalThis.crypto.getRandomValues(new Uint8Array(20)));
+      const issuedAt = this.now();
+      const expiresAt = enrollmentCodeExpiry(issuedAt);
+      s.insert('MemberEnrollmentToken', {
+        MemberID: member.id,
+        TokenHash: await sha256Hex(enrollmentCodeHashInput(code)),
+        CreatedAt: toTimestamp(issuedAt),
+        ExpiresAt: expiresAt,
+      });
       const council = { ...s.rows('Council').find((c) => c.id === member.CouncilID)! } as unknown as Council;
       const activeId = this.activeStatusId(s);
       const adminType = s.rows('MemberType').find((t) => t.Type === 'Admin')?.id;
@@ -1455,7 +1499,8 @@ export class MemoryDataService implements DataService {
       const details = admin
         ? { name: `${admin.MemberFirstName} ${admin.MemberLastName}`, email: admin.Email, phone: admin.Phone }
         : null;
-      this.log('[notification]', JSON.stringify(buildWelcomeEmail({ member, council, admin: details }), null, 2));
+      const packet = buildWelcomeEmail({ member, council, admin: details, enrollment: { code, expiresAt } });
+      await this.sendEmail(buildSendGridMailRequest(packet.email));
     } catch (err) {
       // The member is already saved; a failed notification must not undo or fail that.
       console.error('[notification] welcome email failed:', err);
@@ -2153,6 +2198,7 @@ export class MemoryDataService implements DataService {
             shift: { ...shift } as unknown as Shift,
             MemberFirstName: member.MemberFirstName as string,
             MemberLastName: member.MemberLastName as string,
+            DateJoinedCouncil: (member.DateJoinedCouncil as string | null | undefined) ?? null,
             hoursLogged: time ? (time.Hours as number) : null,
           });
         }
@@ -2872,8 +2918,9 @@ export class MemoryDataService implements DataService {
       return this.liveAssemblyState(s, actorId, meetingId);
     },
 
-    advanceActiveAgendaItem: async (actorId, meetingId, itemName, allottedMinutes) => {
+    advanceActiveAgendaItem: async (actorId, meetingId, itemName, allottedMinutes, options = {}) => {
       const item = cleanLiveAgendaItem(itemName, allottedMinutes);
+      const lineKey = cleanAgendaLineKey(options.lineKey);
       const s = await this.ready();
       s.transaction(() => {
         const actor = this.memberWriteActor(s, actorId);
@@ -2884,6 +2931,7 @@ export class MemoryDataService implements DataService {
           ActiveAgendaItemName: item.name,
           ActiveAgendaItemTimeRemaining: item.minutes,
           ActiveAgendaItemStartedAt: toTimestamp(this.now()),
+          ActiveAgendaLineKey: lineKey,
         });
       });
       return this.liveAssemblyState(s, actorId, meetingId);
@@ -2990,7 +3038,13 @@ export class MemoryDataService implements DataService {
         assertMayRunLiveAssembly(actor, meeting as unknown as Meeting, `close the live console of meeting ${meetingId}`);
         if (!isMeetingLive(meeting as unknown as Meeting)) return;
         assertNoBallotOpen(meetingId, s.rows('ProposedMotion').filter((p) => p.TargetMeetingID === meetingId) as unknown as ProposedMotion[]);
-        Object.assign(meeting, { IsLiveInProgress: 0, ActiveAgendaItemName: null, ActiveAgendaItemTimeRemaining: null, ActiveAgendaItemStartedAt: null });
+        Object.assign(meeting, {
+          IsLiveInProgress: 0,
+          ActiveAgendaItemName: null,
+          ActiveAgendaItemTimeRemaining: null,
+          ActiveAgendaItemStartedAt: null,
+          ActiveAgendaLineKey: null,
+        });
       });
       return this.liveAssemblyState(s, actorId, meetingId);
     },
@@ -3049,6 +3103,29 @@ export class MemoryDataService implements DataService {
         }
       });
       return this.meetingAgendaView(s, meetingId);
+    },
+
+    addAgendaLine: async (actorId, meetingId, sectionKey) => {
+      const section = assertAgendaSectionKey(sectionKey);
+      const s = await this.ready();
+      const itemId = s.transaction(() => {
+        const meeting = this.requireMeetingRow(s, meetingId) as unknown as Meeting;
+        assertMayEditLiveAgenda(this.memberWriteActor(s, actorId), meeting, `add a line to the agenda of meeting ${meetingId}`);
+        const items = s.rows('MeetingAgendaItem').filter((i) => i.MeetingID === meetingId) as unknown as MeetingAgendaItem[];
+        const motionIds = s.rows('ProposedMotion').filter((p) => p.TargetMeetingID === meetingId).map((p) => p.id as number);
+        return s.insert('MeetingAgendaItem', {
+          CouncilID: meeting.CouncilID,
+          MeetingID: meetingId,
+          SectionKey: section,
+          SortOrder: nextAgendaSortOrder(section, items, motionIds),
+          LineMarkdown: '',
+          LastEditedByMemberID: actorId,
+          LastEditedAt: toTimestamp(this.now()),
+        }).id as number;
+      });
+      const agenda = this.meetingAgendaView(s, meetingId);
+      const line = agenda.sections.flatMap((sec) => sec.lines).find((l) => l.key === `item:${itemId}`)!;
+      return { agenda, line };
     },
 
     recordHandBallotTally: async (actorId, motionId, approvedCount, deniedCount, options = {}) => {
@@ -3350,6 +3427,58 @@ export class MemoryDataService implements DataService {
         Status: status,
       });
       return { sync: { ...row } as unknown as SupremeReportingSync, snapshot, request, error };
+    },
+
+    syncSupremeRoster: async (actorId, councilId, rows) => {
+      const s = await this.ready();
+      const result = s.transaction((): SupremeRosterSyncResult => {
+        assertMayImportSupremeRoster(this.memberWriteActor(s, actorId), councilId);
+        this.assertCouncilsExist(s, [councilId]);
+        const memberTypeId = s.rows('MemberType').find((t) => t.Type === 'Member')?.id as number;
+        const ids = { activeStatusId: this.activeStatusId(s) as number, memberTypeId };
+        const out: SupremeRosterSyncResult = { created: [], updated: [], skipped: [] };
+        const seen = new Set<number>();
+        for (const row of Array.isArray(rows) ? rows : []) {
+          const memberNumber = rosterMemberNumber(row);
+          if (memberNumber === null) {
+            out.skipped.push({ memberNumber: null, reason: 'The row has no member number.' });
+            continue;
+          }
+          if (seen.has(memberNumber)) {
+            out.skipped.push({ memberNumber, reason: 'The member number appears twice in this roster.' });
+            continue;
+          }
+          seen.add(memberNumber);
+          try {
+            const existing = s.rows('Member').find((m) => m.CouncilID === councilId && m.MemberNumber === memberNumber);
+            if (existing) {
+              const joined = cleanRosterJoinDate(row.DateJoinedCouncil, this.now());
+              if ((existing.DateJoinedCouncil ?? null) !== joined) {
+                existing.DateJoinedCouncil = joined;
+                out.updated.push(withoutPushToken({ ...existing }) as unknown as Member);
+              }
+              continue;
+            }
+            const clean = cleanSupremeRosterRow(row, councilId, ids, this.now());
+            const email = clean.Email.toLowerCase();
+            if (s.rows('Member').some((m) => lower(m.Email) === email) || s.rows('Credentials').some((c) => lower(c.Username) === email)) {
+              out.skipped.push({ memberNumber, reason: `The email ${clean.Email} already belongs to a member or login.` });
+              continue;
+            }
+            const cred = s.insert('Credentials', { Username: clean.Email, Password: UNREGISTERED_PASSWORD });
+            const values: Record<string, SeedValue | undefined> = { CredentialID: cred.id };
+            for (const c of MEMBER_COLUMNS) values[c] = clean[c] ?? null;
+            out.created.push(withoutPushToken({ ...s.insert('Member', values) }) as unknown as Member);
+          } catch (err) {
+            if (!(err instanceof BusinessRuleError) || err instanceof SecurityPrivilegeError) throw err;
+            out.skipped.push({ memberNumber, reason: describeError(err) });
+          }
+        }
+        return out;
+      });
+      // The post-insert hook: every new member gets the welcome email the moment the batch is stored.
+      for (const member of result.created) await this.sendWelcomeEmail(s, member);
+      return result;
     },
 
     listSyncHistory: async (actorId, councilId) => {

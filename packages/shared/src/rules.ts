@@ -109,7 +109,8 @@ export type BusinessRuleCode =
   | 'MOTION_STATUS_CONFLICT'
   | 'VOTE_TALLY_CONFLICT'
   | 'AGENDA_EDITOR_REQUIRED'
-  | 'AGENDA_CONFLICT';
+  | 'AGENDA_CONFLICT'
+  | 'ENROLLMENT_CODE_INVALID';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -583,6 +584,7 @@ export const MEMBER_COLUMNS = [
   'ProfilePhotoURL',
   'Biography',
   'IsBudgetDirector',
+  'DateJoinedCouncil',
 ] as const satisfies readonly (keyof NewMember)[];
 
 /** Longest Member.ProfilePhotoURL (VARCHAR(2000)). */
@@ -1525,6 +1527,10 @@ export function cleanNewMember(input: NewMember, now: Date): NewMember {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw invalid(`Email "${email}" is not a valid address.`, { email });
   const dob = assertIsoDate(input.DateOfBirth, 'Date of birth');
   if (dob >= toIsoDate(now)) throw invalid(`Date of birth ${dob} must be in the past.`, { dateOfBirth: dob });
+  // Sprint 6B Patch: the day the member joined the council - optional, never in the future nor before their birth.
+  const joined = input.DateJoinedCouncil == null || input.DateJoinedCouncil === '' ? null : assertIsoDate(input.DateJoinedCouncil, 'Date joined council');
+  if (joined !== null && joined > toIsoDate(now)) throw invalid(`Date joined council ${joined} cannot be in the future.`, { dateJoinedCouncil: joined });
+  if (joined !== null && joined <= dob) throw invalid(`Date joined council ${joined} must come after the date of birth.`, { dateJoinedCouncil: joined });
   return {
     CouncilID: assertInteger(input.CouncilID, 'Council', 1),
     MemberNumber: assertInteger(input.MemberNumber, 'Member number', 1),
@@ -1545,6 +1551,7 @@ export function cleanNewMember(input: NewMember, now: Date): NewMember {
     ProfilePhotoURL: optionalText(input.ProfilePhotoURL, 'Profile photo', MEMBER_PHOTO_URL_MAX_LENGTH),
     Biography: optionalText(input.Biography, 'Biography', MEMBER_BIOGRAPHY_MAX_LENGTH),
     IsBudgetDirector: bitFlag(input.IsBudgetDirector, 'IsBudgetDirector'),
+    DateJoinedCouncil: joined,
   };
 }
 

@@ -4,21 +4,28 @@
 // produce (supreme.previewReport), then transmits them to Supreme's Alchemer survey (supreme.syncAlchemerReport).
 // The post goes through the portal's server route, which holds the Alchemer credentials (services/alchemer-transport).
 // Every attempt, successful or failed, lands on the sync history timeline (supreme.listSyncHistory).
+// Sprint 6B Patch: the council's Admins (and Super Admins) also bring in Supreme Headquarters' roster export here
+// (RosterImport, supreme.syncSupremeRoster): new members are added with their join date and sent the welcome email with
+// the Expo Go steps and a one-time setup code; members already on the roster have their join date brought in line.
 import { useState } from 'react';
 import {
   alchemerAnswers,
+  canAdministerCouncil,
   canSyncSupremeReports,
   describeError,
   formatTimestamp,
+  parseSupremeRosterCsv,
   SUPREME_FORM_LABELS,
   SUPREME_FORM_TYPES,
   supremePeriodOptions,
   type SupremeComplianceSnapshot,
   type SupremeFormType,
+  type SupremeRosterRow,
+  type SupremeRosterSyncResult,
   type SupremeSyncHistoryEntry,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td } from '@/components/ui';
+import { Button, cx, Empty, Field, Input, NewMemberBadge, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td, Textarea } from '@/components/ui';
 import { formatDecimalHours, formatMoney } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -139,6 +146,110 @@ function SyncTimeline({ entries }: { entries: SupremeSyncHistoryEntry[] }) {
   );
 }
 
+/** Supreme Headquarters' roster export, brought into the council's Member table (supreme.syncSupremeRoster). */
+function RosterImport({ councilId }: { councilId: number }) {
+  const user = useUser();
+  const [csv, setCsv] = useState('');
+  const [rows, setRows] = useState<SupremeRosterRow[] | null>(null);
+  const [result, setResult] = useState<SupremeRosterSyncResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const read = (text: string) => {
+    setCsv(text);
+    setResult(null);
+    setError(null);
+    try {
+      setRows(text.trim() === '' ? null : parseSupremeRosterCsv(text));
+    } catch (err) {
+      setRows(null);
+      setError(describeError(err));
+    }
+  };
+  const sync = async () => {
+    if (!rows) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setResult(await db.supreme.syncSupremeRoster(user.memberId, councilId, rows));
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel title="Supreme roster sync - new member onboarding">
+      <div className="flex flex-col gap-3">
+        <p className="text-sm">
+          Load Supreme Headquarters&apos; roster export (CSV: Member Number, First Name, Last Name, Email, Phone, Street, Street 2, City, State, Zip,
+          Birth Date, Degree, Date Joined). New members are added with their join date and wear the [🆕 New Member] badge for 180 days; each is sent
+          the welcome email with the Expo Go download steps and a one-time setup code the moment the roster is stored.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <Field label="Roster file">
+            {(id) => (
+              <input
+                id={id}
+                type="file"
+                accept=".csv,text/csv"
+                className="text-sm"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void file.text().then(read);
+                }}
+              />
+            )}
+          </Field>
+        </div>
+        <Field label="…or paste the export">
+          {(id) => <Textarea id={id} value={csv} onChange={(e) => read(e.target.value)} rows={5} placeholder="Member Number,First Name,Last Name,Email,..." />}
+        </Field>
+        {error ? (
+          <Notice tone="error" onDismiss={() => setError(null)}>
+            {error}
+          </Notice>
+        ) : null}
+        <Button variant="gold" disabled={busy || !rows || rows.length === 0} onClick={() => void sync()} className="self-start">
+          {busy ? 'Syncing…' : rows ? `Sync ${rows.length} roster row${rows.length === 1 ? '' : 's'} from Supreme` : 'Sync roster from Supreme'}
+        </Button>
+        {result ? (
+          <div className="flex flex-col gap-2" aria-live="polite">
+            <Notice tone="info">
+              {result.created.length} new member{result.created.length === 1 ? '' : 's'} added and welcomed, {result.updated.length} join date
+              {result.updated.length === 1 ? '' : 's'} updated, {result.skipped.length} row{result.skipped.length === 1 ? '' : 's'} skipped.
+            </Notice>
+            {result.created.length ? (
+              <ul className="flex flex-col gap-1 text-sm">
+                {result.created.map((m) => (
+                  <li key={m.id}>
+                    <strong>
+                      {m.MemberLastName}, {m.MemberFirstName}
+                    </strong>{' '}
+                    #{m.MemberNumber} · joined {m.DateJoinedCouncil}
+                    <NewMemberBadge member={m} />
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {result.skipped.length ? (
+              <ul className="flex flex-col gap-1 text-sm">
+                {result.skipped.map((s, i) => (
+                  <li key={i} className="text-brand-red">
+                    {s.memberNumber !== null ? `#${s.memberNumber}: ` : ''}
+                    {s.reason}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </Panel>
+  );
+}
+
 function ComplianceCenter() {
   const user = useUser();
   const scope = useCouncilScope();
@@ -244,6 +355,7 @@ function ComplianceCenter() {
                 {history.data ? <SyncTimeline entries={history.data} /> : null}
               </Panel>
             </div>
+            {canAdministerCouncil(user, councilId) ? <RosterImport councilId={councilId} /> : null}
           </div>
         </div>
       )}

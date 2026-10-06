@@ -33,7 +33,7 @@ import {
   visibleFeed,
   type Council,
 } from '@kofc/shared';
-import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td } from '@/components/ui';
+import { Button, cx, Empty, Field, Input, NewMemberBadge, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td } from '@/components/ui';
 import { formatFullDate, formatPersonName, formatPhone } from '@/lib/format';
 import { useFeatureFlags, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -240,7 +240,10 @@ function FraternalRoster() {
               const council = byId.get(m.CouncilID);
               return (
                 <tr key={m.id}>
-                  <Td className="font-bold">{formatPersonName(m.MemberFirstName, m.MemberLastName)}</Td>
+                  <Td className="font-bold">
+                    {formatPersonName(m.MemberFirstName, m.MemberLastName)}
+                    <NewMemberBadge member={m} />
+                  </Td>
                   <Td>{m.MemberNumber}</Td>
                   <Td>{council ? councilLabel(council) : m.CouncilID}</Td>
                   <Td className="whitespace-nowrap">{formatPhone(m.Phone)}</Td>

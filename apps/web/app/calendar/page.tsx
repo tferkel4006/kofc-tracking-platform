@@ -27,7 +27,7 @@ import {
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { DriveButtons } from '@/components/DriveLinks';
-import { Button, cx, Empty, Notice, PageTitle, Pill, Tabs } from '@/components/ui';
+import { Button, cx, Empty, NewMemberBadge, Notice, PageTitle, Pill, Tabs } from '@/components/ui';
 import { formatPersonName } from '@/lib/format';
 import { useFeatureFlags, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -299,6 +299,7 @@ function DayDetails({
                     <li key={t.signup.id} className="flex justify-between gap-2">
                       <span>
                         {formatPersonName(t.MemberFirstName, t.MemberLastName)}
+                        <NewMemberBadge member={t} />
                         {t.signup.MemberID === user.memberId ? ' (you)' : ''}
                       </span>
                       <span className="text-xs text-muted">

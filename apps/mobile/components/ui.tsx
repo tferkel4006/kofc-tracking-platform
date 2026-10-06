@@ -16,6 +16,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { isNewMember, NEW_MEMBER_BADGE_LABEL, type Member } from '@kofc/shared';
 import { color, fontFamily, radius, space, touchTarget } from '@/lib/theme';
 
 type Variant = 'body' | 'small' | 'label' | 'title' | 'heading';
@@ -111,6 +112,15 @@ export function Pill({ label, tone = 'navy', style }: { label: string; tone?: Pi
       </AppText>
     </View>
   );
+}
+
+/**
+ * Sprint 6B Patch: '[🆕 New Member]' for a member's first 180 days on the council (isNewMember, from
+ * Member.DateJoinedCouncil); it drops off on day 181. Renders nothing otherwise.
+ */
+export function NewMemberBadge({ member, style }: { member: Pick<Member, 'DateJoinedCouncil'> | null | undefined; style?: StyleProp<ViewStyle> }) {
+  if (!isNewMember(member, new Date())) return null;
+  return <Pill label={`[${NEW_MEMBER_BADGE_LABEL}]`} tone="gold" style={style} />;
 }
 
 /** A white card with a coloured accent bar on the left edge (red = urgent, gold = priority, navy = normal). */

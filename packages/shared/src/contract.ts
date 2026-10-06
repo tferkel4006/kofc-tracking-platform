@@ -208,6 +208,8 @@ export interface VolunteerTurnout {
   shift: Shift;
   MemberFirstName: string;
   MemberLastName: string;
+  /** Sprint 6B Patch: Member.DateJoinedCouncil, for the New Member badge on shift rosters. */
+  DateJoinedCouncil: string | null;
   /** Hours recorded in EventTime, or null when none are recorded yet. */
   hoursLogged: number | null;
 }
@@ -1469,6 +1471,11 @@ export interface LiveAgendaItem {
   startedAt: string;
   /** Whole seconds left of the allotment at the moment the state was read; 0 once it has run out. */
   secondsRemaining: number;
+  /**
+   * Sprint 6B Patch: the agenda line on the floor (AgendaLineView.key, Meeting.ActiveAgendaLineKey), which every phone
+   * frames on its agenda sheet; null for a topic typed in by hand.
+   */
+  lineKey: string | null;
 }
 
 /** One of the meeting's motions as the console and the phones show it. */
@@ -1580,6 +1587,42 @@ export interface HandTallyRecording {
   charitableRequest: CharitableRequest | null;
 }
 
+/** meetings.addAgendaLine's answer (Sprint 6B Patch): the agenda with the new blank line, and that line. */
+export interface AgendaLineAddition {
+  agenda: MeetingAgendaView;
+  line: AgendaLineView;
+}
+
+/**
+ * One member of Supreme Headquarters' roster export (Sprint 6B Patch), as supreme.syncSupremeRoster takes it
+ * (parseSupremeRosterCsv reads the export). DegreeID is 1-4 (First to Fourth Degree); omitted, the First.
+ */
+export interface SupremeRosterRow {
+  MemberNumber: number;
+  MemberFirstName: string;
+  MemberLastName: string;
+  Email: string;
+  Phone: string;
+  StreetAddress1: string;
+  StreetAddress2?: string | null;
+  City: string;
+  State: string;
+  ZipCode: string;
+  DateOfBirth: string;
+  DegreeID?: number | null;
+  DateJoinedCouncil: string;
+}
+
+/** supreme.syncSupremeRoster's answer. */
+export interface SupremeRosterSyncResult {
+  /** New members, each now with a placeholder login and a welcome email on its way. */
+  created: Member[];
+  /** Members already on the council's roster (by member number) whose join date was brought in line with Supreme's. */
+  updated: Member[];
+  /** Roster rows left out, with the reason (a bad field, an email already in use, a duplicate member number). */
+  skipped: { memberNumber: number | null; reason: string }[];
+}
+
 /** finance.listLedgerTransactions (Sprint 6B): one posting of the general ledger, its lines summed. */
 export interface LedgerTransactionSummary {
   transactionId: string;
@@ -1614,8 +1657,11 @@ export interface DataService {
      * Resolves to the new session. Rejects with a BusinessRuleError when: the email matches no
      * member (MEMBER_NOT_FOUND), the member already registered (ALREADY_REGISTERED), or the
      * password is under 8 characters (PASSWORD_TOO_SHORT).
+     * Sprint 6B Patch: `enrollmentCode` is the one-time setup code from the member's welcome email. When given it must be
+     * one of that member's unexpired, unspent codes (ENROLLMENT_CODE_INVALID otherwise, nothing written) and is spent by
+     * the registration. Omitted, the email alone still registers, as before.
      */
-    signUp(email: string, password: string): Promise<SessionUser>;
+    signUp(email: string, password: string, enrollmentCode?: string): Promise<SessionUser>;
   };
 
   /**
@@ -2267,7 +2313,18 @@ export interface DataService {
      * LIVE_AGENDA_ITEM_NAME_MAX_LENGTH characters, or minutes that are not a whole number from 1 to
      * LIVE_AGENDA_ITEM_MAX_MINUTES.
      */
-    advanceActiveAgendaItem(actorId: number, meetingId: number, itemName: string, allottedMinutes: number): Promise<LiveAssemblyState>;
+    advanceActiveAgendaItem(
+      actorId: number,
+      meetingId: number,
+      itemName: string,
+      allottedMinutes: number,
+      /**
+       * Sprint 6B Patch: options.lineKey names the agenda line being put on the floor (an AgendaLineView.key of the
+       * meeting's agenda, stored in Meeting.ActiveAgendaLineKey); omitted or null for a typed-in topic. Rejects
+       * INVALID_INPUT for a key that is not 'item:N', 'motion:N' or 'event:N'.
+       */
+      options?: { lineKey?: string | null },
+    ): Promise<LiveAssemblyState>;
     /**
      * Checks `memberId` in to the live meeting (LiveAttendance), whatever they answered to the invitation: a member taps
      * 'Broadcast Active Assembly Feed' to check themselves in (actorId = memberId), or the chair checks someone in. The
@@ -2336,6 +2393,12 @@ export interface DataService {
      * that is not this meeting's (an event must be the council's). Resolves to the new agenda.
      */
     editAgendaLine(actorId: number, meetingId: number, line: AgendaLineRef, markdown: string): Promise<MeetingAgendaView>;
+    /**
+     * Sprint 6B Patch: a last-minute agenda line - a blank item at the end of `section` (after any generated motion lines
+     * of New Business), for the agenda's editors (assertMayEditLiveAgenda) to fill in with editAgendaLine. Every screen
+     * polling the agenda shows it on its next read. Rejects INVALID_INPUT for an unknown section and MEETING_NOT_FOUND.
+     */
+    addAgendaLine(actorId: number, meetingId: number, section: AgendaSectionKey): Promise<AgendaLineAddition>;
     /**
      * The Recorder's hand-vote console: records a show-of-hands count on a 'Pending' motion (MotionHandTally) and decides
      * it in one transaction - more Approved than Denied is Passed, otherwise Failed (handTallyResult) - with the same
@@ -2430,6 +2493,16 @@ export interface DataService {
     ): Promise<SupremeSyncResult>;
     /** The council's sync attempts, newest SyncDate first, with who ran each. Rejects INVALID_INPUT for an unknown council. */
     listSyncHistory(actorId: number, councilId: number): Promise<SupremeSyncHistoryEntry[]>;
+    /**
+     * Sprint 6B Patch: brings Supreme Headquarters' roster into the council's Member table. A row whose MemberNumber is
+     * not yet on the council's roster becomes a new Active member (MemberType 'Member') with a placeholder login, and the
+     * moment the batch is stored each new member is sent the welcome email with the app download steps and a one-time
+     * setup code (MemberEnrollmentToken). A row already on the roster only has its DateJoinedCouncil brought in line;
+     * the council keeps its own contact details. Invalid rows, emails already in use and member numbers repeated in
+     * the batch are skipped with their reason; the rest are stored together. For the council's Active Admins and any
+     * Active Super Admin (assertMayImportSupremeRoster: ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED).
+     */
+    syncSupremeRoster(actorId: number, councilId: number, rows: readonly SupremeRosterRow[]): Promise<SupremeRosterSyncResult>;
   };
 
   /**

@@ -34,7 +34,7 @@ import {
 } from '@kofc/shared';
 import { LiveAgendaBoard } from '@/components/AgendaParts';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select } from '@/components/ui';
+import { Button, cx, Empty, Field, Input, NewMemberBadge, Notice, PageTitle, Panel, Pill, Select } from '@/components/ui';
 import { formatFullDate, formatPersonName } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -323,7 +323,9 @@ function LiveConsole() {
   const topics = agendaTopics(meeting?.Agenda);
   const [topic, setTopic] = useState('');
   const [minutes, setMinutes] = useState(5);
-  const push = (name: string) => act(() => db.meetings.advanceActiveAgendaItem(user.memberId, meetingId!, name, minutes));
+  // Sprint 6B Patch: a line pushed from the agenda board carries its key, so the phones frame that exact line.
+  const push = (name: string, lineKey: string | null = null) =>
+    act(() => db.meetings.advanceActiveAgendaItem(user.memberId, meetingId!, name, minutes, { lineKey }));
 
   // Roster controls.
   const [search, setSearch] = useState('');
@@ -391,7 +393,8 @@ function LiveConsole() {
             canEdit={canEditLiveAgenda(user, state.meeting)}
             live={live}
             canPush={canRunLiveAssembly(user, state.meeting)}
-            onPush={(name) => void push(name)}
+            activeLineKey={state.activeItem?.lineKey ?? null}
+            onPush={(name, lineKey) => void push(name, lineKey)}
             onChanged={() => void act(() => Promise.resolve())}
           />
 
@@ -492,6 +495,7 @@ function LiveConsole() {
                       <span className={cx('text-sm', here && 'font-bold')}>
                         {here ? '✓ ' : ''}
                         {formatPersonName(m.MemberFirstName, m.MemberLastName)}
+                        <NewMemberBadge member={m} />
                       </span>
                       {here ? (
                         <Pill tone="navy">Checked in</Pill>

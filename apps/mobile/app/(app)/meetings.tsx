@@ -3,10 +3,14 @@
 // so members can see what leadership has on the calendar. Officers and a meeting's owner can take attendance.
 // Sprint 5Y-6: each card under My Invites carries a one-tap RSVP (meetings.rsvpToInvite). The card flips to
 // "Attending" the moment it is tapped and flips back, with a notice, if the save fails.
+// Sprint 6B Patch: the "Agenda" tab shows the full St. Mary's agenda sheet (AgendaSheet) of the meeting under way, else
+// the next one, or of any meeting whose card's "Full agenda" button was tapped; while it runs live, the line on the floor
+// is framed as the Grand Knight's console moves through it.
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { canManageMeeting, type MeetingResponseStatus } from '@kofc/shared';
+import { AgendaSheet } from '@/components/AgendaSheet';
 import { MeetingCard } from '@/components/MeetingCard';
 import { AppText, EmptyState, Loading, Notice, Pill, Screen } from '@/components/ui';
 import { FeatureGate } from '@/components/FeatureGate';
@@ -15,11 +19,12 @@ import { describeError, useLoad } from '@/lib/use-async';
 import { color, radius, space, touchTarget } from '@/lib/theme';
 import { db } from '@/services/db';
 
-type MeetingsTab = 'invites' | 'all';
+type MeetingsTab = 'invites' | 'all' | 'agenda';
 
 const TABS: { key: MeetingsTab; label: string }[] = [
   { key: 'invites', label: 'My Invites' },
   { key: 'all', label: 'All Schedules' },
+  { key: 'agenda', label: 'Agenda' },
 ];
 
 function MeetingsScreenBody() {
@@ -30,6 +35,8 @@ function MeetingsScreenBody() {
   // Answers given on this screen, shown at once while (and after) they save; a reload brings the stored ones.
   const [answered, setAnswered] = useState<Record<number, MeetingResponseStatus>>({});
   const [rsvpError, setRsvpError] = useState<string | null>(null);
+  /** The meeting whose agenda the Agenda tab shows; until one is picked, the live meeting or else the next one. */
+  const [agendaFor, setAgendaFor] = useState<number | null>(null);
 
   const responseTo = (meetingId: number): MeetingResponseStatus => answered[meetingId] ?? state.data?.myResponses[meetingId] ?? 'NoResponse';
 
@@ -49,6 +56,12 @@ function MeetingsScreenBody() {
   const { data } = state;
   const invitedIds = new Set((data?.myInvites ?? []).map((m) => m.id));
   const meetings = data ? (tab === 'invites' ? data.myInvites : data.allSchedules) : [];
+  const schedule = data?.allSchedules ?? [];
+  const agendaMeetingId = agendaFor ?? schedule.find((m) => m.IsLiveInProgress === 1)?.id ?? schedule[0]?.id ?? null;
+  const openAgenda = (meetingId: number) => {
+    setAgendaFor(meetingId);
+    setTab('agenda');
+  };
 
   return (
     <Screen refreshing={state.refreshing} onRefresh={() => void state.reload()}>
@@ -59,7 +72,7 @@ function MeetingsScreenBody() {
       <View accessibilityRole="tablist" style={{ flexDirection: 'row', borderWidth: 2, borderColor: color.navy, borderRadius: radius.md, overflow: 'hidden' }}>
         {TABS.map(({ key, label }) => {
           const selected = tab === key;
-          const count = key === 'invites' ? data?.myInvites.length : data?.allSchedules.length;
+          const count = key === 'invites' ? data?.myInvites.length : key === 'all' ? data?.allSchedules.length : undefined;
           return (
             <Pressable
               key={key}
@@ -80,7 +93,38 @@ function MeetingsScreenBody() {
       {rsvpError ? <Notice tone="error" message={rsvpError} onDismiss={() => setRsvpError(null)} /> : null}
       {!data && state.loading ? <Loading /> : null}
 
-      {data ? (
+      {data && tab === 'agenda' ? (
+        agendaMeetingId === null ? (
+          <EmptyState message="Your council has no upcoming meeting with an agenda." />
+        ) : (
+          <View style={{ gap: space.md }}>
+            {schedule.length > 1 ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.xs }}>
+                {schedule.map((m) => {
+                  const on = m.id === agendaMeetingId;
+                  return (
+                    <Pressable
+                      key={m.id}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      onPress={() => setAgendaFor(m.id)}
+                      style={{ minHeight: touchTarget, justifyContent: 'center', paddingHorizontal: space.md, borderRadius: radius.md, borderWidth: 2, borderColor: color.navy, backgroundColor: on ? color.navy : color.white }}
+                    >
+                      <AppText variant="label" tone={on ? 'white' : 'navy'}>
+                        {m.IsLiveInProgress === 1 ? '● ' : ''}
+                        {m.Date.slice(5, 10)} · {m['Meeting Name']}
+                      </AppText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+            <AgendaSheet meetingId={agendaMeetingId} />
+          </View>
+        )
+      ) : null}
+
+      {data && tab !== 'agenda' ? (
         <View style={{ gap: space.md }}>
           {meetings.length === 0 ? (
             <EmptyState message={tab === 'invites' ? 'You have no meeting invitations.' : 'Your council has no upcoming meetings scheduled.'} />
@@ -92,6 +136,7 @@ function MeetingsScreenBody() {
                 badge={tab === 'all' && invitedIds.has(m.id) ? <Pill label="INVITED" tone="navy" /> : undefined}
                 rsvp={tab === 'invites' ? { status: responseTo(m.id), onToggle: () => void toggleRsvp(m.id) } : undefined}
                 onAttendance={canManageMeeting(user, m) ? () => router.push(`/meeting/${m.id}`) : undefined}
+                onAgenda={() => openAgenda(m.id)}
               />
             ))
           )}

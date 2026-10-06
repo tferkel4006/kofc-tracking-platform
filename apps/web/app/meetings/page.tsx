@@ -20,10 +20,11 @@ import {
   describeError,
   formatDate,
   formatMeetingWhen,
-  isInvitationReleased,
   globalMeetingTypeFor,
+  isInvitationReleased,
   meetingLastDate,
   toIsoDate,
+  withNewMemberBadge,
   type CouncilMeetingType,
   type Meeting,
   type MeetingInviteMode,
@@ -33,7 +34,7 @@ import {
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { DriveButtons, DriveLinkEditor } from '@/components/DriveLinks';
 import { ProposedMotionsSection } from '@/components/MotionParts';
-import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Td, Textarea } from '@/components/ui';
+import { Button, cx, Empty, Field, Input, NewMemberBadge, Notice, PageTitle, Panel, Pill, Select, Table, Td, Textarea } from '@/components/ui';
 import { minutesFileName } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -231,7 +232,7 @@ function NewMeetingForm({
               <option value="">No owner</option>
               {(members.data ?? []).map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.MemberLastName}, {m.MemberFirstName}
+                  {withNewMemberBadge(`${m.MemberLastName}, ${m.MemberFirstName}`, m, new Date())}
                 </option>
               ))}
             </Select>
@@ -278,6 +279,7 @@ function NewMeetingForm({
                 <label key={m.id} className="flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={picked.includes(m.id)} onChange={() => toggle(m.id)} />
                   {m.MemberLastName}, {m.MemberFirstName}
+                  <NewMemberBadge member={m} />
                 </label>
               ))}
             </div>
@@ -308,6 +310,7 @@ function MeetingDetail({ meetingId, councilId, onChanged }: { meetingId: number;
   const editable = canManageMeeting(user, m);
   const canLink = canLinkMeetingDrive(user, m);
   const name = new Map(members.data.map((x) => [x.id, `${x.MemberLastName}, ${x.MemberFirstName}`]));
+  const memberById = new Map(members.data.map((x) => [x.id, x]));
   const invited = new Set(invites.data.map((i) => i.MemberID));
   const notInvited = members.data.filter((x) => !invited.has(x.id));
   const attended = invites.data.filter((i) => i.Attended === 1).length;
@@ -425,7 +428,10 @@ function MeetingDetail({ meetingId, councilId, onChanged }: { meetingId: number;
               .sort((a, b) => (name.get(a.MemberID) ?? '').localeCompare(name.get(b.MemberID) ?? ''))
               .map((i) => (
                 <tr key={i.id}>
-                  <Td>{name.get(i.MemberID) ?? `Member ${i.MemberID}`}</Td>
+                  <Td>
+                    {name.get(i.MemberID) ?? `Member ${i.MemberID}`}
+                    <NewMemberBadge member={memberById.get(i.MemberID)} />
+                  </Td>
                   <Td>
                     <input
                       type="checkbox"

@@ -205,6 +205,10 @@ export const APP_DISTRIBUTION = {
   iosStore: '[App Store listing - not yet published]',
   androidStore: '[Google Play listing - not yet published]',
   webPortal: '[Web portal address - not yet published]',
+  /** Sprint 6B Patch: the public Expo Go app the members' phones run the council app in, and the project link it opens. */
+  expoGoIos: 'https://apps.apple.com/app/expo-go/id982107779',
+  expoGoAndroid: 'https://play.google.com/store/apps/details?id=host.exp.exponent',
+  expoProject: '[Expo Go project link - not yet published]',
 } as const;
 
 export interface CouncilAdminDetails {
@@ -223,8 +227,13 @@ export function buildWelcomeEmail(input: {
   council: { CouncilNumber: number; CouncilName: string; Phone?: string | null };
   /** null when the council has no active Admin on file; the council's phone is offered instead. */
   admin: CouncilAdminDetails | null;
+  /**
+   * Sprint 6B Patch: the member's one-time setup code (MemberEnrollmentToken) and when it expires ('YYYY-MM-DD HH:MM:SS'
+   * UTC). Omitted, the email gives the email-only first sign-in.
+   */
+  enrollment?: { code: string; expiresAt: string } | null;
 }): NotificationPacket {
-  const { member, council, admin } = input;
+  const { member, council, admin, enrollment } = input;
   const app = APP_DISTRIBUTION;
   const contact = admin
     ? `${admin.name}, ${admin.email}, ${admin.phone}`
@@ -242,14 +251,23 @@ export function buildWelcomeEmail(input: {
         `WHAT IT IS\n` +
         `One place to sign up for event shifts, log volunteer and activity hours, see upcoming meetings ` +
         `and minutes, record donations, and message other members of your council.\n\n` +
-        `GET THE APP\n` +
-        `  iPhone:  ${app.iosStore}\n` +
-        `  Android: ${app.androidStore}\n` +
-        `  Web:     ${app.webPortal}\n\n` +
+        `GET THE APP ON YOUR PHONE (EXPO GO)\n` +
+        `  1. Install the free Expo Go app:\n` +
+        `       iPhone:  ${app.expoGoIos}\n` +
+        `       Android: ${app.expoGoAndroid}\n` +
+        `  2. On your phone, open the council app's link (or scan its QR code with the camera): ${app.expoProject}\n` +
+        `  3. Expo Go opens the council app. Keep Expo Go installed; the app updates itself.\n` +
+        `  Store listings (when published): iPhone ${app.iosStore} · Android ${app.androidStore}\n` +
+        `  Web portal: ${app.webPortal}\n\n` +
         `SIGNING IN FOR THE FIRST TIME\n` +
         `  1. Open the app and enter this email address: ${member.Email}\n` +
-        `  2. Create a password of at least ${MIN_PASSWORD_LENGTH} characters.\n` +
-        `  3. After that, sign in with the same email and password.\n\n` +
+        (enrollment
+          ? `  2. Enter your one-time setup code: ${enrollment.code}\n` +
+            `     It works once and expires ${enrollment.expiresAt.slice(0, 16)} UTC. Do not share it: it proves this account is yours.\n` +
+            `  3. Create a password of at least ${MIN_PASSWORD_LENGTH} characters.\n` +
+            `  4. After that, sign in with the same email and password, on the phone or the web portal.\n\n`
+          : `  2. Create a password of at least ${MIN_PASSWORD_LENGTH} characters.\n` +
+            `  3. After that, sign in with the same email and password.\n\n`) +
         `QUESTIONS?\n` +
         `Your council admin: ${contact}.\n`,
       attachments: [],

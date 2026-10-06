@@ -176,6 +176,7 @@ export function createRemoteDataService(): DataService {
       getMeetingAgenda: notImplemented('meetings.getMeetingAgenda'),
       applyAgendaBlueprint: notImplemented('meetings.applyAgendaBlueprint'),
       editAgendaLine: notImplemented('meetings.editAgendaLine'),
+      addAgendaLine: notImplemented('meetings.addAgendaLine'),
       recordHandBallotTally: notImplemented('meetings.recordHandBallotTally'),
       linkHandTallyTransaction: notImplemented('meetings.linkHandTallyTransaction'),
     },
@@ -239,6 +240,7 @@ export function createRemoteDataService(): DataService {
       previewReport: notImplemented('supreme.previewReport'),
       syncAlchemerReport: notImplemented('supreme.syncAlchemerReport'),
       listSyncHistory: notImplemented('supreme.listSyncHistory'),
+      syncSupremeRoster: notImplemented('supreme.syncSupremeRoster'),
     },
     feedback: {
       submit: notImplemented('feedback.submit'),

@@ -491,8 +491,11 @@ const BANK_COLUMN_ALIASES = {
 
 const headerKey = (h: string) => h.toLowerCase().replace(/[^a-z]/g, '');
 
-/** Splits CSV text into records of fields: quoted fields may hold commas, doubled quotes and line breaks. */
-function csvRecords(text: string): { line: number; fields: string[] }[] {
+/**
+ * Splits CSV text into records of fields: quoted fields may hold commas, doubled quotes and line breaks. `source` names
+ * the file in the unclosed-quote error (Sprint 6B Patch: the Supreme roster import reads its export with it too).
+ */
+export function csvRecords(text: string, source = 'The bank statement'): { line: number; fields: string[] }[] {
   const records: { line: number; fields: string[] }[] = [];
   let fields: string[] = [];
   let field = '';
@@ -526,7 +529,7 @@ function csvRecords(text: string): { line: number; fields: string[] }[] {
       field += c;
     }
   }
-  if (quoted) throw invalid(`The bank statement has an unclosed quote starting on line ${start}.`, { line: start });
+  if (quoted) throw invalid(`${source} has an unclosed quote starting on line ${start}.`, { line: start });
   if (field !== '' || fields.length) {
     fields.push(field);
     records.push({ line: start, fields });

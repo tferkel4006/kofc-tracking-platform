@@ -7,7 +7,7 @@ import { Pressable, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { canManageMeeting, formatMeetingWhen } from '@kofc/shared';
 import { NavStrip } from '@/components/NavStrip';
-import { AppText, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
+import { AppText, EmptyState, Loading, NewMemberBadge, Notice, Screen, Section } from '@/components/ui';
 import { FeatureGate } from '@/components/FeatureGate';
 import { useUser } from '@/lib/app-context';
 import { color, radius, space, touchTarget } from '@/lib/theme';
@@ -25,9 +25,12 @@ function MeetingAttendanceScreenBody() {
     const meeting = await db.meetings.get(meetingId);
     if (!meeting) return null;
     const [invites, members] = await Promise.all([db.meetings.listInvites(meetingId), db.members.listByCouncil(meeting.CouncilID)]);
-    const name = new Map(members.map((m) => [m.id, `${m.MemberLastName}, ${m.MemberFirstName}`]));
+    const byId = new Map(members.map((m) => [m.id, m]));
     const rows = invites
-      .map((i) => ({ memberId: i.MemberID, name: name.get(i.MemberID) ?? `Member ${i.MemberID}`, attended: i.Attended === 1 }))
+      .map((i) => {
+        const member = byId.get(i.MemberID);
+        return { memberId: i.MemberID, member, name: member ? `${member.MemberLastName}, ${member.MemberFirstName}` : `Member ${i.MemberID}`, attended: i.Attended === 1 };
+      })
       .sort((a, b) => a.name.localeCompare(b.name));
     return { meeting, rows };
   }, [meetingId]);
@@ -129,9 +132,10 @@ function MeetingAttendanceScreenBody() {
                         </AppText>
                       ) : null}
                     </View>
-                    <AppText variant={on ? 'title' : 'body'} style={{ flex: 1 }}>
-                      {row.name}
-                    </AppText>
+                    <View style={{ flex: 1, gap: space.xs, alignItems: 'flex-start' }}>
+                      <AppText variant={on ? 'title' : 'body'}>{row.name}</AppText>
+                      <NewMemberBadge member={row.member} />
+                    </View>
                     <AppText variant="label" tone={on ? 'navy' : 'muted'}>
                       {on ? 'HERE' : 'NOT YET'}
                     </AppText>

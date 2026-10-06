@@ -23,7 +23,7 @@ import {
   type VolunteerTurnout,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td, Textarea } from '@/components/ui';
+import { Button, cx, Empty, Field, Input, NewMemberBadge, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td, Textarea } from '@/components/ui';
 import { formatMoney, parseNumberField, toField } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -339,6 +339,7 @@ function TurnoutPanel({ eventId }: { eventId: number }) {
             <tr key={r.signup.id} className={cx(r.signup.NoShow === 1 && 'border-l-8 border-brand-red')}>
               <Td className="font-bold">
                 {r.MemberFirstName} {r.MemberLastName}
+                <NewMemberBadge member={r} />
               </Td>
               <Td>{r.shift.ShiftName}</Td>
               <Td>{formatDate(r.shift.ShiftDate)}</Td>
