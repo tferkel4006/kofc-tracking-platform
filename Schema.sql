@@ -1824,3 +1824,23 @@ GO
 -- =========================================================================
 ALTER TABLE [DistributionLists] ADD [IsCouncilWide] BIT NOT NULL DEFAULT 1;
 GO
+
+-- =========================================================================
+-- Sprint 6A: COUNCIL FEATURE FLAGS
+-- Four on/off switches on the council row that trim the portal and the phone app down to the financial engine and simple
+-- service logs. A flag at 0 hides its module's sidebar links, pages, phone tabs and buttons for every member of the
+-- council (portalAreas, mobileTabsEnabled); the data stays and returns when the flag is set back to 1.
+--   flag_mobile_elections     officer nominations and the appointed leadership matrix
+--   flag_donations_hub        the recorded donations desk and the phone's Donate tab
+--   flag_complex_shifts       the event planner, shift sign-ups and shift hour reports
+--   flag_meeting_management   the meeting center, cadence manager, live console and the phone's Meetings tab
+-- Only a Super Admin changes them (councils.setFeatureFlags). Every existing council keeps every module (DEFAULT 1).
+-- =========================================================================
+ALTER TABLE [Council] ADD [flag_mobile_elections] BIT NOT NULL DEFAULT 1;
+GO
+ALTER TABLE [Council] ADD [flag_donations_hub] BIT NOT NULL DEFAULT 1;
+GO
+ALTER TABLE [Council] ADD [flag_complex_shifts] BIT NOT NULL DEFAULT 1;
+GO
+ALTER TABLE [Council] ADD [flag_meeting_management] BIT NOT NULL DEFAULT 1;
+GO

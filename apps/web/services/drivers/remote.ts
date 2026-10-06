@@ -34,6 +34,7 @@ export function createRemoteDataService(): DataService {
       create: notImplemented('councils.create'),
       update: notImplemented('councils.update'),
       remove: notImplemented('councils.remove'),
+      setFeatureFlags: notImplemented('councils.setFeatureFlags'),
     },
     parishes: {
       listByCouncil: notImplemented('parishes.listByCouncil'),
@@ -133,7 +134,11 @@ export function createRemoteDataService(): DataService {
       listGlobalRegistry: notImplemented('lessonsLearned.listGlobalRegistry'),
     },
     eventTime: { logHours: notImplemented('eventTime.logHours') },
-    activityTime: { logHours: notImplemented('activityTime.logHours'), listByActivity: notImplemented('activityTime.listByActivity') },
+    activityTime: {
+      logHours: notImplemented('activityTime.logHours'),
+      addQuarterHour: notImplemented('activityTime.addQuarterHour'),
+      listByActivity: notImplemented('activityTime.listByActivity'),
+    },
     reports: {
       monthlySummary: notImplemented('reports.monthlySummary'),
       missionAreaFootprint: notImplemented('reports.missionAreaFootprint'),

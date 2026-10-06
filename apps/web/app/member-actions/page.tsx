@@ -9,6 +9,8 @@
 //     contact details the council's shared roster sheet already gives every member.
 //   - Hour ledger: log time against a shift I worked (SHIFT_HISTORY_MONTHS back) or a council activity
 //     (ACTIVITY_HISTORY_MONTHS back), with my logged history underneath. The drivers enforce both walls again.
+// Sprint 6A: when the council switches off flag_complex_shifts, the two shift tabs and the shift half of the hour ledger
+// go, leaving the roster and the activity log.
 import { useState, type ReactNode } from 'react';
 import {
   ACTIVITY_HISTORY_MONTHS,
@@ -33,7 +35,7 @@ import {
 } from '@kofc/shared';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td } from '@/components/ui';
 import { formatFullDate, formatPersonName, formatPhone } from '@/lib/format';
-import { useUser } from '@/lib/session';
+import { useFeatureFlags, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
@@ -318,6 +320,7 @@ function LogForm({ title, children, onSubmit, busy, submitLabel }: { title: stri
 
 function HourLedger() {
   const user = useUser();
+  const { flag_complex_shifts: shiftsOn } = useFeatureFlags();
   const { run, banner } = useAction();
   const [busy, setBusy] = useState(false);
   const today = toIsoDate(new Date());
@@ -400,29 +403,31 @@ function HourLedger() {
     <div className="flex flex-col gap-4">
       {banner}
       {data.error ? <Notice tone="error">{data.error}</Notice> : null}
-      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
-        <LogForm title="Report time on a shift" onSubmit={logShift} busy={busy} submitLabel="Save shift hours">
-          {loggable.length === 0 ? (
-            <Empty>No shift from the last {SHIFT_HISTORY_MONTHS} months to report. Hours for older shifts can no longer be logged.</Empty>
-          ) : (
-            <>
-              <Field label="Shift I worked" hint={`Shifts back to ${formatFullDate(shiftWall)}. Logging again replaces the earlier hours.`}>
-                {(id) => (
-                  <Select id={id} value={chosenShift ?? ''} onChange={(e) => pickShift(Number(e.target.value))}>
-                    {loggable.map(({ shift, event, hoursLogged }) => (
-                      <option key={shift.id} value={shift.id}>
-                        {formatShiftWhen(shift)} · {event.EventName}: {shift.ShiftName}
-                        {hoursLogged != null ? ` (logged ${formatHours(hoursLogged)})` : ''}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </Field>
-              <TimePicker hours={shiftTime.hours} minutes={shiftTime.minutes} onChange={(hours, minutes) => setShiftTime({ hours, minutes })} />
-              <Field label="Notes (optional)">{(id) => <Input id={id} value={shiftNotes} maxLength={500} onChange={(e) => setShiftNotes(e.target.value)} />}</Field>
-            </>
-          )}
-        </LogForm>
+      <div className={cx('grid grid-cols-1 items-start gap-4', shiftsOn && 'xl:grid-cols-2')}>
+        {shiftsOn ? (
+          <LogForm title="Report time on a shift" onSubmit={logShift} busy={busy} submitLabel="Save shift hours">
+            {loggable.length === 0 ? (
+              <Empty>No shift from the last {SHIFT_HISTORY_MONTHS} months to report. Hours for older shifts can no longer be logged.</Empty>
+            ) : (
+              <>
+                <Field label="Shift I worked" hint={`Shifts back to ${formatFullDate(shiftWall)}. Logging again replaces the earlier hours.`}>
+                  {(id) => (
+                    <Select id={id} value={chosenShift ?? ''} onChange={(e) => pickShift(Number(e.target.value))}>
+                      {loggable.map(({ shift, event, hoursLogged }) => (
+                        <option key={shift.id} value={shift.id}>
+                          {formatShiftWhen(shift)} · {event.EventName}: {shift.ShiftName}
+                          {hoursLogged != null ? ` (logged ${formatHours(hoursLogged)})` : ''}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+                <TimePicker hours={shiftTime.hours} minutes={shiftTime.minutes} onChange={(hours, minutes) => setShiftTime({ hours, minutes })} />
+                <Field label="Notes (optional)">{(id) => <Input id={id} value={shiftNotes} maxLength={500} onChange={(e) => setShiftNotes(e.target.value)} />}</Field>
+              </>
+            )}
+          </LogForm>
+        ) : null}
 
         <LogForm title="Report time on an activity" onSubmit={logActivity} busy={busy} submitLabel="Save activity hours">
           {(data.data?.activities.length ?? 0) === 0 ? (
@@ -450,35 +455,37 @@ function HourLedger() {
         </LogForm>
       </div>
 
-      <Panel title={`My shift history (${pastShifts.length})`}>
-        {data.data && pastShifts.length === 0 ? <Empty>No past shifts yet.</Empty> : null}
-        {pastShifts.length > 0 ? (
-          <Table caption="My past shifts and logged hours" head={['When', 'Event', 'Shift', 'Hours', 'Status']}>
-            {pastShifts.map(({ shift, event, signup, hoursLogged }) => {
-              const closed = shift.ShiftDate < shiftWall;
-              return (
-                <tr key={signup.id}>
-                  <Td className="whitespace-nowrap">{formatFullDate(shift.ShiftDate)}</Td>
-                  <Td className="font-bold">{event.EventName}</Td>
-                  <Td>{shift.ShiftName}</Td>
-                  <Td>{hoursLogged != null ? formatHours(hoursLogged) : '–'}</Td>
-                  <Td>
-                    {signup.NoShow === 1 ? (
-                      <Pill tone="red">No-show</Pill>
-                    ) : hoursLogged != null ? (
-                      <Pill tone="navy">Logged</Pill>
-                    ) : closed ? (
-                      <Pill tone="outline">Closed</Pill>
-                    ) : (
-                      <Pill tone="redOutline">Hours needed</Pill>
-                    )}
-                  </Td>
-                </tr>
-              );
-            })}
-          </Table>
-        ) : null}
-      </Panel>
+      {shiftsOn ? (
+        <Panel title={`My shift history (${pastShifts.length})`}>
+          {data.data && pastShifts.length === 0 ? <Empty>No past shifts yet.</Empty> : null}
+          {pastShifts.length > 0 ? (
+            <Table caption="My past shifts and logged hours" head={['When', 'Event', 'Shift', 'Hours', 'Status']}>
+              {pastShifts.map(({ shift, event, signup, hoursLogged }) => {
+                const closed = shift.ShiftDate < shiftWall;
+                return (
+                  <tr key={signup.id}>
+                    <Td className="whitespace-nowrap">{formatFullDate(shift.ShiftDate)}</Td>
+                    <Td className="font-bold">{event.EventName}</Td>
+                    <Td>{shift.ShiftName}</Td>
+                    <Td>{hoursLogged != null ? formatHours(hoursLogged) : '–'}</Td>
+                    <Td>
+                      {signup.NoShow === 1 ? (
+                        <Pill tone="red">No-show</Pill>
+                      ) : hoursLogged != null ? (
+                        <Pill tone="navy">Logged</Pill>
+                      ) : closed ? (
+                        <Pill tone="outline">Closed</Pill>
+                      ) : (
+                        <Pill tone="redOutline">Hours needed</Pill>
+                      )}
+                    </Td>
+                  </tr>
+                );
+              })}
+            </Table>
+          ) : null}
+        </Panel>
+      ) : null}
 
       <Panel title={`My activity history (${activityEntries.length})`}>
         {data.data && activityEntries.length === 0 ? <Empty>No activity time logged yet.</Empty> : null}
@@ -499,12 +506,18 @@ function HourLedger() {
   );
 }
 
+/** The shift tabs, which flag_complex_shifts switches off (Sprint 6A). */
+const SHIFT_TABS: ReadonlySet<Tab> = new Set(['shifts', 'desk']);
+
 export default function MemberActionsPage() {
-  const [tab, setTab] = useState<Tab>('shifts');
+  const { flag_complex_shifts: shiftsOn } = useFeatureFlags();
+  const tabs = shiftsOn ? TABS : TABS.filter((t) => !SHIFT_TABS.has(t.id));
+  const [chosen, setTab] = useState<Tab>('shifts');
+  const tab = tabs.some((t) => t.id === chosen) ? chosen : tabs[0].id;
   return (
     <>
       <PageTitle>Member Actions</PageTitle>
-      <Tabs tabs={TABS} value={tab} onChange={setTab} label="Member actions" idPrefix="member-actions" />
+      <Tabs tabs={tabs} value={tab} onChange={setTab} label="Member actions" idPrefix="member-actions" />
       <div id="member-actions-panel" role="tabpanel" aria-labelledby={`member-actions-tab-${tab}`} className="pt-4">
         {tab === 'shifts' ? <ActiveShifts /> : tab === 'desk' ? <RegistrationDesk /> : tab === 'roster' ? <FraternalRoster /> : <HourLedger />}
       </div>

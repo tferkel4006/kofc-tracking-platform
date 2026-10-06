@@ -4,15 +4,20 @@ import { usePathname } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { councilLabel, isSuperAdmin, portalAreaHref, portalAreas, sortCouncils, type Council, type PortalArea } from '@kofc/shared';
 import { Field, Notice, Select } from '@/components/ui';
-import { useUser } from '@/lib/session';
+import { useFeatureFlags, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
 /** Renders `children` only when the signed-in role may open `area`; otherwise says why and where to go. */
 export function RequireArea({ area, children }: { area: PortalArea; children: ReactNode }) {
   const user = useUser();
-  const areas = portalAreas(user);
+  const features = useFeatureFlags();
+  const areas = portalAreas(user, features);
   if (areas.includes(area)) return <>{children}</>;
+  if (portalAreas(user).includes(area)) {
+    // Sprint 6A: the role may open it, but the council has switched the module off.
+    return <Notice tone="info">Your council has switched this section off. A Super Admin can turn it back on from the Councils page.</Notice>;
+  }
   return (
     <Notice tone="error">
       Your role ({user.memberType}

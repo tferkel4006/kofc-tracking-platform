@@ -84,6 +84,7 @@ import type {
 import type { BudgetAlert, BudgetWindowState } from './budget';
 import type { CadenceConfigInput } from './meetings';
 import type { DistributionGroup } from './messaging';
+import type { FeatureFlagChanges, FeatureFlagName } from './features';
 
 // 1. LOOKUPS
 /** The global lookup tables a Super Admin maintains (Blueprint: "System Lookup Manager"). */
@@ -415,7 +416,8 @@ export interface MeetingSchedules {
 
 // 9. COUNCIL-LEVEL MAINTENANCE (Sprint 5G)
 /** A council row without its generated id. */
-export type NewCouncil = Omit<Council, 'id'>;
+/** A council row without its generated id or its feature flags (councils.setFeatureFlags, Sprint 6A). */
+export type NewCouncil = Omit<Council, 'id' | FeatureFlagName>;
 /** A parish row without its generated id. */
 export type NewParish = Omit<Parish, 'id'>;
 /** A pastor row without its generated id. */
@@ -1608,6 +1610,12 @@ export interface DataService {
      * affiliation refers to it.
      */
     remove(actorId: number, id: number): Promise<void>;
+    /**
+     * Switches the council's feature flags (Sprint 6A, features.ts) and resolves to the updated council. Flags left out
+     * keep their stored values. Only an Active Super Admin may (SUPER_ADMIN_REQUIRED, nothing written); RECORD_NOT_FOUND
+     * for an unknown council, INVALID_INPUT for an unknown flag or a value that is not a boolean.
+     */
+    setFeatureFlags(actorId: number, councilId: number, changes: FeatureFlagChanges): Promise<Council>;
   };
 
   /**
@@ -2004,6 +2012,12 @@ export interface DataService {
      * 6 months in the past (ACTIVITY_DATE_TOO_OLD).
      */
     logHours(memberId: number, activityId: number, hours: number, date: string, notes?: string): Promise<ActivityTime>;
+    /**
+     * The phone's rapid-tap tracker (Sprint 6A): adds 15 minutes (HOURS_STEP) to the member's entry for the activity on
+     * `date`, in one transaction, creating a 0.25-hour entry when there is none yet. Repeated taps grow the same entry,
+     * so the day keeps one row per activity. Rejects like logHours, and HOURS_OUT_OF_RANGE once the entry is at 24 hours.
+     */
+    addQuarterHour(memberId: number, activityId: number, date: string): Promise<ActivityTime>;
     /**
      * Every entry logged against the activity (ActivityTime joined to Member), newest ActivityDate first,
      * with the total hours. Rejects ACTIVITY_NOT_FOUND for an unknown activity.

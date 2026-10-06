@@ -57,6 +57,11 @@ export interface Council {
   State: string;
   Phone?: string;
   Email?: string;
+  /** BIT feature flags (Sprint 6A, see features.ts): 0 hides the module for the council. Default 1. */
+  flag_mobile_elections?: number;
+  flag_donations_hub?: number;
+  flag_complex_shifts?: number;
+  flag_meeting_management?: number;
 }
 
 export interface AffiliatedCouncils {

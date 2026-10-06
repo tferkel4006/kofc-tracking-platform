@@ -29,7 +29,7 @@ import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/Counci
 import { DriveButtons } from '@/components/DriveLinks';
 import { Button, cx, Empty, Notice, PageTitle, Pill, Tabs } from '@/components/ui';
 import { formatPersonName } from '@/lib/format';
-import { useUser } from '@/lib/session';
+import { useFeatureFlags, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
@@ -204,6 +204,7 @@ function DayDetails({
   onChanged: () => Promise<void>;
 }) {
   const user = useUser();
+  const meetingCenterOn = useFeatureFlags().flag_meeting_management;
   const events = entries.filter((e): e is Extract<CalendarEntry, { kind: 'event' }> => e.kind === 'event');
   const meetings = entries.filter((e): e is Extract<CalendarEntry, { kind: 'meeting' }> => e.kind === 'meeting');
   const eventIds = events.map((e) => e.id);
@@ -255,9 +256,11 @@ function DayDetails({
             </p>
             {m.meeting['Meeting Description'] ? <p className="text-xs text-muted">{m.meeting['Meeting Description']}</p> : null}
             <DriveButtons meeting={m.meeting} />
-            <Link href="/meetings" className="text-sm font-bold underline">
-              Open in the Meeting center
-            </Link>
+            {meetingCenterOn ? (
+              <Link href="/meetings" className="text-sm font-bold underline">
+                Open in the Meeting center
+              </Link>
+            ) : null}
           </section>
         ))}
 

@@ -101,6 +101,8 @@ import {
   BusinessRuleError,
   cleanActivity,
   cleanCouncil,
+  cleanFeatureFlagChanges,
+  nextQuarterHourTotal,
   cleanCouncilIds,
   cleanFeedbackText,
   cleanDistributionListChanges,
@@ -981,6 +983,14 @@ export class MemoryDataService implements DataService {
       const row = this.requireRecord(s, 'Council', id);
       this.assertRecordUnused(s, 'Council', row, `${String(row.CouncilNumber)} ${String(row.CouncilName)}`);
       s.remove('Council', (r) => r.id === id);
+    },
+
+    setFeatureFlags: async (actorId, councilId, changes) => {
+      const s = await this.ready();
+      assertMayMaintainCouncils(this.memberWriteActor(s, actorId), `change the feature flags of council ${councilId}`);
+      const row = this.requireRecord(s, 'Council', councilId);
+      Object.assign(row, cleanFeatureFlagChanges(changes));
+      return { ...row } as unknown as Council;
     },
   };
 
@@ -2400,6 +2410,34 @@ export class MemoryDataService implements DataService {
           ActivityDate: date,
           Hours: hours,
           ActivityNotes: notes ?? null,
+        });
+        return { ...row } as unknown as ActivityTime;
+      });
+    },
+
+    addQuarterHour: async (memberId, activityId, date) => {
+      assertActivityDateAllowed(date, this.now());
+      const s = await this.ready();
+      return s.transaction(() => {
+        this.requireMember(s, memberId);
+        if (!s.rows('Activities').some((a) => a.id === activityId)) {
+          throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${activityId}.`, { activityId });
+        }
+        // The newest of the member's entries for the activity that day grows (rows are in id order); there is normally just one.
+        const entry = s
+          .rows('ActivityTime')
+          .filter((t) => t.MemberID === memberId && t.ActivityID === activityId && t.ActivityDate === date)
+          .at(-1);
+        if (entry) {
+          entry.Hours = nextQuarterHourTotal(entry.Hours as number);
+          return { ...entry } as unknown as ActivityTime;
+        }
+        const row = s.insert('ActivityTime', {
+          MemberID: memberId,
+          ActivityID: activityId,
+          ActivityDate: date,
+          Hours: nextQuarterHourTotal(null),
+          ActivityNotes: null,
         });
         return { ...row } as unknown as ActivityTime;
       });

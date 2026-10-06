@@ -11,6 +11,7 @@
 // =========================================================================
 import type { CouncilLookupTableName, SessionUser } from './contract';
 import { budgetWindowOf } from './budget';
+import { ALL_FEATURES_ON, withFeatureFlags, type FeatureFlags } from './features';
 import { GRAND_KNIGHT_ROLE } from './elections';
 import { FINANCE_LOOKUP_TABLES, FINANCIAL_SECRETARY_ROLE_NAME, holdsExecutiveRole, holdsFinanceRole } from './rules';
 import type { BudgetLineStatus, Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
@@ -432,8 +433,9 @@ export const canDesignateBudgetDirector = (u: Actor, member: Pick<Member, 'Counc
 /**
  * Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it, and the
  * meeting center because a meeting's owner may be any member (it is read-only for everyone else without rights).
+ * Sprint 6A: `flags` are the council's feature flags (features.ts); a module switched off is left out for every role.
  */
-export function portalAreas(u: Actor): PortalArea[] {
+export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): PortalArea[] {
   // Admins and Super Admins volunteer too, so the member hub leads everyone's navigation, then the shared views.
   const areas: PortalArea[] = ['member-actions', 'calendar', 'gallery'];
   if (canMaintainLookups(u)) areas.push('lookups');
@@ -473,7 +475,7 @@ export function portalAreas(u: Actor): PortalArea[] {
   // Sprint 5Z-10.8: every member builds their own private distribution lists from the header's Messaging menu; council-wide
   // lists stay with Admins (canPublishDistributionList).
   areas.push('messages', 'distribution-lists', 'profile');
-  return areas;
+  return withFeatureFlags(areas, flags);
 }
 
 /**
@@ -554,16 +556,20 @@ export interface PortalSidebarGroup extends Omit<PortalNavGroup, 'items'> {
  * The sidebar for `u` as the portal draws it (Sprint 5Z-10): the links portalAreas allows, plus - in groups that show
  * locked links - every other link of the group with `locked` set. A group with no entries is dropped.
  */
-export function portalSidebar(u: Actor): PortalSidebarGroup[] {
-  const allowed = new Set<string>(portalAreas(u));
+export function portalSidebar(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): PortalSidebarGroup[] {
+  const allowed = new Set<string>(portalAreas(u, flags));
+  // Sprint 6A: a switched-off module is gone, not locked - it is hidden even in groups that show locked desks.
+  const featured = new Set<string>(withFeatureFlags(PORTAL_NAV_GROUPS.flatMap((g) => g.items), flags));
   return PORTAL_NAV_GROUPS.map(({ items, ...g }) => ({
     ...g,
-    entries: items.filter((item) => g.showLocked || allowed.has(item)).map((item) => ({ item, locked: !allowed.has(item) })),
+    entries: items
+      .filter((item) => featured.has(item) && (g.showLocked || allowed.has(item)))
+      .map((item) => ({ item, locked: !allowed.has(item) })),
   })).filter((g) => g.entries.length > 0);
 }
 
 /** The sidebar for `u`: each group holding only the links portalAreas allows; empty groups are dropped. */
-export function portalNavGroups(u: Actor): PortalNavGroup[] {
-  const allowed = new Set<string>(portalAreas(u));
+export function portalNavGroups(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): PortalNavGroup[] {
+  const allowed = new Set<string>(portalAreas(u, flags));
   return PORTAL_NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((item) => allowed.has(item)) })).filter((g) => g.items.length > 0);
 }

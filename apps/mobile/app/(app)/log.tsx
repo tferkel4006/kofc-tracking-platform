@@ -1,35 +1,35 @@
-// Quick Log: record time against a shift I worked (up to 3 months back) or a council activity (up to
-// 6 months back). Hours and minutes come from drop-downs (minutes 00/15/30/45) and are converted to
-// a decimal in exact 0.25 steps by pickerResult() immediately before the DataService call, which
-// validates the value again.
-// Sprint 5Y-6: choosing a shift with no hours logged yet fills the picker with the shift's own length
-// (shifts.getShiftDefaultLength, rounded to 0.25), so a member who worked the whole shift just taps Save.
-// Sprint 5Z-6: the fiscal timeline rule reaches this screen too. A shift whose event has not started, or ended more than
-// 30 days ago (expenseWindowState), is padlocked and grayed, and Save stays disabled while it is chosen.
+// Report Hours. Sprint 6A replaced the hour and minute drop-downs with taps:
+//   - Activities (the default): a high-contrast grid with one button per council activity. Each tap logs 15 minutes
+//     for today at once (activityTime.addQuarterHour), and another tap on the same button grows that day's entry by
+//     15 minutes more; a toast flashes the new total. Taps queue, so rapid taps never race each other's transaction.
+//   - A shift I worked (only while the council keeps flag_complex_shifts on): pick a shift (up to 3 months back), then
+//     step the time in 15-minute steps and save. A shift with no hours logged yet starts at its own length
+//     (shifts.getShiftDefaultLength, Sprint 5Y-6).
+// Sprint 5Z-6: a shift whose event has not started, or ended more than 30 days ago (expenseWindowState), is padlocked
+// and grayed, and Save stays disabled while it is chosen.
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Animated, Pressable, View } from 'react-native';
 import {
-  addDays,
   eventExpenseSpan,
   expenseWindowLockMessage,
   formatHours,
   formatShiftWhen,
-  hoursToPicker,
-  pickerResult,
+  HOURS_STEP,
+  MAX_HOURS_PER_ENTRY,
   SHIFT_HISTORY_MONTHS,
   subtractMonths,
   toIsoDate,
+  type Activities,
 } from '@kofc/shared';
-import { Dropdown } from '@/components/Dropdown';
-import { TimePicker, type PickerValue } from '@/components/TimePicker';
 import { AppInput, AppText, Button, Card, EmptyState, Field, Loading, Notice, Screen, Section } from '@/components/ui';
-import { useUser } from '@/lib/app-context';
-import { color, space, touchTarget } from '@/lib/theme';
+import { useFeatureFlags, useUser } from '@/lib/app-context';
+import { color, radius, space, touchTarget } from '@/lib/theme';
 import { describeError, useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
 
-type Mode = 'shift' | 'activity';
-const NO_TIME: PickerValue = { hours: 0, minutes: 0 };
+type Mode = 'activity' | 'shift';
+/** How long a confirmation toast stays up, in milliseconds. */
+const TOAST_MS = 1800;
 
 function Segmented({ value, onChange }: { value: Mode; onChange: (m: Mode) => void }) {
   const tab = (mode: Mode, label: string) => (
@@ -45,119 +45,227 @@ function Segmented({ value, onChange }: { value: Mode; onChange: (m: Mode) => vo
       </AppText>
     </Pressable>
   );
-  return <View style={{ flexDirection: 'row' }}>{[tab('shift', 'A shift I worked'), tab('activity', 'An activity')]}</View>;
+  return <View style={{ flexDirection: 'row' }}>{[tab('activity', 'Activities'), tab('shift', 'A shift I worked')]}</View>;
 }
 
-export default function LogScreen() {
+type Toast = { tone: 'info' | 'error'; text: string };
+
+/** A confirmation that flashes over the foot of the screen and fades away by itself. */
+function useToast() {
+  const [toast, setToast] = useState<Toast | null>(null);
+  const opacity = useRef(new Animated.Value(0)).current;
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
+  const show = (next: Toast) => {
+    if (timer.current) clearTimeout(timer.current);
+    setToast(next);
+    opacity.setValue(1);
+    timer.current = setTimeout(() => {
+      Animated.timing(opacity, { toValue: 0, duration: 250, useNativeDriver: true }).start(() => setToast(null));
+    }, TOAST_MS);
+  };
+  const view = toast ? (
+    <Animated.View
+      pointerEvents="none"
+      accessibilityLiveRegion="polite"
+      style={{
+        position: 'absolute',
+        left: space.lg,
+        right: space.lg,
+        bottom: space.lg,
+        opacity,
+        backgroundColor: toast.tone === 'error' ? color.red : color.green,
+        borderRadius: radius.md,
+        borderWidth: 2,
+        borderColor: color.white,
+        padding: space.md,
+      }}
+    >
+      <AppText variant="title" tone="white" style={{ textAlign: 'center' }}>
+        {toast.text}
+      </AppText>
+    </Animated.View>
+  ) : null;
+  return { show, view };
+}
+
+/** One activity's button: navy with white type and a gold edge (12.6:1), today's total underneath. */
+function ActivityTile({ activity, today, onPress }: { activity: Activities; today: number; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Log 15 minutes of ${activity.ActivityName}`}
+      accessibilityHint={today > 0 ? `${formatHours(today)} logged today` : 'Nothing logged today yet'}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexBasis: '47%',
+        flexGrow: 1,
+        minHeight: 88,
+        padding: space.md,
+        gap: space.xs,
+        justifyContent: 'center',
+        borderRadius: radius.md,
+        borderWidth: 3,
+        borderColor: color.gold,
+        backgroundColor: pressed ? color.gold : color.navy,
+      })}
+    >
+      {({ pressed }) => (
+        <>
+          <AppText variant="title" style={{ color: pressed ? color.navy : color.white }}>
+            {activity.ActivityName}
+          </AppText>
+          <AppText variant="label" style={{ color: pressed ? color.navy : color.gold }}>
+            {today > 0 ? `${formatHours(today).toUpperCase()} TODAY` : '+15 MIN'}
+          </AppText>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
+/** The rapid-tap grid: one tap, 15 minutes against the activity for today. */
+function ActivityGrid({ onToast }: { onToast: (toast: Toast) => void }) {
   const user = useUser();
-  const [mode, setMode] = useState<Mode>('shift');
+  const [today] = useState(() => toIsoDate(new Date()));
+  const state = useLoad(async () => {
+    const activities = await db.activities.listByCouncil(user.councilId);
+    const logs = await Promise.all(activities.map((a) => db.activityTime.listByActivity(a.id)));
+    const totals = new Map(
+      logs.map((log) => [
+        log.activity.id,
+        log.entries.filter((e) => e.row.MemberID === user.memberId && e.row.ActivityDate === today).reduce((sum, e) => sum + e.row.Hours, 0),
+      ]),
+    );
+    return { activities, totals };
+  }, [user.memberId, user.councilId, today]);
+  // Today's totals per activity; the ref is the running count the queued taps add to, the state what is drawn.
+  const [totals, setTotals] = useState<ReadonlyMap<number, number>>(new Map());
+  const running = useRef(new Map<number, number>());
+  useEffect(() => {
+    if (!state.data) return;
+    running.current = new Map(state.data.totals);
+    setTotals(running.current);
+  }, [state.data]);
+
+  // Taps run one after another, each in its own transaction, however fast they come.
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const tap = (activity: Activities) => {
+    queue.current = queue.current.then(async () => {
+      try {
+        await db.activityTime.addQuarterHour(user.memberId, activity.id, today);
+        const total = (running.current.get(activity.id) ?? 0) + HOURS_STEP;
+        running.current = new Map(running.current).set(activity.id, total);
+        setTotals(running.current);
+        onToast({ tone: 'info', text: `+15 min · ${activity.ActivityName} (${formatHours(total)} today)` });
+      } catch (err) {
+        onToast({ tone: 'error', text: describeError(err) });
+      }
+    });
+  };
+
+  const { data } = state;
+  return (
+    <>
+      {state.error ? <Notice tone="error" message={state.error} /> : null}
+      {!data && state.loading ? <Loading /> : null}
+      {data ? (
+        <Section title="Tap an activity: 15 minutes per tap">
+          {data.activities.length === 0 ? (
+            <EmptyState message="Your council has no activities yet. An admin can add them." />
+          ) : (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.md }}>
+              {data.activities.map((a) => (
+                <ActivityTile key={a.id} activity={a} today={totals.get(a.id) ?? 0} onPress={() => tap(a)} />
+              ))}
+            </View>
+          )}
+        </Section>
+      ) : null}
+    </>
+  );
+}
+
+/** Minus and plus 15 minutes around the total, in place of the old hour and minute drop-downs. */
+function QuarterStepper({ value, onChange }: { value: number; onChange: (hours: number) => void }) {
+  const step = (delta: number) => onChange(Math.min(MAX_HOURS_PER_ENTRY, Math.max(0, value + delta)));
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+      <Button title="− 15 min" variant="secondary" style={{ flex: 1 }} disabled={value <= 0} onPress={() => step(-HOURS_STEP)} />
+      <AppText variant="heading" style={{ minWidth: 96, textAlign: 'center' }} accessibilityLiveRegion="polite">
+        {value > 0 ? formatHours(value) : '0 m'}
+      </AppText>
+      <Button title="+ 15 min" variant="secondary" style={{ flex: 1 }} disabled={value >= MAX_HOURS_PER_ENTRY} onPress={() => step(HOURS_STEP)} />
+    </View>
+  );
+}
+
+function ShiftReport({ onToast }: { onToast: (toast: Toast) => void }) {
+  const user = useUser();
   const [shiftId, setShiftId] = useState<number | null>(null);
-  const [activityId, setActivityId] = useState<number | null>(null);
-  const [picker, setPicker] = useState<PickerValue>(NO_TIME);
-  const [date, setDate] = useState(() => toIsoDate(new Date()));
+  const [hours, setHours] = useState(0);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
 
   const state = useLoad(async () => {
     const today = new Date();
-    const [shifts, activities] = await Promise.all([
-      db.events.listMemberShifts(user.memberId, { fromDate: subtractMonths(today, SHIFT_HISTORY_MONTHS), toDate: toIsoDate(today) }),
-      db.activities.listByCouncil(user.councilId),
-    ]);
-    return { today: toIsoDate(today), shifts: shifts.reverse(), activities };
-  }, [user.memberId, user.councilId]);
+    const shifts = await db.events.listMemberShifts(user.memberId, { fromDate: subtractMonths(today, SHIFT_HISTORY_MONTHS), toDate: toIsoDate(today) });
+    return { today: toIsoDate(today), shifts: shifts.reverse() };
+  }, [user.memberId]);
   const { data } = state;
 
-  // The shift the picker is being filled for, so a slow default for a shift no longer chosen is dropped.
+  // The shift the time is being filled for, so a slow default for a shift no longer chosen is dropped.
   const picking = useRef<number | null>(null);
-
   const pickShift = (id: number) => {
     picking.current = id;
     setShiftId(id);
-    setMessage(null);
     const logged = data?.shifts.find((s) => s.shift.id === id)?.hoursLogged;
     if (logged != null) {
-      setPicker(hoursToPicker(logged));
+      setHours(logged);
       return;
     }
-    setPicker(NO_TIME);
+    setHours(0);
     db.shifts.getShiftDefaultLength(id).then(
-      (hours) => {
-        if (picking.current === id && hours > 0) setPicker(hoursToPicker(hours));
+      (length) => {
+        if (picking.current === id && length > 0) setHours(length);
       },
-      () => undefined, // no default: the member picks the time themselves
+      () => undefined, // no default: the member steps the time themselves
     );
   };
 
-  // Only a shift's own length is a default: an activity starts from zero, and returning to a shift fills it in again.
-  const switchMode = (next: Mode) => {
-    if (next === mode) return;
-    setMode(next);
-    setMessage(null);
-    if (next === 'shift' && shiftId !== null) pickShift(shiftId);
-    else {
-      picking.current = null;
-      setPicker(NO_TIME);
-    }
-  };
-
-  // Low-click defaults: the most recent shift still missing hours (with its length filled in), and the council's
-  // first activity.
+  // Low-click default: the most recent shift still missing hours, with its length filled in.
   useEffect(() => {
-    if (!data) return;
-    if (shiftId === null) {
-      const first = data.shifts.find((s) => s.hoursLogged === null) ?? data.shifts[0];
-      if (first) pickShift(first.shift.id);
-    }
-    if (activityId === null && data.activities[0]) setActivityId(data.activities[0].id);
+    if (!data || shiftId !== null) return;
+    const first = data.shifts.find((s) => s.hoursLogged === null) ?? data.shifts[0];
+    if (first) pickShift(first.shift.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, shiftId, activityId]);
+  }, [data, shiftId]);
 
-  const hours = pickerResult(picker.hours, picker.minutes);
-  const target = mode === 'shift' ? shiftId : activityId;
   const lockOf = (event: Parameters<typeof eventExpenseSpan>[0]) => (data ? expenseWindowLockMessage(eventExpenseSpan(event), data.today) : null);
-  const chosenShift = data?.shifts.find((s) => s.shift.id === shiftId);
-  const locked = mode === 'shift' && chosenShift ? lockOf(chosenShift.event) : null;
-  const canSave = target !== null && 'hours' in hours && !busy && locked === null;
+  const chosen = data?.shifts.find((s) => s.shift.id === shiftId);
+  const locked = chosen ? lockOf(chosen.event) : null;
+  const canSave = shiftId !== null && hours > 0 && !busy && locked === null;
 
   const save = async () => {
-    const result = pickerResult(picker.hours, picker.minutes);
-    if (!('hours' in result) || target === null) return;
+    if (!canSave || shiftId === null) return;
     setBusy(true);
-    setMessage(null);
     try {
-      const note = notes.trim() || undefined;
-      let where: string;
-      if (mode === 'shift') {
-        await db.eventTime.logHours(user.memberId, target, result.hours, note);
-        where = data?.shifts.find((s) => s.shift.id === target)?.shift.ShiftName ?? 'the shift';
-      } else {
-        await db.activityTime.logHours(user.memberId, target, result.hours, date.trim(), note);
-        where = data?.activities.find((a) => a.id === target)?.ActivityName ?? 'the activity';
-      }
-      setMessage({ tone: 'info', text: `Saved ${formatHours(result.hours)} (${result.hours} hours) to ${where}.` });
+      await db.eventTime.logHours(user.memberId, shiftId, hours, notes.trim() || undefined);
+      onToast({ tone: 'info', text: `Saved ${formatHours(hours)} to ${chosen?.shift.ShiftName ?? 'the shift'}` });
       setNotes('');
       await state.reload();
     } catch (err) {
-      setMessage({ tone: 'error', text: describeError(err) });
+      onToast({ tone: 'error', text: describeError(err) });
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Screen refreshing={state.refreshing} onRefresh={() => void state.reload()}>
-      <AppText variant="heading" accessibilityRole="header">
-        Report Hours
-      </AppText>
-      <Segmented value={mode} onChange={switchMode} />
-
-      {message ? <Notice tone={message.tone} message={message.text} onDismiss={() => setMessage(null)} /> : null}
+    <>
       {state.error ? <Notice tone="error" message={state.error} /> : null}
       {!data && state.loading ? <Loading /> : null}
-
-      {data && mode === 'shift' ? (
+      {data ? (
         <Section title="Which shift?">
           {data.shifts.length === 0 ? (
             <EmptyState message={`You have no shifts in the last ${SHIFT_HISTORY_MONTHS} months to report time for.`} />
@@ -193,35 +301,10 @@ export default function LogScreen() {
           )}
         </Section>
       ) : null}
-
-      {data && mode === 'activity' ? (
-        <Section title="Which activity?">
-          {data.activities.length === 0 ? (
-            <EmptyState message="Your council has no activities yet. An admin can add them." />
-          ) : (
-            <View style={{ gap: space.md }}>
-              <Dropdown
-                title="Activity"
-                value={activityId}
-                options={data.activities.map((a) => ({ value: a.id, label: a.ActivityName }))}
-                onChange={setActivityId}
-              />
-              <Field label="DATE (YYYY-MM-DD)">
-                <AppInput value={date} onChangeText={setDate} autoCapitalize="none" autoCorrect={false} keyboardType="numbers-and-punctuation" maxLength={10} />
-              </Field>
-              <View style={{ flexDirection: 'row', gap: space.md }}>
-                <Button title="Today" variant="secondary" style={{ flex: 1 }} onPress={() => setDate(data.today)} />
-                <Button title="Yesterday" variant="secondary" style={{ flex: 1 }} onPress={() => setDate(addDays(data.today, -1))} />
-              </View>
-            </View>
-          )}
-        </Section>
-      ) : null}
-
-      {data && (mode === 'shift' ? data.shifts.length > 0 : data.activities.length > 0) ? (
+      {data && data.shifts.length > 0 ? (
         <>
           <Section title="How long?">
-            <TimePicker value={picker} onChange={setPicker} />
+            <QuarterStepper value={hours} onChange={setHours} />
           </Section>
           <Field label="NOTES (OPTIONAL)">
             <AppInput value={notes} onChangeText={setNotes} multiline style={{ minHeight: 72, textAlignVertical: 'top', paddingTop: space.md }} maxLength={255} />
@@ -229,6 +312,27 @@ export default function LogScreen() {
           <Button title={locked ? '🔒 Reporting locked' : 'Save time'} busy={busy} disabled={!canSave} onPress={() => void save()} />
         </>
       ) : null}
-    </Screen>
+    </>
+  );
+}
+
+export default function LogScreen() {
+  const shiftsOn = useFeatureFlags().flag_complex_shifts;
+  const [chosen, setMode] = useState<Mode>('activity');
+  const mode = shiftsOn ? chosen : 'activity';
+  const toast = useToast();
+
+  return (
+    <View style={{ flex: 1 }}>
+      <Screen>
+        <AppText variant="heading" accessibilityRole="header">
+          Report Hours
+        </AppText>
+        {shiftsOn ? <Segmented value={mode} onChange={setMode} /> : null}
+        {mode === 'activity' ? <ActivityGrid onToast={toast.show} /> : <ShiftReport onToast={toast.show} />}
+        <View style={{ height: 72 }} />
+      </Screen>
+      {toast.view}
+    </View>
   );
 }

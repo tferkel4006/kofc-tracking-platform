@@ -37,7 +37,9 @@ import { GateIntakeOverlay, IntakeSessionSwitch } from '@/components/GateIntake'
 import { Dropdown } from '@/components/Dropdown';
 import { ReceiptScanTile, VERIFICATION_PHOTO_TITLE } from '@/components/ReceiptScanTile';
 import { AppInput, AppText, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section } from '@/components/ui';
+import { FeatureGate } from '@/components/FeatureGate';
 import { useUser } from '@/lib/app-context';
+import { warmCollectionQrs } from '@/lib/qr-cache';
 import { color, space } from '@/lib/theme';
 import { describeError, useLoad } from '@/lib/use-async';
 import { useDonationSession } from '@/lib/use-donation-session';
@@ -252,7 +254,7 @@ function DonationForm({
 
 // ---- the screen --------------------------------------------------------------------
 
-export default function DonateScreen() {
+function DonateScreenBody() {
   const user = useUser();
   const { controller, state: session } = useDonationSession(user.councilId, user.memberId);
   const [picked, setPicked] = useState<CouncilDonationOption | null>(null);
@@ -302,6 +304,15 @@ export default function DonateScreen() {
   useEffect(() => setPicked(null), [pinnedEventId]);
 
   const { data } = setup;
+  // Sprint 6A: have every collection code resolved and cached before its tile is tapped.
+  useEffect(() => {
+    if (!data) return;
+    warmCollectionQrs(
+      data.methods
+        .filter((o) => o.kind === 'qr')
+        .map((o) => ({ uploadedUrl: o.qrCodeUrl, fallback: collectionQrFor(o.method.DonationMethod) })),
+    );
+  }, [data]);
   const methodName = new Map((data?.methods ?? []).map((o) => [o.method.id, o.method.DonationMethod]));
   const typeName = new Map((data?.types ?? []).map((t) => [t.id, t.DonationType]));
 
@@ -437,5 +448,13 @@ export default function DonateScreen() {
         </>
       ) : null}
     </Screen>
+  );
+}
+
+export default function DonateScreen() {
+  return (
+    <FeatureGate flag="flag_donations_hub">
+      <DonateScreenBody />
+    </FeatureGate>
   );
 }

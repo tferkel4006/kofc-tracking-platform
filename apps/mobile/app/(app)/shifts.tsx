@@ -9,6 +9,7 @@ import { councilLabel, isShiftFull, shiftStatus, signupWindow, sortCouncils, vis
 import { Dropdown, type DropdownOption } from '@/components/Dropdown';
 import { FullTag, PriorityTag, ShiftCard, type ShiftLook } from '@/components/ShiftCard';
 import { AppText, Button, EmptyState, Loading, Notice } from '@/components/ui';
+import { FeatureGate } from '@/components/FeatureGate';
 import { useUser } from '@/lib/app-context';
 import { color, radius, space, touchTarget } from '@/lib/theme';
 import { describeError, useLoad } from '@/lib/use-async';
@@ -22,7 +23,7 @@ const TABS: { key: SignupTab; label: string }[] = [
   { key: 'full', label: 'Full Up' },
 ];
 
-export default function ShiftsScreen() {
+function ShiftsScreenBody() {
   const user = useUser();
   const [councilId, setCouncilId] = useState<CouncilFilter>('all');
   const [tab, setTab] = useState<SignupTab>('opening');
@@ -146,5 +147,13 @@ export default function ShiftsScreen() {
         )
       }
     />
+  );
+}
+
+export default function ShiftsScreen() {
+  return (
+    <FeatureGate flag="flag_complex_shifts">
+      <ShiftsScreenBody />
+    </FeatureGate>
   );
 }

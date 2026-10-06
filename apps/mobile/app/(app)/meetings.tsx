@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { canManageMeeting, type MeetingResponseStatus } from '@kofc/shared';
 import { MeetingCard } from '@/components/MeetingCard';
 import { AppText, EmptyState, Loading, Notice, Pill, Screen } from '@/components/ui';
+import { FeatureGate } from '@/components/FeatureGate';
 import { useUser } from '@/lib/app-context';
 import { describeError, useLoad } from '@/lib/use-async';
 import { color, radius, space, touchTarget } from '@/lib/theme';
@@ -21,7 +22,7 @@ const TABS: { key: MeetingsTab; label: string }[] = [
   { key: 'all', label: 'All Schedules' },
 ];
 
-export default function MeetingsScreen() {
+function MeetingsScreenBody() {
   const user = useUser();
   const router = useRouter();
   const [tab, setTab] = useState<MeetingsTab>('invites');
@@ -98,5 +99,13 @@ export default function MeetingsScreen() {
       ) : null}
       <View style={{ height: space.lg }} />
     </Screen>
+  );
+}
+
+export default function MeetingsScreen() {
+  return (
+    <FeatureGate flag="flag_meeting_management">
+      <MeetingsScreenBody />
+    </FeatureGate>
   );
 }

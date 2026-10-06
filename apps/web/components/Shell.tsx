@@ -247,7 +247,7 @@ function SignIn() {
 }
 
 function Frame({ children }: { children: ReactNode }) {
-  const { user } = useSession();
+  const { user, features, featuresLoaded } = useSession();
   const pathname = usePathname();
   const council = useLoad(() => (user ? db.councils.get(user.councilId) : Promise.resolve(null)), [user?.councilId]);
   if (!user) return null;
@@ -266,8 +266,9 @@ function Frame({ children }: { children: ReactNode }) {
         <MemberMenu />
       </header>
       <div className="flex flex-1">
-        <Sidebar user={user} pathname={pathname} />
-        <main className="min-w-0 flex-1 bg-white p-6">{children}</main>
+        <Sidebar user={user} pathname={pathname} features={features} />
+        {/* Sprint 6A: pages wait for the council's feature flags, so a switched-off module never flashes into view. */}
+        <main className="min-w-0 flex-1 bg-white p-6">{featuresLoaded ? children : null}</main>
       </div>
     </div>
   );

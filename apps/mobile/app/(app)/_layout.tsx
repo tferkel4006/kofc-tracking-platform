@@ -2,13 +2,16 @@
 // The selected tab is a navy block with a gold bar and a bold gold label (gold on navy ~6.4:1; gold is never
 // text on white, see the shared theme), so the active choice reads at a glance. Messages is no longer a tab (Sprint 5X-Mobile): the header's
 // envelope opens it and carries the unread badge.
+// Sprint 6A: a tab whose module the council's feature flags switch off (Signup, Mtgs, Donate) is hidden entirely.
 // The gold bar floats over the top edge of the navy block so it never pushes the label down; the label sits centred
 // in a tap space of TAB_HEIGHT, and the bar grows by the device's bottom inset so the home indicator doesn't eat it.
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Tabs } from 'expo-router/js-tabs';
+import { mobileTabEnabled, type MobileTab } from '@kofc/shared';
 import { BrandHeader } from '@/components/BrandHeader';
 import { AppText } from '@/components/ui';
+import { useFeatureFlags } from '@/lib/app-context';
 import { color, fontFamily, space, touchTarget } from '@/lib/theme';
 
 const TAB_HEIGHT = touchTarget + 2 * space.sm;
@@ -48,7 +51,9 @@ const TabLabel = ({ label, focused }: { label: string; focused: boolean }) => (
 
 export default function AppLayout() {
   const insets = useSafeAreaInsets();
-  const tab = (title: string) => ({
+  const features = useFeatureFlags();
+  const tab = (title: string, name?: MobileTab) => ({
+    ...(name && !mobileTabEnabled(name, features) ? { href: null } : {}),
     title,
     tabBarLabel: ({ focused }: { focused: boolean }) => <TabLabel label={title} focused={focused} />,
     tabBarIcon: () => null,
@@ -71,10 +76,10 @@ export default function AppLayout() {
       }}
     >
       <Tabs.Screen name="index" options={tab('Home')} />
-      <Tabs.Screen name="shifts" options={tab('Signup')} />
+      <Tabs.Screen name="shifts" options={tab('Signup', 'shifts')} />
       <Tabs.Screen name="log" options={tab('Report')} />
-      <Tabs.Screen name="meetings" options={tab('Mtgs')} />
-      <Tabs.Screen name="donate" options={tab('Donate')} />
+      <Tabs.Screen name="meetings" options={tab('Mtgs', 'meetings')} />
+      <Tabs.Screen name="donate" options={tab('Donate', 'donate')} />
       {/* Opened from the header envelope; not a tab of its own. */}
       <Tabs.Screen name="messages" options={{ ...tab('Messages'), href: null }} />
       {/* Opened from a meeting card on Home; not a tab of its own. */}

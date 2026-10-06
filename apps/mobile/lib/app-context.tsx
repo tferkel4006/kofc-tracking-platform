@@ -1,9 +1,10 @@
 // Session and startup state for the whole app.
 // Owns the OnboardingController (services/onboarding.ts), which does all the sign-in rules; screens
 // only render its state. Also opens the local database, runs the reminder scheduler while signed in, and links the
-// phone for push alerts after sign-in (lib/push-registration.ts).
+// phone for push alerts after sign-in (lib/push-registration.ts), and reads the council's feature flags (Sprint 6A),
+// which decide the tabs and buttons the app shows.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { startNotificationScheduler, type SessionUser } from '@kofc/shared';
+import { ALL_FEATURES_ON, councilFeatureFlags, startNotificationScheduler, type FeatureFlags, type SessionUser } from '@kofc/shared';
 import { configureAlertDisplay, registerForPushAlerts, unregisterPushAlerts } from '@/lib/push-registration';
 import { db } from '@/services/db';
 import { getConfiguredCouncilNumber, OnboardingController, type OnboardingState } from '@/services/onboarding';
@@ -20,6 +21,10 @@ interface AppContextValue {
   /** Unread messages addressed to the member, across all threads (the header envelope badge). */
   unread: number;
   refreshUnread(): Promise<void>;
+  /** The member's council feature flags (Sprint 6A); every module reads as on until the council has loaded. */
+  features: FeatureFlags;
+  /** Re-reads the flags, e.g. on a pull-to-refresh after a Super Admin changed them. */
+  refreshFeatures(): Promise<void>;
   submitEmail(email: string): Promise<void>;
   submitPassword(password: string, confirmation?: string): Promise<void>;
   restart(): void;
@@ -75,6 +80,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [memberId]);
 
+  const councilId = user?.councilId;
+  const [features, setFeatures] = useState<FeatureFlags>(ALL_FEATURES_ON);
+  const refreshFeatures = useCallback(async () => {
+    if (councilId === undefined) return setFeatures(ALL_FEATURES_ON);
+    try {
+      setFeatures(councilFeatureFlags(await db.councils.get(councilId)));
+    } catch {
+      // an unreadable council keeps the last flags rather than locking the app
+    }
+  }, [councilId]);
+  useEffect(() => void refreshFeatures(), [refreshFeatures]);
+
   useEffect(() => {
     void refreshUnread();
     const timer = setInterval(() => void refreshUnread(), 30_000);
@@ -101,12 +118,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       onboarding,
       unread,
       refreshUnread,
+      features,
+      refreshFeatures,
       submitEmail,
       submitPassword,
       restart,
       signOut,
     }),
-    [user, onboarding, startupError, unread, refreshUnread, submitEmail, submitPassword, restart, signOut],
+    [user, onboarding, startupError, unread, refreshUnread, features, refreshFeatures, submitEmail, submitPassword, restart, signOut],
   );
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
@@ -122,4 +141,9 @@ export function useUser(): SessionUser {
   const { user } = useApp();
   if (!user) throw new Error('useUser called with nobody signed in');
   return user;
+}
+
+/** The member's council feature flags (Sprint 6A). */
+export function useFeatureFlags(): FeatureFlags {
+  return useApp().features;
 }

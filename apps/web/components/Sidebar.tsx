@@ -5,9 +5,10 @@
 // ▾ open), the group holding the current page opens itself, and the viewer's choices are remembered in this browser.
 // The Executive Action Desks list every desk: one the viewer may not open is shown with a gold lock badge and says who
 // holds it, instead of a link. The current page carries a gold marker.
+// Sprint 6A: a module the council's feature flags switch off is left out entirely, never shown locked.
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { canOpenArchiveVault, portalSidebar, type PortalNavGroup, type PortalNavItem, type SessionUser } from '@kofc/shared';
+import { canOpenArchiveVault, portalSidebar, type FeatureFlags, type PortalNavGroup, type PortalNavItem, type SessionUser } from '@kofc/shared';
 import { cx } from '@/components/ui';
 
 export interface NavEntry {
@@ -196,8 +197,8 @@ function LockedEntry({ item }: { item: PortalNavItem }) {
   );
 }
 
-export function Sidebar({ user, pathname }: { user: SessionUser; pathname: string }) {
-  const groups = portalSidebar(user);
+export function Sidebar({ user, pathname, features }: { user: SessionUser; pathname: string; features: FeatureFlags }) {
+  const groups = portalSidebar(user, features);
   const [open, setOpen] = useState<OpenGroups>(readOpenGroups);
   const currentGroup = groups.find((g) => g.entries.some((e) => !e.locked && isCurrent(pathname, e.item)))?.id;
   useEffect(() => {

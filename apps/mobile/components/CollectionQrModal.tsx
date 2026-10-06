@@ -4,13 +4,15 @@
 // missing, blank, a placeholder:// link, or fails to load, the code bundled with the app from
 // apps/mobile/assets/images/qr/ is shown instead.
 // Sprint 5Z-Mobile-Scale: the code is sized from the viewport (never taller than half the screen) and the layout sits in
-// a SafeAreaView, so a high-resolution upload cannot push the Done button off a short phone.
+// a SafeAreaView, so a high-resolution upload cannot push the Continue button off a short phone.
+// Sprint 6A: the code's source comes from the in-memory QR cache (lib/qr-cache.ts), which the Donate screen warms ahead
+// of the tap, and an upload that failed once is skipped for the rest of the run; the button now reads "Continue".
 import { useState } from 'react';
 import type { ImageSourcePropType } from 'react-native';
 import { Image, Modal, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { isLoadableQrUrl } from '@/components/DonationQr';
 import { AppText, Button } from '@/components/ui';
+import { cachedQrSource, markQrUploadFailed } from '@/lib/qr-cache';
 import { color, radius, space } from '@/lib/theme';
 import parishsoftQr from '../assets/images/qr/parishsoft-collection.png';
 import venmoQr from '../assets/images/qr/venmo-collection.png';
@@ -51,9 +53,9 @@ export function CollectionQrModal({
   onClose: () => void;
 }) {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const [uploadFailed, setUploadFailed] = useState(false);
-  const useUpload = isLoadableQrUrl(uploadedUrl) && !uploadFailed;
-  const source: ImageSourcePropType = useUpload ? { uri: uploadedUrl.trim() } : fallback;
+  // Bumped when the upload fails, so the cache's fallback is read again.
+  const [, setFailures] = useState(0);
+  const { source, uploaded: useUpload } = cachedQrSource(uploadedUrl, fallback);
   // A square that fits inside the frame at the screen's width (less gutters) and is at most half the screen tall.
   const frameWidth = Math.min(screenWidth - 2 * space.lg, MAX_FRAME_WIDTH);
   const qrSize = Math.max(0, Math.floor(Math.min(frameWidth - 2 * FRAME_INSET, screenHeight * MAX_HEIGHT_SHARE)));
@@ -68,16 +70,24 @@ export function CollectionQrModal({
             <Image
               key={useUpload ? 'uploaded' : 'bundled'}
               source={source}
-              onError={useUpload ? () => setUploadFailed(true) : undefined}
+              onError={
+                useUpload
+                  ? () => {
+                      markQrUploadFailed(uploadedUrl);
+                      setFailures((n) => n + 1);
+                    }
+                  : undefined
+              }
+              fadeDuration={0}
               accessibilityLabel={`${methodName} QR code for the donor to scan`}
               resizeMode="contain"
               style={{ width: qrSize, height: qrSize }}
             />
           </View>
           <AppText tone="muted" style={{ textAlign: 'center' }}>
-            Turn the phone toward the donor. When they show you the payment confirmation, close this and record the amount.
+            Turn the phone toward the donor. When they show you the payment confirmation, tap Continue and record the amount.
           </AppText>
-          <Button title="Done – record the payment" style={{ alignSelf: 'stretch' }} onPress={onClose} />
+          <Button title="Continue" style={{ alignSelf: 'stretch' }} onPress={onClose} />
         </View>
       </SafeAreaView>
     </Modal>

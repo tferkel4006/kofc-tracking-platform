@@ -3,7 +3,7 @@
 // The memory driver lives in the browser tab (see services/db.ts), so a reload starts a fresh seeded
 // database and asks for sign-in again. That is the mock; the remote driver will hold real sessions.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { SessionUser } from '@kofc/shared';
+import { ALL_FEATURES_ON, councilFeatureFlags, type FeatureFlags, type SessionUser } from '@kofc/shared';
 import { db } from '@/services/db';
 
 interface SessionValue {
@@ -22,6 +22,14 @@ interface SessionValue {
   alertsVersion: number;
   /** Call after sending or reading alerts, so the bell's unread count catches up at once. */
   alertsChanged(): void;
+  /**
+   * The signed-in member's council feature flags (Sprint 6A); every module reads as on until the council has loaded.
+   * `featuresLoaded` turns true once it has, so a page of a switched-off module never flashes into view.
+   */
+  features: FeatureFlags;
+  featuresLoaded: boolean;
+  /** Call after a Super Admin changes feature flags, so the sidebar and pages catch up at once. */
+  featuresChanged(): void;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -52,10 +60,41 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const profileChanged = useCallback(() => setProfileVersion((v) => v + 1), []);
   const [alertsVersion, setAlertsVersion] = useState(0);
   const alertsChanged = useCallback(() => setAlertsVersion((v) => v + 1), []);
+  const [featuresVersion, setFeaturesVersion] = useState(0);
+  const featuresChanged = useCallback(() => setFeaturesVersion((v) => v + 1), []);
+  const [loadedFeatures, setLoadedFeatures] = useState<{ councilId: number; flags: FeatureFlags } | null>(null);
+  const councilId = user?.councilId;
+  useEffect(() => {
+    if (councilId === undefined) return;
+    let live = true;
+    db.councils.get(councilId).then(
+      (council) => live && setLoadedFeatures({ councilId, flags: councilFeatureFlags(council) }),
+      // An unreadable council keeps every module on rather than locking the portal.
+      () => live && setLoadedFeatures({ councilId, flags: ALL_FEATURES_ON }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [councilId, featuresVersion]);
+  const featuresLoaded = loadedFeatures !== null && loadedFeatures.councilId === councilId;
+  const features = featuresLoaded ? loadedFeatures.flags : ALL_FEATURES_ON;
 
   const value = useMemo(
-    () => ({ user, ready, startupError, signIn, signOut, profileVersion, profileChanged, alertsVersion, alertsChanged }),
-    [user, ready, startupError, signIn, signOut, profileVersion, profileChanged, alertsVersion, alertsChanged],
+    () => ({
+      user,
+      ready,
+      startupError,
+      signIn,
+      signOut,
+      profileVersion,
+      profileChanged,
+      alertsVersion,
+      alertsChanged,
+      features,
+      featuresLoaded,
+      featuresChanged,
+    }),
+    [user, ready, startupError, signIn, signOut, profileVersion, profileChanged, alertsVersion, alertsChanged, features, featuresLoaded, featuresChanged],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
@@ -71,4 +110,9 @@ export function useUser(): SessionUser {
   const { user } = useSession();
   if (!user) throw new Error('useUser called with nobody signed in');
   return user;
+}
+
+/** The signed-in member's council feature flags (Sprint 6A). */
+export function useFeatureFlags(): FeatureFlags {
+  return useSession().features;
 }

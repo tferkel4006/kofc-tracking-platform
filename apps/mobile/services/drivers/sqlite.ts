@@ -98,6 +98,8 @@ import {
   BusinessRuleError,
   cleanActivity,
   cleanCouncil,
+  cleanFeatureFlagChanges,
+  nextQuarterHourTotal,
   cleanCouncilIds,
   cleanFeedbackText,
   cleanDistributionListChanges,
@@ -477,8 +479,10 @@ const DB_NAME = 'kofc.db';
  * 27: JournalEntry.TransactionID and the Opening Balance Equity account (Sprint 5Z-8).
  * 28: the live meeting columns on Meeting, ProposedMotion.BallotOpenedAt, LiveAttendance and BallotVote (Sprint 5Z-9).
  * 29: DistributionLists.IsCouncilWide - private member lists (Sprint 5Z-10.8).
+ * 30: Council feature flags flag_mobile_elections, flag_donations_hub, flag_complex_shifts and flag_meeting_management
+ *     (Sprint 6A).
  */
-const SCHEMA_VERSION = 29;
+const SCHEMA_VERSION = 30;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -1033,6 +1037,23 @@ export class SqliteDataService implements DataService {
         await this.assertRecordUnused(db, 'Council', id, `${String(row.CouncilNumber)} ${String(row.CouncilName)}`);
         await db.runAsync('DELETE FROM [Council] WHERE [id] = ?', [id]);
       });
+    },
+
+    setFeatureFlags: async (actorId, councilId, changes) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayMaintainCouncils(await this.memberWriteActor(db, actorId), `change the feature flags of council ${councilId}`);
+        await this.requireRecord(db, 'Council', councilId);
+        const flags = Object.entries(cleanFeatureFlagChanges(changes));
+        // Column names come from FEATURE_FLAG_NAMES via cleanFeatureFlagChanges, never from the caller.
+        if (flags.length > 0) {
+          await db.runAsync(`UPDATE [Council] SET ${flags.map(([name]) => `[${name}] = ?`).join(', ')} WHERE [id] = ?`, [
+            ...flags.map(([, value]) => value),
+            councilId,
+          ]);
+        }
+      });
+      return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [councilId]))!;
     },
   };
 
@@ -2795,6 +2816,37 @@ export class SqliteDataService implements DataService {
           [memberId, activityId, date, hours, notes ?? null],
         );
         timeId = ins.lastInsertRowId;
+      });
+      return (await db.getFirstAsync<ActivityTime>('SELECT * FROM [ActivityTime] WHERE [id] = ?', [timeId]))!;
+    },
+
+    addQuarterHour: async (memberId, activityId, date) => {
+      assertActivityDateAllowed(date, this.now());
+      const db = await this.ready();
+      let timeId = 0;
+      await db.withTransactionAsync(async () => {
+        await this.requireMember(db, memberId);
+        const activity = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Activities] WHERE [id] = ?', [
+          activityId,
+        ]);
+        if (!activity) throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${activityId}.`, { activityId });
+        // The newest of the member's entries for the activity that day grows; there is normally just one.
+        const entry = await db.getFirstAsync<{ id: number; Hours: number }>(
+          `SELECT [id], [Hours] FROM [ActivityTime]
+            WHERE [MemberID] = ? AND [ActivityID] = ? AND [ActivityDate] = ?
+            ORDER BY [id] DESC LIMIT 1`,
+          [memberId, activityId, date],
+        );
+        if (entry) {
+          await db.runAsync('UPDATE [ActivityTime] SET [Hours] = ? WHERE [id] = ?', [nextQuarterHourTotal(entry.Hours), entry.id]);
+          timeId = entry.id;
+        } else {
+          const ins = await db.runAsync(
+            'INSERT INTO [ActivityTime] ([MemberID], [ActivityID], [ActivityDate], [Hours]) VALUES (?, ?, ?, ?)',
+            [memberId, activityId, date, nextQuarterHourTotal(null)],
+          );
+          timeId = ins.lastInsertRowId;
+        }
       });
       return (await db.getFirstAsync<ActivityTime>('SELECT * FROM [ActivityTime] WHERE [id] = ?', [timeId]))!;
     },

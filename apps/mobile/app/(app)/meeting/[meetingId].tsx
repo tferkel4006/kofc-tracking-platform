@@ -8,12 +8,13 @@ import { useLocalSearchParams } from 'expo-router';
 import { canManageMeeting, formatMeetingWhen } from '@kofc/shared';
 import { NavStrip } from '@/components/NavStrip';
 import { AppText, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
+import { FeatureGate } from '@/components/FeatureGate';
 import { useUser } from '@/lib/app-context';
 import { color, radius, space, touchTarget } from '@/lib/theme';
 import { describeError, useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
 
-export default function MeetingAttendanceScreen() {
+function MeetingAttendanceScreenBody() {
   const user = useUser();
   const meetingId = Number(useLocalSearchParams<{ meetingId: string }>().meetingId);
   // Taps not yet confirmed by the database, keyed by member; they win over the loaded value until it reloads.
@@ -142,5 +143,13 @@ export default function MeetingAttendanceScreen() {
         </>
       ) : null}
     </Screen>
+  );
+}
+
+export default function MeetingAttendanceScreen() {
+  return (
+    <FeatureGate flag="flag_meeting_management">
+      <MeetingAttendanceScreenBody />
+    </FeatureGate>
   );
 }
