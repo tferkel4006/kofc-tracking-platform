@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import { DEV_ENROLLMENT_CODE } from '../apps/web/services/seed-dev';
 import { drivers, expectRule, MEMBER, shiftByName } from './helpers';
 
 const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
@@ -26,7 +27,7 @@ describe.each(drivers)('$name driver: auth', (d) => {
 
   it('signUp links the pre-provisioned member to their credentials and signs them in', async () => {
     const db = await d.make();
-    const session = await db.auth.signUp('TestNewMember@kofc.org', 'a-fine-password');
+    const session = await db.auth.signUp('TestNewMember@kofc.org', 'a-fine-password', DEV_ENROLLMENT_CODE);
     expect(session).toMatchObject({ memberId: MEMBER.newMember, username: 'testnewmember@kofc.org', memberType: 'Member' });
 
     const stored = d.credentials(db).find((c) => c.Username === 'testnewmember@kofc.org');
@@ -38,14 +39,18 @@ describe.each(drivers)('$name driver: auth', (d) => {
     const db = await d.make();
     const before = d.credentials(db).map((c) => c.Password);
 
-    const missing = await expectRule(db.auth.signUp('nobody@example.com', 'long-enough-pw'), 'MEMBER_NOT_FOUND');
+    const missing = await expectRule(db.auth.signUp('nobody@example.com', 'long-enough-pw', DEV_ENROLLMENT_CODE), 'MEMBER_NOT_FOUND');
     expect(missing.message).toContain('nobody@example.com');
-    await expectRule(db.auth.signUp('testnewmember@kofc.org', 'short'), 'PASSWORD_TOO_SHORT');
-    await expectRule(db.auth.signUp('testmember@kofc.org', 'long-enough-pw'), 'ALREADY_REGISTERED');
+    await expectRule(db.auth.signUp('testnewmember@kofc.org', 'short', DEV_ENROLLMENT_CODE), 'PASSWORD_TOO_SHORT');
+    await expectRule(db.auth.signUp('testmember@kofc.org', 'long-enough-pw', DEV_ENROLLMENT_CODE), 'ALREADY_REGISTERED');
+    // Sprint 6B Security: the welcome email's setup code is mandatory - missing or wrong, nothing is written.
+    await expectRule(db.auth.signUp('testnewmember@kofc.org', 'long-enough-pw', ''), 'ENROLLMENT_CODE_INVALID');
+    await expectRule(db.auth.signUp('testnewmember@kofc.org', 'long-enough-pw', undefined as unknown as string), 'ENROLLMENT_CODE_INVALID');
+    await expectRule(db.auth.signUp('testnewmember@kofc.org', 'long-enough-pw', 'WRONG-CODE0-00000-00000'), 'ENROLLMENT_CODE_INVALID');
     expect(d.credentials(db).map((c) => c.Password)).toEqual(before);
 
-    await db.auth.signUp('testnewmember@kofc.org', 'first-password');
-    await expectRule(db.auth.signUp('testnewmember@kofc.org', 'second-password'), 'ALREADY_REGISTERED');
+    await db.auth.signUp('testnewmember@kofc.org', 'first-password', DEV_ENROLLMENT_CODE);
+    await expectRule(db.auth.signUp('testnewmember@kofc.org', 'second-password', DEV_ENROLLMENT_CODE), 'ALREADY_REGISTERED');
     expect((await db.auth.signIn('testnewmember@kofc.org', 'first-password'))?.memberId).toBe(MEMBER.newMember);
     expect(await db.auth.signIn('testnewmember@kofc.org', 'second-password')).toBeNull();
   });

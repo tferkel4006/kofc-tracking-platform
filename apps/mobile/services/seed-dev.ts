@@ -107,6 +107,12 @@ export const DEV_UNREGISTERED_MEMBER = {
   DateOfBirth: '1995-03-03',
 } as const;
 
+/**
+ * Sprint 6B Security: the dev member's welcome setup code. auth.signUp needs one, and the dev member was never sent a
+ * welcome email, so the seed issues this published code to them (never expiring) - dev data, like the dev password.
+ */
+export const DEV_ENROLLMENT_CODE = 'DEV15-29500-00000-00004';
+
 export interface DevShift {
   shift: Omit<Shift, 'id' | 'EventID' | 'NumberVolunteersSignedUp'>;
   /** Emails of members already signed up; NumberVolunteersSignedUp is set to this count. */

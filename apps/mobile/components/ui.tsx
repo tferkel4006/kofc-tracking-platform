@@ -1,6 +1,6 @@
 // Brand primitives. Every string on screen goes through AppText and every input through AppInput,
 // which is what guarantees the Arial body font; colours come only from the shared tokens.
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -214,6 +214,54 @@ export function Screen({
     >
       {children}
     </ScrollView>
+  );
+}
+
+/**
+ * Sprint 6B Security: a password box with a high-contrast eye button inside its right edge that switches the text
+ * between masked dots and readable clear text. The button is a full touch target and says what it will do.
+ */
+export function PasswordInput({ style, ...rest }: Omit<TextInputProps, 'secureTextEntry'>) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <View style={{ justifyContent: 'center' }}>
+      <AppInput {...rest} secureTextEntry={!visible} autoCapitalize="none" autoCorrect={false} style={[{ paddingRight: touchTarget + space.xs }, style]} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={visible ? 'Hide password' : 'Show password'}
+        accessibilityState={{ checked: visible }}
+        onPress={() => setVisible((v) => !v)}
+        hitSlop={4}
+        style={({ pressed }) => ({
+          position: 'absolute',
+          right: 4,
+          width: touchTarget - 8,
+          height: touchTarget - 8,
+          borderRadius: radius.sm,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: visible ? color.navy : color.white,
+          borderWidth: 2,
+          borderColor: color.navy,
+          opacity: pressed ? 0.8 : 1,
+        })}
+      >
+        <EyeGlyph open={!visible} tint={visible ? color.white : color.navy} />
+      </Pressable>
+    </View>
+  );
+}
+
+/** An eye drawn from plain Views (no icon font is bundled): open, or struck through once the text is showing. */
+function EyeGlyph({ open, tint }: { open: boolean; tint: string }) {
+  return (
+    <View style={{ width: 24, height: 16, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ position: 'absolute', width: 24, height: 14, borderRadius: 12, borderWidth: 2.5, borderColor: tint }} />
+      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: tint }} />
+      {open ? null : (
+        <View style={{ position: 'absolute', width: 28, height: 2.5, backgroundColor: tint, transform: [{ rotate: '-35deg' }] }} />
+      )}
+    </View>
   );
 }
 

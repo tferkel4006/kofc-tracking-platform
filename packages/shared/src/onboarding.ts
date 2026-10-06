@@ -7,7 +7,7 @@
 // =========================================================================
 import type { SupremeRosterRow } from './contract';
 import { csvRecords } from './finance';
-import type { EmailPayload } from './notifications';
+import { APP_DISTRIBUTION, NOTIFICATION_SENDER, type EmailPayload, type NotificationPacket } from './notifications';
 import {
   assertIsoDate,
   BusinessRuleError,
@@ -141,20 +141,23 @@ export function buildSendGridMailRequest(email: EmailPayload, apiKey: string = S
 
 // ---- Supreme's roster ------------------------------------------------------------------------
 
-/** Who brings Supreme's roster in: the council's Active Admins, or an Active Super Admin. */
-export function assertMayImportSupremeRoster(actor: MemberWriteActor, councilId: number): void {
+/**
+ * Who onboards members: the council's Active Admins, or an Active Super Admin - for bringing in Supreme's roster and
+ * (Sprint 6B Security, members.resendWelcome) sending a fresh setup code. `action` completes "can ...".
+ */
+export function assertMayImportSupremeRoster(actor: MemberWriteActor, councilId: number, action = "bring in Supreme's roster"): void {
   if (hasSuperAdminRights(actor)) return;
   if (!hasAdminRights(actor)) {
     throw new SecurityPrivilegeError(
       'ADMIN_REQUIRED',
-      `Only an active Admin of the council or a Super Admin can bring in Supreme's roster; member ${actor.memberId} is ${describeActor(actor)}.`,
+      `Only an active Admin of the council or a Super Admin can ${action}; member ${actor.memberId} is ${describeActor(actor)}.`,
       { actorId: actor.memberId, councilId },
     );
   }
   if (actor.councilId === councilId) return;
   throw new SecurityPrivilegeError(
     'COUNCIL_ACCESS_DENIED',
-    `Member ${actor.memberId} of council ${actor.councilId} cannot bring in the roster of council ${councilId}.`,
+    `Member ${actor.memberId} of council ${actor.councilId} cannot ${action} for council ${councilId}.`,
     { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
   );
 }
@@ -263,3 +266,85 @@ export const logSendGridRequest =
   async (request: SendGridMailRequest): Promise<void> => {
     log('[notification]', JSON.stringify({ transport: 'sendgrid (simulated)', request }, null, 2));
   };
+
+// ---- mandatory setup codes and self-service password resets (Sprint 6B Security) --------------------------------
+
+/** signUp without a setup code: refused outright, with the same code as a wrong one. */
+export const enrollmentCodeRequired = (): BusinessRuleError =>
+  new BusinessRuleError(
+    'ENROLLMENT_CODE_INVALID',
+    'Enter the setup code from your welcome email to create your password. Ask your council admin to send a new one if it has expired.',
+  );
+
+/** Digits in a password reset code. */
+export const RESET_CODE_LENGTH = 6;
+/** How long a reset code works. */
+export const RESET_CODE_LIFETIME_MINUTES = 15;
+/** Wrong guesses a reset code survives; six digits are few, so the code dies after these. */
+export const RESET_CODE_MAX_ATTEMPTS = 5;
+/** A reset request this soon after the last one sends nothing (it would only flood the member's inbox). */
+export const RESET_REQUEST_COOLDOWN_SECONDS = 60;
+
+/** A 6-digit reset code from 4 random bytes ('042917'); the modulo bias of 2^32 mod 10^6 is negligible. */
+export function formatResetCode(bytes: Uint8Array): string {
+  if (bytes.length < 4) throw new Error('A reset code needs 4 random bytes.');
+  const n = ((bytes[0]! << 24) | (bytes[1]! << 16) | (bytes[2]! << 8) | bytes[3]!) >>> 0;
+  return String(n % 10 ** RESET_CODE_LENGTH).padStart(RESET_CODE_LENGTH, '0');
+}
+
+/** A typed reset code: its digits, when there are exactly RESET_CODE_LENGTH of them; otherwise null. */
+export function cleanResetCode(code: unknown): string | null {
+  if (typeof code !== 'string') return null;
+  const digits = code.replace(/[\s-]/g, '');
+  return new RegExp(`^\\d{${RESET_CODE_LENGTH}}$`).test(digits) ? digits : null;
+}
+
+/** What a driver hashes (SHA-256) into PasswordResetToken.CodeHash: keyed by the member, so equal codes differ. */
+export const resetCodeHashInput = (memberId: number, code: string): string => `kofc-reset:${memberId}:${code}`;
+
+/** 'YYYY-MM-DD HH:MM:SS' UTC, RESET_CODE_LIFETIME_MINUTES after `issuedAt`. */
+export const resetCodeExpiry = (issuedAt: Date): string =>
+  new Date(issuedAt.getTime() + RESET_CODE_LIFETIME_MINUTES * 60_000).toISOString().slice(0, 19).replace('T', ' ');
+
+const stampMs = (stamp: string): number => Date.parse(`${stamp.replace(' ', 'T')}Z`);
+
+/** A reset token still accepts guesses at `now`: unspent, unexpired and not guessed out. */
+export const isResetTokenLive = (token: { ExpiresAt: string; ConsumedAt?: string | null; FailedAttempts: number }, now: Date): boolean =>
+  token.ConsumedAt == null && stampMs(token.ExpiresAt) > now.getTime() && token.FailedAttempts < RESET_CODE_MAX_ATTEMPTS;
+
+/** The last request (by CreatedAt) was within the cooldown, so a new one sends nothing. */
+export const isResetRequestCoolingDown = (lastCreatedAt: string | null | undefined, now: Date): boolean =>
+  lastCreatedAt != null && now.getTime() - stampMs(lastCreatedAt) < RESET_REQUEST_COOLDOWN_SECONDS * 1000;
+
+/** Every way a reset code can fail says the same thing, so a guesser learns nothing about which it was. */
+export const resetCodeInvalid = (): BusinessRuleError =>
+  new BusinessRuleError(
+    'RESET_CODE_INVALID',
+    `That reset code is not valid. Codes expire after ${RESET_CODE_LIFETIME_MINUTES} minutes and stop working after ${RESET_CODE_MAX_ATTEMPTS} wrong tries; request a new one.`,
+  );
+
+/** The reset-code email. */
+export function buildPasswordResetEmail(input: {
+  member: Pick<Member, 'id' | 'Email' | 'MemberFirstName'>;
+  code: string;
+  expiresAt: string;
+}): NotificationPacket {
+  const { member, code, expiresAt } = input;
+  return {
+    kind: 'passwordReset',
+    key: `passwordReset:member:${member.id}:${expiresAt}`,
+    email: {
+      from: NOTIFICATION_SENDER,
+      to: member.Email,
+      subject: `Your ${APP_DISTRIBUTION.appName} password reset code`,
+      text:
+        `Hello ${member.MemberFirstName},\n\n` +
+        `Someone asked to reset the password for ${member.Email}. Your reset code is:\n\n` +
+        `    ${code}\n\n` +
+        `Enter it on the "Forgot password?" screen of the app or the web portal. It works once, expires ${expiresAt.slice(0, 16)} UTC ` +
+        `(${RESET_CODE_LIFETIME_MINUTES} minutes), and stops working after ${RESET_CODE_MAX_ATTEMPTS} wrong tries.\n\n` +
+        `If you did not ask for this, ignore this email: your password has not changed. Never share this code.\n`,
+      attachments: [],
+    },
+  };
+}

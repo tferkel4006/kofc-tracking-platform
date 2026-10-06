@@ -4,6 +4,7 @@ import type { DataService } from '@kofc/shared';
 import { OnboardingController, findCouncilAdminContact } from '../apps/mobile/services/onboarding';
 import { SessionStore, sessionStore } from '../apps/mobile/services/session';
 import { _reset } from './shims/expo-secure-store';
+import { DEV_ENROLLMENT_CODE } from '../apps/web/services/seed-dev';
 import { drivers, MEMBER } from './helpers';
 
 beforeEach(() => _reset());
@@ -72,7 +73,12 @@ describe.each(drivers)('$name driver: mobile onboarding', (d) => {
       error: expect.stringContaining('at least 8 characters'),
     });
 
-    const done = await c.submitPassword('a-fine-password', 'a-fine-password');
+    // Sprint 6B Security: no setup code, no registration.
+    expect(await c.submitPassword('a-fine-password', 'a-fine-password')).toMatchObject({
+      screen: 'createPassword',
+      error: expect.stringContaining('setup code'),
+    });
+    const done = await c.submitPassword('a-fine-password', 'a-fine-password', DEV_ENROLLMENT_CODE);
     expect(done).toMatchObject({ screen: 'signedIn', user: { memberId: MEMBER.newMember } });
     expect((await db.auth.signIn('testnewmember@kofc.org', 'a-fine-password'))?.memberId).toBe(MEMBER.newMember);
 
@@ -86,7 +92,7 @@ describe.each(drivers)('$name driver: mobile onboarding', (d) => {
     const first = controllerFor(db);
     await first.start();
     await first.submitEmail('testnewmember@kofc.org');
-    await first.submitPassword('a-fine-password', 'a-fine-password');
+    await first.submitPassword('a-fine-password', 'a-fine-password', DEV_ENROLLMENT_CODE);
 
     const relaunch = controllerFor(db);
     expect(await relaunch.start()).toMatchObject({ screen: 'signedIn', user: { memberId: MEMBER.newMember } });

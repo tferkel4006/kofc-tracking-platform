@@ -659,3 +659,15 @@ A new member's one-time setup code, issued by the post-insert welcome email that
 •	ExpiresAt (DATETIME, NOT NULL) — ENROLLMENT_CODE_LIFETIME_DAYS (14) after CreatedAt.
 •	ConsumedAt (DATETIME, NULL) — When auth.signUp spent it; NULL while unspent.
 ________________________________________
+# 18. Mandatory Setup Codes and Self-Service Password Resets (Sprint 6B Security Extension)
+Schema version 33. auth.signUp now refuses any registration without a valid MemberEnrollmentToken setup code (ENROLLMENT_CODE_INVALID, nothing written), so an email address alone no longer claims an account. An Admin sends a fresh code with members.resendWelcome. The dev seed's pre-provisioned member carries the published dev code DEV_ENROLLMENT_CODE (apps/*/services/seed-dev.ts), dev data like the dev password.
+[PasswordResetToken]
+A 6-digit password reset code. auth.requestPasswordReset emails one (as a SendGrid request) to a member who has registered, answering exactly the same for any other email so the form cannot reveal who is a member; a request within 60 seconds of the last sends nothing, and a new code retires every earlier unspent one. auth.verifyPasswordResetCode checks a code and auth.resetPassword spends it to set the new password; every failure reads RESET_CODE_INVALID.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	MemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). Indexed.
+•	CodeHash (VARCHAR(64), NOT NULL) — SHA-256 hex of the code keyed by the member (resetCodeHashInput); the code itself is never stored.
+•	CreatedAt (DATETIME, NOT NULL) — When it was issued ('YYYY-MM-DD HH:MM:SS' UTC); also the cooldown clock.
+•	ExpiresAt (DATETIME, NOT NULL) — RESET_CODE_LIFETIME_MINUTES (15) after CreatedAt.
+•	ConsumedAt (DATETIME, NULL) — When it was spent by auth.resetPassword or retired by a newer request; NULL while it works.
+•	FailedAttempts (INTEGER, NOT NULL, DEFAULT 0) — Wrong guesses so far; at RESET_CODE_MAX_ATTEMPTS (5) the code is dead even for the right digits.
+________________________________________

@@ -4853,6 +4853,73 @@ export const TABLES: Record<string, TableMeta> = {
         "TokenHash"
       ]
     ]
+  },
+  "PasswordResetToken": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "MemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "CodeHash",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "CreatedAt",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ExpiresAt",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ConsumedAt",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "FailedAttempts",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "MemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": []
   }
 };
 

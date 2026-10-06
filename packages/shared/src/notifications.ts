@@ -110,7 +110,7 @@ export interface EmailPayload {
 }
 
 export interface NotificationPacket {
-  kind: 'shift' | 'meeting' | 'welcome';
+  kind: 'shift' | 'meeting' | 'welcome' | 'passwordReset';
   /** Stable dedupe key, e.g. "shift:12:member:3". */
   key: string;
   email: EmailPayload;

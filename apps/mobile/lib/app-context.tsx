@@ -27,6 +27,11 @@ interface AppContextValue {
   refreshFeatures(): Promise<void>;
   submitEmail(email: string): Promise<void>;
   submitPassword(password: string, confirmation?: string, setupCode?: string): Promise<void>;
+  /** Sprint 6B Security: the self-service password reset (OnboardingController). */
+  startPasswordReset(): void;
+  submitResetEmail(email: string): Promise<void>;
+  submitResetCode(code: string): Promise<void>;
+  submitNewPassword(password: string, confirmation: string): Promise<void>;
   restart(): void;
   signOut(): Promise<void>;
 }
@@ -103,6 +108,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (password: string, confirmation?: string, setupCode?: string) => setOnboarding(await controller.submitPassword(password, confirmation, setupCode)),
     [controller],
   );
+  const startPasswordReset = useCallback(() => setOnboarding(controller.startPasswordReset()), [controller]);
+  const submitResetEmail = useCallback(async (email: string) => setOnboarding(await controller.submitResetEmail(email)), [controller]);
+  const submitResetCode = useCallback(async (code: string) => setOnboarding(await controller.submitResetCode(code)), [controller]);
+  const submitNewPassword = useCallback(
+    async (password: string, confirmation: string) => setOnboarding(await controller.submitNewPassword(password, confirmation)),
+    [controller],
+  );
   const restart = useCallback(() => setOnboarding(controller.restart()), [controller]);
   const signOut = useCallback(async () => {
     // Unlink the phone first, while the member is still known; a failure must not block signing out.
@@ -122,10 +134,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshFeatures,
       submitEmail,
       submitPassword,
+      startPasswordReset,
+      submitResetEmail,
+      submitResetCode,
+      submitNewPassword,
       restart,
       signOut,
     }),
-    [user, onboarding, startupError, unread, refreshUnread, features, refreshFeatures, submitEmail, submitPassword, restart, signOut],
+    [
+      user,
+      onboarding,
+      startupError,
+      unread,
+      refreshUnread,
+      features,
+      refreshFeatures,
+      submitEmail,
+      submitPassword,
+      startPasswordReset,
+      submitResetEmail,
+      submitResetCode,
+      submitNewPassword,
+      restart,
+      signOut,
+    ],
   );
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

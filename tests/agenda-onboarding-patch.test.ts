@@ -254,10 +254,11 @@ describe.each(['memory', 'sqlite'] as const)('new member onboarding (%s driver)'
     expect(await db.auth.signIn('luke.newman@example.org', 'a-strong-password')).toBeNull();
     const session = await db.auth.signUp('luke.newman@example.org', 'a-strong-password', setupCode.toLowerCase());
     expect(session.memberId).toBe(created.id);
-    // Somebody else's code does not work for this member.
+    // Somebody else's code does not work for this member, and (Sprint 6B Security) neither does no code at all.
     const other = await db.members.create(MEMBER.admin, newMember({ MemberNumber: 7000002, Email: 'paul.newman@example.org' }));
     await expectRule(db.auth.signUp('paul.newman@example.org', 'a-strong-password', setupCode), 'ENROLLMENT_CODE_INVALID');
-    expect((await db.auth.signUp('paul.newman@example.org', 'a-strong-password')).memberId).toBe(other.id);
+    await expectRule(db.auth.signUp('paul.newman@example.org', 'a-strong-password', ''), 'ENROLLMENT_CODE_INVALID');
+    expect((await db.auth.signUp('paul.newman@example.org', 'a-strong-password', setupCodeIn(sent[1]!))).memberId).toBe(other.id);
   });
 
   it("syncs Supreme's roster: new members are added and welcomed, known ones get their join date, bad rows are skipped", async () => {

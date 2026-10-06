@@ -284,6 +284,22 @@ function MemberForm({
                 Undo changes
               </Button>
             ) : null}
+            {/* Sprint 6B Security: the setup code is mandatory, so a member whose code expired needs a fresh one. */}
+            {member && canCreateMembers(user, member.CouncilID) ? (
+              <Button
+                variant="secondary"
+                disabled={busy}
+                title="For a member who has not chosen a password yet"
+                onClick={() =>
+                  void run(
+                    () => db.members.resendWelcome(user.memberId, member.id),
+                    `A new welcome email with a fresh setup code was sent to ${member.Email}.`,
+                  )
+                }
+              >
+                Send new setup code
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </form>

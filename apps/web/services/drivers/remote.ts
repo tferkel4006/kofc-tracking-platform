@@ -16,7 +16,13 @@ export function createRemoteDataService(): DataService {
   return {
     init: notImplemented('init'),
     reset: notImplemented('reset'),
-    auth: { signIn: notImplemented('auth.signIn'), signUp: notImplemented('auth.signUp') },
+    auth: {
+      signIn: notImplemented('auth.signIn'),
+      signUp: notImplemented('auth.signUp'),
+      requestPasswordReset: notImplemented('auth.requestPasswordReset'),
+      verifyPasswordResetCode: notImplemented('auth.verifyPasswordResetCode'),
+      resetPassword: notImplemented('auth.resetPassword'),
+    },
     lookups: {
       list: notImplemented('lookups.list'),
       create: notImplemented('lookups.create'),
@@ -72,6 +78,7 @@ export function createRemoteDataService(): DataService {
       listRoles: notImplemented('members.listRoles'),
       create: notImplemented('members.create'),
       update: notImplemented('members.update'),
+      resendWelcome: notImplemented('members.resendWelcome'),
     },
     memberProfiles: {
       listOptions: notImplemented('memberProfiles.listOptions'),

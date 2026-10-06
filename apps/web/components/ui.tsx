@@ -4,6 +4,7 @@
 import {
   useId,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
   type ComponentProps,
   type InputHTMLAttributes,
@@ -20,6 +21,36 @@ const control =
 
 export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...rest} className={cx(control, className)} />;
+}
+
+/**
+ * Sprint 6B Security: a password box with a high-contrast eye button inside its right edge that switches the text
+ * between masked dots (type="password") and readable clear text (type="text"). The button says what it will do.
+ */
+export function PasswordInput({ className, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, 'type'>) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input {...rest} type={visible ? 'text' : 'password'} className={cx(control, 'pr-11', className)} />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? 'Hide password' : 'Show password'}
+        aria-pressed={visible}
+        title={visible ? 'Hide password' : 'Show password'}
+        className={cx(
+          'absolute inset-y-0.5 right-0.5 flex w-9 items-center justify-center rounded border-2 border-navy',
+          visible ? 'bg-navy text-white' : 'bg-white text-navy',
+        )}
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+          <path d="M1.5 12S5.5 4.5 12 4.5 22.5 12 22.5 12 18.5 19.5 12 19.5 1.5 12 1.5 12Z" />
+          <circle cx="12" cy="12" r="3.2" fill="currentColor" />
+          {visible ? <path d="M3 21 21 3" /> : null}
+        </svg>
+      </button>
+    </div>
+  );
 }
 
 export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {

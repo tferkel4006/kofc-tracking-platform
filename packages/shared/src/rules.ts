@@ -110,7 +110,8 @@ export type BusinessRuleCode =
   | 'VOTE_TALLY_CONFLICT'
   | 'AGENDA_EDITOR_REQUIRED'
   | 'AGENDA_CONFLICT'
-  | 'ENROLLMENT_CODE_INVALID';
+  | 'ENROLLMENT_CODE_INVALID'
+  | 'RESET_CODE_INVALID';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {

@@ -352,6 +352,15 @@ import {
   logSendGridRequest,
   nextAgendaSortOrder,
   rosterMemberNumber,
+  buildPasswordResetEmail,
+  cleanResetCode,
+  enrollmentCodeRequired,
+  formatResetCode,
+  isResetRequestCoolingDown,
+  isResetTokenLive,
+  resetCodeExpiry,
+  resetCodeHashInput,
+  resetCodeInvalid,
   type SendGridMailRequest,
   type SupremeRosterSyncResult,
   type CleanJournalLine,
@@ -472,6 +481,7 @@ import {
   DEV_COUNCIL_DONATION_METHODS,
   DEV_COUNCIL_NUMBER,
   DEV_UNAFFILIATED_COUNCIL,
+  DEV_ENROLLMENT_CODE,
   DEV_UNREGISTERED_MEMBER,
   toIsoDate,
   type DevMeetingTypeName,
@@ -675,7 +685,7 @@ export class MemoryDataService implements DataService {
       const stored = cred.Password as string;
       if (stored !== UNREGISTERED_PASSWORD && !isSha256Hex(stored)) (cred as Row).Password = await sha256Hex(stored);
     }
-    this.seedDevMember();
+    await this.seedDevMember();
 
     const council = this.store.rows('Council').find((c) => c.CouncilNumber === DEV_COUNCIL_NUMBER);
     if (!council) throw new Error(`Seed.sql did not create Council ${DEV_COUNCIL_NUMBER}`);
@@ -699,8 +709,11 @@ export class MemoryDataService implements DataService {
     for (const c of this.store.rows('Council')) this.backfillLeadershipHistory(this.store, c.id as number);
   }
 
-  /** A pre-provisioned member with a placeholder Credentials row. Council activities come from Seed.sql. */
-  private seedDevMember(): void {
+  /**
+   * A pre-provisioned member with a placeholder Credentials row, and (Sprint 6B Security) the published dev setup code
+   * DEV_ENROLLMENT_CODE that auth.signUp now requires. Council activities come from Seed.sql.
+   */
+  private async seedDevMember(): Promise<void> {
     const council = this.store.rows('Council').find((c) => c.CouncilNumber === DEV_COUNCIL_NUMBER);
     const template = this.store.rows('Member').find((m) => m.CouncilID === council?.id);
     if (!council || !template) throw new Error(`Seed.sql did not create Council ${DEV_COUNCIL_NUMBER} with members`);
@@ -708,13 +721,19 @@ export class MemoryDataService implements DataService {
       Username: DEV_UNREGISTERED_MEMBER.Email,
       Password: UNREGISTERED_PASSWORD,
     });
-    this.store.insert('Member', {
+    const member = this.store.insert('Member', {
       ...DEV_UNREGISTERED_MEMBER,
       CouncilID: council.id,
       StatusID: this.activeStatusId(this.store),
       DegreeID: template.DegreeID,
       MemberTypeID: this.store.rows('MemberType').find((t) => t.Type === 'Member')?.id,
       CredentialID: cred.id,
+    });
+    this.store.insert('MemberEnrollmentToken', {
+      MemberID: member.id,
+      TokenHash: await sha256Hex(enrollmentCodeHashInput(DEV_ENROLLMENT_CODE)),
+      CreatedAt: toTimestamp(this.now()),
+      ExpiresAt: '9999-12-31 23:59:59',
     });
   }
 
@@ -830,7 +849,7 @@ export class MemoryDataService implements DataService {
     signUp: async (email, password, enrollmentCode) => {
       assertPasswordAcceptable(password);
       const hash = await sha256Hex(password); // hash first: the check-and-write below must not span an await
-      const codeHash = enrollmentCode == null || enrollmentCode.trim() === '' ? null : await sha256Hex(enrollmentCodeHashInput(enrollmentCode));
+      const codeHash = typeof enrollmentCode !== 'string' || enrollmentCode.trim() === '' ? null : await sha256Hex(enrollmentCodeHashInput(enrollmentCode));
       const s = await this.ready();
       const member = s.rows('Member').find((m) => lower(m.Email) === email.trim().toLowerCase());
       if (!member) {
@@ -853,17 +872,85 @@ export class MemoryDataService implements DataService {
           memberId: member.id,
         });
       }
-      if (codeHash !== null) {
-        // Sprint 6B Patch: the welcome email's setup code must be this member's, unspent and unexpired; it is spent here.
-        const token = s.rows('MemberEnrollmentToken').find((t) => t.MemberID === member.id && t.TokenHash === codeHash);
-        if (!token || !isEnrollmentTokenUsable(token as unknown as { ExpiresAt: string; ConsumedAt: string | null }, this.now())) throw enrollmentCodeInvalid();
-        (token as Row).ConsumedAt = toTimestamp(this.now());
-      }
+      // Sprint 6B Security: the welcome email's setup code is mandatory - this member's, unspent and unexpired - and is
+      // spent here; without it the registration is refused and nothing is written.
+      if (codeHash === null) throw enrollmentCodeRequired();
+      const token = s.rows('MemberEnrollmentToken').find((t) => t.MemberID === member.id && t.TokenHash === codeHash);
+      if (!token || !isEnrollmentTokenUsable(token as unknown as { ExpiresAt: string; ConsumedAt: string | null }, this.now())) throw enrollmentCodeInvalid();
+      (token as Row).ConsumedAt = toTimestamp(this.now());
       (cred as Row).Password = hash;
       (cred as Row).Username = member.Email;
       return this.sessionFor(s, member, cred);
     },
+
+    requestPasswordReset: async (email) => {
+      const s = await this.ready();
+      const found = this.registeredMemberByEmail(s, email);
+      if (!found) return; // the same answer for a stranger: the form must not reveal who is a member
+      const { member } = found;
+      const tokens = s.rows('PasswordResetToken').filter((t) => t.MemberID === member.id);
+      const last = tokens.map((t) => t.CreatedAt as string).sort().at(-1);
+      if (isResetRequestCoolingDown(last, this.now())) return;
+      const code = formatResetCode(globalThis.crypto.getRandomValues(new Uint8Array(4)));
+      const codeHash = await sha256Hex(resetCodeHashInput(member.id as number, code));
+      const issuedAt = this.now();
+      const expiresAt = resetCodeExpiry(issuedAt);
+      // Only the newest code works: every earlier unspent one is retired.
+      for (const t of s.rows('PasswordResetToken')) if (t.MemberID === member.id && t.ConsumedAt == null) (t as Row).ConsumedAt = toTimestamp(issuedAt);
+      s.insert('PasswordResetToken', { MemberID: member.id, CodeHash: codeHash, CreatedAt: toTimestamp(issuedAt), ExpiresAt: expiresAt, FailedAttempts: 0 });
+      try {
+        const packet = buildPasswordResetEmail({ member: member as unknown as Member, code, expiresAt });
+        await this.sendEmail(buildSendGridMailRequest(packet.email));
+      } catch (err) {
+        console.error('[notification] password reset email failed:', err);
+      }
+    },
+
+    verifyPasswordResetCode: async (email, code) => {
+      await this.liveResetToken(email, code);
+    },
+
+    resetPassword: async (email, code, newPassword) => {
+      assertPasswordAcceptable(newPassword);
+      const hash = await sha256Hex(newPassword); // hashed first: the check-and-write below must not span an await
+      const { s, member, cred, token } = await this.liveResetToken(email, code);
+      (token as Row).ConsumedAt = toTimestamp(this.now());
+      (cred as Row).Password = hash;
+      return this.sessionFor(s, member, cred);
+    },
   };
+
+  /** The member who registered with `email` (case-insensitive) and their credentials; null for anyone else. */
+  private registeredMemberByEmail(s: MemoryStore, email: unknown): { member: Row; cred: Row } | null {
+    const wanted = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const member = wanted ? s.rows('Member').find((m) => lower(m.Email) === wanted) : undefined;
+    const cred = member ? s.rows('Credentials').find((c) => c.id === member.CredentialID) : undefined;
+    if (!member || !cred || cred.Password === UNREGISTERED_PASSWORD) return null;
+    return { member: member as Row, cred: cred as Row };
+  }
+
+  /**
+   * The member's newest live reset token when `code` matches it; otherwise RESET_CODE_INVALID, and a wrong code counts
+   * against the token (outside any transaction, so the count sticks). Ends without an await after the token is read, so
+   * the caller's writes follow at once.
+   */
+  private async liveResetToken(email: unknown, code: unknown): Promise<{ s: MemoryStore; member: Row; cred: Row; token: Row }> {
+    const digits = cleanResetCode(code);
+    const s = await this.ready();
+    const found = this.registeredMemberByEmail(s, email);
+    if (!found || digits === null) throw resetCodeInvalid();
+    const codeHash = await sha256Hex(resetCodeHashInput(found.member.id as number, digits));
+    const token = s
+      .rows('PasswordResetToken')
+      .filter((t) => t.MemberID === found.member.id && t.ConsumedAt == null)
+      .sort((a, b) => (b.id as number) - (a.id as number))[0];
+    if (!token || !isResetTokenLive(token as unknown as { ExpiresAt: string; ConsumedAt: string | null; FailedAttempts: number }, this.now())) throw resetCodeInvalid();
+    if (token.CodeHash !== codeHash) {
+      (token as Row).FailedAttempts = (token.FailedAttempts as number) + 1;
+      throw resetCodeInvalid();
+    }
+    return { s, member: found.member, cred: found.cred, token: token as Row };
+  }
 
   private sessionFor(s: MemoryStore, member: Row, cred: Row): SessionUser {
     const type = s.rows('MemberType').find((t) => t.id === member.MemberTypeID);
@@ -1413,6 +1500,18 @@ export class MemoryDataService implements DataService {
       const created = withoutPushToken({ ...row }) as unknown as Member;
       await this.sendWelcomeEmail(s, created);
       return created;
+    },
+
+    resendWelcome: async (actorId, memberId) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const member = this.requireMember(s, memberId);
+      assertMayImportSupremeRoster(actor, member.CouncilID as number, `send member ${memberId} a new setup code`);
+      const cred = s.rows('Credentials').find((c) => c.id === member.CredentialID);
+      if (cred && cred.Password !== UNREGISTERED_PASSWORD) {
+        throw new BusinessRuleError('ALREADY_REGISTERED', `${member.Email as string} has already registered; they can reset their password instead.`, { memberId });
+      }
+      await this.sendWelcomeEmail(s, withoutPushToken({ ...member }) as unknown as Member);
     },
 
     update: async (actorId, id, changes) => {

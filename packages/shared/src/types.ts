@@ -459,6 +459,20 @@ export interface MemberEnrollmentToken {
   ConsumedAt?: string | null; // DATETIME
 }
 
+/**
+ * A 6-digit password reset code (Sprint 6B Security), sent by email. Only its keyed SHA-256 is stored; it expires at
+ * ExpiresAt, works once and dies after RESET_CODE_MAX_ATTEMPTS wrong guesses.
+ */
+export interface PasswordResetToken {
+  id: number;
+  MemberID: number;
+  CodeHash: string; // VARCHAR(64), SHA-256 hex
+  CreatedAt: string; // DATETIME
+  ExpiresAt: string; // DATETIME
+  ConsumedAt?: string | null; // DATETIME
+  FailedAttempts: number; // default 0
+}
+
 /** The Recorder's show-of-hands count on a motion (Sprint 6B); one per motion. */
 export interface MotionHandTally {
   id: number;

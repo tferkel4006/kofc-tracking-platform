@@ -355,6 +355,15 @@ import {
   logSendGridRequest,
   nextAgendaSortOrder,
   rosterMemberNumber,
+  buildPasswordResetEmail,
+  cleanResetCode,
+  enrollmentCodeRequired,
+  formatResetCode,
+  isResetRequestCoolingDown,
+  isResetTokenLive,
+  resetCodeExpiry,
+  resetCodeHashInput,
+  resetCodeInvalid,
   type SendGridMailRequest,
   type SupremeRosterSyncResult,
   type CleanJournalLine,
@@ -479,6 +488,7 @@ import {
   DEV_COUNCIL_DONATION_METHODS,
   DEV_COUNCIL_NUMBER,
   DEV_UNAFFILIATED_COUNCIL,
+  DEV_ENROLLMENT_CODE,
   DEV_UNREGISTERED_MEMBER,
   toIsoDate,
   type DevMeetingTypeName,
@@ -522,8 +532,9 @@ const DB_NAME = 'kofc.db';
  *     and flag_meeting_management (Sprint 6A; the patch split flag_donations_hub in two within version 30).
  * 31: MeetingAgendaItem and MotionHandTally - the St. Mary's live agenda and hand-vote tallies (Sprint 6B).
  * 32: Meeting.ActiveAgendaLineKey, Member.DateJoinedCouncil and MemberEnrollmentToken (Sprint 6B Patch).
+ * 33: PasswordResetToken - self-service password resets; the welcome setup code becomes mandatory (Sprint 6B Security).
  */
-const SCHEMA_VERSION = 32;
+const SCHEMA_VERSION = 33;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -713,7 +724,10 @@ export class SqliteDataService implements DataService {
     }
   }
 
-  /** A pre-provisioned member with a placeholder Credentials row. Council activities come from Seed.sql. */
+  /**
+   * A pre-provisioned member with a placeholder Credentials row, and (Sprint 6B Security) the published dev setup code
+   * DEV_ENROLLMENT_CODE that auth.signUp now requires. Council activities come from Seed.sql.
+   */
   private async seedDevMember(db: SQLite.SQLiteDatabase): Promise<void> {
     const council = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Council] WHERE [CouncilNumber] = ?', [
       DEV_COUNCIL_NUMBER,
@@ -730,7 +744,7 @@ export class SqliteDataService implements DataService {
       m.Email,
       UNREGISTERED_PASSWORD,
     ]);
-    await db.runAsync(
+    const member = await db.runAsync(
       `INSERT INTO [Member] ([CouncilID], [MemberNumber], [MemberFirstName], [MemberLastName], [Phone],
                              [StreetAddress1], [City], [State], [ZipCode], [Email], [DateOfBirth],
                              [StatusID], [DegreeID], [MemberTypeID], [CredentialID])
@@ -753,6 +767,12 @@ export class SqliteDataService implements DataService {
         cred.lastInsertRowId,
       ],
     );
+    await db.runAsync('INSERT INTO [MemberEnrollmentToken] ([MemberID], [TokenHash], [CreatedAt], [ExpiresAt]) VALUES (?, ?, ?, ?)', [
+      member.lastInsertRowId,
+      await sha256Hex(enrollmentCodeHashInput(DEV_ENROLLMENT_CODE)),
+      toTimestamp(this.now()),
+      '9999-12-31 23:59:59',
+    ]);
   }
 
   private async seedDevEvents(db: SQLite.SQLiteDatabase): Promise<void> {
@@ -815,7 +835,7 @@ export class SqliteDataService implements DataService {
     signUp: async (email, password, enrollmentCode) => {
       assertPasswordAcceptable(password);
       const hash = await sha256Hex(password);
-      const codeHash = enrollmentCode == null || enrollmentCode.trim() === '' ? null : await sha256Hex(enrollmentCodeHashInput(enrollmentCode));
+      const codeHash = typeof enrollmentCode !== 'string' || enrollmentCode.trim() === '' ? null : await sha256Hex(enrollmentCodeHashInput(enrollmentCode));
       const db = await this.ready();
       let credentialId = 0;
       await db.withTransactionAsync(async () => {
@@ -830,9 +850,14 @@ export class SqliteDataService implements DataService {
             { email },
           );
         }
-        if (codeHash !== null) {
-          // Sprint 6B Patch: the welcome email's setup code must be this member's, unspent and unexpired; it is spent here
-          // (inside the transaction, so a failed registration leaves it unspent).
+        // Sprint 6B Security: the welcome email's setup code is mandatory - this member's, unspent and unexpired - and is
+        // spent here (inside the transaction, so a refused registration writes nothing).
+        const registered = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Credentials] WHERE [id] = ? AND [Password] <> ?', [
+          member.CredentialID,
+          UNREGISTERED_PASSWORD,
+        ]);
+        if (!registered) {
+          if (codeHash === null) throw enrollmentCodeRequired();
           const token = await db.getFirstAsync<{ id: number; ExpiresAt: string; ConsumedAt: string | null }>(
             'SELECT [id], [ExpiresAt], [ConsumedAt] FROM [MemberEnrollmentToken] WHERE [MemberID] = ? AND [TokenHash] = ?',
             [member.id, codeHash],
@@ -864,7 +889,93 @@ export class SqliteDataService implements DataService {
       const row = await db.getFirstAsync<SignInRow>(`${SIGN_IN_SELECT} WHERE c.[id] = ?`, [credentialId]);
       return this.buildSession(db, row!);
     },
+
+    requestPasswordReset: async (email) => {
+      const db = await this.ready();
+      const found = await this.registeredMemberByEmail(db, email);
+      if (!found) return; // the same answer for a stranger: the form must not reveal who is a member
+      const last = await db.getFirstAsync<{ at: string | null }>('SELECT MAX([CreatedAt]) AS at FROM [PasswordResetToken] WHERE [MemberID] = ?', [found.id]);
+      if (isResetRequestCoolingDown(last?.at, this.now())) return;
+      const code = formatResetCode(await Crypto.getRandomBytesAsync(4));
+      const codeHash = await sha256Hex(resetCodeHashInput(found.id, code));
+      const issuedAt = this.now();
+      const expiresAt = resetCodeExpiry(issuedAt);
+      await db.withTransactionAsync(async () => {
+        // Only the newest code works: every earlier unspent one is retired.
+        await db.runAsync('UPDATE [PasswordResetToken] SET [ConsumedAt] = ? WHERE [MemberID] = ? AND [ConsumedAt] IS NULL', [toTimestamp(issuedAt), found.id]);
+        await db.runAsync(
+          'INSERT INTO [PasswordResetToken] ([MemberID], [CodeHash], [CreatedAt], [ExpiresAt], [FailedAttempts]) VALUES (?, ?, ?, ?, 0)',
+          [found.id, codeHash, toTimestamp(issuedAt), expiresAt],
+        );
+      });
+      try {
+        const packet = buildPasswordResetEmail({ member: { id: found.id, Email: found.Email, MemberFirstName: found.MemberFirstName }, code, expiresAt });
+        await this.sendEmail(buildSendGridMailRequest(packet.email));
+      } catch (err) {
+        console.error('[notification] password reset email failed:', err);
+      }
+    },
+
+    verifyPasswordResetCode: async (email, code) => {
+      await this.liveResetToken(await this.ready(), email, code);
+    },
+
+    resetPassword: async (email, code, newPassword) => {
+      assertPasswordAcceptable(newPassword);
+      const hash = await sha256Hex(newPassword);
+      const db = await this.ready();
+      const { member, tokenId } = await this.liveResetToken(db, email, code);
+      let spent = false;
+      await db.withTransactionAsync(async () => {
+        // The ConsumedAt guard makes spending the code atomic: two resets racing on one code cannot both win.
+        const res = await db.runAsync('UPDATE [PasswordResetToken] SET [ConsumedAt] = ? WHERE [id] = ? AND [ConsumedAt] IS NULL', [toTimestamp(this.now()), tokenId]);
+        if (res.changes === 0) return;
+        await db.runAsync('UPDATE [Credentials] SET [Password] = ? WHERE [id] = ?', [hash, member.CredentialID]);
+        spent = true;
+      });
+      if (!spent) throw resetCodeInvalid();
+      const row = await db.getFirstAsync<SignInRow>(`${SIGN_IN_SELECT} WHERE c.[id] = ?`, [member.CredentialID]);
+      return this.buildSession(db, row!);
+    },
   };
+
+  /** The member who registered with `email` (case-insensitive); null for anyone else. */
+  private async registeredMemberByEmail(
+    db: SQLite.SQLiteDatabase,
+    email: unknown,
+  ): Promise<{ id: number; Email: string; MemberFirstName: string; CredentialID: number } | null> {
+    const wanted = typeof email === 'string' ? email.trim() : '';
+    if (!wanted) return null;
+    return db.getFirstAsync<{ id: number; Email: string; MemberFirstName: string; CredentialID: number }>(
+      `SELECT m.[id], m.[Email], m.[MemberFirstName], m.[CredentialID] FROM [Member] m JOIN [Credentials] c ON c.[id] = m.[CredentialID]
+        WHERE m.[Email] = ? COLLATE NOCASE AND c.[Password] <> ?`,
+      [wanted, UNREGISTERED_PASSWORD],
+    );
+  }
+
+  /**
+   * The member's newest live reset token when `code` matches it; otherwise RESET_CODE_INVALID, and a wrong code counts
+   * against the token (written on its own, so the count sticks).
+   */
+  private async liveResetToken(
+    db: SQLite.SQLiteDatabase,
+    email: unknown,
+    code: unknown,
+  ): Promise<{ member: { id: number; CredentialID: number }; tokenId: number }> {
+    const digits = cleanResetCode(code);
+    const member = await this.registeredMemberByEmail(db, email);
+    if (!member || digits === null) throw resetCodeInvalid();
+    const token = await db.getFirstAsync<{ id: number; CodeHash: string; ExpiresAt: string; ConsumedAt: string | null; FailedAttempts: number }>(
+      'SELECT * FROM [PasswordResetToken] WHERE [MemberID] = ? AND [ConsumedAt] IS NULL ORDER BY [id] DESC LIMIT 1',
+      [member.id],
+    );
+    if (!token || !isResetTokenLive(token, this.now())) throw resetCodeInvalid();
+    if (token.CodeHash !== (await sha256Hex(resetCodeHashInput(member.id, digits)))) {
+      await db.runAsync('UPDATE [PasswordResetToken] SET [FailedAttempts] = [FailedAttempts] + 1 WHERE [id] = ?', [token.id]);
+      throw resetCodeInvalid();
+    }
+    return { member, tokenId: token.id };
+  }
 
   private async buildSession(db: SQLite.SQLiteDatabase, row: SignInRow): Promise<SessionUser> {
     const roles = await this.rolesFor(db, row.memberId);
@@ -1565,6 +1676,18 @@ export class SqliteDataService implements DataService {
       const created = withoutPushToken((await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]))!);
       await this.sendWelcomeEmail(db, created);
       return created;
+    },
+
+    resendWelcome: async (actorId, memberId) => {
+      const db = await this.ready();
+      const actor = await this.memberWriteActor(db, actorId);
+      const member = await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [memberId]);
+      if (!member) throw new BusinessRuleError('MEMBER_NOT_FOUND', `No member with id ${memberId}.`, { memberId });
+      assertMayImportSupremeRoster(actor, member.CouncilID, `send member ${memberId} a new setup code`);
+      if (await db.getFirstAsync('SELECT [id] FROM [Credentials] WHERE [id] = ? AND [Password] <> ?', [member.CredentialID, UNREGISTERED_PASSWORD])) {
+        throw new BusinessRuleError('ALREADY_REGISTERED', `${member.Email} has already registered; they can reset their password instead.`, { memberId });
+      }
+      await this.sendWelcomeEmail(db, withoutPushToken(member));
     },
 
     update: async (actorId, id, changes) => {

@@ -7,6 +7,10 @@
 //       │                                               signIn ──▶ signedIn
 //       └──no Member with that email──▶ contactAdmin   (halted: shows the admin's details)
 //
+// Sprint 6B Security: createPassword needs the setup code from the welcome email (auth.signUp refuses without it), and
+// "Forgot password?" (from enterEmail or signIn) runs the self-service reset:
+//   forgotPassword ──email──▶ resetCode ──6-digit code──▶ newPassword ──▶ signedIn
+//
 // Screens render `controller.state` and call submitEmail / submitPassword; they
 // hold no rules of their own. `contactAdmin` is terminal: submitEmail and
 // submitPassword do nothing until the screen offers restart().
@@ -36,6 +40,9 @@ export type OnboardingState =
   | { screen: 'createPassword'; email: string; firstName: string; error?: string }
   | { screen: 'signIn'; email: string; error?: string }
   | { screen: 'contactAdmin'; email: string; message: string; contact: CouncilAdminContact | null }
+  | { screen: 'forgotPassword'; email: string; error?: string }
+  | { screen: 'resetCode'; email: string; error?: string }
+  | { screen: 'newPassword'; email: string; code: string; error?: string }
   | { screen: 'signedIn'; user: SessionUser };
 
 /** The council admin's name and phone/email, from existing DataService methods. */
@@ -94,9 +101,9 @@ export class OnboardingController {
   }
 
   /**
-   * On `createPassword`: registers the password (hashed by auth.signUp) and remembers the session. Sprint 6B Patch:
-   * `setupCode` is the optional one-time code from the welcome email; given, auth.signUp spends it (a wrong, used or
-   * expired code is shown on the screen).
+   * On `createPassword`: registers the password (hashed by auth.signUp) and remembers the session. Sprint 6B Security:
+   * `setupCode`, the one-time code from the welcome email, is required; auth.signUp spends it (a missing, wrong, used or
+   * expired code is shown on the screen and nothing is registered).
    * On `signIn`: checks the password against the stored hash.
    */
   async submitPassword(password: string, confirmation?: string, setupCode?: string): Promise<OnboardingState> {
@@ -104,7 +111,9 @@ export class OnboardingController {
     if (current.screen === 'createPassword') {
       if (password !== confirmation) return this.set({ ...current, error: 'The two passwords do not match.' });
       try {
-        return await this.finish(await this.deps.db.auth.signUp(current.email, password, setupCode?.trim() || undefined));
+        // The driver decides about the code: a member who already registered goes to sign-in (ALREADY_REGISTERED) whatever
+        // was typed; anyone else is refused without a valid code.
+        return await this.finish(await this.deps.db.auth.signUp(current.email, password, setupCode?.trim() ?? ''));
       } catch (err) {
         if (err instanceof BusinessRuleError && err.code === 'ALREADY_REGISTERED') {
           return this.set({ screen: 'signIn', email: current.email });
@@ -118,6 +127,52 @@ export class OnboardingController {
       return user ? this.finish(user) : this.set({ ...current, error: 'Incorrect password. Please try again.' });
     }
     return current;
+  }
+
+  /** "Forgot password?" from the email or password prompt: asks for the email, filled in when it is known. */
+  startPasswordReset(): OnboardingState {
+    const current = this.state;
+    if (current.screen !== 'enterEmail' && current.screen !== 'signIn') return current;
+    return this.set({ screen: 'forgotPassword', email: current.screen === 'signIn' ? current.email : '' });
+  }
+
+  /**
+   * Asks for a reset code by email (auth.requestPasswordReset) and moves on to the code prompt whatever the answer, so
+   * the screen never reveals whether the email belongs to a member.
+   */
+  async submitResetEmail(rawEmail: string): Promise<OnboardingState> {
+    if (this.state.screen !== 'forgotPassword') return this.state;
+    const email = rawEmail.trim();
+    if (!/^\S+@\S+\.\S+$/.test(email)) return this.set({ screen: 'forgotPassword', email, error: 'Enter the email address you sign in with.' });
+    await this.deps.db.auth.requestPasswordReset(email);
+    return this.set({ screen: 'resetCode', email });
+  }
+
+  /** Checks the 6-digit code (auth.verifyPasswordResetCode) before the new-password form opens. */
+  async submitResetCode(code: string): Promise<OnboardingState> {
+    const current = this.state;
+    if (current.screen !== 'resetCode') return current;
+    try {
+      await this.deps.db.auth.verifyPasswordResetCode(current.email, code);
+      return this.set({ screen: 'newPassword', email: current.email, code: code.trim() });
+    } catch (err) {
+      if (err instanceof BusinessRuleError) return this.set({ ...current, error: err.message });
+      throw err;
+    }
+  }
+
+  /** Sets the new password (auth.resetPassword), which spends the code, and signs the member in. */
+  async submitNewPassword(password: string, confirmation: string): Promise<OnboardingState> {
+    const current = this.state;
+    if (current.screen !== 'newPassword') return current;
+    if (password !== confirmation) return this.set({ ...current, error: 'The two passwords do not match.' });
+    try {
+      return await this.finish(await this.deps.db.auth.resetPassword(current.email, current.code, password));
+    } catch (err) {
+      if (err instanceof BusinessRuleError && err.code === 'RESET_CODE_INVALID') return this.set({ screen: 'resetCode', email: current.email, error: err.message });
+      if (err instanceof BusinessRuleError) return this.set({ ...current, error: err.message });
+      throw err;
+    }
   }
 
   /** Back to the email prompt (e.g. after a typo froze the screen on contactAdmin). */

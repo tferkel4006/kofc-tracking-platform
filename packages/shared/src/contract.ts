@@ -1657,11 +1657,30 @@ export interface DataService {
      * Resolves to the new session. Rejects with a BusinessRuleError when: the email matches no
      * member (MEMBER_NOT_FOUND), the member already registered (ALREADY_REGISTERED), or the
      * password is under 8 characters (PASSWORD_TOO_SHORT).
-     * Sprint 6B Patch: `enrollmentCode` is the one-time setup code from the member's welcome email. When given it must be
-     * one of that member's unexpired, unspent codes (ENROLLMENT_CODE_INVALID otherwise, nothing written) and is spent by
-     * the registration. Omitted, the email alone still registers, as before.
+     * Sprint 6B Security: `enrollmentCode`, the one-time setup code from the member's welcome email, is mandatory: it
+     * must be one of that member's unexpired, unspent codes, or the registration is refused outright
+     * (ENROLLMENT_CODE_INVALID, nothing written) - knowing a member's email is no longer enough to claim the account.
+     * The code is spent by the registration. An Admin sends a fresh code with members.resendWelcome.
      */
-    signUp(email: string, password: string, enrollmentCode?: string): Promise<SessionUser>;
+    signUp(email: string, password: string, enrollmentCode: string): Promise<SessionUser>;
+    /**
+     * Sprint 6B Security: emails a 6-digit reset code (PasswordResetToken, RESET_CODE_LIFETIME_MINUTES) to the member
+     * who registered with `email`, as a SendGrid request. It resolves the same way whether or not the email belongs to
+     * a registered member, so the form cannot be used to find out who is a member. A new request retires every earlier
+     * code; a request within RESET_REQUEST_COOLDOWN_SECONDS of the last sends nothing.
+     */
+    requestPasswordReset(email: string): Promise<void>;
+    /**
+     * Checks a reset code before the new-password form opens. Rejects RESET_CODE_INVALID for an unknown email, a wrong,
+     * spent or expired code, or a code already guessed wrong RESET_CODE_MAX_ATTEMPTS times; each wrong guess counts
+     * against the code. A right code is not spent here.
+     */
+    verifyPasswordResetCode(email: string, code: string): Promise<void>;
+    /**
+     * Sets a new password with a valid reset code (as verifyPasswordResetCode), spends the code and resolves to the
+     * member's session. Rejects PASSWORD_TOO_SHORT before anything else is checked, and RESET_CODE_INVALID as above.
+     */
+    resetPassword(email: string, code: string, newPassword: string): Promise<SessionUser>;
   };
 
   /**
@@ -1852,6 +1871,13 @@ export interface DataService {
      * Rejects MEMBER_NOT_FOUND for an unknown actor or member.
      */
     update(actorId: number, id: number, changes: Partial<NewMember>): Promise<Member>;
+    /**
+     * Sprint 6B Security: sends the member a new welcome email with a fresh one-time setup code - for a pre-provisioned
+     * member whose code expired or never arrived. Earlier codes stay valid until they expire. By an Active Admin of the
+     * member's council or a Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects MEMBER_NOT_FOUND and
+     * ALREADY_REGISTERED for a member who has already chosen a password.
+     */
+    resendWelcome(actorId: number, memberId: number): Promise<void>;
   };
 
   memberProfiles: {

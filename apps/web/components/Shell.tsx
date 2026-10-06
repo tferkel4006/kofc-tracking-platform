@@ -5,11 +5,11 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { councilLabel } from '@kofc/shared';
+import { councilLabel, describeError } from '@kofc/shared';
 import { AlertBell } from '@/components/AlertBell';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { NAV, Sidebar } from '@/components/Sidebar';
-import { Button, cx, Field, Input, Notice } from '@/components/ui';
+import { Button, cx, Field, Input, Notice, PasswordInput } from '@/components/ui';
 import { useSession } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
@@ -201,12 +201,115 @@ function MemberMenu() {
   );
 }
 
+/**
+ * Sprint 6B Security: the self-service password reset, in place of the sign-in form. The email step always moves on,
+ * so the form never tells whether an email belongs to a member; the 6-digit code (15 minutes, 5 tries) unlocks the
+ * new-password step, which saves through auth.resetPassword and then signs the member in.
+ */
+function PasswordReset({ initialEmail, onDone, onCancel }: { initialEmail: string; onDone: (email: string, password: string) => Promise<void>; onCancel: () => void }) {
+  const [step, setStep] = useState<'email' | 'code' | 'password'>('email');
+  const [email, setEmail] = useState(initialEmail);
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async (action: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (step === 'email') {
+      void run(async () => {
+        await db.auth.requestPasswordReset(email.trim());
+        setStep('code');
+      });
+    } else if (step === 'code') {
+      void run(async () => {
+        await db.auth.verifyPasswordResetCode(email.trim(), code);
+        setStep('password');
+      });
+    } else if (password !== confirmation) {
+      setError('The two passwords do not match.');
+    } else {
+      void run(async () => {
+        await db.auth.resetPassword(email.trim(), code, password);
+        await onDone(email.trim(), password);
+      });
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      <h2 className="font-serif text-lg font-bold">Reset your password</h2>
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      {step === 'email' ? (
+        <>
+          <p className="text-sm text-muted">Enter the email you sign in with. If it belongs to a registered member, a 6-digit reset code is emailed to it.</p>
+          <Field label="Email">{(id) => <Input id={id} type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />}</Field>
+          <Button type="submit" disabled={busy || email.trim() === ''}>
+            {busy ? 'Sending…' : 'Email me a reset code'}
+          </Button>
+        </>
+      ) : step === 'code' ? (
+        <>
+          <p className="text-sm text-muted">If {email.trim()} belongs to a registered member, a 6-digit code is on its way. It expires in 15 minutes.</p>
+          <Field label="6-digit reset code">
+            {(id) => (
+              <Input
+                id={id}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                className="text-center text-2xl tracking-[0.5em]"
+                required
+              />
+            )}
+          </Field>
+          <Button type="submit" disabled={busy || code.length !== 6}>
+            {busy ? 'Checking…' : 'Continue'}
+          </Button>
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-muted">Choose a new password of at least 8 characters.</p>
+          <Field label="New password">
+            {(id) => <PasswordInput id={id} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required />}
+          </Field>
+          <Field label="Confirm new password">
+            {(id) => <PasswordInput id={id} autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} required />}
+          </Field>
+          <Button type="submit" disabled={busy || password === ''}>
+            {busy ? 'Saving…' : 'Save new password and sign in'}
+          </Button>
+        </>
+      )}
+      <button type="button" onClick={onCancel} className="self-center text-sm font-bold underline">
+        Back to sign in
+      </button>
+    </form>
+  );
+}
+
 function SignIn() {
   const { signIn } = useSession();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const devHint = (process.env.NEXT_PUBLIC_DATA_DRIVER ?? 'memory') === 'memory';
 
   const submit = async (event: FormEvent) => {
@@ -222,24 +325,55 @@ function SignIn() {
     }
   };
 
+  const brand = (
+    <div className="flex items-center gap-3">
+      <BrandMark size={52} />
+      <div>
+        <h1 className="font-serif text-xl font-bold leading-tight">Knights of Columbus</h1>
+        <p className="text-sm text-muted">Council administration portal</p>
+      </div>
+    </div>
+  );
+
+  if (resetting) {
+    return (
+      <div data-surface="navy" className="flex min-h-screen items-center justify-center bg-navy p-6">
+        <div className="flex w-full max-w-sm flex-col gap-4 rounded border-t-8 border-gold bg-white p-6">
+          {brand}
+          <PasswordReset
+            initialEmail={username}
+            onCancel={() => setResetting(false)}
+            onDone={async (email, newPassword) => {
+              if (!(await signIn(email, newPassword))) throw new Error('Your password was changed, but signing in failed. Sign in with the new password.');
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div data-surface="navy" className="flex min-h-screen items-center justify-center bg-navy p-6">
       <form onSubmit={(e) => void submit(e)} className="flex w-full max-w-sm flex-col gap-4 rounded border-t-8 border-gold bg-white p-6">
-        <div className="flex items-center gap-3">
-          <BrandMark size={52} />
-          <div>
-            <h1 className="font-serif text-xl font-bold leading-tight">Knights of Columbus</h1>
-            <p className="text-sm text-muted">Council administration portal</p>
-          </div>
-        </div>
+        {brand}
         {error ? <Notice tone="error">{error}</Notice> : null}
         <Field label="Email">{(id) => <Input id={id} type="email" autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />}</Field>
         <Field label="Password">
-          {(id) => <Input id={id} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />}
+          {(id) => <PasswordInput id={id} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />}
         </Field>
         <Button type="submit" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
         </Button>
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            setResetting(true);
+          }}
+          className="self-center text-sm font-bold underline"
+        >
+          Forgot Password?
+        </button>
         {devHint ? <p className="text-xs text-muted">Development data: testadmin@kofc.org or testsuperadmin@kofc.org, password dev-pass-secure-9912.</p> : null}
       </form>
     </div>

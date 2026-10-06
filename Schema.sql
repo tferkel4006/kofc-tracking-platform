@@ -1990,3 +1990,32 @@ GO
 
 CREATE UNIQUE INDEX [MemberEnrollmentToken_Hash_Idx] ON [MemberEnrollmentToken] ([TokenHash]);
 GO
+
+-- =========================================================================
+-- Sprint 6B Security Extension: SELF-SERVICE PASSWORD RESET
+-- PasswordResetToken is a 6-digit reset code sent by email (auth.requestPasswordReset) to a member who has registered.
+-- Only its SHA-256 (CodeHash, keyed by the member) is stored. It expires RESET_CODE_LIFETIME_MINUTES after CreatedAt,
+-- works once (ConsumedAt), and dies after RESET_CODE_MAX_ATTEMPTS wrong guesses (FailedAttempts), since six digits are
+-- few. Requesting a new code retires every earlier unspent one (ConsumedAt is set), so only the newest code works.
+-- From this version MemberEnrollmentToken (the welcome email's setup code) is mandatory for auth.signUp.
+-- =========================================================================
+CREATE TABLE [PasswordResetToken] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[MemberID] INTEGER NOT NULL,
+	[CodeHash] VARCHAR(64) NOT NULL,
+	[CreatedAt] DATETIME NOT NULL,
+	[ExpiresAt] DATETIME NOT NULL,
+	[ConsumedAt] DATETIME NULL,
+	[FailedAttempts] INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [PasswordResetToken]
+ADD FOREIGN KEY([MemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE INDEX [PasswordResetToken_Member_Idx] ON [PasswordResetToken] ([MemberID]);
+GO
