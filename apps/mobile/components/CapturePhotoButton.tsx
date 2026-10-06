@@ -2,7 +2,7 @@
 // and passes the stored path to `onCaptured`, which records it against the event or donation.
 import { View } from 'react-native';
 import { Button, Notice } from '@/components/ui';
-import { space } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import { usePhotoCapture } from '@/lib/use-photo-capture';
 
 export const CAPTURE_TITLE = 'Capture & Upload Verification Photos';
@@ -19,6 +19,7 @@ export function CapturePhotoButton({
   title?: string;
   variant?: 'primary' | 'secondary';
 }) {
+  const { space } = useTheme();
   const { capture, busy, error, clearError } = usePhotoCapture(prefix, onCaptured);
   return (
     <View style={{ gap: space.sm }}>

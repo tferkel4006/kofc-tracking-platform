@@ -5,17 +5,25 @@ import type { ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 import { useRouter, type Href } from 'expo-router';
 import { AppText } from '@/components/ui';
-import { color, space, touchTarget } from '@/lib/theme';
+import type { LayoutTokens } from '@kofc/shared';
+import { useTheme } from '@/lib/layout-mode';
 
 type Surface = 'white' | 'navy';
 
-/** Navy on white, or white and gold on a navy sheet header, so both controls stay high contrast. */
-const look = {
-  white: { back: 'navy', closeFill: color.navy, closeMark: color.white },
-  navy: { back: 'white', closeFill: color.gold, closeMark: color.navy },
-} as const;
+/**
+ * Navy on white, or white and gold on a navy sheet header, so both controls stay high contrast. In the large text
+ * layout the ✕ is white in a black circle with a thick gold ring on either surface.
+ */
+const looks = ({ color }: LayoutTokens) =>
+  ({
+    white: { back: 'navy', closeFill: color.navy, closeMark: color.white },
+    navy: { back: 'white', closeFill: color.gold, closeMark: color.navy },
+  }) as const;
 
 export function BackLink({ onPress, label = 'Back', surface = 'white' }: { onPress: () => void; label?: string; surface?: Surface }) {
+  const theme = useTheme();
+  const { touchTarget } = theme;
+  const look = looks(theme);
   return (
     <Pressable
       accessibilityRole="button"
@@ -32,6 +40,9 @@ export function BackLink({ onPress, label = 'Back', surface = 'white' }: { onPre
 }
 
 export function CloseButton({ onPress, label = 'Close', surface = 'white' }: { onPress: () => void; label?: string; surface?: Surface }) {
+  const theme = useTheme();
+  const { color, touchTarget, large } = theme;
+  const look = looks(theme);
   return (
     <Pressable
       accessibilityRole="button"
@@ -42,7 +53,9 @@ export function CloseButton({ onPress, label = 'Close', surface = 'white' }: { o
         width: touchTarget,
         height: touchTarget,
         borderRadius: touchTarget / 2,
-        backgroundColor: look[surface].closeFill,
+        backgroundColor: large ? color.navy : look[surface].closeFill,
+        borderWidth: large ? 6 : 0,
+        borderColor: color.gold,
         alignItems: 'center',
         justifyContent: 'center',
         opacity: pressed ? 0.85 : 1,
@@ -67,6 +80,7 @@ export function NavStripLayout({
   closeLabel?: string;
   surface?: Surface;
 }) {
+  const { space } = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
       <BackLink onPress={onBack} surface={surface} />

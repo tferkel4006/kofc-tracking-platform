@@ -8,10 +8,10 @@ import { FlatList, Pressable, RefreshControl, View } from 'react-native';
 import { councilLabel, isShiftFull, shiftStatus, signupWindow, sortCouncils, visibleFeed, type ShiftFeedItem } from '@kofc/shared';
 import { Dropdown, type DropdownOption } from '@/components/Dropdown';
 import { FullTag, PriorityTag, ShiftCard, type ShiftLook } from '@/components/ShiftCard';
-import { AppText, Button, EmptyState, Loading, Notice } from '@/components/ui';
+import { AppText, choiceStyle, Button, EmptyState, Loading, Notice } from '@/components/ui';
 import { FeatureGate } from '@/components/FeatureGate';
 import { useUser } from '@/lib/app-context';
-import { color, radius, space, touchTarget } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import { describeError, useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
 
@@ -24,6 +24,8 @@ const TABS: { key: SignupTab; label: string }[] = [
 ];
 
 function ShiftsScreenBody() {
+  const theme = useTheme();
+  const { color, radius, space, touchTarget } = theme;
   const user = useUser();
   const [councilId, setCouncilId] = useState<CouncilFilter>('all');
   const [tab, setTab] = useState<SignupTab>('opening');
@@ -104,13 +106,16 @@ function ShiftsScreenBody() {
       data={items}
       keyExtractor={(item) => String(item.shift.id)}
       renderItem={renderItem}
-      refreshControl={<RefreshControl refreshing={state.refreshing} onRefresh={() => void state.reload()} tintColor={color.navy} colors={[color.navy]} />}
+      refreshControl={<RefreshControl refreshing={state.refreshing} onRefresh={() => void state.reload()} tintColor={color.text} colors={[color.text]} />}
       ListHeaderComponent={
         <View style={{ gap: space.md, marginBottom: space.sm }}>
           <AppText variant="heading" accessibilityRole="header">
             Signup Desk
           </AppText>
-          <View accessibilityRole="tablist" style={{ flexDirection: 'row', borderWidth: 2, borderColor: color.navy, borderRadius: radius.md, overflow: 'hidden' }}>
+          <View
+            accessibilityRole="tablist"
+            style={{ flexDirection: 'row', borderWidth: theme.border(2), borderColor: theme.large ? color.gold : color.navy, borderRadius: radius.md, overflow: 'hidden' }}
+          >
             {TABS.map(({ key, label }) => {
               const selected = tab === key;
               return (
@@ -119,7 +124,7 @@ function ShiftsScreenBody() {
                   accessibilityRole="tab"
                   accessibilityState={{ selected }}
                   onPress={() => setTab(key)}
-                  style={{ flex: 1, minHeight: touchTarget, alignItems: 'center', justifyContent: 'center', backgroundColor: selected ? color.navy : color.white }}
+                  style={[{ flex: 1, minHeight: touchTarget, alignItems: 'center', justifyContent: 'center' }, choiceStyle(theme, selected)]}
                 >
                   <AppText variant="label" tone={selected ? 'white' : 'navy'}>
                     {data ? `${label} (${byTab[key].length})` : label}

@@ -63,9 +63,10 @@ interface Lookups {
 
 /**
  * Every form field is text; numbers and ids are converted on save and validated again by the driver. The photo and
- * biography are the member's own (My Profile), so the roster form leaves them as stored.
+ * biography are the member's own (My Profile), so the roster form leaves them as stored, as it does the member's
+ * Large Text Layout Mode choice (Sprint 6C).
  */
-type Draft = Record<Exclude<keyof NewMember, 'WorkingStatusID' | 'ProfilePhotoURL' | 'Biography' | 'IsBudgetDirector'>, string>;
+type Draft = Record<Exclude<keyof NewMember, 'WorkingStatusID' | 'ProfilePhotoURL' | 'Biography' | 'IsBudgetDirector' | 'flag_large_text_mode'>, string>;
 
 const TEXT_FIELDS: { key: keyof Draft; label: string; type?: string; maxLength: number; optional?: boolean; wide?: boolean }[] = [
   { key: 'MemberFirstName', label: 'First name', maxLength: 100 },

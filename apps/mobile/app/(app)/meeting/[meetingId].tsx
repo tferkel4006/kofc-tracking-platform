@@ -10,12 +10,15 @@ import { NavStrip } from '@/components/NavStrip';
 import { AppText, EmptyState, Loading, NewMemberBadge, Notice, Screen, Section } from '@/components/ui';
 import { FeatureGate } from '@/components/FeatureGate';
 import { useUser } from '@/lib/app-context';
-import { color, radius, space, touchTarget } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import { describeError, useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
 
 function MeetingAttendanceScreenBody() {
+  const { color, radius, space, touchTarget, large } = useTheme();
   const user = useUser();
+  // Large text layout: a bigger box, and a white ring round the members marked present (every other edge is gold).
+  const box = large ? 56 : 28;
   const meetingId = Number(useLocalSearchParams<{ meetingId: string }>().meetingId);
   // Taps not yet confirmed by the database, keyed by member; they win over the loaded value until it reloads.
   const [pending, setPending] = useState(new Map<number, boolean>());
@@ -105,9 +108,9 @@ function MeetingAttendanceScreenBody() {
                       gap: space.md,
                       minHeight: touchTarget + space.md,
                       paddingHorizontal: space.md,
-                      borderWidth: 1,
-                      borderColor: on ? color.navy : color.line,
-                      borderLeftWidth: 8,
+                      borderWidth: large ? (on ? 6 : 4) : 1,
+                      borderColor: large ? (on ? color.text : color.gold) : on ? color.navy : color.line,
+                      borderLeftWidth: large ? 12 : 8,
                       borderLeftColor: on ? color.gold : color.line,
                       borderRadius: radius.md,
                       backgroundColor: color.white,
@@ -116,11 +119,11 @@ function MeetingAttendanceScreenBody() {
                   >
                     <View
                       style={{
-                        width: 28,
-                        height: 28,
+                        width: box,
+                        height: box,
                         borderRadius: radius.sm,
-                        borderWidth: 2,
-                        borderColor: color.navy,
+                        borderWidth: large ? 4 : 2,
+                        borderColor: color.edge,
                         backgroundColor: on ? color.navy : color.white,
                         alignItems: 'center',
                         justifyContent: 'center',

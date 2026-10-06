@@ -2,9 +2,18 @@
 // Owns the OnboardingController (services/onboarding.ts), which does all the sign-in rules; screens
 // only render its state. Also opens the local database, runs the reminder scheduler while signed in, and links the
 // phone for push alerts after sign-in (lib/push-registration.ts), and reads the council's feature flags (Sprint 6A),
-// which decide the tabs and buttons the app shows.
+// which decide the tabs and buttons the app shows. Sprint 6C: also holds the member's Large Text Layout Mode
+// (Member.flag_large_text_mode) and mounts LayoutModeProvider with it, so every screen draws in that layout.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ALL_FEATURES_ON, councilFeatureFlags, startNotificationScheduler, type FeatureFlags, type SessionUser } from '@kofc/shared';
+import {
+  ALL_FEATURES_ON,
+  councilFeatureFlags,
+  prefersLargeText,
+  startNotificationScheduler,
+  type FeatureFlags,
+  type SessionUser,
+} from '@kofc/shared';
+import { LayoutModeProvider } from '@/lib/layout-mode';
 import { configureAlertDisplay, registerForPushAlerts, unregisterPushAlerts } from '@/lib/push-registration';
 import { db } from '@/services/db';
 import { getConfiguredCouncilNumber, OnboardingController, type OnboardingState } from '@/services/onboarding';
@@ -25,6 +34,10 @@ interface AppContextValue {
   features: FeatureFlags;
   /** Re-reads the flags, e.g. on a pull-to-refresh after a Super Admin changed them. */
   refreshFeatures(): Promise<void>;
+  /** Sprint 6C: the member chose the large text layout (Member.flag_large_text_mode). False while signed out. */
+  largeText: boolean;
+  /** Saves the member's Large Text Layout Mode choice on their record and redraws the app in that layout. */
+  setLargeText(on: boolean): Promise<void>;
   submitEmail(email: string): Promise<void>;
   submitPassword(password: string, confirmation?: string, setupCode?: string): Promise<void>;
   /** Sprint 6B Security: the self-service password reset (OnboardingController). */
@@ -97,6 +110,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [councilId]);
   useEffect(() => void refreshFeatures(), [refreshFeatures]);
 
+  const [largeText, setLargeTextState] = useState(false);
+  useEffect(() => {
+    let live = true;
+    if (memberId === undefined) setLargeTextState(false);
+    else {
+      db.members
+        .get(memberId)
+        .then((m) => live && setLargeTextState(prefersLargeText(m)))
+        .catch(() => undefined); // an unreadable record keeps the standard layout
+    }
+    return () => {
+      live = false;
+    };
+  }, [memberId]);
+  const setLargeText = useCallback(
+    async (on: boolean) => {
+      if (memberId === undefined) return;
+      const saved = await db.members.update(memberId, memberId, { flag_large_text_mode: on ? 1 : 0 });
+      setLargeTextState(prefersLargeText(saved));
+    },
+    [memberId],
+  );
+
   useEffect(() => {
     void refreshUnread();
     const timer = setInterval(() => void refreshUnread(), 30_000);
@@ -132,6 +168,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshUnread,
       features,
       refreshFeatures,
+      largeText,
+      setLargeText,
       submitEmail,
       submitPassword,
       startPasswordReset,
@@ -149,6 +187,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshUnread,
       features,
       refreshFeatures,
+      largeText,
+      setLargeText,
       submitEmail,
       submitPassword,
       startPasswordReset,
@@ -159,7 +199,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       signOut,
     ],
   );
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={value}>
+      <LayoutModeProvider large={largeText}>{children}</LayoutModeProvider>
+    </AppContext.Provider>
+  );
 }
 
 export function useApp(): AppContextValue {

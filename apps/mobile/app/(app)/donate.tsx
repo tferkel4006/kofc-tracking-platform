@@ -24,6 +24,7 @@ import {
   formatDate,
   GATE_LEAD_HOURS,
   isEventAtGate,
+  SPACING,
   toIsoDate,
   type CouncilDonationOption,
   type DonationDefaults,
@@ -40,7 +41,7 @@ import { AppInput, AppText, Button, Card, EmptyState, Field, Loading, Notice, Pi
 import { FeatureGate } from '@/components/FeatureGate';
 import { useUser } from '@/lib/app-context';
 import { warmCollectionQrs } from '@/lib/qr-cache';
-import { color, space } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import { describeError, useLoad } from '@/lib/use-async';
 import { useDonationSession } from '@/lib/use-donation-session';
 import { db } from '@/services/db';
@@ -64,7 +65,8 @@ function parseAmount(text: string, label: string): { value: number | null } | { 
   return Number.isFinite(value) ? { value } : { error: `${label} must be a dollar amount such as 20 or 12.50; received "${text}".` };
 }
 
-const multiline = { minHeight: 72, textAlignVertical: 'top' as const, paddingTop: space.md };
+/** A multi-line note box; AppInput lifts the height to the large text layout's touchTarget. */
+const multiline = { minHeight: 72, textAlignVertical: 'top' as const, paddingTop: SPACING.md };
 
 // ---- start a session -----------------------------------------------------------
 
@@ -79,6 +81,7 @@ function StartSessionForm({
   onStart: (eventId: number, defaults: DonationDefaults) => Promise<void>;
   onCancel: () => void;
 }) {
+  const { color, space } = useTheme();
   const [eventId, setEventId] = useState<number | null>(events[0]?.id ?? null);
   const [amount, setAmount] = useState('');
   const [typeId, setTypeId] = useState<number | null>(types[0]?.id ?? null);
@@ -159,6 +162,7 @@ function DonationForm({
   onRecord: (values: DonationValues) => Promise<void>;
   onCancel: () => void;
 }) {
+  const { color, space } = useTheme();
   const isItem = option.kind === 'item';
   const [amount, setAmount] = useState(defaults.amount != null ? String(defaults.amount) : '');
   const [typeId, setTypeId] = useState<number | null>(defaults.donationTypeId ?? types[0]?.id ?? null);
@@ -255,6 +259,7 @@ function DonationForm({
 // ---- the screen --------------------------------------------------------------------
 
 function DonateScreenBody() {
+  const { color, space } = useTheme();
   const user = useUser();
   const { controller, state: session } = useDonationSession(user.councilId, user.memberId);
   const [picked, setPicked] = useState<CouncilDonationOption | null>(null);

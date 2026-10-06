@@ -13,7 +13,7 @@ import { MessageNode } from '@/components/MessageNode';
 import { NavStrip } from '@/components/NavStrip';
 import { AppInput, AppText, Button, EmptyState, Loading, Notice } from '@/components/ui';
 import { useApp, useUser } from '@/lib/app-context';
-import { color, space } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import { describeError, useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
 
@@ -31,6 +31,9 @@ const statusText: Record<DraftStatus, string> = {
 };
 
 export default function ThreadScreen() {
+  const { color, space, large, touchTarget } = useTheme();
+  // Sprint 6C: the reply ✕ is a full tap area in the large text layout.
+  const largeTap = large ? touchTarget : undefined;
   const { threadId } = useLocalSearchParams<{ threadId: string }>();
   const id = Number(threadId);
   const user = useUser();
@@ -237,13 +240,13 @@ export default function ThreadScreen() {
         )}
       />
 
-      <View style={{ borderTopWidth: 2, borderTopColor: color.navy, padding: space.md, gap: space.sm, backgroundColor: color.white }}>
+      <View style={{ borderTopWidth: 2, borderTopColor: color.edge, padding: space.md, gap: space.sm, backgroundColor: color.white }}>
         {replyTo ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, borderLeftWidth: 4, borderLeftColor: color.gold, paddingLeft: space.sm }}>
             <AppText variant="small" style={{ flex: 1 }} numberOfLines={2}>
               Replying to {replyTo.senderName}: {preview(replyTo.message.MessageText, 80)}
             </AppText>
-            <Pressable accessibilityRole="button" accessibilityLabel="Cancel reply" onPress={() => setReplyTo(null)} hitSlop={12}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Cancel reply" onPress={() => setReplyTo(null)} hitSlop={12} style={{ minHeight: largeTap, minWidth: largeTap, alignItems: 'center', justifyContent: 'center' }}>
               <AppText variant="title">×</AppText>
             </Pressable>
           </View>

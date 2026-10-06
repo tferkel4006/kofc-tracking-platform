@@ -2,19 +2,18 @@ import { Pressable, View } from 'react-native';
 import { formatTimestamp, isUnread, preview, type FlatReply, type MessageAttachment, type ThreadMessage } from '@kofc/shared';
 import { AttachmentChip } from '@/components/AttachmentChip';
 import { AppText, Pill } from '@/components/ui';
-import { color, space, touchTarget } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 
-const Action = ({ label, onPress, tone = 'navy' }: { label: string; onPress: () => void; tone?: 'navy' | 'red' }) => (
-  <Pressable
-    accessibilityRole="button"
-    onPress={onPress}
-    style={{ minHeight: touchTarget, justifyContent: 'center', paddingRight: space.md }}
-  >
-    <AppText variant="label" tone={tone} style={{ textDecorationLine: 'underline' }}>
-      {label}
-    </AppText>
-  </Pressable>
-);
+function Action({ label, onPress, tone = 'navy' }: { label: string; onPress: () => void; tone?: 'navy' | 'red' }) {
+  const { space, touchTarget } = useTheme();
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} style={{ minHeight: touchTarget, justifyContent: 'center', paddingRight: space.md }}>
+      <AppText variant="label" tone={tone} style={{ textDecorationLine: 'underline' }}>
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
 
 export function MessageNode({
   node,
@@ -37,6 +36,7 @@ export function MessageNode({
   onDiscardDraft: () => void;
   onPreview: (a: MessageAttachment) => void;
 }) {
+  const { color, space } = useTheme();
   const { message, senderName, attachments, receipt } = node.item;
   const isDraft = message.IsDraft === 1;
   const unread = isUnread(node.item);

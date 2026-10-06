@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { Image, View } from 'react-native';
 import { AppText } from '@/components/ui';
-import { color, radius, space } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 
 const LOADABLE = /^(https?:|data:image\/|file:)/i;
 
@@ -13,6 +13,7 @@ const LOADABLE = /^(https?:|data:image\/|file:)/i;
 export const isLoadableQrUrl = (url: string | null): url is string => url !== null && LOADABLE.test(url.trim());
 
 export function DonationQr({ url, methodName }: { url: string | null; methodName: string }) {
+  const { color, radius, space } = useTheme();
   const [failed, setFailed] = useState(false);
   const usable = isLoadableQrUrl(url) && !failed;
 
@@ -28,7 +29,7 @@ export function DonationQr({ url, methodName }: { url: string | null; methodName
       {usable ? (
         <Image source={{ uri: url }} onError={() => setFailed(true)} resizeMode="contain" style={{ width: '100%', aspectRatio: 1, maxWidth: 320 }} />
       ) : (
-        <View style={{ width: '100%', aspectRatio: 1, maxWidth: 320, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderStyle: 'dashed', borderColor: color.navy, borderRadius: radius.sm, padding: space.lg }}>
+        <View style={{ width: '100%', aspectRatio: 1, maxWidth: 320, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderStyle: 'dashed', borderColor: color.edge, borderRadius: radius.sm, padding: space.lg }}>
           <AppText variant="title" style={{ textAlign: 'center' }}>
             {failed ? 'The QR code could not be loaded.' : 'Your council has not uploaded this QR code yet.'}
           </AppText>

@@ -3,7 +3,7 @@
 import { Pressable, View } from 'react-native';
 import type { CouncilDonationOption, DonationMethodKind } from '@kofc/shared';
 import { AppText } from '@/components/ui';
-import { color, radius, space, touchTarget } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 
 const HINT: Record<DonationMethodKind, string> = {
   cash: 'Record the amount',
@@ -14,6 +14,7 @@ const HINT: Record<DonationMethodKind, string> = {
 };
 
 export function DonationMethodGrid({ options, onPick }: { options: readonly CouncilDonationOption[]; onPick: (option: CouncilDonationOption) => void }) {
+  const { color, radius, space, touchTarget } = useTheme();
   return (
     <View accessibilityRole="radiogroup" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.md }}>
       {options.map((option) => (
@@ -29,7 +30,7 @@ export function DonationMethodGrid({ options, onPick }: { options: readonly Coun
             justifyContent: 'center',
             padding: space.md,
             borderWidth: 2,
-            borderColor: color.navy,
+            borderColor: color.edge,
             borderLeftWidth: 8,
             borderLeftColor: option.kind === 'qr' ? color.gold : color.navy,
             borderRadius: radius.md,

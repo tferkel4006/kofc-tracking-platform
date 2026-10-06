@@ -8,10 +8,11 @@ import { BrandMark } from '@/components/BrandHeader';
 import { AppInput, AppText, Button, Card, Field, Notice, PasswordInput } from '@/components/ui';
 import { useApp } from '@/lib/app-context';
 import { describeError } from '@/lib/use-async';
-import { color, space } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 
 /** The 'Forgot Password?' text button under the email and password prompts. */
 function ForgotLink({ onPress }: { onPress: () => void }) {
+  const { space } = useTheme();
   return (
     <Pressable accessibilityRole="button" onPress={onPress} hitSlop={8} style={{ alignSelf: 'center', paddingVertical: space.sm }}>
       <AppText variant="label" style={{ textDecorationLine: 'underline' }}>
@@ -22,6 +23,7 @@ function ForgotLink({ onPress }: { onPress: () => void }) {
 }
 
 export default function SignInScreen() {
+  const { color, space } = useTheme();
   const { onboarding, submitEmail, submitPassword, startPasswordReset, submitResetEmail, submitResetCode, submitNewPassword, restart } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

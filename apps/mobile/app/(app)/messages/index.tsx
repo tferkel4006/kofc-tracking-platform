@@ -6,7 +6,7 @@ import { formatTimestamp, preview, type ThreadSummary } from '@kofc/shared';
 import { NavStrip } from '@/components/NavStrip';
 import { AppText, Button, Card, EmptyState, Loading, Notice, Pill } from '@/components/ui';
 import { useApp, useUser } from '@/lib/app-context';
-import { color, space } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import { useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
 
@@ -17,6 +17,7 @@ function otherNames(t: ThreadSummary, myId: number): string {
 }
 
 export default function ThreadsScreen() {
+  const { color, space } = useTheme();
   const user = useUser();
   const router = useRouter();
   const { refreshUnread } = useApp();
@@ -32,7 +33,7 @@ export default function ThreadsScreen() {
       contentContainerStyle={{ padding: space.lg, gap: space.md }}
       data={state.data ?? []}
       keyExtractor={(t) => String(t.thread.id)}
-      refreshControl={<RefreshControl refreshing={state.refreshing} onRefresh={() => void state.reload()} tintColor={color.navy} colors={[color.navy]} />}
+      refreshControl={<RefreshControl refreshing={state.refreshing} onRefresh={() => void state.reload()} tintColor={color.text} colors={[color.text]} />}
       ListHeaderComponent={
         <View style={{ gap: space.md, marginBottom: space.sm }}>
           <NavStrip closeLabel="Close messaging" />

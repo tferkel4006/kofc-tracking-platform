@@ -5,6 +5,8 @@
 // Sprint 6A: a tab whose module the council's feature flags switch off (Signup, Mtgs, Donate) is hidden entirely.
 // The gold bar floats over the top edge of the navy block so it never pushes the label down; the label sits centred
 // in a tap space of TAB_HEIGHT, and the bar grows by the device's bottom inset so the home indicator doesn't eat it.
+// Sprint 6C: in the large text layout the bar is pitch black with a thick gold top edge, every tab is a touchTarget
+// (140-point) tap space, the labels are large bold white, and the chosen tab carries a thick gold bar.
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Tabs } from 'expo-router/js-tabs';
@@ -12,44 +14,52 @@ import { mobileTabEnabled, type MobileTab } from '@kofc/shared';
 import { BrandHeader } from '@/components/BrandHeader';
 import { AppText } from '@/components/ui';
 import { useFeatureFlags } from '@/lib/app-context';
-import { color, fontFamily, space, touchTarget } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
+import { fontFamily } from '@/lib/theme';
 
-const TAB_HEIGHT = touchTarget + 2 * space.sm;
-const INDICATOR_HEIGHT = 4;
-
-const TabLabel = ({ label, focused }: { label: string; focused: boolean }) => (
-  <View
-    style={{
-      alignItems: 'center',
-      justifyContent: 'center',
-      alignSelf: 'stretch',
-      flex: 1,
-      paddingHorizontal: space.sm,
-      paddingVertical: INDICATOR_HEIGHT,
-      backgroundColor: focused ? color.navy : 'transparent',
-    }}
-  >
+function TabLabel({ label, focused }: { label: string; focused: boolean }) {
+  const { color, space, large } = useTheme();
+  const indicator = large ? 10 : 4;
+  return (
     <View
       style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: INDICATOR_HEIGHT,
-        backgroundColor: focused ? color.gold : 'transparent',
+        alignItems: 'center',
+        justifyContent: 'center',
+        alignSelf: 'stretch',
+        flex: 1,
+        paddingHorizontal: large ? 2 : space.sm,
+        paddingVertical: indicator,
+        backgroundColor: focused ? color.navy : 'transparent',
       }}
-    />
-    <AppText
-      variant="label"
-      tone="muted"
-      style={{ fontSize: 14, lineHeight: 18, margin: 0, fontWeight: focused ? '700' : '400', color: focused ? color.gold : color.muted }}
     >
-      {label}
-    </AppText>
-  </View>
-);
+      <View
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: indicator,
+          backgroundColor: focused ? color.gold : 'transparent',
+        }}
+      />
+      <AppText
+        variant="label"
+        tone="muted"
+        numberOfLines={large ? 1 : undefined}
+        adjustsFontSizeToFit={large}
+        minimumFontScale={0.6}
+        style={{ fontSize: 14, lineHeight: 18, margin: 0, fontWeight: focused ? '700' : '400', color: focused ? color.gold : color.muted }}
+      >
+        {label}
+      </AppText>
+    </View>
+  );
+}
 
 export default function AppLayout() {
+  const { color, space, touchTarget, large } = useTheme();
+  // The large layout's touchTarget is already the 140-point floor; the standard 44 gets breathing room.
+  const tabHeight = large ? touchTarget : touchTarget + 2 * space.sm;
   const insets = useSafeAreaInsets();
   const features = useFeatureFlags();
   const tab = (title: string, name?: MobileTab) => ({
@@ -65,12 +75,13 @@ export default function AppLayout() {
         header: () => <BrandHeader />,
         tabBarStyle: {
           backgroundColor: color.white,
-          borderTopColor: color.navy,
-          borderTopWidth: 2,
-          height: TAB_HEIGHT + insets.bottom,
+          borderTopColor: large ? color.gold : color.navy,
+          borderTopWidth: large ? 6 : 2,
+          height: tabHeight + insets.bottom,
           paddingTop: 0,
         },
-        tabBarItemStyle: { height: TAB_HEIGHT, padding: 0, justifyContent: 'center', alignItems: 'stretch', borderRadius: 0 },
+        tabBarItemStyle: { height: tabHeight, padding: 0, justifyContent: 'center', alignItems: 'stretch', borderRadius: 0 },
+        sceneStyle: { backgroundColor: color.white },
         tabBarLabelStyle: { fontFamily: fontFamily.body, margin: 0 },
         tabBarBadgeStyle: { backgroundColor: color.gold, color: color.navy, fontFamily: fontFamily.body, fontWeight: '700' },
       }}
@@ -86,6 +97,8 @@ export default function AppLayout() {
       <Tabs.Screen name="meeting/[meetingId]" options={{ ...tab('Attendance'), href: null }} />
       {/* Opened from the expense card on Home. */}
       <Tabs.Screen name="expenses" options={{ ...tab('Expenses'), href: null }} />
+      {/* Sprint 6C: opened from the member's name in the header (Large Text Layout Mode and sign-out). */}
+      <Tabs.Screen name="settings" options={{ ...tab('Settings'), href: null }} />
     </Tabs>
   );
 }

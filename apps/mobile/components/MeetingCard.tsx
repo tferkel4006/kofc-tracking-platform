@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Pressable, View } from 'react-native';
 import { formatMeetingWhen, type Meeting, type MeetingResponseStatus } from '@kofc/shared';
 import { AppText, Button, Card } from '@/components/ui';
-import { color, radius, space, touchTarget } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 
 /** The invitee's RSVP control (Sprint 5Y-6): what they answered and the one tap that changes it. */
 export interface MeetingRsvp {
@@ -15,6 +15,7 @@ export interface MeetingRsvp {
  * "Attending" banner; tapping it again withdraws the answer.
  */
 function RsvpToggle({ status, onToggle }: MeetingRsvp) {
+  const { color, radius, space, touchTarget, large } = useTheme();
   const attending = status === 'Accepted';
   return (
     <Pressable
@@ -26,8 +27,8 @@ function RsvpToggle({ status, onToggle }: MeetingRsvp) {
       style={({ pressed }) => ({
         minHeight: touchTarget,
         borderRadius: radius.md,
-        borderWidth: 2,
-        borderColor: attending ? color.green : color.gold,
+        borderWidth: large ? 6 : 2,
+        borderColor: attending && !large ? color.green : color.gold,
         backgroundColor: attending ? color.green : color.white,
         alignItems: 'center',
         justifyContent: 'center',
@@ -56,7 +57,7 @@ function RsvpToggle({ status, onToggle }: MeetingRsvp) {
  * One meeting: name, date and time (or its days, for a multi-day meeting), place and agenda; an invitee gets the RSVP
  * toggle, and officers and the owner a Take attendance button.
  */
-export const MeetingCard = ({
+export function MeetingCard({
   meeting,
   onAttendance,
   onAgenda,
@@ -69,25 +70,28 @@ export const MeetingCard = ({
   onAgenda?: () => void;
   badge?: ReactNode;
   rsvp?: MeetingRsvp;
-}) => (
-  <Card accent={color.navy}>
-    <AppText variant="title">{meeting['Meeting Name']}</AppText>
-    {badge}
-    <AppText>{formatMeetingWhen(meeting)}</AppText>
-    <AppText variant="small" tone="muted">
-      {meeting.Location}
-    </AppText>
-    {meeting.Agenda ? (
-      <AppText variant="small" tone="muted" numberOfLines={3}>
-        {meeting.Agenda}
+}) {
+  const { color, space } = useTheme();
+  return (
+    <Card accent={color.navy}>
+      <AppText variant="title">{meeting['Meeting Name']}</AppText>
+      {badge}
+      <AppText>{formatMeetingWhen(meeting)}</AppText>
+      <AppText variant="small" tone="muted">
+        {meeting.Location}
       </AppText>
-    ) : null}
-    {rsvp || onAttendance || onAgenda ? (
-      <View style={{ gap: space.sm }}>
-        {rsvp ? <RsvpToggle {...rsvp} /> : null}
-        {onAgenda ? <Button title={meeting.IsLiveInProgress === 1 ? '● Follow the live agenda' : '📋 Full agenda'} variant="secondary" onPress={onAgenda} /> : null}
-        {onAttendance ? <Button title="Take attendance" variant="secondary" onPress={onAttendance} /> : null}
-      </View>
-    ) : null}
-  </Card>
-);
+      {meeting.Agenda ? (
+        <AppText variant="small" tone="muted" numberOfLines={3}>
+          {meeting.Agenda}
+        </AppText>
+      ) : null}
+      {rsvp || onAttendance || onAgenda ? (
+        <View style={{ gap: space.sm }}>
+          {rsvp ? <RsvpToggle {...rsvp} /> : null}
+          {onAgenda ? <Button title={meeting.IsLiveInProgress === 1 ? '● Follow the live agenda' : '📋 Full agenda'} variant="secondary" onPress={onAgenda} /> : null}
+          {onAttendance ? <Button title="Take attendance" variant="secondary" onPress={onAttendance} /> : null}
+        </View>
+      ) : null}
+    </Card>
+  );
+}

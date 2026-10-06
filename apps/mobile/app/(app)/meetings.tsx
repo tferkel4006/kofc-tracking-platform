@@ -12,11 +12,11 @@ import { useRouter } from 'expo-router';
 import { canManageMeeting, type MeetingResponseStatus } from '@kofc/shared';
 import { AgendaSheet } from '@/components/AgendaSheet';
 import { MeetingCard } from '@/components/MeetingCard';
-import { AppText, EmptyState, Loading, Notice, Pill, Screen } from '@/components/ui';
+import { AppText, choiceStyle, EmptyState, Loading, Notice, Pill, Screen } from '@/components/ui';
 import { FeatureGate } from '@/components/FeatureGate';
 import { useUser } from '@/lib/app-context';
 import { describeError, useLoad } from '@/lib/use-async';
-import { color, radius, space, touchTarget } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import { db } from '@/services/db';
 
 type MeetingsTab = 'invites' | 'all' | 'agenda';
@@ -28,6 +28,8 @@ const TABS: { key: MeetingsTab; label: string }[] = [
 ];
 
 function MeetingsScreenBody() {
+  const theme = useTheme();
+  const { color, radius, space, touchTarget } = theme;
   const user = useUser();
   const router = useRouter();
   const [tab, setTab] = useState<MeetingsTab>('invites');
@@ -69,7 +71,10 @@ function MeetingsScreenBody() {
         Meetings
       </AppText>
 
-      <View accessibilityRole="tablist" style={{ flexDirection: 'row', borderWidth: 2, borderColor: color.navy, borderRadius: radius.md, overflow: 'hidden' }}>
+      <View
+        accessibilityRole="tablist"
+        style={{ flexDirection: 'row', borderWidth: theme.border(2), borderColor: theme.large ? color.gold : color.navy, borderRadius: radius.md, overflow: 'hidden' }}
+      >
         {TABS.map(({ key, label }) => {
           const selected = tab === key;
           const count = key === 'invites' ? data?.myInvites.length : key === 'all' ? data?.allSchedules.length : undefined;
@@ -79,7 +84,7 @@ function MeetingsScreenBody() {
               accessibilityRole="tab"
               accessibilityState={{ selected }}
               onPress={() => setTab(key)}
-              style={{ flex: 1, minHeight: touchTarget, alignItems: 'center', justifyContent: 'center', backgroundColor: selected ? color.navy : color.white }}
+              style={[{ flex: 1, minHeight: touchTarget, alignItems: 'center', justifyContent: 'center' }, choiceStyle(theme, selected)]}
             >
               <AppText variant="label" tone={selected ? 'white' : 'navy'}>
                 {count === undefined ? label : `${label} (${count})`}
@@ -108,7 +113,10 @@ function MeetingsScreenBody() {
                       accessibilityRole="button"
                       accessibilityState={{ selected: on }}
                       onPress={() => setAgendaFor(m.id)}
-                      style={{ minHeight: touchTarget, justifyContent: 'center', paddingHorizontal: space.md, borderRadius: radius.md, borderWidth: 2, borderColor: color.navy, backgroundColor: on ? color.navy : color.white }}
+                      style={[
+                        { minHeight: touchTarget, justifyContent: 'center', paddingHorizontal: space.md, borderRadius: radius.md, borderWidth: 2, borderColor: color.edge },
+                        choiceStyle(theme, on),
+                      ]}
                     >
                       <AppText variant="label" tone={on ? 'white' : 'navy'}>
                         {m.IsLiveInProgress === 1 ? '● ' : ''}

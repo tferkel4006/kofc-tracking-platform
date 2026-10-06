@@ -586,6 +586,7 @@ export const MEMBER_COLUMNS = [
   'Biography',
   'IsBudgetDirector',
   'DateJoinedCouncil',
+  'flag_large_text_mode',
 ] as const satisfies readonly (keyof NewMember)[];
 
 /** Longest Member.ProfilePhotoURL (VARCHAR(2000)). */
@@ -897,7 +898,10 @@ export const hasAdminRights = (a: MemberWriteActor): boolean => a.active && (a.m
 /** 'Admin', 'an inactive Member', ... for refusal messages. */
 export const describeActor = (a: MemberWriteActor): string => `${a.active ? '' : 'an inactive '}${a.memberType ?? 'of unknown type'}`;
 
-/** The member fields a Member without admin rights may change on their own record (contact details, photo and biography). */
+/**
+ * The member fields a Member without admin rights may change on their own record (contact details, photo, biography and,
+ * from Sprint 6C, their own Large Text Layout Mode preference).
+ */
 export const MEMBER_SELF_SERVICE_COLUMNS = [
   'Phone',
   'StreetAddress1',
@@ -909,6 +913,7 @@ export const MEMBER_SELF_SERVICE_COLUMNS = [
   'WorkingStatusID',
   'ProfilePhotoURL',
   'Biography',
+  'flag_large_text_mode',
 ] as const satisfies readonly (typeof MEMBER_COLUMNS)[number][];
 
 /**
@@ -1553,6 +1558,7 @@ export function cleanNewMember(input: NewMember, now: Date): NewMember {
     Biography: optionalText(input.Biography, 'Biography', MEMBER_BIOGRAPHY_MAX_LENGTH),
     IsBudgetDirector: bitFlag(input.IsBudgetDirector, 'IsBudgetDirector'),
     DateJoinedCouncil: joined,
+    flag_large_text_mode: bitFlag(input.flag_large_text_mode, 'flag_large_text_mode'),
   };
 }
 

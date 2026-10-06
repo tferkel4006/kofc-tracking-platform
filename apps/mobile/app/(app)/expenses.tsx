@@ -26,6 +26,7 @@ import {
   formatDate,
   listExpenseReferences,
   parseExpenseReferenceKey,
+  SPACING,
   toIsoDate,
   EXPENSE_DESCRIPTION_MAX_LENGTH,
   EXPENSE_SUBMISSION_GRACE_DAYS,
@@ -37,14 +38,15 @@ import {
 import { Dropdown } from '@/components/Dropdown';
 import { NavStrip } from '@/components/NavStrip';
 import { ReceiptScanTile, SCAN_RECEIPT_TITLE } from '@/components/ReceiptScanTile';
-import { AppInput, AppText, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section } from '@/components/ui';
+import { AppInput, AppText, choiceStyle, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
-import { color, radius, space, touchTarget } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import { describeError, useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
 
 const money = (n: number) => `$${n.toFixed(2)}`;
-const multiline = { minHeight: 72, textAlignVertical: 'top' as const, paddingTop: space.md };
+/** A multi-line note box; AppInput lifts the height to the large text layout's touchTarget. */
+const multiline = { minHeight: 72, textAlignVertical: 'top' as const, paddingTop: SPACING.md };
 
 type Row = ExpenseLineDraft & { key: number };
 
@@ -74,6 +76,8 @@ function ExpenseDraftForm({
   onSaved: (saved: ExpenseReportDetail) => Promise<void>;
   onCancel: () => void;
 }) {
+  const theme = useTheme();
+  const { color, radius, space, touchTarget } = theme;
   const user = useUser();
   const nextKey = useRef(0);
   const keyed = (line: ExpenseLineDraft): Row => ({ ...line, key: nextKey.current++ });
@@ -124,7 +128,7 @@ function ExpenseDraftForm({
         <AppText variant="title">{detail ? `Draft #${detail.report.id}` : 'New expense report'}</AppText>
         {detail?.report.RejectionReason ? <Notice tone="error" message={`Returned by council leadership: ${detail.report.RejectionReason}`} /> : null}
         <Field label="SPENT FOR">
-          <View accessibilityRole="tablist" style={{ flexDirection: 'row', borderWidth: 2, borderColor: color.navy, borderRadius: radius.md, overflow: 'hidden' }}>
+          <View accessibilityRole="tablist" style={{ flexDirection: 'row', borderWidth: 2, borderColor: color.edge, borderRadius: radius.md, overflow: 'hidden' }}>
             {SPENT_FOR.map(({ key, label }) => {
               const selected = spentFor === key;
               return (
@@ -137,7 +141,7 @@ function ExpenseDraftForm({
                     setSpentFor(key);
                     setReference('');
                   }}
-                  style={{ flex: 1, minHeight: touchTarget, alignItems: 'center', justifyContent: 'center', backgroundColor: selected ? color.navy : color.white }}
+                  style={[{ flex: 1, minHeight: touchTarget, alignItems: 'center', justifyContent: 'center' }, choiceStyle(theme, selected)]}
                 >
                   <AppText variant="label" tone={selected ? 'white' : 'navy'}>
                     {label}
@@ -247,6 +251,7 @@ function ExpenseDraftForm({
 
 /** A grayed padlock line beside an item outside its submission window (Sprint 5Z-6). */
 function WindowLock({ message }: { message: string }) {
+  const { color, radius, space } = useTheme();
   return (
     <View
       accessibilityRole="text"
@@ -266,6 +271,7 @@ function WindowLock({ message }: { message: string }) {
 // ---- one sheet in the list ------------------------------------------------------------
 
 function ExpenseReportCard({ detail, refs, today, onEdit }: { detail: ExpenseReportDetail; refs: ExpenseReferenceOptions; today: string; onEdit?: () => void }) {
+  const { color, space } = useTheme();
   const { report, disbursement } = detail;
   const badge = expenseStatusBadge(report);
   const span = report.Status === 'Draft' ? expenseReferenceSpan(expenseReferenceKey(report), refs) : null;
@@ -295,6 +301,7 @@ function ExpenseReportCard({ detail, refs, today, onEdit }: { detail: ExpenseRep
 // ---- the screen ------------------------------------------------------------------------
 
 export default function ExpensesScreen() {
+  const { color, space } = useTheme();
   const user = useUser();
   const today = toIsoDate(new Date());
   const state = useLoad(async () => {

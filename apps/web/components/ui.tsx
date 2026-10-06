@@ -279,3 +279,51 @@ export const Td = ({ children, className, colSpan }: { children?: ReactNode; cla
 export function Empty({ children }: { children: ReactNode }) {
   return <p className="rounded border border-dashed border-line p-4 text-center text-sm text-muted">{children}</p>;
 }
+
+/**
+ * Sprint 6C: a high-contrast on/off switch - one button (role="switch") holding a navy-ringed track with a sliding
+ * knob and the label beside it, so the whole row toggles. On is a navy track with a gold knob, off a white track with
+ * a navy knob.
+ */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  description,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+}) {
+  const descriptionId = useId();
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-describedby={description ? descriptionId : undefined}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-center gap-4 rounded border-2 border-navy bg-white px-4 py-3 text-left font-sans text-navy disabled:cursor-not-allowed disabled:opacity-45"
+    >
+      <span
+        aria-hidden="true"
+        className={cx('flex h-8 w-14 shrink-0 items-center rounded-full border-2 border-navy p-0.5', checked ? 'justify-end bg-navy' : 'justify-start bg-white')}
+      >
+        <span className={cx('block h-6 w-6 rounded-full', checked ? 'bg-gold' : 'bg-navy')} />
+      </span>
+      <span className="flex flex-col">
+        <span className="text-base font-bold">{label}</span>
+        {description ? (
+          <span id={descriptionId} className="text-sm text-muted">
+            {description}
+          </span>
+        ) : null}
+      </span>
+      <span className="ml-auto text-sm font-bold">{checked ? 'On' : 'Off'}</span>
+    </button>
+  );
+}

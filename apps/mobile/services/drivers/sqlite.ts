@@ -533,8 +533,9 @@ const DB_NAME = 'kofc.db';
  * 31: MeetingAgendaItem and MotionHandTally - the St. Mary's live agenda and hand-vote tallies (Sprint 6B).
  * 32: Meeting.ActiveAgendaLineKey, Member.DateJoinedCouncil and MemberEnrollmentToken (Sprint 6B Patch).
  * 33: PasswordResetToken - self-service password resets; the welcome setup code becomes mandatory (Sprint 6B Security).
+ * 34: Member.flag_large_text_mode - the member's Large Text Layout Mode preference (Sprint 6C).
  */
-const SCHEMA_VERSION = 33;
+const SCHEMA_VERSION = 34;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';

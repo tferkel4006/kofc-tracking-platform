@@ -117,6 +117,8 @@ export interface Member {
   IsBudgetDirector?: number;
   /** DATE (Sprint 6B Patch): the day the member joined the council, from Supreme's roster; drives the New Member badge. */
   DateJoinedCouncil?: string | null;
+  /** BIT (Sprint 6C): the member's own Large Text Layout Mode preference for the phone app (largeTextLayout). Default 0. */
+  flag_large_text_mode?: number;
 }
 
 export interface MemberRoles {

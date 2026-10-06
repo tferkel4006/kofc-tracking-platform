@@ -8,10 +8,11 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BrandMark } from '@/components/BrandHeader';
 import { AppText } from '@/components/ui';
 import { AppProvider, useApp } from '@/lib/app-context';
-import { color, space } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 
 function Gate() {
   const { user, ready, startupError } = useApp();
+  const { color, space } = useTheme();
   return (
     <View style={{ flex: 1, backgroundColor: color.white }}>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.white } }}>

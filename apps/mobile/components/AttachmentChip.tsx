@@ -1,7 +1,7 @@
 import { Pressable, View } from 'react-native';
 import { attachmentKind, type MessageAttachment } from '@kofc/shared';
 import { AppText } from '@/components/ui';
-import { color, radius, space, touchTarget } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 
 /**
  * Attachment placeholder: a kind tag (PDF, IMG, XLS, DOC) on a gold marker, the file name and a
@@ -9,6 +9,7 @@ import { color, radius, space, touchTarget } from '@/lib/theme';
  * remote storage driver.
  */
 export function AttachmentChip({ attachment, onPress }: { attachment: MessageAttachment; onPress: (a: MessageAttachment) => void }) {
+  const { color, radius, space, touchTarget, large } = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -19,15 +20,24 @@ export function AttachmentChip({ attachment, onPress }: { attachment: MessageAtt
         alignItems: 'center',
         gap: space.md,
         minHeight: touchTarget,
-        borderWidth: 1,
+        borderWidth: large ? 4 : 1,
         borderStyle: 'dashed',
-        borderColor: color.navy,
+        borderColor: color.edge,
         borderRadius: radius.sm,
         padding: space.sm,
         backgroundColor: color.white,
       }}
     >
-      <View style={{ backgroundColor: color.gold, borderRadius: radius.sm, paddingHorizontal: space.sm, paddingVertical: space.xs }}>
+      <View
+        style={{
+          backgroundColor: large ? color.white : color.gold,
+          borderWidth: large ? 4 : 0,
+          borderColor: color.gold,
+          borderRadius: radius.sm,
+          paddingHorizontal: space.sm,
+          paddingVertical: space.xs,
+        }}
+      >
         <AppText variant="label">{attachmentKind(attachment.FileType)}</AppText>
       </View>
       <View style={{ flex: 1 }}>

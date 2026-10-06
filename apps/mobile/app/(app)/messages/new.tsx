@@ -11,11 +11,12 @@ import { Dropdown } from '@/components/Dropdown';
 import { NavStrip } from '@/components/NavStrip';
 import { AppInput, AppText, Button, Field, Loading, Notice, Pill } from '@/components/ui';
 import { useApp, useUser } from '@/lib/app-context';
-import { color, space } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import { describeError, useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
 
 export default function NewMessageScreen() {
+  const { color, space } = useTheme();
   const user = useUser();
   const router = useRouter();
   const { refreshUnread } = useApp();

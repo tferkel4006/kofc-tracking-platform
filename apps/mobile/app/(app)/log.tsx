@@ -9,6 +9,8 @@
 //     (shifts.getShiftDefaultLength, Sprint 5Y-6).
 // Sprint 5Z-6: a shift whose event has not started, or ended more than 30 days ago (expenseWindowState), is padlocked
 // and grayed, and Save stays disabled while it is chosen.
+// Sprint 6C: in the large text layout (useTheme) the tiles fill the width one per row and stand at least 140 points
+// tall, black with a thick gold edge and large white type; the slide bar's thumb and every button grow to match.
 import { useEffect, useRef, useState } from 'react';
 import { Animated, PanResponder, Pressable, View } from 'react-native';
 import {
@@ -26,7 +28,7 @@ import {
 import { AppInput, AppText, Button, Card, EmptyState, Field, Loading, Notice, Screen, Section } from '@/components/ui';
 import { useFeatureFlags, useUser } from '@/lib/app-context';
 import { confirmTap, pocketGateMode, type PocketGateMode } from '@/lib/pocket-gate';
-import { color, radius, space, touchTarget } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import { describeError, useLoad } from '@/lib/use-async';
 import { db } from '@/services/db';
 
@@ -35,15 +37,23 @@ type Mode = 'activity' | 'shift';
 const TOAST_MS = 1800;
 
 function Segmented({ value, onChange }: { value: Mode; onChange: (m: Mode) => void }) {
+  const { color, touchTarget, large } = useTheme();
   const tab = (mode: Mode, label: string) => (
     <Pressable
       key={mode}
       accessibilityRole="tab"
       accessibilityState={{ selected: value === mode }}
       onPress={() => onChange(mode)}
-      style={{ flex: 1, minHeight: touchTarget, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 4, borderBottomColor: value === mode ? color.gold : color.line }}
+      style={{
+        flex: 1,
+        minHeight: touchTarget,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderBottomWidth: large ? 12 : 4,
+        borderBottomColor: value === mode ? color.gold : large ? color.navy : color.line,
+      }}
     >
-      <AppText variant="title" tone={value === mode ? 'navy' : 'muted'}>
+      <AppText variant="title" tone={value === mode ? 'navy' : 'muted'} style={{ textAlign: 'center' }}>
         {label}
       </AppText>
     </Pressable>
@@ -55,6 +65,7 @@ type Toast = { tone: 'info' | 'error'; text: string };
 
 /** A confirmation that flashes over the foot of the screen and fades away by itself. */
 function useToast() {
+  const { color, radius, space, large } = useTheme();
   const [toast, setToast] = useState<Toast | null>(null);
   const opacity = useRef(new Animated.Value(0)).current;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -79,8 +90,8 @@ function useToast() {
         opacity,
         backgroundColor: toast.tone === 'error' ? color.red : color.green,
         borderRadius: radius.md,
-        borderWidth: 2,
-        borderColor: color.white,
+        borderWidth: large ? 4 : 2,
+        borderColor: large ? color.gold : color.white,
         padding: space.md,
       }}
     >
@@ -92,8 +103,13 @@ function useToast() {
   return { show, view };
 }
 
-/** One activity's button: navy with white type and a gold edge (12.6:1), today's total and any queued taps underneath. */
+/**
+ * One activity's button: navy with white type and a gold edge (12.6:1), today's total and any queued taps underneath.
+ * Large text layout: full width, at least touchTarget tall, black with an 8-point gold edge that turns white while
+ * pressed (a gold flash would put white type on gold).
+ */
 function ActivityTile({ activity, today, queued, onPress }: { activity: Activities; today: number; queued: number; onPress: () => void }) {
+  const { color, radius, space, touchTarget, large } = useTheme();
   const status = [today > 0 ? `${formatHours(today).toUpperCase()} TODAY` : null, queued > 0 ? `+${formatHours(queued * HOURS_STEP).toUpperCase()} QUEUED` : null]
     .filter(Boolean)
     .join(' · ');
@@ -106,17 +122,17 @@ function ActivityTile({ activity, today, queued, onPress }: { activity: Activiti
       hitSlop={4}
       style={({ pressed }) => ({
         // Sprint 6A patch: large targets with a heavy edge, for members with less steady hands or eyesight.
-        flexBasis: '46%',
+        flexBasis: large ? '100%' : '46%',
         flexGrow: 1,
-        minHeight: 128,
-        paddingVertical: space.xl,
+        minHeight: Math.max(128, touchTarget),
+        paddingVertical: large ? space.lg : space.xl,
         paddingHorizontal: space.lg,
         gap: space.sm,
         justifyContent: 'center',
         borderRadius: radius.md,
-        borderWidth: 5,
-        borderColor: color.gold,
-        backgroundColor: pressed ? color.gold : color.navy,
+        borderWidth: large ? 8 : 5,
+        borderColor: large && pressed ? color.text : color.gold,
+        backgroundColor: !large && pressed ? color.gold : color.navy,
       })}
     >
       {({ pressed }) => (
@@ -142,9 +158,12 @@ const SLIDE_SLACK = 12;
  * commits the queued taps; letting go early springs it back and logs nothing. Screen readers activate it directly.
  */
 function SlideToLog({ label, onConfirm, onClear }: { label: string; onConfirm: () => void; onClear: () => void }) {
+  const { color, radius, space, touchTarget, large } = useTheme();
+  // Large text layout: the thumb is a full touchTarget circle, black with a gold ring.
+  const thumb = large ? touchTarget : THUMB;
   const [width, setWidth] = useState(0);
   const x = useRef(new Animated.Value(0)).current;
-  const travel = Math.max(0, width - THUMB - 2 * space.xs);
+  const travel = Math.max(0, width - thumb - 2 * space.xs);
   const travelRef = useRef(travel);
   travelRef.current = travel;
   const confirmRef = useRef(onConfirm);
@@ -169,7 +188,16 @@ function SlideToLog({ label, onConfirm, onClear }: { label: string; onConfirm: (
   ).current;
 
   return (
-    <View style={{ gap: space.sm, padding: space.lg, paddingTop: space.md, backgroundColor: color.white, borderTopWidth: 2, borderTopColor: color.navy }}>
+    <View
+      style={{
+        gap: space.sm,
+        padding: space.lg,
+        paddingTop: space.md,
+        backgroundColor: color.white,
+        borderTopWidth: large ? 4 : 2,
+        borderTopColor: large ? color.gold : color.navy,
+      }}
+    >
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
         <AppText variant="title" style={{ flex: 1 }}>
           {label}
@@ -183,9 +211,20 @@ function SlideToLog({ label, onConfirm, onClear }: { label: string; onConfirm: (
         accessibilityActions={[{ name: 'activate', label: 'Log the queued hours' }]}
         onAccessibilityAction={(e) => e.nativeEvent.actionName === 'activate' && onConfirm()}
         onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-        style={{ height: THUMB + 2 * space.xs, borderRadius: radius.pill, backgroundColor: color.navy, borderWidth: 3, borderColor: color.gold, justifyContent: 'center' }}
+        style={{
+          height: thumb + 2 * space.xs,
+          borderRadius: radius.pill,
+          backgroundColor: color.navy,
+          borderWidth: large ? 4 : 3,
+          borderColor: color.gold,
+          justifyContent: 'center',
+        }}
       >
-        <AppText variant="title" tone="white" style={{ position: 'absolute', left: 0, right: 0, textAlign: 'center', fontSize: 19 }}>
+        <AppText
+          variant="title"
+          tone="white"
+          style={{ position: 'absolute', left: large ? thumb + space.sm : 0, right: 0, textAlign: 'center', fontSize: 19 }}
+        >
           Slide to Log Hours
         </AppText>
         <Animated.View
@@ -193,10 +232,12 @@ function SlideToLog({ label, onConfirm, onClear }: { label: string; onConfirm: (
           style={{
             position: 'absolute',
             left: space.xs - 3,
-            width: THUMB,
-            height: THUMB,
-            borderRadius: THUMB / 2,
-            backgroundColor: color.gold,
+            width: thumb,
+            height: thumb,
+            borderRadius: thumb / 2,
+            backgroundColor: large ? color.navy : color.gold,
+            borderWidth: large ? 6 : 0,
+            borderColor: color.gold,
             alignItems: 'center',
             justifyContent: 'center',
             transform: [{ translateX: x }],
@@ -320,6 +361,7 @@ type Tracker = ReturnType<typeof useActivityTracker>;
 
 /** The rapid-tap grid: one tap, 15 minutes against the activity for today, once the pocket gate lets it through. */
 function ActivityGrid({ tracker }: { tracker: Tracker }) {
+  const { space } = useTheme();
   const { state, totals, queued, gate, tap } = tracker;
   const { data } = state;
   return (
@@ -350,19 +392,38 @@ function ActivityGrid({ tracker }: { tracker: Tracker }) {
 
 /** Minus and plus 15 minutes around the total, in place of the old hour and minute drop-downs. */
 function QuarterStepper({ value, onChange }: { value: number; onChange: (hours: number) => void }) {
+  const { space, large } = useTheme();
   const step = (delta: number) => onChange(Math.min(MAX_HOURS_PER_ENTRY, Math.max(0, value + delta)));
+  const total = (
+    <AppText variant="heading" style={{ minWidth: 96, textAlign: 'center' }} accessibilityLiveRegion="polite">
+      {value > 0 ? formatHours(value) : '0 m'}
+    </AppText>
+  );
+  const minus = <Button title="− 15 min" variant="secondary" style={{ flex: 1 }} disabled={value <= 0} onPress={() => step(-HOURS_STEP)} />;
+  const plus = <Button title="+ 15 min" variant="secondary" style={{ flex: 1 }} disabled={value >= MAX_HOURS_PER_ENTRY} onPress={() => step(HOURS_STEP)} />;
+  // Large text layout: the total gets its own line above the two buttons, which would not fit beside it.
+  if (large) {
+    return (
+      <View style={{ gap: space.md }}>
+        {total}
+        <View style={{ flexDirection: 'row', gap: space.md }}>
+          {minus}
+          {plus}
+        </View>
+      </View>
+    );
+  }
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-      <Button title="− 15 min" variant="secondary" style={{ flex: 1 }} disabled={value <= 0} onPress={() => step(-HOURS_STEP)} />
-      <AppText variant="heading" style={{ minWidth: 96, textAlign: 'center' }} accessibilityLiveRegion="polite">
-        {value > 0 ? formatHours(value) : '0 m'}
-      </AppText>
-      <Button title="+ 15 min" variant="secondary" style={{ flex: 1 }} disabled={value >= MAX_HOURS_PER_ENTRY} onPress={() => step(HOURS_STEP)} />
+      {minus}
+      {total}
+      {plus}
     </View>
   );
 }
 
 function ShiftReport({ onToast }: { onToast: (toast: Toast) => void }) {
+  const { color, space, touchTarget, large } = useTheme();
   const user = useUser();
   const [shiftId, setShiftId] = useState<number | null>(null);
   const [hours, setHours] = useState(0);
@@ -437,7 +498,11 @@ function ShiftReport({ onToast }: { onToast: (toast: Toast) => void }) {
               const lock = lockOf(event);
               return (
                 <Pressable key={shift.id} accessibilityRole="radio" accessibilityState={{ selected }} onPress={() => pickShift(shift.id)}>
-                  <Card accent={selected ? color.gold : color.line}>
+                  <Card
+                    accent={selected ? color.gold : color.line}
+                    // Large text layout: every card edge is gold, so the chosen shift is ringed in white.
+                    style={[{ minHeight: touchTarget }, large && selected ? { borderColor: color.text, borderWidth: 8 } : null]}
+                  >
                     <AppText variant="title" tone={lock ? 'muted' : 'navy'}>
                       {lock ? '🔒 ' : ''}
                       {shift.ShiftName}
@@ -479,6 +544,7 @@ function ShiftReport({ onToast }: { onToast: (toast: Toast) => void }) {
 }
 
 export default function LogScreen() {
+  const { color, large } = useTheme();
   const shiftsOn = useFeatureFlags().flag_complex_shifts;
   const [chosen, setMode] = useState<Mode>('activity');
   const mode = shiftsOn ? chosen : 'activity';
@@ -495,7 +561,7 @@ export default function LogScreen() {
           </AppText>
           {shiftsOn ? <Segmented value={mode} onChange={setMode} /> : null}
           {mode === 'activity' ? <ActivityGrid tracker={tracker} /> : <ShiftReport onToast={toast.show} />}
-          <View style={{ height: 72 }} />
+          <View style={{ height: large ? 160 : 72 }} />
         </Screen>
         {toast.view}
       </View>

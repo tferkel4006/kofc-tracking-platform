@@ -10,10 +10,11 @@
 import { useState } from 'react';
 import type { ImageSourcePropType } from 'react-native';
 import { Image, Modal, useWindowDimensions, View } from 'react-native';
+import { SPACING } from '@kofc/shared';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText, Button } from '@/components/ui';
 import { cachedQrSource, markQrUploadFailed } from '@/lib/qr-cache';
-import { color, radius, space } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import parishsoftQr from '../assets/images/qr/parishsoft-collection.png';
 import venmoQr from '../assets/images/qr/venmo-collection.png';
 import zeffyQr from '../assets/images/qr/zeffy-collection.png';
@@ -29,7 +30,7 @@ const COLLECTION_QR: Record<string, ImageSourcePropType> = {
 
 /** The code's gold frame: border width, and border plus inner padding on each side. */
 const FRAME_BORDER = 6;
-const FRAME_INSET = FRAME_BORDER + space.md;
+const FRAME_INSET = FRAME_BORDER + SPACING.md;
 const MAX_FRAME_WIDTH = 420;
 /** The code is never taller than this share of the screen, leaving room for the heading, hint and Done button. */
 const MAX_HEIGHT_SHARE = 0.5;
@@ -52,6 +53,7 @@ export function CollectionQrModal({
   visible: boolean;
   onClose: () => void;
 }) {
+  const { color, radius, space } = useTheme();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   // Bumped when the upload fails, so the cache's fallback is read again.
   const [, setFailures] = useState(0);

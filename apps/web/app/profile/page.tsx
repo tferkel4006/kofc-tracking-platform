@@ -3,12 +3,14 @@
 // fraternal biography and contact details (members.update allows a member only the MEMBER_SELF_SERVICE_COLUMNS on
 // their own record), their working status, trade skills and training classes. Name, member number, degree, type
 // and status belong to the council's admins and are shown read-only.
+// Sprint 6C: the Display settings panel holds the member's Large Text Layout Mode switch (Member.flag_large_text_mode),
+// saved at once; it redraws the phone app in large bold white type on black with 140-point tap areas.
 import { useEffect, useState } from 'react';
-import { describeError, MEMBER_BIOGRAPHY_MAX_LENGTH, type Member } from '@kofc/shared';
+import { describeError, LARGE_TEXT_TOGGLE_LABEL, MEMBER_BIOGRAPHY_MAX_LENGTH, prefersLargeText, type Member } from '@kofc/shared';
 import { RequireArea } from '@/components/CouncilScope';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { ProfileExtensionsEditor } from '@/components/ProfileExtensionsEditor';
-import { Button, cx, Field, Input, Notice, PageTitle, Panel, Pill, Textarea } from '@/components/ui';
+import { Button, cx, Field, Input, Notice, PageTitle, Panel, Pill, Switch, Textarea } from '@/components/ui';
 import { formatPhone } from '@/lib/format';
 import { useSession, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -262,6 +264,45 @@ function BiographyForm({ member, onSaved }: { member: Member; onSaved: () => Pro
   );
 }
 
+/** Sprint 6C: the member's Large Text Layout Mode for the phone app, saved the moment it is switched. */
+function DisplaySettings({ member, onSaved }: { member: Member; onSaved: () => Promise<void> }) {
+  const user = useUser();
+  const on = prefersLargeText(member);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+
+  const toggle = async (next: boolean) => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await db.members.update(user.memberId, member.id, { flag_large_text_mode: next ? 1 : 0 });
+      await onSaved();
+      setMessage({ tone: 'info', text: next ? 'Large Text Layout Mode is on for your phone app.' : 'Large Text Layout Mode is off; the phone app is back to the standard layout.' });
+    } catch (err) {
+      setMessage({ tone: 'error', text: describeError(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      {message ? (
+        <Notice tone={message.tone} onDismiss={() => setMessage(null)}>
+          {message.text}
+        </Notice>
+      ) : null}
+      <Switch
+        checked={on}
+        disabled={busy}
+        onChange={(next) => void toggle(next)}
+        label={LARGE_TEXT_TOGGLE_LABEL}
+        description="For easier reading on the phone app: larger bold text, buttons at least 140 points tall, and white type on a black background with thick gold borders."
+      />
+    </div>
+  );
+}
+
 function Profile() {
   const user = useUser();
   const { profileChanged } = useSession();
@@ -301,6 +342,9 @@ function Profile() {
           <p className="mt-4 text-xs text-muted">Your name, member number, degree and type are kept by your council&apos;s admins. Ask them to correct these.</p>
         </Panel>
         <div className="flex flex-col gap-4">
+          <Panel title="Display settings">
+            <DisplaySettings member={m} onSaved={reloadOwn} />
+          </Panel>
           <Panel title="My fraternal biography">
             <BiographyForm member={m} onSaved={reloadOwn} />
           </Panel>

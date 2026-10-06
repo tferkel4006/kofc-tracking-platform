@@ -19,8 +19,8 @@ import {
   type DonationType,
   type GateIntakeTarget,
 } from '@kofc/shared';
-import { AppText, Button, Card, Notice } from '@/components/ui';
-import { color, radius, space, touchTarget } from '@/lib/theme';
+import { AppText, Button, Card, Notice, choiceStyle } from '@/components/ui';
+import { useTheme } from '@/lib/layout-mode';
 import { describeError } from '@/lib/use-async';
 
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -35,6 +35,8 @@ export function IntakeSessionSwitch({
   busy: boolean;
   onChange: (active: boolean) => void;
 }) {
+  const theme = useTheme();
+  const { color, radius, space, touchTarget, large } = theme;
   return (
     <Pressable
       accessibilityRole="switch"
@@ -52,8 +54,8 @@ export function IntakeSessionSwitch({
         paddingVertical: space.md,
         borderRadius: radius.md,
         borderWidth: 2,
-        borderColor: color.navy,
-        backgroundColor: active ? color.navy : color.white,
+        borderColor: color.edge,
+        ...choiceStyle(theme, active),
       }}
     >
       <View style={{ flex: 1 }}>
@@ -69,10 +71,10 @@ export function IntakeSessionSwitch({
         disabled={busy}
         onValueChange={onChange}
         trackColor={{ false: color.line, true: color.gold }}
-        thumbColor={active ? color.white : color.navy}
+        thumbColor={large ? color.text : active ? color.white : color.navy}
         accessibilityElementsHidden
         importantForAccessibility="no"
-        style={{ transform: [{ scale: 1.3 }] }}
+        style={{ transform: [{ scale: large ? 2 : 1.3 }] }}
       />
     </Pressable>
   );
@@ -80,6 +82,7 @@ export function IntakeSessionSwitch({
 
 /** One massive one-tap target. */
 function IntakeTarget({ label, detail, fill, disabled, onPress }: { label: string; detail: string; fill: string; disabled: boolean; onPress: () => void }) {
+  const { color, radius, space } = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -140,6 +143,7 @@ export function GateIntakeOverlay({
   onHide: () => void;
   onRecorded: () => void;
 }) {
+  const { color, radius, space, touchTarget, large } = useTheme();
   const insets = useSafeAreaInsets();
   const presets = defaults.amount != null && !GATE_INTAKE_AMOUNTS.includes(defaults.amount) ? [defaults.amount, ...GATE_INTAKE_AMOUNTS] : GATE_INTAKE_AMOUNTS;
   const [amount, setAmount] = useState<number>(defaults.amount ?? 10);
@@ -199,9 +203,10 @@ export function GateIntakeOverlay({
                       justifyContent: 'center',
                       paddingHorizontal: space.md,
                       borderRadius: radius.pill,
-                      borderWidth: 2,
-                      borderColor: color.gold,
-                      backgroundColor: selected ? color.gold : color.navy,
+                      // Large text layout: no gold fill under white type; the chosen amount is ringed in white instead.
+                      borderWidth: large ? (selected ? 8 : 4) : 2,
+                      borderColor: large && selected ? color.text : color.gold,
+                      backgroundColor: selected && !large ? color.gold : color.navy,
                     }}
                   >
                     <AppText variant="title" tone={selected ? 'navy' : 'white'} style={{ fontSize: 20 }}>
@@ -230,7 +235,7 @@ export function GateIntakeOverlay({
             <IntakeTarget
               label={GATE_INTAKE_TARGETS.card.label}
               detail={card ? money(amount) : 'Credit Card is not enabled'}
-              fill={color.gold}
+              fill={large ? color.white : color.gold}
               disabled={busy || !card || types.length === 0}
               onPress={() => void log('card')}
             />

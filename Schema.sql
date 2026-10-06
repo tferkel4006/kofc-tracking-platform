@@ -2019,3 +2019,14 @@ GO
 
 CREATE INDEX [PasswordResetToken_Member_Idx] ON [PasswordResetToken] ([MemberID]);
 GO
+
+-- =========================================================================
+-- Sprint 6C: VISUALLY IMPAIRED LARGE TEXT LAYOUT MODE
+-- Member.flag_large_text_mode is the member's own choice, made from their profile settings on the web portal or the
+-- phone app (members.update allows it on the member's own record, MEMBER_SELF_SERVICE_COLUMNS). At 1 the phone app
+-- draws every screen in its large text layout (largeTextLayout): font sizes doubled, interactive areas at least
+-- LARGE_TEXT_TOUCH_TARGET points tall, and a pitch-black background with bold white text and thick gold borders.
+-- Every existing member keeps the standard layout (DEFAULT 0).
+-- =========================================================================
+ALTER TABLE [Member] ADD [flag_large_text_mode] BIT NOT NULL DEFAULT 0;
+GO

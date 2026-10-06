@@ -11,10 +11,11 @@ import { ShiftCard, UrgentTag } from '@/components/ShiftCard';
 import { AppText, Button, Card, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
 import { useApp, useUser } from '@/lib/app-context';
 import { useLoad } from '@/lib/use-async';
-import { color, space } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
 import { db } from '@/services/db';
 
 export default function DashboardScreen() {
+  const { color, space } = useTheme();
   const user = useUser();
   const { features, refreshFeatures } = useApp();
   const shiftsOn = features.flag_complex_shifts;

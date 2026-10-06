@@ -4,6 +4,8 @@
 // the chair put on the floor (LiveAgendaItem.lineKey) gets a high-contrast focus frame - a gold fill inside a heavy navy border
 // with an ON THE FLOOR tag - its section heading is marked, and a banner at the top names the topic and its countdown.
 // Blank last-minute lines (still being written at the console) are left out.
+// Sprint 6C: in the large text layout nothing is filled gold (white type on gold is unreadable); the line on the floor,
+// the floor banner and the marked section heading are black inside a thick white frame instead.
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import {
@@ -18,7 +20,8 @@ import {
 import { AppText, EmptyState, Loading, Notice, Pill } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
 import { describeError } from '@/lib/use-async';
-import { color, fontFamily, radius, space } from '@/lib/theme';
+import { useTheme } from '@/lib/layout-mode';
+import { fontFamily } from '@/lib/theme';
 import { db } from '@/services/db';
 
 /** How often a live meeting is re-read, as the web console does. */
@@ -28,14 +31,21 @@ const RESULT_TONE: Record<string, 'navy' | 'red' | 'gold' | 'outline'> = { Pendi
 
 /** An agenda line's light markdown as nested Text: **bold**, *italic*, '- ' bullets. */
 function Markdown({ text, emphasis }: { text: string; emphasis: boolean }) {
-  const base = { fontFamily: fontFamily.body, fontSize: emphasis ? 18 : 16, lineHeight: emphasis ? 25 : 22, color: color.navy };
+  const { color, font, large } = useTheme();
+  const base = {
+    fontFamily: fontFamily.body,
+    fontSize: font(emphasis ? 18 : 16),
+    lineHeight: font(emphasis ? 25 : 22),
+    color: color.text,
+    ...(large ? { fontWeight: '700' as const } : {}),
+  };
   return (
     <View style={{ gap: 2 }}>
       {parseAgendaMarkdown(text).map((block, i) => (
         <Text key={i} style={base}>
           {block.kind === 'bullet' ? '•  ' : ''}
           {block.spans.map((span, j) => (
-            <Text key={j} style={{ fontWeight: span.bold ? '700' : '400', fontStyle: span.italic ? 'italic' : 'normal' }}>
+            <Text key={j} style={{ fontWeight: span.bold || large ? '700' : '400', fontStyle: span.italic ? 'italic' : 'normal' }}>
               {span.text}
             </Text>
           ))}
@@ -46,6 +56,7 @@ function Markdown({ text, emphasis }: { text: string; emphasis: boolean }) {
 }
 
 function Line({ line, number, onFloor }: { line: AgendaLineView; number: number; onFloor: boolean }) {
+  const { color, radius, space, large } = useTheme();
   return (
     <View
       accessible
@@ -57,14 +68,14 @@ function Line({ line, number, onFloor }: { line: AgendaLineView; number: number;
         paddingVertical: space.sm,
         paddingHorizontal: onFloor ? space.sm : 0,
         borderRadius: radius.md,
-        borderWidth: onFloor ? 4 : 0,
-        borderColor: color.navy,
-        backgroundColor: onFloor ? color.gold : color.white,
-        borderBottomWidth: onFloor ? 4 : 1,
-        borderBottomColor: onFloor ? color.navy : color.line,
+        borderWidth: onFloor ? (large ? 8 : 4) : 0,
+        borderColor: large ? color.text : color.edge,
+        backgroundColor: onFloor && !large ? color.gold : color.white,
+        borderBottomWidth: onFloor ? (large ? 8 : 4) : large ? 2 : 1,
+        borderBottomColor: onFloor ? (large ? color.text : color.navy) : color.line,
       }}
     >
-      <AppText variant="title" style={{ width: 26, textAlign: 'right' }}>
+      <AppText variant="title" style={{ width: large ? 52 : 26, textAlign: 'right' }}>
         {number}
       </AppText>
       <View style={{ flex: 1, gap: space.xs }}>
@@ -104,6 +115,7 @@ function useCountdown(live: LiveAssemblyState | null, readAt: number): number | 
 }
 
 export function AgendaSheet({ meetingId }: { meetingId: number }) {
+  const { color, radius, space, large } = useTheme();
   const user = useUser();
   const [agenda, setAgenda] = useState<MeetingAgendaView | null>(null);
   const [live, setLive] = useState<LiveAssemblyState | null>(null);
@@ -163,7 +175,14 @@ export function AgendaSheet({ meetingId }: { meetingId: number }) {
       {isLive && live?.activeItem ? (
         <View
           accessibilityLiveRegion="polite"
-          style={{ borderWidth: 4, borderColor: color.navy, backgroundColor: color.gold, borderRadius: radius.md, padding: space.md, gap: space.xs }}
+          style={{
+            borderWidth: large ? 8 : 4,
+            borderColor: large ? color.text : color.edge,
+            backgroundColor: large ? color.white : color.gold,
+            borderRadius: radius.md,
+            padding: space.md,
+            gap: space.xs,
+          }}
         >
           <AppText variant="label">NOW ON THE FLOOR</AppText>
           <AppText variant="title">{live.activeItem.name}</AppText>
@@ -187,6 +206,7 @@ export function AgendaSheet({ meetingId }: { meetingId: number }) {
                 borderBottomColor: color.gold,
                 paddingBottom: space.xs,
                 backgroundColor: floorSection === si ? color.navy : color.white,
+                ...(large && floorSection === si ? { borderWidth: 6, borderColor: color.text } : {}),
                 paddingHorizontal: floorSection === si ? space.sm : 0,
                 borderRadius: floorSection === si ? radius.sm : 0,
               }}

@@ -54,3 +54,98 @@ export function contrastRatio(a: string, b: string): number {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (hi + 0.05) / (lo + 0.05);
 }
+
+// =========================================================================
+// Sprint 6C: LARGE TEXT LAYOUT MODE (Member.flag_large_text_mode)
+// The phone app's visually impaired layout. Every screen reads its colours, sizes and spacing from layoutTokens(),
+// so switching the member's flag redraws the whole app: larger type, tap areas at least LARGE_TEXT_TOUCH_TARGET
+// points tall, doubled padding, and a pitch-black background with bold white text inside thick gold borders.
+// =========================================================================
+
+/**
+ * Font multiplier in the large text layout. 1.5 lands the app's 16 pt body copy on 24 pt and its 24 pt headings on
+ * 36 pt, the sizes the Sprint 6C brief names.
+ */
+export const LARGE_TEXT_FONT_SCALE = 1.5;
+/** No text in the large text layout is drawn smaller than this (points), even the smallest captions. */
+export const LARGE_TEXT_MIN_FONT_SIZE = 20;
+/** Minimum height (points) of every button, tab, tile, input and other tap area in the large text layout. */
+export const LARGE_TEXT_TOUCH_TARGET = 140;
+/** Width (points) of the gold borders round every card, button, input and chip in the large text layout. */
+export const LARGE_TEXT_BORDER_WIDTH = 4;
+/** Padding multiplier in the large text layout. */
+export const LARGE_TEXT_SPACING_SCALE = 2;
+
+/**
+ * The large text layout's palette, under the same role names as BRAND so a screen reads `color.navy` either way.
+ * Navy frames and white surfaces both turn pitch black, text and muted text turn white, hairlines turn gold, and
+ * red and gold brighten so they stand out on black. Text is always white (bold) in this layout, never gold or red,
+ * and nothing is filled gold, since white on gold is unreadable.
+ */
+export const HIGH_CONTRAST = {
+  navy: '#000000',
+  red: '#FF4040',
+  gold: '#FFC72C',
+  white: '#000000',
+  muted: '#FFFFFF',
+  line: '#FFC72C',
+  green: '#17692F',
+  /** The one text colour of the large text layout. */
+  text: '#FFFFFF',
+  /** Outlines of fields, tabs and frames: the thick gold boundaries. */
+  edge: '#FFC72C',
+} as const;
+
+/**
+ * Colour roles a screen draws with: BRAND's names, plus `text` (the text colour) and `edge` (outlines of fields, tabs
+ * and frames), both navy in the standard layout.
+ */
+export type LayoutPalette = { [K in keyof typeof BRAND | 'text' | 'edge']: string };
+
+/** Everything a phone screen sizes and colours itself from, in the standard or the large text layout. */
+export interface LayoutTokens {
+  /** True in the large text layout. */
+  large: boolean;
+  color: LayoutPalette;
+  space: { [K in keyof typeof SPACING]: number };
+  radius: { [K in keyof typeof RADIUS]: number };
+  /** Minimum height of any tap area. */
+  touchTarget: number;
+  /** Border width for a card, button, input or chip edge drawn `width` points wide in the standard layout. */
+  border(width: number): number;
+  /** A font size (or line height) given in standard-layout points, in this layout. */
+  font(size: number): number;
+}
+
+const scaleRecord = <T extends Record<string, number>>(record: T, factor: number): { [K in keyof T]: number } =>
+  Object.fromEntries(Object.entries(record).map(([k, v]) => [k, v * factor])) as { [K in keyof T]: number };
+
+const STANDARD_LAYOUT: LayoutTokens = {
+  large: false,
+  color: { ...BRAND, text: BRAND.navy, edge: BRAND.navy },
+  space: { ...SPACING },
+  radius: { ...RADIUS },
+  touchTarget: TOUCH_TARGET,
+  border: (width) => width,
+  font: (size) => size,
+};
+
+const LARGE_TEXT_LAYOUT: LayoutTokens = {
+  large: true,
+  color: { ...HIGH_CONTRAST },
+  space: scaleRecord(SPACING, LARGE_TEXT_SPACING_SCALE),
+  radius: { ...RADIUS },
+  touchTarget: LARGE_TEXT_TOUCH_TARGET,
+  border: (width) => Math.max(width, LARGE_TEXT_BORDER_WIDTH),
+  font: (size) => Math.max(Math.round(size * LARGE_TEXT_FONT_SCALE), LARGE_TEXT_MIN_FONT_SIZE),
+};
+
+/** The phone's layout tokens: the large text layout when `large`, otherwise the standard KofC brand layout. */
+export const layoutTokens = (large: boolean): LayoutTokens => (large ? LARGE_TEXT_LAYOUT : STANDARD_LAYOUT);
+
+/** Whether the member chose the large text layout (Member.flag_large_text_mode = 1). */
+export const prefersLargeText = (member: { flag_large_text_mode?: number | null } | null | undefined): boolean =>
+  member?.flag_large_text_mode === 1;
+
+/** The label of the Large Text Layout Mode switch on the web profile and the phone settings screen. */
+export const LARGE_TEXT_TOGGLE_LABEL = '[ 👓 Enable Large Text Layout Mode ]';

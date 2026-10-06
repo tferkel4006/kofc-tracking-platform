@@ -1,10 +1,13 @@
 // A branded drop-down: a field that opens a bottom sheet of options. Used for the council filter,
 // the hour and minute pickers and the member picker. The selected row carries a gold marker.
-import { useState } from 'react';
+// Sprint 6C: styled from useTheme(), so the large text layout gets a black field and sheet with gold edges and
+// touchTarget-tall rows.
+import { useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { NavStripLayout } from '@/components/NavStrip';
 import { AppText } from '@/components/ui';
-import { color, radius, space, touchTarget } from '@/lib/theme';
+import type { LayoutTokens } from '@kofc/shared';
+import { useTheme } from '@/lib/layout-mode';
 
 export interface DropdownOption<T extends string | number> {
   value: T;
@@ -29,6 +32,9 @@ export function Dropdown<T extends string | number>({
   accessibilityLabel?: string;
   style?: object;
 }) {
+  const theme = useTheme();
+  const { color } = theme;
+  const styles = useMemo(() => makeStyles(theme), [theme]);
   const [open, setOpen] = useState(false);
   const selected = options.find((o) => o.value === value);
 
@@ -90,32 +96,37 @@ export function Dropdown<T extends string | number>({
   );
 }
 
-const styles = StyleSheet.create({
-  field: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.sm,
-    minHeight: touchTarget,
-    paddingHorizontal: space.md,
-    borderWidth: 1,
-    borderColor: color.navy,
-    borderRadius: radius.sm,
-    backgroundColor: color.white,
-  },
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 40, 85, 0.45)' },
-  sheet: { maxHeight: '70%', backgroundColor: color.white, borderTopLeftRadius: radius.md, borderTopRightRadius: radius.md, overflow: 'hidden' },
-  sheetHeader: {
-    paddingHorizontal: space.lg,
-    paddingVertical: space.sm,
-    backgroundColor: color.navy,
-  },
-  row: {
-    minHeight: touchTarget,
-    justifyContent: 'center',
-    paddingHorizontal: space.lg,
-    borderLeftWidth: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: color.line,
-    backgroundColor: color.white,
-  },
-});
+const makeStyles = ({ color, radius, space, touchTarget, border, large }: LayoutTokens) =>
+  StyleSheet.create({
+    field: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: space.sm,
+      minHeight: touchTarget,
+      paddingHorizontal: space.md,
+      borderWidth: border(1),
+      borderColor: large ? color.gold : color.navy,
+      borderRadius: radius.sm,
+      backgroundColor: color.white,
+    },
+    backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0, 40, 85, 0.45)' },
+    sheet: {
+      maxHeight: large ? '85%' : '70%',
+      backgroundColor: color.white,
+      borderWidth: large ? 4 : 0,
+      borderColor: color.gold, borderTopLeftRadius: radius.md, borderTopRightRadius: radius.md, overflow: 'hidden' },
+    sheetHeader: {
+      paddingHorizontal: space.lg,
+      paddingVertical: space.sm,
+      backgroundColor: color.navy,
+    },
+    row: {
+      minHeight: touchTarget,
+      justifyContent: 'center',
+      paddingHorizontal: space.lg,
+      borderLeftWidth: large ? 12 : 6,
+      borderBottomWidth: border(1),
+      borderBottomColor: color.line,
+      backgroundColor: color.white,
+    },
+  });
