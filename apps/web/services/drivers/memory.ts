@@ -319,7 +319,27 @@ import {
   isCouncilWideList,
   isListVisibleTo,
   assertMayRunEventIntake,
+  agendaAlreadyStructured,
+  agendaLineNotFound,
+  assertAgendaLineRef,
+  assertHandTallyAllowed,
+  assertMayEditLiveAgenda,
+  blueprintAgendaItems,
+  buildMeetingAgendaView,
+  capitalOnFailedMotion,
+  cleanAgendaLineMarkdown,
+  cleanHandTally,
+  cleanTransactionId,
+  handTallyNotFound,
+  handTallyResult,
+  ledgerTransactionNotFound,
+  mayPostGeneralLedger,
+  MOTION_LINE_SORT_BASE,
+  summarizeLedgerTransactions,
   type CleanJournalLine,
+  type MeetingAgendaItem,
+  type MeetingAgendaView,
+  type MotionHandTally,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -2974,7 +2994,152 @@ export class MemoryDataService implements DataService {
       });
       return this.liveAssemblyState(s, actorId, meetingId);
     },
+
+    getMeetingAgenda: async (actorId, meetingId) => {
+      const s = await this.ready();
+      assertMayFollowLiveAssembly(this.memberWriteActor(s, actorId), this.requireMeetingRow(s, meetingId) as unknown as Meeting);
+      return this.meetingAgendaView(s, meetingId);
+    },
+
+    applyAgendaBlueprint: async (actorId, meetingId) => {
+      const s = await this.ready();
+      s.transaction(() => {
+        const meeting = this.requireMeetingRow(s, meetingId) as unknown as Meeting;
+        assertMayEditLiveAgenda(this.memberWriteActor(s, actorId), meeting, `lay out the agenda of meeting ${meetingId}`);
+        if (s.rows('MeetingAgendaItem').some((i) => i.MeetingID === meetingId)) throw agendaAlreadyStructured(meetingId);
+        const roles = s.rows('Role').map((r) => ({ id: r.id as number, Role: r.Role as string }));
+        for (const row of blueprintAgendaItems(meeting, roles)) s.insert('MeetingAgendaItem', row as unknown as Row);
+      });
+      return this.meetingAgendaView(s, meetingId);
+    },
+
+    editAgendaLine: async (actorId, meetingId, line, markdown) => {
+      const ref = assertAgendaLineRef(line);
+      const text = cleanAgendaLineMarkdown(markdown);
+      const s = await this.ready();
+      s.transaction(() => {
+        const meeting = this.requireMeetingRow(s, meetingId) as unknown as Meeting;
+        assertMayEditLiveAgenda(this.memberWriteActor(s, actorId), meeting, `correct the agenda of meeting ${meetingId}`);
+        const stamp = { LineMarkdown: text, LastEditedByMemberID: actorId, LastEditedAt: toTimestamp(this.now()) };
+        const items = s.rows('MeetingAgendaItem').filter((i) => i.MeetingID === meetingId);
+        if (ref.kind === 'item') {
+          const item = items.find((i) => i.id === ref.itemId);
+          if (!item) throw agendaLineNotFound(ref, meetingId);
+          Object.assign(item, stamp);
+        } else if (ref.kind === 'motion') {
+          if (!s.rows('ProposedMotion').some((p) => p.id === ref.motionId && p.TargetMeetingID === meetingId)) throw agendaLineNotFound(ref, meetingId);
+          const item = items.find((i) => i.ProposedMotionID === ref.motionId);
+          if (item) Object.assign(item, stamp);
+          else {
+            s.insert('MeetingAgendaItem', {
+              CouncilID: meeting.CouncilID,
+              MeetingID: meetingId,
+              SectionKey: 'new_business',
+              SortOrder: MOTION_LINE_SORT_BASE + ref.motionId,
+              ProposedMotionID: ref.motionId,
+              ...stamp,
+            });
+          }
+        } else {
+          const linked = s.rows('EventCouncils').some((ec) => ec.EventID === ref.eventId && ec.CouncilID === meeting.CouncilID);
+          if (!linked) throw agendaLineNotFound(ref, meetingId);
+          const item = items.find((i) => i.LinkedEventID === ref.eventId);
+          if (item) Object.assign(item, stamp);
+          else s.insert('MeetingAgendaItem', { CouncilID: meeting.CouncilID, MeetingID: meetingId, SectionKey: 'upcoming_events', SortOrder: 0, LinkedEventID: ref.eventId, ...stamp });
+        }
+      });
+      return this.meetingAgendaView(s, meetingId);
+    },
+
+    recordHandBallotTally: async (actorId, motionId, approvedCount, deniedCount, options = {}) => {
+      const counts = cleanHandTally(approvedCount, deniedCount);
+      const transactionId = cleanTransactionId(options.transactionId);
+      const result = handTallyResult(counts.approved, counts.denied);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const motion = s.rows('ProposedMotion').find((p) => p.id === motionId);
+        if (!motion) throw proposedMotionNotFound(motionId);
+        const meeting = this.requireMeetingRow(s, motion.TargetMeetingID as number) as unknown as Meeting;
+        assertMayEditLiveAgenda(actor, meeting, `record the hand tally on motion ${motionId}`);
+        assertHandTallyAllowed(motion as unknown as ProposedMotion);
+        if (transactionId !== null) {
+          if (result !== 'Passed') throw capitalOnFailedMotion(motionId);
+          this.requireLedgerTransaction(s, meeting.CouncilID, transactionId);
+        }
+        const tally = s.insert('MotionHandTally', {
+          CouncilID: meeting.CouncilID,
+          ProposedMotionID: motionId,
+          ApprovedCount: counts.approved,
+          DeniedCount: counts.denied,
+          RecordedByMemberID: actorId,
+          RecordedAt: toTimestamp(this.now()),
+          LinkedTransactionID: transactionId,
+        });
+        motion.VoteResult = result;
+        let charitableRequest: CharitableRequest | null = null;
+        if (motion.SourceType === 'CharitableRequest' && motion.SourceRecordID != null) {
+          const request = s.rows('CharitableRequest').find((r) => r.id === motion.SourceRecordID);
+          if (request) {
+            const outcome = charitableVoteOutcome(result, request as unknown as CharitableRequest);
+            if (outcome) Object.assign(request, outcome);
+            charitableRequest = { ...request } as unknown as CharitableRequest;
+          }
+        }
+        return { tally: { ...tally } as unknown as MotionHandTally, motion: { ...motion } as unknown as ProposedMotion, charitableRequest };
+      });
+    },
+
+    linkHandTallyTransaction: async (actorId, motionId, transactionIdInput) => {
+      const transactionId = cleanTransactionId(transactionIdInput);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const motion = s.rows('ProposedMotion').find((p) => p.id === motionId);
+        if (!motion) throw proposedMotionNotFound(motionId);
+        const meeting = this.requireMeetingRow(s, motion.TargetMeetingID as number) as unknown as Meeting;
+        if (!mayPostGeneralLedger(actor, meeting.CouncilID)) assertMayEditLiveAgenda(actor, meeting, `link the capital released for motion ${motionId}`);
+        const tally = s.rows('MotionHandTally').find((t) => t.ProposedMotionID === motionId);
+        if (!tally) throw handTallyNotFound(motionId);
+        if (motion.VoteResult !== 'Passed') throw capitalOnFailedMotion(motionId);
+        if (transactionId !== null) this.requireLedgerTransaction(s, meeting.CouncilID, transactionId);
+        tally.LinkedTransactionID = transactionId;
+        return { ...tally } as unknown as MotionHandTally;
+      });
+    },
   };
+
+  /** RECORD_NOT_FOUND unless the council's ledger holds a posting with this TransactionID. */
+  private requireLedgerTransaction(s: MemoryStore, councilId: number, transactionId: string): void {
+    if (!s.rows('JournalEntry').some((e) => e.CouncilID === councilId && e.TransactionID === transactionId)) {
+      throw ledgerTransactionNotFound(transactionId, councilId);
+    }
+  }
+
+  /** MeetingAgendaView of the meeting, from its items, motions and hand tallies and its council's seats and events. */
+  private meetingAgendaView(s: MemoryStore, meetingId: number): MeetingAgendaView {
+    const meeting = { ...this.requireMeetingRow(s, meetingId) } as unknown as Meeting;
+    const motions = s.rows('ProposedMotion').filter((p) => p.TargetMeetingID === meetingId).map((p) => ({ ...p })) as unknown as ProposedMotion[];
+    const motionIds = new Set(motions.map((m) => m.id));
+    const eventIds = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === meeting.CouncilID).map((ec) => ec.EventID as number));
+    const active = this.activeStatusId(s);
+    return buildMeetingAgendaView({
+      meeting,
+      items: s.rows('MeetingAgendaItem').filter((i) => i.MeetingID === meetingId).map((i) => ({ ...i })) as unknown as MeetingAgendaItem[],
+      motions,
+      handTallies: s.rows('MotionHandTally').filter((t) => motionIds.has(t.ProposedMotionID as number)).map((t) => ({ ...t })) as unknown as MotionHandTally[],
+      events: s.rows('Event').filter((e) => eventIds.has(e.id as number)).map((e) => ({ ...e })) as unknown as Event[],
+      roles: s.rows('Role').map((r) => ({ id: r.id as number, Role: r.Role as string, Officer: r.Officer as number })),
+      seats: s.rows('MemberRoles').map((mr) => ({ id: mr.id as number, RoleID: mr.RoleID as number, MemberID: mr.MemberID as number })),
+      members: s.rows('Member').map((m) => ({
+        id: m.id as number,
+        CouncilID: m.CouncilID as number,
+        MemberFirstName: m.MemberFirstName as string,
+        MemberLastName: m.MemberLastName as string,
+        active: m.StatusID === active,
+      })),
+    });
+  }
 
   /** A meeting row of the store (inside a transaction, its working copy); an unknown id rejects MEETING_NOT_FOUND. */
   private requireMeetingRow(s: MemoryStore, meetingId: number): Row {
@@ -3002,6 +3167,7 @@ export class MemoryDataService implements DataService {
       viewerId,
       viewerVotedMotionIds: voted,
       now: this.now(),
+      handTallies: s.rows('MotionHandTally').filter((t) => motionIds.has(t.ProposedMotionID as number)).map((t) => ({ ...t })) as unknown as MotionHandTally[],
     });
   }
 
@@ -4105,6 +4271,13 @@ export class MemoryDataService implements DataService {
       const linked = new Set(entries.map((e) => e.LinkedEventID).filter((id): id is number => id != null));
       const eventNames = new Map(s.rows('Event').filter((e) => linked.has(e.id as number)).map((e) => [e.id as number, e.EventName as string]));
       return buildAccountLedger(account, this.glAccounts(s, account.CouncilID), entries, eventNames);
+    },
+
+    listLedgerTransactions: async (actorId, councilId, options = {}) => {
+      const s = await this.ready();
+      assertMayReadGeneralLedger(this.memberWriteActor(s, actorId), councilId, `read the postings of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return summarizeLedgerTransactions(this.journalEntries(s, councilId), options.limit);
     },
 
     uploadBankStatementReconciliation: async (actorId, csvFileData, options = {}) => {

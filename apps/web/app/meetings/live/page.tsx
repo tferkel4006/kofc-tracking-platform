@@ -12,10 +12,14 @@
 //     bars, and be decided Passed, Failed or Tabled (meetings.finalizeProposedMotionVote) - the decision buttons follow the
 //     ballot (assertResultMatchesTally).
 // The state is polled every LIVE_POLL_MS (meetings.getLiveAssemblyState), as the phones do.
+// Sprint 6B: the St. Mary's order of business (LiveAgendaBoard, components/AgendaParts.tsx) sits under the top bar - every
+// speaker read from the council's seats, Upcoming Events from its calendar, any line corrected in place by the Grand
+// Knight or the Recorder, and the Recorder's hand-vote tally drawer on each motion of New and Old Business.
 import { useEffect, useMemo, useState } from 'react';
 import {
   agendaTopics,
   assertResultMatchesTally,
+  canEditLiveAgenda,
   canRunLiveAssembly,
   describeError,
   formatCountdown,
@@ -28,6 +32,7 @@ import {
   type LiveMotionState,
   type Meeting,
 } from '@kofc/shared';
+import { LiveAgendaBoard } from '@/components/AgendaParts';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select } from '@/components/ui';
 import { formatFullDate, formatPersonName } from '@/lib/format';
@@ -228,6 +233,12 @@ function MotionCard({
         </div>
       </div>
       {m.motion.BallotOpenedAt != null ? <Tally tally={m.tally} /> : null}
+      {m.handTally ? (
+        <p className="text-sm">
+          Decided by a show of hands: <strong className="tabular-nums">{m.handTally.ApprovedCount} approved · {m.handTally.DeniedCount} denied</strong>
+          {m.handTally.LinkedTransactionID ? ' · capital tied to its ledger posting' : ''}
+        </p>
+      ) : null}
       {pending ? (
         <div className="flex flex-wrap gap-2">
           {m.motion.BallotOpenedAt == null ? (
@@ -373,6 +384,16 @@ function LiveConsole() {
               </Button>
             )}
           </div>
+
+          <LiveAgendaBoard
+            meetingId={state.meeting.id}
+            councilId={state.meeting.CouncilID}
+            canEdit={canEditLiveAgenda(user, state.meeting)}
+            live={live}
+            canPush={canRunLiveAssembly(user, state.meeting)}
+            onPush={(name) => void push(name)}
+            onChanged={() => void act(() => Promise.resolve())}
+          />
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             <Panel title="Advance the agenda" className="xl:col-span-1">

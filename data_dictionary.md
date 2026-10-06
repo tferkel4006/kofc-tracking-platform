@@ -616,3 +616,31 @@ A secret smartphone ballot. meetings.castAnonymousMobileVote stores one per chec
 •	VoteSelection (VARCHAR(50), NOT NULL) — Approve, Deny or Abstain (BALLOT_SELECTIONS; rules layer, no CHECK).
 •	CastAt (DATETIME, NOT NULL) — When the ballot was cast ('YYYY-MM-DD HH:MM:SS' UTC).
 ________________________________________
+# 16. The St. Mary's Live Agenda and Hand-Vote Tallies (Sprint 6B)
+Schema version 31. Both tables are council-scoped and block deleting their council (RECORD_IN_USE). Every Active member of the meeting's council (or a Super Admin) reads the agenda (meetings.getMeetingAgenda). Its editors - the council's Active Grand Knight or Recorder, its Active Admins, or an Active Super Admin (assertMayEditLiveAgenda) - lay it out from the St. Mary's blueprint (meetings.applyAgendaBlueprint), correct any line live (meetings.editAgendaLine) and record hand votes (meetings.recordHandBallotTally).
+[MeetingAgendaItem]
+One line of a meeting's St. Mary's order of business. Speakers are looked up when the agenda is read, never copied. New Business also lists every motion of the meeting no item carries, and Upcoming Events lists the council's events ending on or after the meeting's date (at most 8); a correction to one of those generated lines is stored here carrying ProposedMotionID or LinkedEventID.
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id). The meeting's council.
+•	MeetingID (INTEGER, NOT NULL) — Foreign Key references Meeting(id).
+•	SectionKey (VARCHAR(50), NOT NULL) — opening, officer_reports, director_reports, new_business, old_business, upcoming_events or good_of_order (AGENDA_SECTION_KEYS; rules layer, no CHECK).
+•	SortOrder (INTEGER, NOT NULL, DEFAULT 0) — The line's place in its section (then id). A corrected motion line sorts at 10000 + its motion id, where the generated line stood.
+•	LineMarkdown (TEXT, NOT NULL) — The line in light markdown: **bold**, *italic*, and lines starting '- ' as bullets; at most 2,000 characters (AGENDA_LINE_MAX_LENGTH). The console renders it without HTML.
+•	SpeakerRoleID (INTEGER, NULL) — Foreign Key references Role(id). A seat: the speaker is its most recently seated (highest MemberRoles id) Active holder in the meeting's council, so the line follows elections.
+•	SpeakerMemberID (INTEGER, NULL) — Foreign Key references Member(id). A named member, shown ahead of the seat's holder.
+•	SpeakerLabel (VARCHAR(100), NULL) — The printed speaker when no member resolves: a guest ('State Deputy John Snyder') or a vacant seat ('Monsignor').
+•	ProposedMotionID (INTEGER, NULL) — Foreign Key references ProposedMotion(id). A legislative line; under New or Old Business it carries the Recorder's hand-vote console.
+•	LinkedEventID (INTEGER, NULL) — Foreign Key references Event(id). An Upcoming Events correction: replaces that event's generated line.
+•	LastEditedByMemberID (INTEGER, NULL) — Foreign Key references Member(id). Who last corrected the line.
+•	LastEditedAt (DATETIME, NULL) — When ('YYYY-MM-DD HH:MM:SS' UTC); NULL for a line never corrected.
+[MotionHandTally]
+The Recorder's count of a show of hands on a motion, one per motion (a unique index on ProposedMotionID). Recording it decides the motion in the same transaction - more Approved than Denied is Passed, a tie or fewer is Failed - with the same charitable-request effect as a decided ballot. Only a 'Pending' motion that never went to a smartphone ballot takes a hand tally (MOTION_STATUS_CONFLICT, BALLOT_STATE_CONFLICT).
+•	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	CouncilID (INTEGER, NOT NULL) — Foreign Key references Council(id).
+•	ProposedMotionID (INTEGER, NOT NULL) — Foreign Key references ProposedMotion(id).
+•	ApprovedCount (INTEGER, NOT NULL) — Hands for, 0 to 9,999.
+•	DeniedCount (INTEGER, NOT NULL) — Hands against, 0 to 9,999; the two together count at least one hand.
+•	RecordedByMemberID (INTEGER, NOT NULL) — Foreign Key references Member(id). The editor who entered the count.
+•	RecordedAt (DATETIME, NOT NULL) — When ('YYYY-MM-DD HH:MM:SS' UTC).
+•	LinkedTransactionID (VARCHAR(50), NULL) — JournalEntry.TransactionID of the council's posting that released the passed motion's capital (no foreign key: TransactionID is shared by a posting's lines). Set when the tally is recorded or later by meetings.linkHandTallyTransaction (the editors or the council's finance officers); NULL unlinks. Refused on a motion that failed.
+________________________________________

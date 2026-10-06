@@ -8,7 +8,7 @@
 // =========================================================================
 import type { BallotTally, LiveAssemblyState, LiveMotionState } from './contract';
 import { assertText, BusinessRuleError, describeActor, hasAdminRights, hasSuperAdminRights, SecurityPrivilegeError, type MemberWriteActor } from './rules';
-import type { BallotSelection, BallotVote, CharitableRequest, Meeting, ProposedMotion } from './types';
+import type { BallotSelection, BallotVote, CharitableRequest, Meeting, MotionHandTally, ProposedMotion } from './types';
 
 /** BallotVote.VoteSelection values. */
 export const BALLOT_SELECTIONS: readonly BallotSelection[] = ['Approve', 'Deny', 'Abstain'];
@@ -229,7 +229,10 @@ export function buildLiveAssemblyState(input: {
   viewerId: number;
   viewerVotedMotionIds: ReadonlySet<number>;
   now: Date;
+  /** Sprint 6B: the meeting's hand tallies (MotionHandTally); none when omitted. */
+  handTallies?: readonly MotionHandTally[];
 }): LiveAssemblyState {
+  const handTallies = input.handTallies ?? [];
   const { meeting, checkedInMemberIds } = input;
   const eligible = checkedInMemberIds.length;
   const motions: LiveMotionState[] = [...input.motions]
@@ -243,6 +246,10 @@ export function buildLiveAssemblyState(input: {
         eligible,
       ),
       viewerHasVoted: input.viewerVotedMotionIds.has(motion.id),
+      handTally: (() => {
+        const t = handTallies.find((h) => h.ProposedMotionID === motion.id);
+        return t ? { ...t } : null;
+      })(),
     }));
   return {
     meeting: { ...meeting },

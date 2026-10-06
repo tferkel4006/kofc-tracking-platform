@@ -410,6 +410,51 @@ export interface BallotVote {
   CastAt: string; // DATETIME
 }
 
+/** A St. Mary's agenda heading (Sprint 6B); see AGENDA_SECTIONS. */
+export type AgendaSectionKey =
+  | 'opening'
+  | 'officer_reports'
+  | 'director_reports'
+  | 'new_business'
+  | 'old_business'
+  | 'upcoming_events'
+  | 'good_of_order';
+
+/**
+ * One line of a meeting's structured agenda (Sprint 6B). The speaker is resolved when the agenda is read: the named
+ * member, else the seat's current holder, else the printed label.
+ */
+export interface MeetingAgendaItem {
+  id: number;
+  CouncilID: number;
+  MeetingID: number;
+  SectionKey: AgendaSectionKey;
+  SortOrder: number;
+  LineMarkdown: string; // TEXT, light markdown
+  SpeakerRoleID?: number | null;
+  SpeakerMemberID?: number | null;
+  SpeakerLabel?: string | null; // VARCHAR(100)
+  /** A legislative line: the motion it puts to the floor (its hand tally is recorded from the line). */
+  ProposedMotionID?: number | null;
+  /** An Upcoming Events line correction: the event whose generated text it replaces. */
+  LinkedEventID?: number | null;
+  LastEditedByMemberID?: number | null;
+  LastEditedAt?: string | null; // DATETIME
+}
+
+/** The Recorder's show-of-hands count on a motion (Sprint 6B); one per motion. */
+export interface MotionHandTally {
+  id: number;
+  CouncilID: number;
+  ProposedMotionID: number;
+  ApprovedCount: number;
+  DeniedCount: number;
+  RecordedByMemberID: number;
+  RecordedAt: string; // DATETIME
+  /** JournalEntry.TransactionID of the posting that released the motion's capital; null when none is linked. */
+  LinkedTransactionID?: string | null;
+}
+
 
 
 // 7. PHASE 2 EXTENSIONS: DONATIONS, SKILLS, TRAINING, WORKING STATUS

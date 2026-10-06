@@ -107,7 +107,9 @@ export type BusinessRuleCode =
   | 'BALLOT_ALREADY_CAST'
   | 'NOT_CHECKED_IN'
   | 'MOTION_STATUS_CONFLICT'
-  | 'VOTE_TALLY_CONFLICT';
+  | 'VOTE_TALLY_CONFLICT'
+  | 'AGENDA_EDITOR_REQUIRED'
+  | 'AGENDA_CONFLICT';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -134,7 +136,8 @@ export class SecurityPrivilegeError extends BusinessRuleError {
       | 'FINANCE_OFFICER_REQUIRED'
       | 'GRAND_KNIGHT_REQUIRED'
       | 'VETTING_AUTHORITY_REQUIRED'
-      | 'FINANCIAL_SECRETARY_REQUIRED',
+      | 'FINANCIAL_SECRETARY_REQUIRED'
+      | 'AGENDA_EDITOR_REQUIRED',
     message: string,
     details: Record<string, unknown> = {},
   ) {

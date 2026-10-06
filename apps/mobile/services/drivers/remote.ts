@@ -173,6 +173,11 @@ export function createRemoteDataService(): DataService {
       finalizeProposedMotionVote: notImplemented('meetings.finalizeProposedMotionVote'),
       getLiveAssemblyState: notImplemented('meetings.getLiveAssemblyState'),
       closeLiveAssemblyConsole: notImplemented('meetings.closeLiveAssemblyConsole'),
+      getMeetingAgenda: notImplemented('meetings.getMeetingAgenda'),
+      applyAgendaBlueprint: notImplemented('meetings.applyAgendaBlueprint'),
+      editAgendaLine: notImplemented('meetings.editAgendaLine'),
+      recordHandBallotTally: notImplemented('meetings.recordHandBallotTally'),
+      linkHandTallyTransaction: notImplemented('meetings.linkHandTallyTransaction'),
     },
     shifts: { getShiftDefaultLength: notImplemented('shifts.getShiftDefaultLength') },
     notifications: {
@@ -227,6 +232,7 @@ export function createRemoteDataService(): DataService {
       transferAssetFunds: notImplemented('finance.transferAssetFunds'),
       getLatestBalanceSheet: notImplemented('finance.getLatestBalanceSheet'),
       getAccountLedger: notImplemented('finance.getAccountLedger'),
+      listLedgerTransactions: notImplemented('finance.listLedgerTransactions'),
       uploadBankStatementReconciliation: notImplemented('finance.uploadBankStatementReconciliation'),
     },
     supreme: {

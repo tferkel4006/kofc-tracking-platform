@@ -4554,6 +4554,230 @@ export const TABLES: Record<string, TableMeta> = {
         "AnonymousBallotHash"
       ]
     ]
+  },
+  "MeetingAgendaItem": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "MeetingID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "SectionKey",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "SortOrder",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "LineMarkdown",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "SpeakerRoleID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "SpeakerMemberID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "SpeakerLabel",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ProposedMotionID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "LinkedEventID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "LastEditedByMemberID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "LastEditedAt",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "MeetingID",
+        "refTable": "Meeting",
+        "refColumn": "id"
+      },
+      {
+        "column": "SpeakerRoleID",
+        "refTable": "Role",
+        "refColumn": "id"
+      },
+      {
+        "column": "SpeakerMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "ProposedMotionID",
+        "refTable": "ProposedMotion",
+        "refColumn": "id"
+      },
+      {
+        "column": "LinkedEventID",
+        "refTable": "Event",
+        "refColumn": "id"
+      },
+      {
+        "column": "LastEditedByMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": []
+  },
+  "MotionHandTally": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "CouncilID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ProposedMotionID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "ApprovedCount",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "DeniedCount",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "RecordedByMemberID",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "RecordedAt",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "LinkedTransactionID",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "CouncilID",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "ProposedMotionID",
+        "refTable": "ProposedMotion",
+        "refColumn": "id"
+      },
+      {
+        "column": "RecordedByMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "ProposedMotionID"
+      ]
+    ]
   }
 };
 
@@ -7621,7 +7845,7 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "CouncilID": 1,
         "MemberNumber": 9900019,
         "MemberFirstName": "Tom",
-        "MemberLastName": "Demo",
+        "MemberLastName": "McDougal",
         "Phone": "503-555-0119",
         "StreetAddress1": "100 Parish Way",
         "City": "Portland",
@@ -7638,7 +7862,7 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "CouncilID": 1,
         "MemberNumber": 9900020,
         "MemberFirstName": "David",
-        "MemberLastName": "Demo",
+        "MemberLastName": "Norman",
         "Phone": "503-555-0120",
         "StreetAddress1": "100 Parish Way",
         "City": "Portland",
@@ -7655,7 +7879,7 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "CouncilID": 1,
         "MemberNumber": 9900021,
         "MemberFirstName": "Hector",
-        "MemberLastName": "Demo",
+        "MemberLastName": "Nunez",
         "Phone": "503-555-0121",
         "StreetAddress1": "100 Parish Way",
         "City": "Portland",
@@ -7688,24 +7912,181 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
     ]
   },
   {
+    "table": "Credentials",
+    "rows": [
+      {
+        "Username": "brian.recorder@kofc15295.org",
+        "Password": "dev-pass-secure-9912"
+      },
+      {
+        "Username": "bill.treasurer@kofc15295.org",
+        "Password": "dev-pass-secure-9912"
+      },
+      {
+        "Username": "george.gurney@kofc15295.org",
+        "Password": "dev-pass-secure-9912"
+      },
+      {
+        "Username": "alan.sanchez@kofc15295.org",
+        "Password": "dev-pass-secure-9912"
+      },
+      {
+        "Username": "tim.community@kofc15295.org",
+        "Password": "dev-pass-secure-9912"
+      },
+      {
+        "Username": "matt.fife@kofc15295.org",
+        "Password": "dev-pass-secure-9912"
+      }
+    ]
+  },
+  {
+    "table": "Member",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "MemberNumber": 9900022,
+        "MemberFirstName": "Brian",
+        "MemberLastName": "Wolf",
+        "Phone": "503-555-0122",
+        "StreetAddress1": "100 Parish Way",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97201",
+        "Email": "brian.recorder@kofc15295.org",
+        "DateOfBirth": "1972-01-01",
+        "StatusID": 1,
+        "DegreeID": 4,
+        "MemberTypeID": 3,
+        "CredentialID": 22
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 9900023,
+        "MemberFirstName": "Bill",
+        "MemberLastName": "Kehrli",
+        "Phone": "503-555-0123",
+        "StreetAddress1": "100 Parish Way",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97201",
+        "Email": "bill.treasurer@kofc15295.org",
+        "DateOfBirth": "1960-01-01",
+        "StatusID": 1,
+        "DegreeID": 4,
+        "MemberTypeID": 3,
+        "CredentialID": 23
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 9900024,
+        "MemberFirstName": "George",
+        "MemberLastName": "Gurney",
+        "Phone": "503-555-0124",
+        "StreetAddress1": "100 Parish Way",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97201",
+        "Email": "george.gurney@kofc15295.org",
+        "DateOfBirth": "1958-01-01",
+        "StatusID": 1,
+        "DegreeID": 4,
+        "MemberTypeID": 3,
+        "CredentialID": 24
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 9900025,
+        "MemberFirstName": "Alan",
+        "MemberLastName": "Sanchez",
+        "Phone": "503-555-0125",
+        "StreetAddress1": "100 Parish Way",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97201",
+        "Email": "alan.sanchez@kofc15295.org",
+        "DateOfBirth": "1978-01-01",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 25
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 9900026,
+        "MemberFirstName": "Tim",
+        "MemberLastName": "Ferkel",
+        "Phone": "503-555-0126",
+        "StreetAddress1": "100 Parish Way",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97201",
+        "Email": "tim.community@kofc15295.org",
+        "DateOfBirth": "1968-01-01",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 26
+      },
+      {
+        "CouncilID": 1,
+        "MemberNumber": 9900027,
+        "MemberFirstName": "Matt",
+        "MemberLastName": "Fife",
+        "Phone": "503-555-0127",
+        "StreetAddress1": "100 Parish Way",
+        "City": "Portland",
+        "State": "OR",
+        "ZipCode": "97201",
+        "Email": "matt.fife@kofc15295.org",
+        "DateOfBirth": "1981-01-01",
+        "StatusID": 1,
+        "DegreeID": 3,
+        "MemberTypeID": 3,
+        "CredentialID": 27
+      }
+    ]
+  },
+  {
+    "table": "MemberRoles",
+    "rows": [
+      {
+        "RoleID": 4,
+        "MemberID": 22
+      },
+      {
+        "RoleID": 6,
+        "MemberID": 23
+      },
+      {
+        "RoleID": 15,
+        "MemberID": 21
+      },
+      {
+        "RoleID": 16,
+        "MemberID": 26
+      }
+    ]
+  },
+  {
     "table": "Meeting",
     "rows": [
       {
         "CouncilID": 1,
         "Meeting Name": "October Business Meeting",
-        "Meeting Description": "Live demo assembly: check-ins, agenda countdown and secret smartphone ballots",
-        "Date": "2026-10-05",
+        "Meeting Description": "St. Mary's Cathedral business meeting: live agenda, check-ins, hand votes and smartphone ballots",
+        "Date": "2026-10-06",
         "Time Start": "19:30:00",
         "Time End": "21:00:00",
-        "Location": "Parish Hall",
-        "Agenda": "Opening prayer; Roll call of officers; Minutes of the September meeting; Treasurer's report; Charitable funding requests; New business; Closing prayer",
+        "Location": "St. Mary's Cathedral",
+        "Agenda": "Call to Order & Opening\nChaplain's & Officer Reports\nDirector & Ministry Reports\nNew Business\nOld Business\nUpcoming Events\nGood of the Order",
         "MinutesURL": "",
         "MeetingType": 1,
         "OwnerID": 19,
         "IsMultiDay": 0,
         "MeetingTypeID": 1,
         "IsLiveInProgress": 1,
-        "LiveQuorumRosterCount": 21
+        "LiveQuorumRosterCount": 28
       }
     ]
   },
@@ -7729,6 +8110,202 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "MemberID": 21,
         "Attended": 0,
         "ResponseStatus": "Accepted"
+      }
+    ]
+  },
+  {
+    "table": "ProposedMotion",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "TargetMeetingID": 1,
+        "SourceType": "GeneralMember",
+        "SourceRecordID": null,
+        "MotionText": "Vote on 2026-2027 Budget Proposed Changes",
+        "PresenterMemberID": 23,
+        "AllocatedMinutes": 10,
+        "VoteResult": "Pending"
+      }
+    ]
+  },
+  {
+    "table": "MeetingAgendaItem",
+    "rows": [
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "opening",
+        "SortOrder": 1,
+        "LineMarkdown": "**Call to Order** - the Grand Knight opens the meeting",
+        "SpeakerRoleID": 1,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "opening",
+        "SortOrder": 2,
+        "LineMarkdown": "**Opening Prayer & Pledge of Allegiance**",
+        "SpeakerRoleID": null,
+        "SpeakerMemberID": 24,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "opening",
+        "SortOrder": 3,
+        "LineMarkdown": "**Roll Call of Officers** - the full officer array",
+        "SpeakerRoleID": 2,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "opening",
+        "SortOrder": 4,
+        "LineMarkdown": "**Reading & Approval of the Minutes** of the September meeting",
+        "SpeakerRoleID": 4,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "officer_reports",
+        "SortOrder": 1,
+        "LineMarkdown": "**Chaplain's Report** & spiritual reflection",
+        "SpeakerRoleID": 19,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": "Monsignor",
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "officer_reports",
+        "SortOrder": 2,
+        "LineMarkdown": "**Grand Knight's Report**",
+        "SpeakerRoleID": 1,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "officer_reports",
+        "SortOrder": 3,
+        "LineMarkdown": "**Financial Secretary's Report**",
+        "SpeakerRoleID": 5,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "officer_reports",
+        "SortOrder": 4,
+        "LineMarkdown": "**Treasurer's Report**",
+        "SpeakerRoleID": 6,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "officer_reports",
+        "SortOrder": 5,
+        "LineMarkdown": "**State Deputy's Remarks**",
+        "SpeakerRoleID": null,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": "State Deputy John Snyder",
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "director_reports",
+        "SortOrder": 1,
+        "LineMarkdown": "**Membership & Parking Report**",
+        "SpeakerRoleID": 15,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "director_reports",
+        "SortOrder": 2,
+        "LineMarkdown": "**Ministry Report**",
+        "SpeakerRoleID": null,
+        "SpeakerMemberID": 25,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "director_reports",
+        "SortOrder": 3,
+        "LineMarkdown": "**Community Director's Report**",
+        "SpeakerRoleID": 16,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "director_reports",
+        "SortOrder": 4,
+        "LineMarkdown": "**Ministry Report**",
+        "SpeakerRoleID": null,
+        "SpeakerMemberID": 27,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "old_business",
+        "SortOrder": 1,
+        "LineMarkdown": "**Vote on 2026-2027 Budget Proposed Changes** - the Treasurer presents the revised line items",
+        "SpeakerRoleID": 6,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": null,
+        "ProposedMotionID": 1
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "good_of_order",
+        "SortOrder": 1,
+        "LineMarkdown": "**Prayer Requests**\n- Dolores Redden\n- Mark Boshears\n- Paul Wolf\n- Paul Della",
+        "SpeakerRoleID": null,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": null,
+        "ProposedMotionID": null
+      },
+      {
+        "CouncilID": 1,
+        "MeetingID": 1,
+        "SectionKey": "good_of_order",
+        "SortOrder": 2,
+        "LineMarkdown": "**Closing Prayer**",
+        "SpeakerRoleID": 19,
+        "SpeakerMemberID": null,
+        "SpeakerLabel": "Monsignor",
+        "ProposedMotionID": null
       }
     ]
   }

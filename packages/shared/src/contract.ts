@@ -19,6 +19,8 @@ import type {
   ProposedMotion,
   BallotSelection,
   LiveAttendance,
+  AgendaSectionKey,
+  MotionHandTally,
   CharityDonationProposal,
   ChatThread,
   Council,
@@ -1477,6 +1479,8 @@ export interface LiveMotionState {
   tally: BallotTally;
   /** The reader has cast a ballot on it. */
   viewerHasVoted: boolean;
+  /** Sprint 6B: the Recorder's show-of-hands count, when the motion was decided by hand; null otherwise. */
+  handTally: MotionHandTally | null;
 }
 
 /**
@@ -1507,6 +1511,86 @@ export interface MotionVoteFinalization {
    * unchanged and free to be routed again). Null for a member's own motion.
    */
   charitableRequest: CharitableRequest | null;
+}
+
+/**
+ * Sprint 6B: which agenda line a correction is for - a stored agenda item, or a line the agenda generates from one of
+ * the meeting's motions or one of the council's coming events.
+ */
+export type AgendaLineRef = { kind: 'item'; itemId: number } | { kind: 'motion'; motionId: number } | { kind: 'event'; eventId: number };
+
+/** Who speaks to an agenda line, looked up when the agenda is read. */
+export interface AgendaSpeaker {
+  /** The member's full name, or the item's printed label for a guest or a vacant seat. */
+  name: string;
+  /** The seat they speak from ('Treasurer'), when the line names one. */
+  roleName: string | null;
+  /** Null for a printed label. */
+  memberId: number | null;
+}
+
+/** One line of the live agenda as the console shows it. */
+export interface AgendaLineView {
+  /** Stable across reads: 'item:12', 'motion:3' or 'event:5'. */
+  key: string;
+  ref: AgendaLineRef;
+  section: AgendaSectionKey;
+  markdown: string;
+  speaker: AgendaSpeaker | null;
+  /** The motion a legislative line puts to the floor, with its hand tally once recorded. */
+  motion: ProposedMotion | null;
+  handTally: MotionHandTally | null;
+  /** The event an Upcoming Events line announces. */
+  event: Pick<Event, 'id' | 'EventName' | 'StartDate' | 'EndDate' | 'Location'> | null;
+  /** The last live correction: when, and by whom. */
+  lastEditedAt: string | null;
+  lastEditedByName: string | null;
+}
+
+export interface AgendaSectionView {
+  key: AgendaSectionKey;
+  title: string;
+  lines: AgendaLineView[];
+}
+
+/** A seated officer of the meeting's council, for the opening's officer array. */
+export interface AgendaOfficerSeat {
+  roleId: number;
+  roleName: string;
+  memberId: number;
+  name: string;
+}
+
+/** meetings.getMeetingAgenda (Sprint 6B): the St. Mary's agenda, sections in order, every speaker resolved. */
+export interface MeetingAgendaView {
+  meeting: Meeting;
+  sections: AgendaSectionView[];
+  /** Every officer seat (Role.Officer = 1) of the council that has a holder, with its current holder, in Role order. */
+  officers: AgendaOfficerSeat[];
+  /** The meeting has stored agenda items (otherwise only the generated motion and event lines show). */
+  hasStructuredAgenda: boolean;
+}
+
+/** meetings.recordHandBallotTally's answer. */
+export interface HandTallyRecording {
+  tally: MotionHandTally;
+  /** The motion with its VoteResult now Passed or Failed. */
+  motion: ProposedMotion;
+  /** As MotionVoteFinalization.charitableRequest. */
+  charitableRequest: CharitableRequest | null;
+}
+
+/** finance.listLedgerTransactions (Sprint 6B): one posting of the general ledger, its lines summed. */
+export interface LedgerTransactionSummary {
+  transactionId: string;
+  dateLogged: string;
+  /** The first line's description. */
+  description: string;
+  /** The posting's debits (equal to its credits), to the cent. */
+  amount: number;
+  lineCount: number;
+  linkedEventId: number | null;
+  linkedMeetingId: number | null;
 }
 
 // 21. THE SERVICE
@@ -2228,6 +2312,54 @@ export interface DataService {
      * that is not live is returned unchanged.
      */
     closeLiveAssemblyConsole(actorId: number, meetingId: number): Promise<LiveAssemblyState>;
+    /**
+     * Sprint 6B: the meeting's St. Mary's agenda (MeetingAgendaView), readable like the live state by any Active member
+     * of its council or an Active Super Admin (COUNCIL_ACCESS_DENIED). Speakers are resolved now: a named member, else
+     * the most recently seated Active holder of the item's seat in the meeting's council, else the item's label. New
+     * Business also lists every motion of the meeting no item carries (in id order); Upcoming Events lists the
+     * council's events ending on or after the meeting's date (buildMeetingAgendaView), each replaced by its stored
+     * correction when there is one. Rejects MEETING_NOT_FOUND.
+     */
+    getMeetingAgenda(actorId: number, meetingId: number): Promise<MeetingAgendaView>;
+    /**
+     * Lays the St. Mary's blueprint (AGENDA_BLUEPRINT) onto a meeting that has no agenda items yet, each seat looked up
+     * by role name. For the agenda's editors only: the council's Grand Knight or Recorder, its Admins, or a Super Admin
+     * (assertMayEditLiveAgenda; AGENDA_EDITOR_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects AGENDA_CONFLICT when the meeting
+     * already has items. Resolves to the new agenda.
+     */
+    applyAgendaBlueprint(actorId: number, meetingId: number): Promise<MeetingAgendaView>;
+    /**
+     * A live correction to one agenda line (the agenda's editors, as applyAgendaBlueprint): the line's markdown is
+     * replaced and stamped with the editor and the time. A generated motion or event line is stored as an item of its
+     * section carrying the motion or event, so the correction replaces the generated text from then on. Rejects
+     * INVALID_INPUT for blank text or text over AGENDA_LINE_MAX_LENGTH, and RECORD_NOT_FOUND for an item, motion or event
+     * that is not this meeting's (an event must be the council's). Resolves to the new agenda.
+     */
+    editAgendaLine(actorId: number, meetingId: number, line: AgendaLineRef, markdown: string): Promise<MeetingAgendaView>;
+    /**
+     * The Recorder's hand-vote console: records a show-of-hands count on a 'Pending' motion (MotionHandTally) and decides
+     * it in one transaction - more Approved than Denied is Passed, otherwise Failed (handTallyResult) - with the same
+     * charitable effect as finalizeProposedMotionVote. options.transactionId links a passed motion to the general-ledger
+     * posting that released its capital (a JournalEntry.TransactionID of the council). For the agenda's editors
+     * (assertMayEditLiveAgenda). Rejects RECORD_NOT_FOUND for an unknown motion or posting, MOTION_STATUS_CONFLICT
+     * unless the motion is 'Pending', BALLOT_STATE_CONFLICT when it went to a smartphone ballot (decide that by the
+     * ballot), and INVALID_INPUT for counts that are not whole numbers from 0 to HAND_TALLY_MAX_COUNT, a count of no
+     * hands at all, or a posting on a motion that failed.
+     */
+    recordHandBallotTally(
+      actorId: number,
+      motionId: number,
+      approvedCount: number,
+      deniedCount: number,
+      options?: { transactionId?: string | null },
+    ): Promise<HandTallyRecording>;
+    /**
+     * Links (or, with null, unlinks) the ledger posting that released a passed motion's capital, after its hand tally was
+     * recorded: by the agenda's editors or the council's finance officers (assertMayPostGeneralLedger). Rejects
+     * RECORD_NOT_FOUND for a motion with no hand tally or an unknown posting, and MOTION_STATUS_CONFLICT unless the
+     * motion Passed.
+     */
+    linkHandTallyTransaction(actorId: number, motionId: number, transactionId: string | null): Promise<MotionHandTally>;
   };
 
   /** Shift helpers behind the automatic hour-reporting defaults (Sprint 5Y-5). */
@@ -2640,6 +2772,12 @@ export interface DataService {
      * account.
      */
     getAccountLedger(actorId: number, glAccountId: number): Promise<AccountLedger>;
+    /**
+     * Sprint 6B: the council's postings, newest first (by DateLogged, then TransactionID), each summed
+     * (LedgerTransactionSummary), at most options.limit (default 50) - the hand-vote console's capital-release picker.
+     * Read by whoever reads the council's books (assertMayReadGeneralLedger).
+     */
+    listLedgerTransactions(actorId: number, councilId: number, options?: { limit?: number }): Promise<LedgerTransactionSummary[]>;
     /**
      * Reads a bank statement CSV (parseBankStatementCsv) and flags each journal entry it matches IsBankReconciled, in
      * one transaction (matchBankStatement). A deposit matches a debit of the same amount and a withdrawal a credit,

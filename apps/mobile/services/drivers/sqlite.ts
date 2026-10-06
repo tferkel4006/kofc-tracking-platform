@@ -322,11 +322,32 @@ import {
   isCouncilWideList,
   isListVisibleTo,
   assertMayRunEventIntake,
+  agendaAlreadyStructured,
+  agendaLineNotFound,
+  assertAgendaLineRef,
+  assertHandTallyAllowed,
+  assertMayEditLiveAgenda,
+  blueprintAgendaItems,
+  buildMeetingAgendaView,
+  capitalOnFailedMotion,
+  cleanAgendaLineMarkdown,
+  cleanHandTally,
+  cleanTransactionId,
+  handTallyNotFound,
+  handTallyResult,
+  ledgerTransactionNotFound,
+  mayPostGeneralLedger,
+  MOTION_LINE_SORT_BASE,
+  summarizeLedgerTransactions,
   type CleanJournalLine,
+  type MeetingAgendaItem,
+  type MeetingAgendaView,
+  type MotionHandTally,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
   Event,
+  HandTallyRecording,
   MeetingType,
   ProposedMotion,
   DistributionGroup,
@@ -481,8 +502,9 @@ const DB_NAME = 'kofc.db';
  * 29: DistributionLists.IsCouncilWide - private member lists (Sprint 5Z-10.8).
  * 30: Council feature flags flag_mobile_elections, flag_fundraising_inflow, flag_charity_proposals, flag_complex_shifts
  *     and flag_meeting_management (Sprint 6A; the patch split flag_donations_hub in two within version 30).
+ * 31: MeetingAgendaItem and MotionHandTally - the St. Mary's live agenda and hand-vote tallies (Sprint 6B).
  */
-const SCHEMA_VERSION = 30;
+const SCHEMA_VERSION = 31;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -3491,7 +3513,164 @@ export class SqliteDataService implements DataService {
       });
       return this.liveAssemblyState(db, actorId, meetingId);
     },
+
+    getMeetingAgenda: async (actorId, meetingId) => {
+      const db = await this.ready();
+      assertMayFollowLiveAssembly(await this.memberWriteActor(db, actorId), await this.requireMeetingRow(db, meetingId));
+      return this.meetingAgendaView(db, meetingId);
+    },
+
+    applyAgendaBlueprint: async (actorId, meetingId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const meeting = await this.requireMeetingRow(db, meetingId);
+        assertMayEditLiveAgenda(await this.memberWriteActor(db, actorId), meeting, `lay out the agenda of meeting ${meetingId}`);
+        if (await db.getFirstAsync('SELECT [id] FROM [MeetingAgendaItem] WHERE [MeetingID] = ?', [meetingId])) throw agendaAlreadyStructured(meetingId);
+        const roles = await db.getAllAsync<{ id: number; Role: string }>('SELECT [id], [Role] FROM [Role]');
+        for (const row of blueprintAgendaItems(meeting, roles)) {
+          await db.runAsync(
+            `INSERT INTO [MeetingAgendaItem] ([CouncilID], [MeetingID], [SectionKey], [SortOrder], [LineMarkdown], [SpeakerRoleID], [SpeakerLabel])
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [row.CouncilID, row.MeetingID, row.SectionKey, row.SortOrder, row.LineMarkdown, row.SpeakerRoleID ?? null, row.SpeakerLabel ?? null],
+          );
+        }
+      });
+      return this.meetingAgendaView(db, meetingId);
+    },
+
+    editAgendaLine: async (actorId, meetingId, line, markdown) => {
+      const ref = assertAgendaLineRef(line);
+      const text = cleanAgendaLineMarkdown(markdown);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const meeting = await this.requireMeetingRow(db, meetingId);
+        assertMayEditLiveAgenda(await this.memberWriteActor(db, actorId), meeting, `correct the agenda of meeting ${meetingId}`);
+        const stamp = toTimestamp(this.now());
+        const update = (itemId: number) =>
+          db.runAsync('UPDATE [MeetingAgendaItem] SET [LineMarkdown] = ?, [LastEditedByMemberID] = ?, [LastEditedAt] = ? WHERE [id] = ?', [text, actorId, stamp, itemId]);
+        const insert = (section: string, sort: number, motionId: number | null, eventId: number | null) =>
+          db.runAsync(
+            `INSERT INTO [MeetingAgendaItem] ([CouncilID], [MeetingID], [SectionKey], [SortOrder], [LineMarkdown], [ProposedMotionID], [LinkedEventID],
+               [LastEditedByMemberID], [LastEditedAt]) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [meeting.CouncilID, meetingId, section, sort, text, motionId, eventId, actorId, stamp],
+          );
+        if (ref.kind === 'item') {
+          const item = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [MeetingAgendaItem] WHERE [id] = ? AND [MeetingID] = ?', [ref.itemId, meetingId]);
+          if (!item) throw agendaLineNotFound(ref, meetingId);
+          await update(item.id);
+        } else if (ref.kind === 'motion') {
+          if (!(await db.getFirstAsync('SELECT [id] FROM [ProposedMotion] WHERE [id] = ? AND [TargetMeetingID] = ?', [ref.motionId, meetingId]))) {
+            throw agendaLineNotFound(ref, meetingId);
+          }
+          const item = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [MeetingAgendaItem] WHERE [MeetingID] = ? AND [ProposedMotionID] = ?', [meetingId, ref.motionId]);
+          if (item) await update(item.id);
+          else await insert('new_business', MOTION_LINE_SORT_BASE + ref.motionId, ref.motionId, null);
+        } else {
+          if (!(await db.getFirstAsync('SELECT [EventID] FROM [EventCouncils] WHERE [EventID] = ? AND [CouncilID] = ?', [ref.eventId, meeting.CouncilID]))) {
+            throw agendaLineNotFound(ref, meetingId);
+          }
+          const item = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [MeetingAgendaItem] WHERE [MeetingID] = ? AND [LinkedEventID] = ?', [meetingId, ref.eventId]);
+          if (item) await update(item.id);
+          else await insert('upcoming_events', 0, null, ref.eventId);
+        }
+      });
+      return this.meetingAgendaView(db, meetingId);
+    },
+
+    recordHandBallotTally: async (actorId, motionId, approvedCount, deniedCount, options = {}) => {
+      const counts = cleanHandTally(approvedCount, deniedCount);
+      const transactionId = cleanTransactionId(options.transactionId);
+      const result = handTallyResult(counts.approved, counts.denied);
+      const db = await this.ready();
+      let recording: HandTallyRecording | null = null;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const motion = await db.getFirstAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [id] = ?', [motionId]);
+        if (!motion) throw proposedMotionNotFound(motionId);
+        const meeting = await this.requireMeetingRow(db, motion.TargetMeetingID);
+        assertMayEditLiveAgenda(actor, meeting, `record the hand tally on motion ${motionId}`);
+        assertHandTallyAllowed(motion);
+        if (transactionId !== null) {
+          if (result !== 'Passed') throw capitalOnFailedMotion(motionId);
+          await this.requireLedgerTransaction(db, meeting.CouncilID, transactionId);
+        }
+        const res = await db.runAsync(
+          `INSERT INTO [MotionHandTally] ([CouncilID], [ProposedMotionID], [ApprovedCount], [DeniedCount], [RecordedByMemberID], [RecordedAt], [LinkedTransactionID])
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [meeting.CouncilID, motionId, counts.approved, counts.denied, actorId, toTimestamp(this.now()), transactionId],
+        );
+        await db.runAsync('UPDATE [ProposedMotion] SET [VoteResult] = ? WHERE [id] = ?', [result, motionId]);
+        let charitableRequest: CharitableRequest | null = null;
+        if (motion.SourceType === 'CharitableRequest' && motion.SourceRecordID != null) {
+          const request = await db.getFirstAsync<CharitableRequest>('SELECT * FROM [CharitableRequest] WHERE [id] = ?', [motion.SourceRecordID]);
+          if (request) {
+            const outcome = charitableVoteOutcome(result, request);
+            if (outcome) {
+              await db.runAsync('UPDATE [CharitableRequest] SET [VoteStatus] = ?, [AmountApproved] = ? WHERE [id] = ?', [outcome.VoteStatus, outcome.AmountApproved, request.id]);
+            }
+            charitableRequest = await db.getFirstAsync<CharitableRequest>('SELECT * FROM [CharitableRequest] WHERE [id] = ?', [request.id]);
+          }
+        }
+        recording = {
+          tally: (await db.getFirstAsync<MotionHandTally>('SELECT * FROM [MotionHandTally] WHERE [id] = ?', [res.lastInsertRowId]))!,
+          motion: (await db.getFirstAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [id] = ?', [motionId]))!,
+          charitableRequest,
+        };
+      });
+      return recording!;
+    },
+
+    linkHandTallyTransaction: async (actorId, motionId, transactionIdInput) => {
+      const transactionId = cleanTransactionId(transactionIdInput);
+      const db = await this.ready();
+      let tallyId = 0;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const motion = await db.getFirstAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [id] = ?', [motionId]);
+        if (!motion) throw proposedMotionNotFound(motionId);
+        const meeting = await this.requireMeetingRow(db, motion.TargetMeetingID);
+        if (!mayPostGeneralLedger(actor, meeting.CouncilID)) assertMayEditLiveAgenda(actor, meeting, `link the capital released for motion ${motionId}`);
+        const tally = await db.getFirstAsync<MotionHandTally>('SELECT * FROM [MotionHandTally] WHERE [ProposedMotionID] = ?', [motionId]);
+        if (!tally) throw handTallyNotFound(motionId);
+        if (motion.VoteResult !== 'Passed') throw capitalOnFailedMotion(motionId);
+        if (transactionId !== null) await this.requireLedgerTransaction(db, meeting.CouncilID, transactionId);
+        await db.runAsync('UPDATE [MotionHandTally] SET [LinkedTransactionID] = ? WHERE [id] = ?', [transactionId, tally.id]);
+        tallyId = tally.id;
+      });
+      return (await db.getFirstAsync<MotionHandTally>('SELECT * FROM [MotionHandTally] WHERE [id] = ?', [tallyId]))!;
+    },
   };
+
+  /** RECORD_NOT_FOUND unless the council's ledger holds a posting with this TransactionID. */
+  private async requireLedgerTransaction(db: SQLite.SQLiteDatabase, councilId: number, transactionId: string): Promise<void> {
+    if (!(await db.getFirstAsync('SELECT [id] FROM [JournalEntry] WHERE [CouncilID] = ? AND [TransactionID] = ?', [councilId, transactionId]))) {
+      throw ledgerTransactionNotFound(transactionId, councilId);
+    }
+  }
+
+  /** MeetingAgendaView of the meeting, from its items, motions and hand tallies and its council's seats and events. */
+  private async meetingAgendaView(db: SQLite.SQLiteDatabase, meetingId: number): Promise<MeetingAgendaView> {
+    const meeting = await this.requireMeetingRow(db, meetingId);
+    return buildMeetingAgendaView({
+      meeting,
+      items: await db.getAllAsync<MeetingAgendaItem>('SELECT * FROM [MeetingAgendaItem] WHERE [MeetingID] = ?', [meetingId]),
+      motions: await db.getAllAsync<ProposedMotion>('SELECT * FROM [ProposedMotion] WHERE [TargetMeetingID] = ?', [meetingId]),
+      handTallies: await db.getAllAsync<MotionHandTally>(
+        'SELECT t.* FROM [MotionHandTally] t JOIN [ProposedMotion] p ON p.[id] = t.[ProposedMotionID] WHERE p.[TargetMeetingID] = ?',
+        [meetingId],
+      ),
+      events: await db.getAllAsync<Event>('SELECT e.* FROM [Event] e JOIN [EventCouncils] ec ON ec.[EventID] = e.[id] WHERE ec.[CouncilID] = ?', [meeting.CouncilID]),
+      roles: await db.getAllAsync<{ id: number; Role: string; Officer: number }>('SELECT [id], [Role], [Officer] FROM [Role]'),
+      seats: await db.getAllAsync<{ id: number; RoleID: number; MemberID: number }>('SELECT [id], [RoleID], [MemberID] FROM [MemberRoles]'),
+      members: (
+        await db.getAllAsync<{ id: number; CouncilID: number; MemberFirstName: string; MemberLastName: string; active: number }>(
+          `SELECT m.[id], m.[CouncilID], m.[MemberFirstName], m.[MemberLastName],
+                  (m.[StatusID] = (SELECT [id] FROM [MemberStatus] WHERE [Status] = 'Active')) AS active
+             FROM [Member] m`,
+        )
+      ).map((m) => ({ ...m, active: m.active === 1 })),
+    });
+  }
 
   /** A meeting row; an unknown id rejects MEETING_NOT_FOUND. */
   private async requireMeetingRow(db: SQLite.SQLiteDatabase, meetingId: number): Promise<Meeting> {
@@ -3544,6 +3723,10 @@ export class SqliteDataService implements DataService {
       viewerId,
       viewerVotedMotionIds: voted,
       now: this.now(),
+      handTallies: await db.getAllAsync<MotionHandTally>(
+        'SELECT t.* FROM [MotionHandTally] t JOIN [ProposedMotion] p ON p.[id] = t.[ProposedMotionID] WHERE p.[TargetMeetingID] = ?',
+        [meetingId],
+      ),
     });
   }
 
@@ -4847,6 +5030,13 @@ export class SqliteDataService implements DataService {
       const linked = [...new Set(entries.map((e) => e.LinkedEventID).filter((id): id is number => id != null))];
       const events = await selectIn<{ id: number; EventName: string }>(db, (m) => `SELECT [id], [EventName] FROM [Event] WHERE [id] IN (${m})`, linked);
       return buildAccountLedger(account, await this.glAccounts(db, account.CouncilID), entries, new Map(events.map((e) => [e.id, e.EventName])));
+    },
+
+    listLedgerTransactions: async (actorId, councilId, options = {}) => {
+      const db = await this.ready();
+      assertMayReadGeneralLedger(await this.memberWriteActor(db, actorId), councilId, `read the postings of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return summarizeLedgerTransactions(await this.journalEntries(db, councilId), options.limit);
     },
 
     uploadBankStatementReconciliation: async (actorId, csvFileData, options = {}) => {

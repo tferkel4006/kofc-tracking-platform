@@ -12,6 +12,7 @@
 import type { CouncilLookupTableName, SessionUser } from './contract';
 import { budgetWindowOf } from './budget';
 import { ALL_FEATURES_ON, withFeatureFlags, type FeatureFlags } from './features';
+import { AGENDA_EDITOR_ROLE_NAMES } from './agenda';
 import { GRAND_KNIGHT_ROLE } from './elections';
 import { FINANCE_LOOKUP_TABLES, FINANCIAL_SECRETARY_ROLE_NAME, holdsExecutiveRole, holdsFinanceRole } from './rules';
 import type { BudgetLineStatus, Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
@@ -165,6 +166,14 @@ export const canManageMeetings = (u: Actor, councilId: number): boolean =>
  */
 export const canRunLiveAssembly = (u: Actor, meeting: Pick<Meeting, 'CouncilID' | 'OwnerID'>): boolean =>
   meeting.OwnerID === u.memberId || canManageMeetings(u, meeting.CouncilID);
+
+/**
+ * Sprint 6B, mirroring assertMayEditLiveAgenda: laying out and correcting the live agenda and recording hand-vote tallies
+ * belong to the council's Grand Knight and Recorder, its Admins, and any Super Admin.
+ */
+export const canEditLiveAgenda = (u: Actor, meeting: Pick<Meeting, 'CouncilID'>): boolean =>
+  canAdministerCouncil(u, meeting.CouncilID) ||
+  (u.councilId === meeting.CouncilID && (u.roles ?? []).some((r) => (AGENDA_EDITOR_ROLE_NAMES as readonly string[]).includes(r)));
 
 /** One existing meeting's attendance, minutes and details: its owner (OwnerID) and anyone who manages the council's meetings. */
 export const canManageMeeting = (u: Actor, meeting: Pick<Meeting, 'CouncilID' | 'OwnerID'>): boolean =>

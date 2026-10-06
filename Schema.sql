@@ -1849,3 +1849,107 @@ ALTER TABLE [Council] ADD [flag_complex_shifts] BIT NOT NULL DEFAULT 1;
 GO
 ALTER TABLE [Council] ADD [flag_meeting_management] BIT NOT NULL DEFAULT 1;
 GO
+
+-- =========================================================================
+-- Sprint 6B: ST. MARY'S PARLIAMENTARY ENGINE - EDITABLE LIVE AGENDA AND HAND-VOTE TALLIES
+-- MeetingAgendaItem is one line of a meeting's structured agenda, as the live console displays it. SectionKey places it
+-- under one of the St. Mary's agenda headings ('opening', 'officer_reports', 'director_reports', 'new_business',
+-- 'old_business', 'upcoming_events', 'good_of_order'; AGENDA_SECTION_KEYS, rules layer, no CHECK) in SortOrder.
+-- LineMarkdown is the line itself in light markdown (**bold**, *italic*, '- ' bullets); the Grand Knight or the Recorder
+-- corrects it live from the console. The speaker is looked up when the agenda is read, never copied: SpeakerMemberID
+-- names one member; otherwise SpeakerRoleID names a seat, shown as whoever holds it now in the meeting's council (the
+-- most recently seated Active holder); SpeakerLabel is the printed fallback for a guest or a vacant seat ("State Deputy",
+-- "Monsignor"). The New Business, Old Business and Upcoming Events blocks also list the meeting's motions and the
+-- council's coming events straight from ProposedMotion and Event; a line correction on one of those is stored as an
+-- item carrying ProposedMotionID or LinkedEventID, which then replaces the generated text.
+-- MotionHandTally is the Recorder's count of a show of hands on a motion (one per motion): ApprovedCount and
+-- DeniedCount decide it (more Approved than Denied passes; a tie fails) and write ProposedMotion.VoteResult in the same
+-- transaction. LinkedTransactionID ties a motion that releases capital to its posting in the general ledger
+-- (JournalEntry.TransactionID of the same council); it carries no foreign key because TransactionID is not unique.
+-- =========================================================================
+CREATE TABLE [MeetingAgendaItem] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[MeetingID] INTEGER NOT NULL,
+	[SectionKey] VARCHAR(50) NOT NULL,
+	[SortOrder] INTEGER NOT NULL DEFAULT 0,
+	[LineMarkdown] TEXT NOT NULL,
+	[SpeakerRoleID] INTEGER NULL,
+	[SpeakerMemberID] INTEGER NULL,
+	[SpeakerLabel] VARCHAR(100) NULL,
+	[ProposedMotionID] INTEGER NULL,
+	[LinkedEventID] INTEGER NULL,
+	[LastEditedByMemberID] INTEGER NULL,
+	[LastEditedAt] DATETIME NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [MotionHandTally] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[CouncilID] INTEGER NOT NULL,
+	[ProposedMotionID] INTEGER NOT NULL,
+	[ApprovedCount] INTEGER NOT NULL,
+	[DeniedCount] INTEGER NOT NULL,
+	[RecordedByMemberID] INTEGER NOT NULL,
+	[RecordedAt] DATETIME NOT NULL,
+	[LinkedTransactionID] VARCHAR(50) NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [MeetingAgendaItem]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MeetingAgendaItem]
+ADD FOREIGN KEY([MeetingID])
+REFERENCES [Meeting]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MeetingAgendaItem]
+ADD FOREIGN KEY([SpeakerRoleID])
+REFERENCES [Role]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MeetingAgendaItem]
+ADD FOREIGN KEY([SpeakerMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MeetingAgendaItem]
+ADD FOREIGN KEY([ProposedMotionID])
+REFERENCES [ProposedMotion]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MeetingAgendaItem]
+ADD FOREIGN KEY([LinkedEventID])
+REFERENCES [Event]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MeetingAgendaItem]
+ADD FOREIGN KEY([LastEditedByMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MotionHandTally]
+ADD FOREIGN KEY([CouncilID])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MotionHandTally]
+ADD FOREIGN KEY([ProposedMotionID])
+REFERENCES [ProposedMotion]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MotionHandTally]
+ADD FOREIGN KEY([RecordedByMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE INDEX [MeetingAgendaItem_Meeting_Idx] ON [MeetingAgendaItem] ([MeetingID], [SectionKey], [SortOrder]);
+GO
+CREATE UNIQUE INDEX [MotionHandTally_Motion_Idx] ON [MotionHandTally] ([ProposedMotionID]);
+GO

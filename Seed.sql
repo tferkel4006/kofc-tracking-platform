@@ -609,7 +609,8 @@ GO
 -- Credentials 19-21 / Member 19-21, dev password dev-pass-secure-9912 (hashed by the drivers at load, like every
 -- other seed login). Plain members (MemberTypeID 3): their access comes from their seats, per the Sprint 5Z-2.5
 -- executive-officer rule. They share their seats with the baseline holders (Super Admin is Grand Knight, Michael
--- O'Connor is Deputy Grand Knight, William Schmidt holds Trustee 1). Last names are placeholders.
+-- O'Connor is Deputy Grand Knight, William Schmidt holds Trustee 1). Sprint 6B replaced the placeholder last names
+-- with the St. Mary's officers' own (Tom McDougal, David Norman, Hector Nunez).
 -- ==============================================================================
 INSERT INTO [Credentials] ([Username], [Password])
 VALUES
@@ -624,9 +625,9 @@ INSERT INTO [Member] (
     [DateOfBirth], [StatusID], [DegreeID], [MemberTypeID], [CredentialID]
 )
 VALUES
-(1, 9900019, 'Tom', 'Demo', '503-555-0119', '100 Parish Way', 'Portland', 'OR', '97201', 'tom.gk@kofc15295.org', '1970-01-01', 1, 4, 3, 19),
-(1, 9900020, 'David', 'Demo', '503-555-0120', '100 Parish Way', 'Portland', 'OR', '97201', 'david.dgk@kofc15295.org', '1975-01-01', 1, 3, 3, 20),
-(1, 9900021, 'Hector', 'Demo', '503-555-0121', '100 Parish Way', 'Portland', 'OR', '97201', 'hector.trustee@kofc15295.org', '1965-01-01', 1, 4, 3, 21);
+(1, 9900019, 'Tom', 'McDougal', '503-555-0119', '100 Parish Way', 'Portland', 'OR', '97201', 'tom.gk@kofc15295.org', '1970-01-01', 1, 4, 3, 19),
+(1, 9900020, 'David', 'Norman', '503-555-0120', '100 Parish Way', 'Portland', 'OR', '97201', 'david.dgk@kofc15295.org', '1975-01-01', 1, 3, 3, 20),
+(1, 9900021, 'Hector', 'Nunez', '503-555-0121', '100 Parish Way', 'Portland', 'OR', '97201', 'hector.trustee@kofc15295.org', '1965-01-01', 1, 4, 3, 21);
 GO
 
 INSERT INTO [MemberRoles] ([RoleID], [MemberID])
@@ -637,9 +638,51 @@ VALUES
 GO
 
 -- ==============================================================================
--- Sprint 5Z-Meeting-Audit: the live demo meeting for the October 5, 2026 presentation (Meeting 1, CouncilID 1)
+-- Sprint 6B: the rest of the St. Mary's Cathedral roster for the October 6, 2026 agenda (Council 15295)
+-- Credentials 22-27 / Member 22-27, dev password dev-pass-secure-9912, plain members (MemberTypeID 3); contact details
+-- are placeholders. Brian Wolf takes the Recorder's seat and Bill Kehrli the Treasurer's; Hector Nunez adds the
+-- Membership Director's seat and Tim Ferkel takes the Community Director's. Each seat was already held by a member
+-- above, so the agenda shows the newest holder (currentSeatHolder: the highest MemberRoles id). George Gurney, Alan
+-- Sanchez and Matt Fife hold no seat; the agenda names them on their lines directly (SpeakerMemberID).
+-- ==============================================================================
+INSERT INTO [Credentials] ([Username], [Password])
+VALUES
+('brian.recorder@kofc15295.org', 'dev-pass-secure-9912'),    -- ID 22
+('bill.treasurer@kofc15295.org', 'dev-pass-secure-9912'),    -- ID 23
+('george.gurney@kofc15295.org', 'dev-pass-secure-9912'),     -- ID 24
+('alan.sanchez@kofc15295.org', 'dev-pass-secure-9912'),      -- ID 25
+('tim.community@kofc15295.org', 'dev-pass-secure-9912'),     -- ID 26
+('matt.fife@kofc15295.org', 'dev-pass-secure-9912');         -- ID 27
+GO
+
+INSERT INTO [Member] (
+    [CouncilID], [MemberNumber], [MemberFirstName], [MemberLastName],
+    [Phone], [StreetAddress1], [City], [State], [ZipCode], [Email],
+    [DateOfBirth], [StatusID], [DegreeID], [MemberTypeID], [CredentialID]
+)
+VALUES
+(1, 9900022, 'Brian', 'Wolf', '503-555-0122', '100 Parish Way', 'Portland', 'OR', '97201', 'brian.recorder@kofc15295.org', '1972-01-01', 1, 4, 3, 22),
+(1, 9900023, 'Bill', 'Kehrli', '503-555-0123', '100 Parish Way', 'Portland', 'OR', '97201', 'bill.treasurer@kofc15295.org', '1960-01-01', 1, 4, 3, 23),
+(1, 9900024, 'George', 'Gurney', '503-555-0124', '100 Parish Way', 'Portland', 'OR', '97201', 'george.gurney@kofc15295.org', '1958-01-01', 1, 4, 3, 24),
+(1, 9900025, 'Alan', 'Sanchez', '503-555-0125', '100 Parish Way', 'Portland', 'OR', '97201', 'alan.sanchez@kofc15295.org', '1978-01-01', 1, 3, 3, 25),
+(1, 9900026, 'Tim', 'Ferkel', '503-555-0126', '100 Parish Way', 'Portland', 'OR', '97201', 'tim.community@kofc15295.org', '1968-01-01', 1, 3, 3, 26),
+(1, 9900027, 'Matt', 'Fife', '503-555-0127', '100 Parish Way', 'Portland', 'OR', '97201', 'matt.fife@kofc15295.org', '1981-01-01', 1, 3, 3, 27);
+GO
+
+INSERT INTO [MemberRoles] ([RoleID], [MemberID])
+VALUES
+(4, 22),  -- Recorder
+(6, 23),  -- Treasurer
+(15, 21), -- Membership Director (Hector Nunez, also Trustee 1)
+(16, 26); -- Community Director
+GO
+
+-- ==============================================================================
+-- Sprint 5Z-Meeting-Audit: the live demo meeting (Meeting 1, CouncilID 1); Sprint 6B moved it to the St. Mary's
+-- Cathedral meeting of October 6, 2026.
 -- Already live (IsLiveInProgress 1) so the console opens straight onto it and members can check in. The quorum
--- roster is locked at 21, the council's Active members at seed time, the count startLiveAssemblyConsole would take.
+-- roster is locked at 28, the council's Active members once the apps finish seeding (the dev seed's pre-provisioned
+-- member included), the count startLiveAssemblyConsole would take.
 -- No agenda item is active yet: the presenter takes the first one live, so its countdown starts on stage.
 -- Tom (owner), David and Hector are invited and Accepted; Attended stays 0 until they check in.
 -- ==============================================================================
@@ -648,10 +691,16 @@ INSERT INTO [Meeting] (
     [MinutesURL], [MeetingType], [OwnerID], [IsMultiDay], [MeetingTypeID], [IsLiveInProgress], [LiveQuorumRosterCount]
 )
 VALUES
-(1, 'October Business Meeting', 'Live demo assembly: check-ins, agenda countdown and secret smartphone ballots',
- '2026-10-05', '19:30:00', '21:00:00', 'Parish Hall',
- 'Opening prayer; Roll call of officers; Minutes of the September meeting; Treasurer''s report; Charitable funding requests; New business; Closing prayer',
- '', 1, 19, 0, 1, 1, 21);
+(1, 'October Business Meeting', 'St. Mary''s Cathedral business meeting: live agenda, check-ins, hand votes and smartphone ballots',
+ '2026-10-06', '19:30:00', '21:00:00', 'St. Mary''s Cathedral',
+ 'Call to Order & Opening
+Chaplain''s & Officer Reports
+Director & Ministry Reports
+New Business
+Old Business
+Upcoming Events
+Good of the Order',
+ '', 1, 19, 0, 1, 1, 28);
 GO
 
 INSERT INTO [MeetingInvites] ([MeetingID], [MemberID], [Attended], [ResponseStatus])
@@ -659,4 +708,39 @@ VALUES
 (1, 19, 0, 'Accepted'),  -- Tom, Grand Knight
 (1, 20, 0, 'Accepted'),  -- David, Deputy Grand Knight
 (1, 21, 0, 'Accepted');  -- Hector, Trustee 1
+GO
+
+-- ==============================================================================
+-- Sprint 6B: the St. Mary's agenda of Meeting 1 (ProposedMotion 1, MeetingAgendaItem 1-16)
+-- The Treasurer presents the budget changes for a hand vote under Old Business. Seated lines name a Role (GK 1,
+-- DGK 2, Recorder 4, FS 5, Treasurer 6, Membership Director 15, Community Director 16, Chaplain 19) and show its
+-- current holder; the Chaplain's seat is vacant, so its label 'Monsignor' prints; the State Deputy is a guest.
+-- ==============================================================================
+INSERT INTO [ProposedMotion] ([CouncilID], [TargetMeetingID], [SourceType], [SourceRecordID], [MotionText], [PresenterMemberID], [AllocatedMinutes], [VoteResult])
+VALUES
+(1, 1, 'GeneralMember', NULL, 'Vote on 2026-2027 Budget Proposed Changes', 23, 10, 'Pending');
+GO
+
+INSERT INTO [MeetingAgendaItem] ([CouncilID], [MeetingID], [SectionKey], [SortOrder], [LineMarkdown], [SpeakerRoleID], [SpeakerMemberID], [SpeakerLabel], [ProposedMotionID])
+VALUES
+(1, 1, 'opening', 1, '**Call to Order** - the Grand Knight opens the meeting', 1, NULL, NULL, NULL),
+(1, 1, 'opening', 2, '**Opening Prayer & Pledge of Allegiance**', NULL, 24, NULL, NULL),
+(1, 1, 'opening', 3, '**Roll Call of Officers** - the full officer array', 2, NULL, NULL, NULL),
+(1, 1, 'opening', 4, '**Reading & Approval of the Minutes** of the September meeting', 4, NULL, NULL, NULL),
+(1, 1, 'officer_reports', 1, '**Chaplain''s Report** & spiritual reflection', 19, NULL, 'Monsignor', NULL),
+(1, 1, 'officer_reports', 2, '**Grand Knight''s Report**', 1, NULL, NULL, NULL),
+(1, 1, 'officer_reports', 3, '**Financial Secretary''s Report**', 5, NULL, NULL, NULL),
+(1, 1, 'officer_reports', 4, '**Treasurer''s Report**', 6, NULL, NULL, NULL),
+(1, 1, 'officer_reports', 5, '**State Deputy''s Remarks**', NULL, NULL, 'State Deputy John Snyder', NULL),
+(1, 1, 'director_reports', 1, '**Membership & Parking Report**', 15, NULL, NULL, NULL),
+(1, 1, 'director_reports', 2, '**Ministry Report**', NULL, 25, NULL, NULL),
+(1, 1, 'director_reports', 3, '**Community Director''s Report**', 16, NULL, NULL, NULL),
+(1, 1, 'director_reports', 4, '**Ministry Report**', NULL, 27, NULL, NULL),
+(1, 1, 'old_business', 1, '**Vote on 2026-2027 Budget Proposed Changes** - the Treasurer presents the revised line items', 6, NULL, NULL, 1),
+(1, 1, 'good_of_order', 1, '**Prayer Requests**
+- Dolores Redden
+- Mark Boshears
+- Paul Wolf
+- Paul Della', NULL, NULL, NULL, NULL),
+(1, 1, 'good_of_order', 2, '**Closing Prayer**', 19, NULL, 'Monsignor', NULL);
 GO
