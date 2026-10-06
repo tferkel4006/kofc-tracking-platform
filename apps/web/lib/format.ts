@@ -1,4 +1,4 @@
-import { BusinessRuleError } from '@kofc/shared';
+import { BusinessRuleError, isDriveFileId } from '@kofc/shared';
 
 const dollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
@@ -47,6 +47,7 @@ export const toField = (value: number | null | undefined): string => (value == n
 /** Minutes are stored as a blob URL with the original file name after the #, so the name survives in MinutesURL. */
 export function minutesFileName(url: string | undefined | null): string | null {
   if (!url) return null;
+  if (isDriveFileId(url)) return 'Minutes (Google Drive)';
   const hash = url.indexOf('#');
   return hash >= 0 ? decodeURIComponent(url.slice(hash + 1)) : url;
 }

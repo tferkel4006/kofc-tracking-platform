@@ -12,6 +12,8 @@ import {
   type ExpenseReferenceOptions,
   type ExpenseReport,
   type ExpenseReportDetail,
+  driveFileViewUrl,
+  isDriveFileId,
 } from '@kofc/shared';
 import { Button, Empty, Field, Notice, Pill, Table, Td, Textarea } from '@/components/ui';
 import { formatFullDate, formatMoney, formatPersonName, minutesFileName } from '@/lib/format';
@@ -33,6 +35,13 @@ export function ExpenseStatusPill({ report }: { report: Pick<ExpenseReport, 'Sta
  */
 export function ReceiptLink({ url }: { url: string | null | undefined }) {
   if (!url) return <span className="text-muted">None</span>;
+  if (isDriveFileId(url)) {
+    return (
+      <a href={driveFileViewUrl(url)} target="_blank" rel="noreferrer" className="font-bold underline">
+        Receipt (Google Drive)
+      </a>
+    );
+  }
   const name = url.includes('#') ? (minutesFileName(url) ?? url) : photoName(url);
   const src = photoSrc(url);
   if (!src) {

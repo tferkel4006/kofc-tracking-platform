@@ -17,6 +17,7 @@ import { LayoutModeProvider } from '@/lib/layout-mode';
 import { configureAlertDisplay, registerForPushAlerts, unregisterPushAlerts } from '@/lib/push-registration';
 import { db } from '@/services/db';
 import { getConfiguredCouncilNumber, OnboardingController, type OnboardingState } from '@/services/onboarding';
+import { biometricLogin } from '@/services/biometric-login';
 import { sessionStore } from '@/services/session';
 
 interface AppContextValue {
@@ -40,6 +41,9 @@ interface AppContextValue {
   setLargeText(on: boolean): Promise<void>;
   submitEmail(email: string): Promise<void>;
   submitPassword(password: string, confirmation?: string, setupCode?: string): Promise<void>;
+  /** Sprint 6D: the email this phone's biometric key belongs to, or null when the biometric button is hidden. */
+  biometricEmail: string | null;
+  submitBiometric(): Promise<void>;
   /** Sprint 6B Security: the self-service password reset (OnboardingController). */
   startPasswordReset(): void;
   submitResetEmail(email: string): Promise<void>;
@@ -53,7 +57,7 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const controller = useMemo(
-    () => new OnboardingController({ db, sessions: sessionStore, councilNumber: getConfiguredCouncilNumber() }),
+    () => new OnboardingController({ db, sessions: sessionStore, councilNumber: getConfiguredCouncilNumber(), biometric: biometricLogin }),
     [],
   );
   const [onboarding, setOnboarding] = useState<OnboardingState>(controller.state);
@@ -152,6 +156,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [controller],
   );
   const restart = useCallback(() => setOnboarding(controller.restart()), [controller]);
+  const [biometricEmail, setBiometricEmail] = useState<string | null>(null);
+  const promptScreen = onboarding.screen === 'enterEmail' || onboarding.screen === 'signIn';
+  useEffect(() => {
+    let live = true;
+    if (promptScreen) void controller.biometricEmail().then((email) => live && setBiometricEmail(email), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, [controller, promptScreen]);
+  const submitBiometric = useCallback(async () => setOnboarding(await controller.submitBiometric()), [controller]);
   const signOut = useCallback(async () => {
     // Unlink the phone first, while the member is still known; a failure must not block signing out.
     if (memberId !== undefined) await unregisterPushAlerts(memberId).catch(() => undefined);
@@ -172,6 +186,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setLargeText,
       submitEmail,
       submitPassword,
+      biometricEmail,
+      submitBiometric,
       startPasswordReset,
       submitResetEmail,
       submitResetCode,
@@ -191,6 +207,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setLargeText,
       submitEmail,
       submitPassword,
+      biometricEmail,
+      submitBiometric,
       startPasswordReset,
       submitResetEmail,
       submitResetCode,

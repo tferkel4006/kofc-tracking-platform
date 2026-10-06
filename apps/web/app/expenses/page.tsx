@@ -34,6 +34,7 @@ import { formatFullDate, formatMoney } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
+import { archiveToDriveVault, localFileLink } from '@/services/drive-vault-transport';
 
 type Message = { tone: 'error' | 'info'; text: string };
 type Row = ExpenseLineDraft & { key: number };
@@ -71,9 +72,15 @@ function ExpenseSheetForm({
 
   const setCell = (key: number, field: keyof ExpenseLineDraft, value: string) =>
     setRows((now) => now.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
-  const attach = (key: number, file: File | undefined) => {
-    // The memory driver has no file store, so a receipt is a browser blob link carrying its file name after the #.
-    if (file) setCell(key, 'ReceiptPhotoURL', `${URL.createObjectURL(file)}#${encodeURIComponent(file.name)}`);
+  const attach = async (key: number, file: File | undefined) => {
+    if (!file) return;
+    // Sprint 6D: an Admin's receipt goes to the Drive vault's Vouchers folder and only its file id is kept. Otherwise
+    // the memory driver has no file store, so a receipt is a browser blob link carrying its file name after the #.
+    try {
+      setCell(key, 'ReceiptPhotoURL', (await archiveToDriveVault(user, 'voucher', file)) ?? localFileLink(file));
+    } catch (err) {
+      setError(describeError(err));
+    }
   };
 
   const save = async (status: 'Draft' | 'Submitted') => {
@@ -167,7 +174,7 @@ function ExpenseSheetForm({
                     aria-label={`Line ${i + 1} receipt file`}
                     className="sr-only"
                     onChange={(e) => {
-                      attach(row.key, e.target.files?.[0]);
+                      void attach(row.key, e.target.files?.[0]);
                       e.target.value = '';
                     }}
                   />

@@ -2,6 +2,8 @@
 //   enterEmail -> createPassword | signIn | contactAdmin -> signedIn (the root layout then swaps to the tabs)
 // Sprint 6B Security: creating a password needs the welcome email's setup code; every password box has an eye toggle
 // (PasswordInput); "Forgot Password?" runs forgotPassword -> resetCode -> newPassword -> signedIn.
+// Sprint 6D: once this phone holds a biometric key (minted with the setup code), the email and password prompts lead
+// with "Sign In with FaceID / Biometrics", which skips the password.
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { BrandMark } from '@/components/BrandHeader';
@@ -22,9 +24,23 @@ function ForgotLink({ onPress }: { onPress: () => void }) {
   );
 }
 
+/** The biometric sign-in button and an "or" rule above the password route; hidden when the phone holds no key. */
+function BiometricSignIn({ email, busy, onPress }: { email: string | null; busy: boolean; onPress: () => void }) {
+  const { space } = useTheme();
+  if (!email) return null;
+  return (
+    <View style={{ gap: space.sm }}>
+      <Button title="🔑 Sign In with FaceID / Biometrics" busy={busy} onPress={onPress} />
+      <AppText variant="small" tone="muted" style={{ textAlign: 'center' }}>
+        {email} · or use your password below
+      </AppText>
+    </View>
+  );
+}
+
 export default function SignInScreen() {
   const { color, space } = useTheme();
-  const { onboarding, submitEmail, submitPassword, startPasswordReset, submitResetEmail, submitResetCode, submitNewPassword, restart } = useApp();
+  const { onboarding, biometricEmail, submitBiometric, submitEmail, submitPassword, startPasswordReset, submitResetEmail, submitResetCode, submitNewPassword, restart } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -66,6 +82,7 @@ export default function SignInScreen() {
 
           {state.screen === 'enterEmail' ? (
             <>
+              <BiometricSignIn email={biometricEmail} busy={busy} onPress={() => void run(submitBiometric)} />
               <AppText variant="title">Welcome. What is your email address?</AppText>
               <AppText variant="small" tone="muted">
                 Use the address your council has on file for you.
@@ -118,6 +135,11 @@ export default function SignInScreen() {
               <AppText variant="small" tone="muted">
                 {state.email}
               </AppText>
+              <BiometricSignIn
+                email={biometricEmail?.toLowerCase() === state.email.toLowerCase() ? biometricEmail : null}
+                busy={busy}
+                onPress={() => void run(submitBiometric)}
+              />
               <Field label="PASSWORD">
                 <PasswordInput value={password} onChangeText={setPassword} textContentType="password" />
               </Field>

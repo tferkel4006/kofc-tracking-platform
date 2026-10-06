@@ -20,6 +20,7 @@ import { photoName, photoSrc } from '@/lib/media';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
+import { archiveToDriveVault } from '@/services/drive-vault-transport';
 
 const GROUPINGS = [
   { id: 'event', label: 'By event' },
@@ -148,8 +149,11 @@ function UploadPhotos({ events, onUploaded }: { events: CouncilEvent[]; onUpload
     setBusy(true);
     setMessage(null);
     try {
-      // The memory driver has no file store, so each photo is a browser blob link (as meeting minutes are).
-      const event = await db.events.uploadPhotos(user.memberId, eventId, files.map((f) => f.url));
+      // Sprint 6D: an Admin's photos go to the Drive vault's Media folder and only their file ids are stored. Otherwise
+      // the memory driver has no file store, so each photo is a browser blob link (as meeting minutes are).
+      const refs: string[] = [];
+      for (const f of files) refs.push((await archiveToDriveVault(user, 'media', f.file)) ?? f.url);
+      const event = await db.events.uploadPhotos(user.memberId, eventId, refs);
       setMessage({ tone: 'info', text: `${files.length} photo${files.length === 1 ? '' : 's'} added to ${event.EventName}.` });
       setFiles([]);
       await onUploaded();

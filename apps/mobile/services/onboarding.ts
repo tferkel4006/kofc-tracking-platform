@@ -11,11 +11,15 @@
 // "Forgot password?" (from enterEmail or signIn) runs the self-service reset:
 //   forgotPassword ──email──▶ resetCode ──6-digit code──▶ newPassword ──▶ signedIn
 //
+// Sprint 6D: spending the setup code also stores a biometric device key (biometric-login.ts); from then on the email
+// and password prompts offer "Sign In with FaceID / Biometrics" (submitBiometric), which skips the password.
+//
 // Screens render `controller.state` and call submitEmail / submitPassword; they
 // hold no rules of their own. `contactAdmin` is terminal: submitEmail and
 // submitPassword do nothing until the screen offers restart().
 import type { DataService, SessionUser } from '@kofc/shared';
 import { BusinessRuleError } from '@kofc/shared';
+import type { BiometricLogin } from './biometric-login';
 import type { SessionStore } from './session';
 
 /** The council whose admin is shown when an email is not recognised. */
@@ -68,7 +72,16 @@ export interface OnboardingDeps {
   councilNumber: number;
   /** Optional Face ID / fingerprint gate applied when restoring a remembered session. */
   authenticate?: () => Promise<boolean>;
+  /** Sprint 6D: the biometric device key, enrolled when the setup code is spent. Omitted means no biometric sign-in. */
+  biometric?: BiometricLogin;
 }
+
+const BIOMETRIC_FAILURES = {
+  noKey: 'Biometric sign-in is not set up on this phone. Sign in with your password.',
+  unavailable: 'Face ID or fingerprint is not available on this phone right now. Sign in with your password.',
+  refused: 'The biometric check did not pass. Try again or sign in with your password.',
+  revoked: 'Biometric sign-in on this phone is no longer valid. Sign in with your password.',
+} as const;
 
 export class OnboardingController {
   state: OnboardingState = { screen: 'loading' };
@@ -113,7 +126,10 @@ export class OnboardingController {
       try {
         // The driver decides about the code: a member who already registered goes to sign-in (ALREADY_REGISTERED) whatever
         // was typed; anyone else is refused without a valid code.
-        return await this.finish(await this.deps.db.auth.signUp(current.email, password, setupCode?.trim() ?? ''));
+        const user = await this.deps.db.auth.signUp(current.email, password, setupCode?.trim() ?? '');
+        // The setup code was accepted: mint this phone's biometric key. A keystore failure must not undo the sign-up.
+        await this.deps.biometric?.enroll(user, current.email).catch(() => undefined);
+        return await this.finish(user);
       } catch (err) {
         if (err instanceof BusinessRuleError && err.code === 'ALREADY_REGISTERED') {
           return this.set({ screen: 'signIn', email: current.email });
@@ -127,6 +143,20 @@ export class OnboardingController {
       return user ? this.finish(user) : this.set({ ...current, error: 'Incorrect password. Please try again.' });
     }
     return current;
+  }
+
+  /** The email whose biometric key this phone holds (and can scan for), or null: shows or hides the biometric button. */
+  biometricEmail(): Promise<string | null> {
+    return this.deps.biometric ? this.deps.biometric.enrolledEmail() : Promise.resolve(null);
+  }
+
+  /** "Sign In with FaceID / Biometrics" from the email or password prompt: the device check, then straight in. */
+  async submitBiometric(): Promise<OnboardingState> {
+    const current = this.state;
+    if (current.screen !== 'enterEmail' && current.screen !== 'signIn') return current;
+    if (!this.deps.biometric) return this.set({ ...current, error: BIOMETRIC_FAILURES.noKey });
+    const result = await this.deps.biometric.signIn(this.deps.db);
+    return result.ok ? this.finish(result.user) : this.set({ ...current, error: BIOMETRIC_FAILURES[result.reason] });
   }
 
   /** "Forgot password?" from the email or password prompt: asks for the email, filled in when it is known. */

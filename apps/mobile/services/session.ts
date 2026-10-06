@@ -58,21 +58,9 @@ export class SessionStore {
     if (!stored) return null;
     if (options.authenticate && !(await options.authenticate())) return null;
 
-    const member = await db.members.get(stored.user.memberId);
-    if (!member || member.CredentialID !== stored.user.credentialId) {
-      await this.clear();
-      return null;
-    }
-    const roles = await db.members.listRoles(member.id);
-    return {
-      ...stored.user,
-      councilId: member.CouncilID,
-      firstName: member.MemberFirstName,
-      lastName: member.MemberLastName,
-      roles: roles.map((r) => r.Role),
-      isOfficer: roles.some((r) => r.Officer === 1),
-      isBudgetDirector: member.IsBudgetDirector === 1,
-    };
+    const user = await refreshSessionUser(db, stored.user);
+    if (!user) await this.clear();
+    return user;
   }
 
   /** Sign out: forget the session. */
@@ -97,8 +85,27 @@ export class SessionStore {
   }
 }
 
+/**
+ * `user` with its roles, council and name re-read from the database, so promotions and moves apply immediately; null
+ * when the member, or the credential it names, no longer exists. Shared by restore() and the biometric sign-in.
+ */
+export async function refreshSessionUser(db: DataService, user: SessionUser): Promise<SessionUser | null> {
+  const member = await db.members.get(user.memberId);
+  if (!member || member.CredentialID !== user.credentialId) return null;
+  const roles = await db.members.listRoles(member.id);
+  return {
+    ...user,
+    councilId: member.CouncilID,
+    firstName: member.MemberFirstName,
+    lastName: member.MemberLastName,
+    roles: roles.map((r) => r.Role),
+    isOfficer: roles.some((r) => r.Officer === 1),
+    isBudgetDirector: member.IsBudgetDirector === 1,
+  };
+}
+
 /** 32 random bytes from the platform's secure generator, as 64 hex characters. */
-const randomTokenHex = async () => toHex(await Crypto.getRandomBytesAsync(32));
+export const randomTokenHex = async () => toHex(await Crypto.getRandomBytesAsync(32));
 
 /** The app-wide store, backed by the device keystore. */
 export const sessionStore = new SessionStore(

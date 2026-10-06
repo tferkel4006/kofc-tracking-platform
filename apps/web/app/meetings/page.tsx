@@ -30,6 +30,8 @@ import {
   type MeetingInviteMode,
   type MeetingType,
   type NewMeeting,
+  driveFileViewUrl,
+  isDriveFileId,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { DriveButtons, DriveLinkEditor } from '@/components/DriveLinks';
@@ -39,6 +41,7 @@ import { minutesFileName } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
+import { archiveToDriveVault, localFileLink } from '@/services/drive-vault-transport';
 
 type Message = { tone: 'error' | 'info'; text: string };
 type InviteChoice = 'allActive' | 'officers' | 'none' | 'pick';
@@ -326,8 +329,12 @@ function MeetingDetail({ meetingId, councilId, onChanged }: { meetingId: number;
 
   const attach = (file: File | undefined) => {
     if (!file) return;
-    // The memory driver has no file store yet, so the minutes are a browser blob whose file name rides after the #.
-    void act(async () => void (await db.meetings.setMinutes(m.id, `${URL.createObjectURL(file)}#${encodeURIComponent(file.name)}`)), 'Minutes attached.');
+    // Sprint 6D: an Admin's minutes go to the Drive vault's Minutes folder and only the file id is stored. Otherwise the
+    // memory driver has no file store yet, so the minutes are a browser blob whose file name rides after the #.
+    void act(async () => {
+      const fileId = await archiveToDriveVault(user, 'minutes', file);
+      await db.meetings.setMinutes(m.id, fileId ?? localFileLink(file));
+    }, 'Minutes attached.');
   };
 
   return (
@@ -379,7 +386,13 @@ function MeetingDetail({ meetingId, councilId, onChanged }: { meetingId: number;
           <Banner message={message} onDismiss={() => setMessage(null)} />
           {fileName && m.MinutesURL ? (
             <p className="text-sm">
-              <a href={m.MinutesURL.split('#')[0]} download={fileName} className="font-bold underline">
+              <a
+                href={isDriveFileId(m.MinutesURL) ? driveFileViewUrl(m.MinutesURL) : m.MinutesURL.split('#')[0]}
+                download={isDriveFileId(m.MinutesURL) ? undefined : fileName}
+                target={isDriveFileId(m.MinutesURL) ? '_blank' : undefined}
+                rel="noreferrer"
+                className="font-bold underline"
+              >
                 {fileName}
               </a>
             </p>

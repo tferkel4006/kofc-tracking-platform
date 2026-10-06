@@ -25,3 +25,4 @@ export * from './assembly';
 export * from './features';
 export * from './agenda';
 export * from './onboarding';
+export * from './drive-vault';

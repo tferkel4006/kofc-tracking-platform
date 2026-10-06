@@ -13,6 +13,7 @@ export default defineConfig({
       'expo-sqlite': at('./tests/shims/expo-sqlite.ts'),
       'expo-crypto': at('./tests/shims/expo-crypto.ts'),
       'expo-secure-store': at('./tests/shims/expo-secure-store.ts'),
+      'expo-local-authentication': at('./tests/shims/expo-local-authentication.ts'),
     },
   },
   test: {
