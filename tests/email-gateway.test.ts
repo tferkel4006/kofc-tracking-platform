@@ -1,4 +1,4 @@
-// Sprint 6Z-Email-Proxy (Schema 37): a council's own outbound email gateway - the five Council columns and
+// Sprint 6Z-Email-Proxy (Schema 37) and 6Z-Admin-Email-Perms: a council's own outbound email gateway - the five Council columns and
 // councils.setEmailGateway, the server's password sealing, the SMTP client, the save route and the notification
 // route's SMTP branch.
 import { readFileSync } from 'node:fs';
@@ -157,9 +157,17 @@ describe.each(drivers)('$name driver: councils.setEmailGateway', (d) => {
     expect(cleared.EmailPasswordEncrypted ?? null).toBeNull();
   });
 
-  it('refuses an Admin, an unknown council and an unsealed password, writing nothing', async () => {
+  it("lets the council's own Admin save it (Sprint 6Z-Admin-Email-Perms)", async () => {
     const db = await d.make();
-    await expectRule(db.councils.setEmailGateway(MEMBER.admin, 1, settings()), 'SUPER_ADMIN_REQUIRED');
+    const saved = await db.councils.setEmailGateway(MEMBER.admin, 1, settings());
+    expect(councilEmailGateway(saved)?.SmtpHost).toBe('smtp.gmail.com');
+    expect(councilEmailGateway(await db.councils.setEmailGateway(MEMBER.admin, 1, null))).toBeNull();
+  });
+
+  it("refuses a plain member, another council's Admin, an unknown council and an unsealed password, writing nothing", async () => {
+    const db = await d.make();
+    await expectRule(db.councils.setEmailGateway(MEMBER.member, 1, settings()), 'ADMIN_REQUIRED');
+    await expectRule(db.councils.setEmailGateway(MEMBER.admin, 999, settings()), 'COUNCIL_ACCESS_DENIED');
     await expectRule(db.councils.setEmailGateway(MEMBER.superAdmin, 999, settings()), 'RECORD_NOT_FOUND');
     await expectRule(db.councils.setEmailGateway(MEMBER.superAdmin, 1, settings({ EmailPasswordEncrypted: PASSWORD })), 'INVALID_INPUT');
     expect(councilEmailGateway(await db.councils.get(1))).toBeNull();
@@ -192,14 +200,19 @@ describe('/api/councils/email-gateway and the SMTP route', () => {
     content: [{ type: 'text/plain', value: 'Hello' }],
   };
 
-  it('lets only a Super Admin save, seals the password, and then sends the council email through SMTP', async () => {
+  it("lets the council's Admin save it, refuses a member or another council, and sends through SMTP", async () => {
+    const admin = await cookieFor('testadmin@kofc.org');
     const superAdmin = await cookieFor('testsuperadmin@kofc.org');
     const { councilId } = await (await sessionGet(new Request('http://localhost/api/auth/session', { headers: { cookie: superAdmin } }))).json();
+    const adminCouncil = (await (await sessionGet(new Request('http://localhost/api/auth/session', { headers: { cookie: admin } }))).json()).councilId;
+    expect(adminCouncil).toBe(councilId);
     const body = { councilId, EmailProvider: 'Microsoft 365', SmtpHost: 'smtp.office365.com', SmtpPort: 587, SmtpUsername: 'council@kofc.org', password: PASSWORD };
 
     expect((await gatewayPost(jsonRequest('/api/councils/email-gateway', body))).status).toBe(401);
-    expect((await gatewayPost(jsonRequest('/api/councils/email-gateway', body, await cookieFor('testadmin@kofc.org')))).status).toBe(403);
+    expect((await gatewayPost(jsonRequest('/api/councils/email-gateway', body, await cookieFor('testmember@kofc.org')))).status).toBe(403);
+    expect((await gatewayPost(jsonRequest('/api/councils/email-gateway', { ...body, councilId: councilId + 1000 }, admin))).status).toBe(403);
     expect((await gatewayPost(jsonRequest('/api/councils/email-gateway', { ...body, password: undefined }, superAdmin))).status).toBe(400);
+    expect((await gatewayPost(jsonRequest('/api/councils/email-gateway', body, admin))).status).toBe(200);
 
     const res = await gatewayPost(jsonRequest('/api/councils/email-gateway', body, superAdmin));
     expect(res.status).toBe(200);

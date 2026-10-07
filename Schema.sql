@@ -2059,8 +2059,8 @@ GO
 -- Google Workspace or Microsoft 365 (EMAIL_PROVIDERS; rules layer, no CHECK). SmtpPort is 25, 465, 587 or 2525.
 -- EmailPasswordEncrypted never holds the password itself: the web server seals it with AES-256-GCM under its own
 -- EMAIL_GATEWAY_SECRET before any driver sees it ('v1.<iv>.<tag>.<ciphertext>'), and unseals it only to send. Only an
--- Active Super Admin saves the five columns (councils.setEmailGateway, from the Councils page); councils.create and
--- update never touch them. All NULL until configured; a council without a full set uses the default SendGrid route.
+-- Active Admin of the council or an Active Super Admin saves the five columns (councils.setEmailGateway, from the
+-- Council Lookups page; Sprint 6Z-Admin-Email-Perms); councils.create and update never touch them. All NULL until configured; a council without a full set uses the default SendGrid route.
 -- =========================================================================
 ALTER TABLE [Council] ADD [EmailProvider] VARCHAR(50) NULL;
 GO

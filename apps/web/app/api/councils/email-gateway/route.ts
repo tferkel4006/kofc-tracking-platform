@@ -7,11 +7,12 @@
 // { settings: null } after a clear. The Councils page then stores the same values through its own data driver, so the
 // password itself never reaches a driver, a log or the browser again.
 //
-// Only an Active Super Admin's portal session may (401 without a session, 403 otherwise), as for councils.setEmailGateway.
+// Only the portal session of an Active Admin of that council or an Active Super Admin may (Sprint 6Z-Admin-Email-Perms;
+// 401 without a session, 403 otherwise), the assertMayMaintainCouncilRecords rule councils.setEmailGateway applies.
 // The server keeps the gateway in its own data copy (session.ts), which the notification route reads at send time.
 // Leaving the password out keeps the saved one, but only while the host and username stay the same.
 import { NextResponse } from 'next/server';
-import { councilEmailGateway, describeError, hasSuperAdminRights } from '@kofc/shared';
+import { assertMayMaintainCouncilRecords, councilEmailGateway, describeError } from '@kofc/shared';
 import { sealSmtpPassword } from '@/services/server/email-gateway';
 import { memberDirectory, requirePortalSession } from '@/services/server/session';
 
@@ -21,7 +22,14 @@ export async function POST(req: Request) {
   if (typeof councilId !== 'number' || !Number.isInteger(councilId) || councilId <= 0) {
     return NextResponse.json({ message: 'Name the council as councilId.' }, { status: 400 });
   }
-  const session = await requirePortalSession(req, (actor) => hasSuperAdminRights(actor));
+  const session = await requirePortalSession(req, (actor) => {
+    try {
+      assertMayMaintainCouncilRecords(actor, councilId, 'configure the email gateway');
+      return true;
+    } catch {
+      return false;
+    }
+  });
   if ('denied' in session) return session.denied;
 
   try {

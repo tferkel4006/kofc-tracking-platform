@@ -1154,7 +1154,7 @@ export class MemoryDataService implements DataService {
 
     setEmailGateway: async (actorId, councilId, settings) => {
       const s = await this.ready();
-      assertMayMaintainCouncils(this.memberWriteActor(s, actorId), `configure the email gateway of council ${councilId}`);
+      assertMayMaintainCouncilRecords(this.memberWriteActor(s, actorId), councilId, 'configure the email gateway');
       const row = this.requireRecord(s, 'Council', councilId);
       Object.assign(row, settings === null ? CLEARED_EMAIL_GATEWAY : cleanEmailGatewaySettings(settings));
       return { ...row } as unknown as Council;

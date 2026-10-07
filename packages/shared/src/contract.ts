@@ -1779,8 +1779,9 @@ export interface DataService {
     /**
      * Saves the council's outbound email gateway (Sprint 6Z-Email-Proxy, email-gateway.ts) and resolves to the updated
      * council; null clears all five columns. The password arrives already sealed by the server
-     * (/api/councils/email-gateway) and is stored as given. Only an Active Super Admin may (SUPER_ADMIN_REQUIRED, nothing
-     * written); RECORD_NOT_FOUND for an unknown council, INVALID_INPUT for settings cleanEmailGatewaySettings refuses.
+     * (/api/councils/email-gateway) and is stored as given. Only an Active Admin of the council or an Active Super Admin
+     * may (Sprint 6Z-Admin-Email-Perms; ADMIN_REQUIRED or COUNCIL_ACCESS_DENIED, nothing written); RECORD_NOT_FOUND for an
+     * unknown council, INVALID_INPUT for settings cleanEmailGatewaySettings refuses.
      */
     setEmailGateway(actorId: number, councilId: number, settings: EmailGatewaySettings | null): Promise<Council>;
   };

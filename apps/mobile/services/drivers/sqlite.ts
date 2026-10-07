@@ -1259,7 +1259,7 @@ export class SqliteDataService implements DataService {
     setEmailGateway: async (actorId, councilId, settings) => {
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
-        assertMayMaintainCouncils(await this.memberWriteActor(db, actorId), `configure the email gateway of council ${councilId}`);
+        assertMayMaintainCouncilRecords(await this.memberWriteActor(db, actorId), councilId, 'configure the email gateway');
         await this.requireRecord(db, 'Council', councilId);
         const g = settings === null ? CLEARED_EMAIL_GATEWAY : cleanEmailGatewaySettings(settings);
         await db.runAsync(

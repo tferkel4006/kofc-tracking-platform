@@ -1,8 +1,9 @@
 // Sprint 6Z-Email-Proxy (Schema 37): a council's own outbound email gateway.
 //
 // Five Council columns name the SMTP server the council's portal email goes out through: EmailProvider, SmtpHost,
-// SmtpPort, SmtpUsername and EmailPasswordEncrypted. Only an Active Super Admin saves them (councils.setEmailGateway,
-// from the Councils page); councils.create and update never touch them.
+// SmtpPort, SmtpUsername and EmailPasswordEncrypted. Only an Active Admin of the council or an Active Super Admin saves
+// them (councils.setEmailGateway, from the Outbound Email Gateway tab of Council Lookups - Sprint 6Z-Admin-Email-Perms);
+// councils.create and update never touch them.
 //
 // THE PASSWORD IS NEVER STORED OR SHOWN IN THE CLEAR. The Councils page posts it once to /api/councils/email-gateway,
 // where the server seals it with AES-256-GCM under a key that exists only on the server (EMAIL_GATEWAY_SECRET) and
