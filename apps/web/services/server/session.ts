@@ -30,8 +30,11 @@ import {
 let directory: MemoryDataService | null = null;
 const throttle = new SignInThrottle();
 
-/** The server's own copy of the member data, seeded once per process like the browser's. */
-async function memberDirectory(): Promise<MemoryDataService> {
+/**
+ * The server's own copy of the member data, seeded once per process like the browser's. Sprint 6Z-Email-Proxy: it also
+ * holds each council's email gateway, saved through /api/councils/email-gateway and read by the notification route.
+ */
+export async function memberDirectory(): Promise<MemoryDataService> {
   directory ??= new MemoryDataService({ presentationData: true, log: () => {} });
   await directory.init();
   return directory;

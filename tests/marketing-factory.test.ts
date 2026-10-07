@@ -222,7 +222,7 @@ describe('portal wiring', () => {
 
   it('adds the flyer column at schema 36 and shows filed flyers on the bulletins board', () => {
     expect(read('Schema.sql')).toMatch(/ALTER TABLE \[Event\] ADD \[GoogleDriveFlyerFileID\] VARCHAR\(128\) NULL;/);
-    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = 36;/);
+    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = (3[6-9]|[4-9]\d);/);
     expect(read('data_dictionary.md')).toContain('GoogleDriveFlyerFileID (VARCHAR(128), NULL)');
     const cards = bulletinCards([], [{ id: 4, EventName: 'Fish Fry', StartDate: '2027-03-12', PhotoGalleryURL: null, GoogleDriveFlyerFileID: DRIVE_ID }]);
     expect(cards.map((c) => [c.key, c.kind])).toEqual([['event-4-flyer', 'Flyer']]);

@@ -67,6 +67,16 @@ export interface Council {
   BylawsMarkdown?: string | null;
   /** When councils.setBylaws last saved BylawsMarkdown (ISO date-time). */
   BylawsUpdatedAt?: string | null;
+  /**
+   * Sprint 6Z-Email-Proxy (Schema 37): the council's outbound email gateway (email-gateway.ts), written only by
+   * councils.setEmailGateway. All five are NULL until a Super Admin configures it.
+   */
+  EmailProvider?: string | null;
+  SmtpHost?: string | null;
+  SmtpPort?: number | null;
+  SmtpUsername?: string | null;
+  /** The SMTP password sealed by the server (AES-256-GCM, `v1.<iv>.<tag>.<ciphertext>`); never the password itself. */
+  EmailPasswordEncrypted?: string | null;
 }
 
 export interface AffiliatedCouncils {

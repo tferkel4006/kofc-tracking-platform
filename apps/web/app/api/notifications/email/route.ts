@@ -9,11 +9,17 @@
 // (the members who add members and resend setup codes). Anything else - no key, a member's own password reset, nobody
 // signed in - is logged with the key redacted, as before. A route that mailed whatever any caller sent would let anyone
 // send mail as the council, and the reset email is composed in the browser until the remote driver moves it here.
+//
+// Sprint 6Z-Email-Proxy: when the session's council has its own email gateway (all five Council gateway columns, in the
+// server's data copy), an Admin's email goes out through that SMTP server instead, with the password unsealed only here,
+// and SendGrid is not used. The same Admin rule applies; everyone else is still only logged.
 import { NextResponse } from 'next/server';
-import { buildSendGridMailRequest, describeError, hasAdminRights, logSendGridRequest, type EmailPayload } from '@kofc/shared';
+import { buildSendGridMailRequest, councilEmailGateway, describeError, hasAdminRights, logSendGridRequest, type EmailPayload } from '@kofc/shared';
+import { unsealSmtpPassword } from '@/services/server/email-gateway';
 import { liveSendGridKey } from '@/services/server/secrets';
-import { readPortalSession } from '@/services/server/session';
+import { memberDirectory, readPortalSession } from '@/services/server/session';
 import { sessionActor } from '@/services/server/session-token';
+import { sendSmtpMail, smtpMessageFor } from '@/services/server/smtp';
 
 const MAX_SUBJECT = 200;
 const MAX_TEXT = 20_000;
@@ -56,9 +62,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ sent: false, message: describeError(err) }, { status: 400 });
   }
 
+  const claims = await readPortalSession(req);
+  const mayGoLive = claims !== null && hasAdminRights(sessionActor(claims));
+
+  const gateway = mayGoLive ? councilEmailGateway(await (await memberDirectory()).councils.get(claims.councilId)) : null;
+  if (claims && gateway) {
+    const password = unsealSmtpPassword(gateway.EmailPasswordEncrypted, claims.councilId);
+    if (password === null) {
+      return NextResponse.json(
+        { sent: false, simulated: false, message: "The council's SMTP password could not be unsealed. A Super Admin must enter it again on the Councils page." },
+        { status: 502 },
+      );
+    }
+    try {
+      await sendSmtpMail({ host: gateway.SmtpHost, port: gateway.SmtpPort, username: gateway.SmtpUsername, password }, smtpMessageFor(email, gateway.SmtpUsername));
+      return NextResponse.json({ sent: true, simulated: false, transport: 'smtp' });
+    } catch (err) {
+      console.error(`[notification] SMTP send through ${gateway.SmtpHost}:${gateway.SmtpPort} failed:`, describeError(err));
+      return NextResponse.json({ sent: false, simulated: false, message: `${gateway.SmtpHost} did not accept the email.` }, { status: 502 });
+    }
+  }
+
   const key = liveSendGridKey();
-  const claims = key ? await readPortalSession(req) : null;
-  if (!key || !claims || !hasAdminRights(sessionActor(claims))) {
+  if (!key || !mayGoLive) {
     await logSendGridRequest(console.log)(buildSendGridMailRequest(email));
     return NextResponse.json({ sent: false, simulated: true });
   }
@@ -67,7 +93,7 @@ export async function POST(req: Request) {
   try {
     const res = await fetch(request.url, { method: request.method, headers: request.headers, body: JSON.stringify(request.body) });
     if (!res.ok) throw new Error(`SendGrid answered HTTP ${res.status}.`);
-    return NextResponse.json({ sent: true, simulated: false });
+    return NextResponse.json({ sent: true, simulated: false, transport: 'sendgrid' });
   } catch (err) {
     console.error('[notification] SendGrid send failed:', describeError(err));
     return NextResponse.json({ sent: false, simulated: false, message: 'SendGrid did not accept the email.' }, { status: 502 });

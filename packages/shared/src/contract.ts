@@ -87,6 +87,7 @@ import type { BudgetAlert, BudgetWindowState } from './budget';
 import type { CadenceConfigInput } from './meetings';
 import type { DistributionGroup } from './messaging';
 import type { FeatureFlagChanges, FeatureFlagName } from './features';
+import type { EmailGatewayColumn, EmailGatewaySettings } from './email-gateway';
 
 // 1. LOOKUPS
 /** The global lookup tables a Super Admin maintains (Blueprint: "System Lookup Manager"). */
@@ -421,10 +422,10 @@ export interface MeetingSchedules {
 // 9. COUNCIL-LEVEL MAINTENANCE (Sprint 5G)
 /** A council row without its generated id. */
 /**
- * A council row without its generated id, its feature flags (councils.setFeatureFlags, Sprint 6A) or its bylaws
- * (councils.setBylaws, Sprint 6Z).
+ * A council row without its generated id, its feature flags (councils.setFeatureFlags, Sprint 6A), its bylaws
+ * (councils.setBylaws, Sprint 6Z) or its email gateway (councils.setEmailGateway, Sprint 6Z-Email-Proxy).
  */
-export type NewCouncil = Omit<Council, 'id' | FeatureFlagName | 'BylawsMarkdown' | 'BylawsUpdatedAt'>;
+export type NewCouncil = Omit<Council, 'id' | FeatureFlagName | 'BylawsMarkdown' | 'BylawsUpdatedAt' | EmailGatewayColumn>;
 /** A parish row without its generated id. */
 export type NewParish = Omit<Parish, 'id'>;
 /** A pastor row without its generated id. */
@@ -1775,6 +1776,13 @@ export interface DataService {
      * for text that is not a string or is longer than BYLAWS_MAX_LENGTH.
      */
     setBylaws(actorId: number, councilId: number, markdown: string): Promise<Council>;
+    /**
+     * Saves the council's outbound email gateway (Sprint 6Z-Email-Proxy, email-gateway.ts) and resolves to the updated
+     * council; null clears all five columns. The password arrives already sealed by the server
+     * (/api/councils/email-gateway) and is stored as given. Only an Active Super Admin may (SUPER_ADMIN_REQUIRED, nothing
+     * written); RECORD_NOT_FOUND for an unknown council, INVALID_INPUT for settings cleanEmailGatewaySettings refuses.
+     */
+    setEmailGateway(actorId: number, councilId: number, settings: EmailGatewaySettings | null): Promise<Council>;
   };
 
   /**

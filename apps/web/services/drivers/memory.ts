@@ -109,6 +109,8 @@ import {
   cleanFeatureFlagChanges,
   assertMayEditBylaws,
   cleanBylawsText,
+  cleanEmailGatewaySettings,
+  CLEARED_EMAIL_GATEWAY,
   nextQuarterHourTotal,
   cleanCouncilIds,
   cleanFeedbackText,
@@ -1147,6 +1149,14 @@ export class MemoryDataService implements DataService {
       const row = this.requireRecord(s, 'Council', councilId);
       assertMayEditBylaws(actor, councilId);
       Object.assign(row, { BylawsMarkdown: cleanBylawsText(markdown), BylawsUpdatedAt: new Date().toISOString() });
+      return { ...row } as unknown as Council;
+    },
+
+    setEmailGateway: async (actorId, councilId, settings) => {
+      const s = await this.ready();
+      assertMayMaintainCouncils(this.memberWriteActor(s, actorId), `configure the email gateway of council ${councilId}`);
+      const row = this.requireRecord(s, 'Council', councilId);
+      Object.assign(row, settings === null ? CLEARED_EMAIL_GATEWAY : cleanEmailGatewaySettings(settings));
       return { ...row } as unknown as Council;
     },
   };

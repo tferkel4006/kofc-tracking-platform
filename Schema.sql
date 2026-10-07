@@ -2052,3 +2052,23 @@ GO
 -- =========================================================================
 ALTER TABLE [Event] ADD [GoogleDriveFlyerFileID] VARCHAR(128) NULL;
 GO
+
+-- =========================================================================
+-- Sprint 6Z-Email-Proxy: MULTI-TENANT OUTBOUND EMAIL GATEWAY (schema version 37)
+-- The council's own SMTP server for portal email (welcome and password-reset notices). EmailProvider is Custom SMTP,
+-- Google Workspace or Microsoft 365 (EMAIL_PROVIDERS; rules layer, no CHECK). SmtpPort is 25, 465, 587 or 2525.
+-- EmailPasswordEncrypted never holds the password itself: the web server seals it with AES-256-GCM under its own
+-- EMAIL_GATEWAY_SECRET before any driver sees it ('v1.<iv>.<tag>.<ciphertext>'), and unseals it only to send. Only an
+-- Active Super Admin saves the five columns (councils.setEmailGateway, from the Councils page); councils.create and
+-- update never touch them. All NULL until configured; a council without a full set uses the default SendGrid route.
+-- =========================================================================
+ALTER TABLE [Council] ADD [EmailProvider] VARCHAR(50) NULL;
+GO
+ALTER TABLE [Council] ADD [SmtpHost] VARCHAR(255) NULL;
+GO
+ALTER TABLE [Council] ADD [SmtpPort] INT NULL;
+GO
+ALTER TABLE [Council] ADD [SmtpUsername] VARCHAR(255) NULL;
+GO
+ALTER TABLE [Council] ADD [EmailPasswordEncrypted] TEXT NULL;
+GO

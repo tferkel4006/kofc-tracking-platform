@@ -4,20 +4,29 @@
 // (members, parishes, events, donations, ...) cannot be deleted, and the message lists what is in use.
 // Sprint 6A: the master admin's Module Feature Flags panel switches a council's optional modules on and off
 // (councils.setFeatureFlags); a module switched off disappears from that council's sidebar, pages and phone tabs.
-import { useState } from 'react';
+// Sprint 6Z-Email-Proxy: the Configure Outbound Email Gateway card saves a council's own SMTP server. The password goes
+// to /api/councils/email-gateway once, comes back sealed, and only the sealed value is stored (councils.setEmailGateway).
+import { useState, type FormEvent } from 'react';
 import {
   canMaintainCouncils,
+  councilEmailGateway,
   councilFeatureFlags,
   councilLabel,
   describeError,
+  EMAIL_PROVIDER_PRESETS,
+  EMAIL_PROVIDERS,
   FEATURE_FLAG_LABELS,
   FEATURE_FLAG_NAMES,
+  REDACTED_SECRET,
+  SMTP_PORTS,
   type Council,
+  type EmailGatewaySettings,
+  type EmailProvider,
   type FeatureFlagName,
 } from '@kofc/shared';
 import { RequireArea } from '@/components/CouncilScope';
 import { RecordGrid, type Draft, type FormField, type Selection } from '@/components/RecordGrid';
-import { Field, Notice, PageTitle, Panel, Select } from '@/components/ui';
+import { Button, Field, Notice, PageTitle, Panel, Select } from '@/components/ui';
 import { blankToNull, formatPhone, parseNumberField } from '@/lib/format';
 import { useSession, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -114,6 +123,199 @@ function FeatureFlagsPanel({ councils, onSaved }: { councils: Council[]; onSaved
   );
 }
 
+const EMAIL_GATEWAY_ROUTE = '/api/councils/email-gateway';
+
+/** Posts to the gateway route, which seals the password; resolves to the settings to store, or null after a clear. */
+async function saveGatewayOnServer(body: Record<string, unknown>): Promise<EmailGatewaySettings | null> {
+  const res = await fetch(EMAIL_GATEWAY_ROUTE, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const answer = (await res.json().catch(() => null)) as { settings?: EmailGatewaySettings | null; message?: string } | null;
+  if (!res.ok || !answer || answer.settings === undefined) throw new Error(answer?.message ?? `The server answered HTTP ${res.status}.`);
+  return answer.settings;
+}
+
+const gatewayInput = 'w-full rounded border-4 border-hc-gold bg-black px-3 py-2 text-base text-white placeholder:text-white/70';
+
+/**
+ * Configure Outbound Email Gateway (Sprint 6Z-Email-Proxy): one council's SMTP server for portal email. Super Admins
+ * only, like the rest of the page. A saved password is never shown or sent back: the box shows dots, and leaving it
+ * empty keeps the saved one while the host and username stay the same.
+ */
+function EmailGatewayPanel({ councils, onSaved }: { councils: Council[]; onSaved: () => Promise<void> }) {
+  const user = useUser();
+  const [councilId, setCouncilId] = useState(user.councilId);
+  const council = councils.find((c) => c.id === councilId) ?? councils[0];
+  const saved = councilEmailGateway(council);
+  const [provider, setProvider] = useState<EmailProvider>(saved?.EmailProvider ?? 'Custom SMTP');
+  const [host, setHost] = useState(saved?.SmtpHost ?? '');
+  const [port, setPort] = useState(String(saved?.SmtpPort ?? 587));
+  const [username, setUsername] = useState(saved?.SmtpUsername ?? '');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+  if (!council) return null;
+
+  const pick = (id: number) => {
+    const next = councilEmailGateway(councils.find((c) => c.id === id));
+    setCouncilId(id);
+    setProvider(next?.EmailProvider ?? 'Custom SMTP');
+    setHost(next?.SmtpHost ?? '');
+    setPort(String(next?.SmtpPort ?? 587));
+    setUsername(next?.SmtpUsername ?? '');
+    setPassword('');
+    setMessage(null);
+  };
+
+  const chooseProvider = (value: EmailProvider) => {
+    setProvider(value);
+    const preset = EMAIL_PROVIDER_PRESETS[value];
+    if (preset) {
+      setHost(preset.host);
+      setPort(String(preset.port));
+    }
+  };
+
+  const store = async (settings: EmailGatewaySettings | null, done: string) => {
+    await db.councils.setEmailGateway(user.memberId, council.id, settings);
+    await onSaved();
+    setMessage({ tone: 'info', text: done });
+  };
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setMessage(null);
+    try {
+      const settings = await saveGatewayOnServer({
+        councilId: council.id,
+        EmailProvider: provider,
+        SmtpHost: host,
+        SmtpPort: Number(port),
+        SmtpUsername: username,
+        ...(password ? { password } : {}),
+      });
+      await store(settings, `Council ${council.CouncilNumber} now sends its email through ${settings?.SmtpHost ?? host}.`);
+    } catch (err) {
+      setMessage({ tone: 'error', text: describeError(err) });
+    } finally {
+      setPassword('');
+      setBusy(false);
+    }
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await saveGatewayOnServer({ councilId: council.id, clear: true });
+      await store(null, `Council ${council.CouncilNumber} is back on the default email route.`);
+      setProvider('Custom SMTP');
+      setHost('');
+      setPort('587');
+      setUsername('');
+    } catch (err) {
+      setMessage({ tone: 'error', text: describeError(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="email-gateway-title" data-surface="black" className="mt-4 rounded border-4 border-hc-gold bg-black p-4 font-bold text-white sm:p-6">
+      <h2 id="email-gateway-title" className="mb-1 border-b-4 border-hc-gold pb-1 font-serif text-xl">
+        Configure Outbound Email Gateway
+      </h2>
+      <p className="mb-4 text-sm">
+        Restricted to Super Admins. Send this council&apos;s portal email (welcome and password-reset notices) through its own mail server instead of
+        the portal&apos;s default. The password is sealed on the server before it is saved and is never shown again.
+      </p>
+      {message ? (
+        <div className="mb-3">
+          <Notice tone={message.tone} onDismiss={() => setMessage(null)}>
+            {message.text}
+          </Notice>
+        </div>
+      ) : null}
+      <form onSubmit={(e) => void submit(e)} className="grid gap-3 sm:grid-cols-2" autoComplete="off">
+        <label className="flex flex-col gap-1 sm:col-span-2">
+          <span className="text-xs uppercase tracking-wide text-hc-gold">Council</span>
+          <select value={council.id} onChange={(e) => pick(Number(e.target.value))} className={gatewayInput} disabled={busy}>
+            {councils.map((c) => (
+              <option key={c.id} value={c.id}>
+                {councilLabel(c)}
+                {councilEmailGateway(c) ? ' (gateway on)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs uppercase tracking-wide text-hc-gold">Provider</span>
+          <select value={provider} onChange={(e) => chooseProvider(e.target.value as EmailProvider)} className={gatewayInput} disabled={busy}>
+            {EMAIL_PROVIDERS.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs uppercase tracking-wide text-hc-gold">Host</span>
+          <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="smtp.example.org" maxLength={253} required className={gatewayInput} disabled={busy} />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs uppercase tracking-wide text-hc-gold">Port</span>
+          <select value={port} onChange={(e) => setPort(e.target.value)} className={gatewayInput} disabled={busy}>
+            {SMTP_PORTS.map((p) => (
+              <option key={p} value={p}>
+                {p}
+                {p === 465 ? ' (TLS)' : p === 587 ? ' (STARTTLS)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs uppercase tracking-wide text-hc-gold">Username</span>
+          <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="council@example.org" maxLength={255} required className={gatewayInput} disabled={busy} />
+        </label>
+        <label className="flex flex-col gap-1 sm:col-span-2">
+          <span className="text-xs uppercase tracking-wide text-hc-gold">Password</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={saved ? `${REDACTED_SECRET} (saved - leave empty to keep it)` : 'App password or SMTP password'}
+            autoComplete="new-password"
+            spellCheck={false}
+            maxLength={1000}
+            required={!saved}
+            className={gatewayInput}
+            disabled={busy}
+          />
+          {saved ? (
+            <span className="text-sm">
+              Saved password: <span aria-label="hidden">{REDACTED_SECRET}</span>
+            </span>
+          ) : null}
+        </label>
+        <div className="flex flex-wrap gap-2 sm:col-span-2">
+          <Button type="submit" variant="gold" disabled={busy || !host.trim() || !username.trim() || (!saved && !password)}>
+            {busy ? 'Saving…' : 'Save gateway'}
+          </Button>
+          {saved ? (
+            <Button variant="danger" disabled={busy} onClick={() => void clear()}>
+              Remove gateway
+            </Button>
+          ) : null}
+        </div>
+      </form>
+    </section>
+  );
+}
+
 function Councils() {
   const user = useUser();
   const councils = useLoad(() => db.councils.list(), []);
@@ -163,6 +365,7 @@ function Councils() {
         onSelect={setSelected}
       />
       {canMaintainCouncils(user) && councils.data ? <FeatureFlagsPanel councils={councils.data} onSaved={councils.reload} /> : null}
+      {canMaintainCouncils(user) && councils.data ? <EmailGatewayPanel councils={councils.data} onSaved={councils.reload} /> : null}
     </>
   );
 }

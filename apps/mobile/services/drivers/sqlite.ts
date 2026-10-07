@@ -106,6 +106,8 @@ import {
   cleanFeatureFlagChanges,
   assertMayEditBylaws,
   cleanBylawsText,
+  cleanEmailGatewaySettings,
+  CLEARED_EMAIL_GATEWAY,
   nextQuarterHourTotal,
   cleanCouncilIds,
   cleanFeedbackText,
@@ -543,8 +545,10 @@ const DB_NAME = 'kofc.db';
  * 34: Member.flag_large_text_mode - the member's Large Text Layout Mode preference (Sprint 6C).
  * 35: Council.BylawsMarkdown and Council.BylawsUpdatedAt - the Council Bylaws Data Vault (Sprint 6Z).
  * 36: Event.GoogleDriveFlyerFileID - the Marketing Factory's filed flyer (Sprint 6C, Phase 4).
+ * 37: Council.EmailProvider, SmtpHost, SmtpPort, SmtpUsername and EmailPasswordEncrypted - the council's outbound
+ *     email gateway (Sprint 6Z-Email-Proxy).
  */
-const SCHEMA_VERSION = 36;
+const SCHEMA_VERSION = 37;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -1248,6 +1252,20 @@ export class SqliteDataService implements DataService {
           new Date().toISOString(),
           councilId,
         ]);
+      });
+      return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [councilId]))!;
+    },
+
+    setEmailGateway: async (actorId, councilId, settings) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayMaintainCouncils(await this.memberWriteActor(db, actorId), `configure the email gateway of council ${councilId}`);
+        await this.requireRecord(db, 'Council', councilId);
+        const g = settings === null ? CLEARED_EMAIL_GATEWAY : cleanEmailGatewaySettings(settings);
+        await db.runAsync(
+          'UPDATE [Council] SET [EmailProvider] = ?, [SmtpHost] = ?, [SmtpPort] = ?, [SmtpUsername] = ?, [EmailPasswordEncrypted] = ? WHERE [id] = ?',
+          [g.EmailProvider, g.SmtpHost, g.SmtpPort, g.SmtpUsername, g.EmailPasswordEncrypted, councilId],
+        );
       });
       return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [councilId]))!;
     },
