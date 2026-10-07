@@ -84,6 +84,7 @@ import type {
   WorkingStatus,
 } from './types';
 import type { BudgetAlert, BudgetWindowState } from './budget';
+import type { ConcludedBudgetPerformance } from './dues';
 import type { CadenceConfigInput } from './meetings';
 import type { DistributionGroup } from './messaging';
 import type { FeatureFlagChanges, FeatureFlagName } from './features';
@@ -2845,6 +2846,15 @@ export interface DataService {
      * approved years (summarizeBudgetHistory). Council leadership, as getBudgetProgress.
      */
     getHistoricalKPIs(actorId: number, councilId: number): Promise<BudgetHistoricalKPIs>;
+    /**
+     * Sprint 6A (Phase 5): budgeted against actual spend for the current fraternal year's events and meetings that have
+     * concluded (buildConcludedBudgetPerformance) - each event's Budget against its Spend plus the expenses linked to it
+     * on 'Approved' and 'Reimbursed' sheets, and the year's held meetings against the approved 'Council Meetings' line.
+     * Each annual event carries its previous occurrence as a Historical Benchmark, which no total includes. Reads only;
+     * the general ledger and cash on hand are untouched. Council leadership, as getBudgetProgress
+     * (assertMayReviewBudgetPerformance).
+     */
+    getConcludedPerformance(actorId: number, councilId: number): Promise<ConcludedBudgetPerformance>;
   };
 
   /**

@@ -239,6 +239,8 @@ import {
   buildBudgetYearPerformance,
   buildPriorYearBaselines,
   completedFraternalYears,
+  buildConcludedBudgetPerformance,
+  currentFraternalYear,
   budgetLineExists,
   budgetLineNotFound,
   cleanBudgetLineUpdate,
@@ -4362,6 +4364,50 @@ export class MemoryDataService implements DataService {
       const budgeted = s.rows('CouncilBudgetForecast').filter((l) => l.CouncilID === councilId).map((l) => l.FraternalYear as string);
       const years = completedFraternalYears(budgeted, today).map((y) => this.budgetYearPerformance(s, councilId, y, fraternalYearBounds(y).toDate));
       return summarizeBudgetHistory(councilId, years, today);
+    },
+
+    getConcludedPerformance: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReviewBudgetPerformance(this.memberWriteActor(s, actorId), councilId, `review the concluded budget performance of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      const today = this.now();
+      const year = currentFraternalYear(today);
+      const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+      const spendingReports = new Map(
+        s
+          .rows('ExpenseReport')
+          .filter((r) => r.CouncilID === councilId && EXPENSE_SPEND_STATUSES.includes(r.Status as ExpenseReportStatus))
+          .map((r) => [r.id, r]),
+      );
+      return buildConcludedBudgetPerformance({
+        councilId,
+        fraternalYear: year,
+        today: toIsoDate(today),
+        rows: {
+          events: s
+            .rows('Event')
+            .filter((e) => linked.has(e.id))
+            .map((e) => ({
+              id: e.id as number,
+              EventName: e.EventName as string,
+              StartDate: e.StartDate as string,
+              EndDate: e.EndDate as string,
+              IsAnnual: e.IsAnnual as boolean | number | null,
+              Budget: e.Budget as number | null,
+              Spend: e.Spend as number | null,
+            })),
+          expenses: s.rows('ExpenseLineItem').flatMap((li) => {
+            const report = spendingReports.get(li.ExpenseReportID);
+            if (!report) return [];
+            return [{ EventID: (report.LinkedEventID as number | null) ?? null, MeetingID: (report.LinkedMeetingID as number | null) ?? null, Amount: li.Amount as number }];
+          }),
+          meetings: s
+            .rows('Meeting')
+            .filter((m) => m.CouncilID === councilId)
+            .map((m) => ({ id: m.id as number, Date: m.Date as string, EndDate: (m.EndDate as string | null) ?? null })),
+          lines: this.budgetLines(s, councilId, year).map((l) => ({ ...l })),
+        },
+      });
     },
   };
 

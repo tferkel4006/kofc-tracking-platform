@@ -81,6 +81,8 @@ export interface Council {
    * organization (tenant.ts). A missing or NULL value reads as 'KOFC'.
    */
   tenant_type?: string | null;
+  /** Sprint 6A Phase 5 (Schema 41): yearly dues per member, DEFAULT 40.00 (dues.ts). A missing value reads as 40.00. */
+  base_dues_rate?: number | null;
 }
 
 export interface AffiliatedCouncils {

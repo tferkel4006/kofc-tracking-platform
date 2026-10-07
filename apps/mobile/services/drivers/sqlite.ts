@@ -243,6 +243,8 @@ import {
   buildBudgetYearPerformance,
   buildPriorYearBaselines,
   completedFraternalYears,
+  buildConcludedBudgetPerformance,
+  currentFraternalYear,
   budgetLineExists,
   budgetLineNotFound,
   cleanBudgetLineUpdate,
@@ -553,8 +555,9 @@ const DB_NAME = 'kofc.db';
  * 39: Council.tenant_type - the multi-tenant white-label gate (Sprint 6Z-Dual-Gate-Model).
  * 40: CouncilCredentialsVault, and Council.EmailPasswordEncrypted dropped - the Centralized Encrypted Credentials Vault
  *     (Sprint 6Y). The phone never reads or writes the vault; only the web server does.
+ * 41: Council.base_dues_rate - the yearly dues per member behind the dues revenue forecast (Sprint 6A, Phase 5).
  */
-const SCHEMA_VERSION = 40;
+const SCHEMA_VERSION = 41;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -5132,6 +5135,43 @@ export class SqliteDataService implements DataService {
         years.push(await this.budgetYearPerformance(db, councilId, y, fraternalYearBounds(y).toDate));
       }
       return summarizeBudgetHistory(councilId, years, today);
+    },
+
+    getConcludedPerformance: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayReviewBudgetPerformance(await this.memberWriteActor(db, actorId), councilId, `review the concluded budget performance of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const today = this.now();
+      const year = currentFraternalYear(today);
+      const events = await db.getAllAsync<{
+        id: number;
+        EventName: string;
+        StartDate: string;
+        EndDate: string;
+        IsAnnual: number;
+        Budget: number | null;
+        Spend: number | null;
+      }>(
+        `SELECT [id], [EventName], [StartDate], [EndDate], [IsAnnual], [Budget], [Spend] FROM [Event]
+          WHERE [id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)`,
+        [councilId],
+      );
+      const expenses = await db.getAllAsync<{ EventID: number | null; MeetingID: number | null; Amount: number }>(
+        `SELECT r.[LinkedEventID] AS EventID, r.[LinkedMeetingID] AS MeetingID, li.[Amount] FROM [ExpenseLineItem] li
+           JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID]
+          WHERE r.[CouncilID] = ? AND r.[Status] IN (${marks(EXPENSE_SPEND_STATUSES.length)})`,
+        [councilId, ...EXPENSE_SPEND_STATUSES],
+      );
+      const meetings = await db.getAllAsync<{ id: number; Date: string; EndDate: string | null }>(
+        'SELECT [id], [Date], [EndDate] FROM [Meeting] WHERE [CouncilID] = ?',
+        [councilId],
+      );
+      return buildConcludedBudgetPerformance({
+        councilId,
+        fraternalYear: year,
+        today: toIsoDate(today),
+        rows: { events, expenses, meetings, lines: await this.budgetLines(db, councilId, year) },
+      });
     },
   };
 

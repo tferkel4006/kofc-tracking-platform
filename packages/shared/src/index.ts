@@ -19,6 +19,7 @@ export * from './supreme';
 export * from './elections';
 export * from './charities';
 export * from './budget';
+export * from './dues';
 export * from './meetings';
 export * from './finance';
 export * from './assembly';

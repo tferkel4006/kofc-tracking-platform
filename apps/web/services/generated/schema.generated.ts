@@ -430,6 +430,16 @@ export const TABLES: Record<string, TableMeta> = {
           "kind": "literal",
           "value": "KOFC"
         }
+      },
+      {
+        "name": "base_dues_rate",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 40
+        }
       }
     ],
     "foreignKeys": [],

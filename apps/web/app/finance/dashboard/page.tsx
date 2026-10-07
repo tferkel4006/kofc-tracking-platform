@@ -8,11 +8,15 @@
 //   - Quick-action hub: the electronic CSV bank audit (finance.uploadBankStatementReconciliation) and the asset transfer
 //     drawer (finance.transferAssetFunds). Both post to the books, so they belong to the council's Financial Secretary
 //     and Treasurer and any Super Admin (canPostGeneralLedger); other readers see why they are locked.
+//   - Sprint 6A (Phase 5): the Membership Dues Revenue Forecast (Active and Inactive members times the council's
+//     base_dues_rate, buildDuesForecast) and the Budgeted vs. Current Actual Spend grid (budget.getConcludedPerformance),
+//     both high-contrast cards (DuesParts). Read-only: neither posts to the books nor changes cash on hand.
 import Link from 'next/link';
 import { useState } from 'react';
-import { buildLiquidityGauges, canPostGeneralLedger } from '@kofc/shared';
+import { buildDuesForecast, buildLiquidityGauges, canPostGeneralLedger } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { BalanceScale, BankStatementUploader, LiquidityGaugeCard, TransferDrawer } from '@/components/FinanceParts';
+import { ConcludedPerformanceGrid, DuesForecastCard } from '@/components/DuesParts';
 import { Button, Empty, Notice, PageTitle, Panel } from '@/components/ui';
 import { formatFullDate } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -25,6 +29,11 @@ function FinanceDashboard() {
   const councilId = scope.councilId;
   const chart = useLoad(() => db.finance.listChartOfAccounts(user.memberId, councilId), [user.memberId, councilId]);
   const sheet = useLoad(() => db.finance.getLatestBalanceSheet(user.memberId, councilId), [user.memberId, councilId]);
+  const dues = useLoad(async () => {
+    const [council, members, statuses] = await Promise.all([db.councils.get(councilId), db.members.listByCouncil(councilId), db.lookups.list('MemberStatus')]);
+    return buildDuesForecast({ council, members, statuses });
+  }, [councilId]);
+  const concluded = useLoad(() => db.budget.getConcludedPerformance(user.memberId, councilId), [user.memberId, councilId]);
   const [transferring, setTransferring] = useState(false);
   const canPost = canPostGeneralLedger(user, councilId);
   const reload = async () => {
@@ -71,6 +80,11 @@ function FinanceDashboard() {
           {sheet.data ? <BalanceScale sheet={sheet.data} /> : sheet.loading ? <p className="text-sm">Loading…</p> : null}
         </Panel>
       </div>
+
+      {dues.error ? <Notice tone="error">{dues.error}</Notice> : null}
+      {concluded.error ? <Notice tone="error">{concluded.error}</Notice> : null}
+      {dues.data ? <DuesForecastCard forecast={dues.data} /> : dues.loading ? <p className="text-sm">Loading…</p> : null}
+      {concluded.data ? <ConcludedPerformanceGrid performance={concluded.data} /> : concluded.loading ? <p className="text-sm">Loading…</p> : null}
 
       <Panel
         title="Quick actions"

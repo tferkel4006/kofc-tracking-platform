@@ -2124,3 +2124,12 @@ GO
 
 CREATE UNIQUE INDEX [CouncilCredentialsVault_Council_Key_Idx] ON [CouncilCredentialsVault] ([council_id], [credential_key]);
 GO
+
+-- =========================================================================
+-- Sprint 6A (Phase 5): MEMBERSHIP DUES REVENUE FORECAST (schema version 41)
+-- Council.base_dues_rate is the council's yearly dues per member. The Financial Management Center multiplies it by the
+-- council's Active and Inactive members (buildDuesForecast) to project the dues income budget line. Every existing
+-- council starts at 40.00. Whole cents, 0 or more (rules layer, no CHECK).
+-- =========================================================================
+ALTER TABLE [Council] ADD [base_dues_rate] DECIMAL(10,2) NOT NULL DEFAULT 40.00;
+GO
