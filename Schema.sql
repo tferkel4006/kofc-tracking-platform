@@ -2057,10 +2057,10 @@ GO
 -- Sprint 6Z-Email-Proxy: MULTI-TENANT OUTBOUND EMAIL GATEWAY (schema version 37)
 -- The council's own SMTP server for portal email (welcome and password-reset notices). EmailProvider is Custom SMTP,
 -- Google Workspace or Microsoft 365 (EMAIL_PROVIDERS; rules layer, no CHECK). SmtpPort is 25, 465, 587 or 2525.
--- EmailPasswordEncrypted never holds the password itself: the web server seals it with AES-256-GCM under its own
--- EMAIL_GATEWAY_SECRET before any driver sees it ('v1.<iv>.<tag>.<ciphertext>'), and unseals it only to send. Only an
--- Active Admin of the council or an Active Super Admin saves the five columns (councils.setEmailGateway, from the
--- Council Lookups page; Sprint 6Z-Admin-Email-Perms); councils.create and update never touch them. All NULL until configured; a council without a full set uses the default SendGrid route.
+-- Only an Active Admin of the council or an Active Super Admin saves the four columns (councils.setEmailGateway, from
+-- the Council Lookups page; Sprint 6Z-Admin-Email-Perms); councils.create and update never touch them. All NULL until
+-- configured; a council without a full set uses the default SendGrid route. The fifth column of version 37,
+-- EmailPasswordEncrypted, was dropped in schema version 40: the SMTP password now lives in CouncilCredentialsVault.
 -- =========================================================================
 ALTER TABLE [Council] ADD [EmailProvider] VARCHAR(50) NULL;
 GO
@@ -2069,8 +2069,6 @@ GO
 ALTER TABLE [Council] ADD [SmtpPort] INT NULL;
 GO
 ALTER TABLE [Council] ADD [SmtpUsername] VARCHAR(255) NULL;
-GO
-ALTER TABLE [Council] ADD [EmailPasswordEncrypted] TEXT NULL;
 GO
 
 -- =========================================================================
@@ -2094,4 +2092,35 @@ GO
 -- (whiteLabel). Every existing council stays a Knights of Columbus council (DEFAULT 'KOFC').
 -- =========================================================================
 ALTER TABLE [Council] ADD [tenant_type] VARCHAR(20) NOT NULL DEFAULT 'KOFC';
+GO
+
+-- =========================================================================
+-- Sprint 6Y: CENTRALIZED ENCRYPTED CREDENTIALS VAULT (schema version 40)
+-- CouncilCredentialsVault is the one table that holds a council's secrets, one row per council and credential_key
+-- (CREDENTIAL_KEYS: 'SMTP_OUTBOUND_PASSWORD', 'GOOGLE_DRIVE_PRIVATE_KEY'; rules layer, no CHECK; unique per council).
+-- credential_value_encrypted never holds the value itself: the web server seals every value with AES-256-GCM under
+-- its own CREDENTIALS_VAULT_SECRET, with the council id and key as additional data, before the row is written
+-- ('v1.<iv>.<tag>.<ciphertext>', base64url), and unseals it only inside a server route at the moment of use (the SMTP
+-- send, the Google Drive sign-in). No data driver and no browser reads the table; the portal shows only the key, the
+-- time it was saved and a fixed mask. Only an Active Admin of the council or an Active Super Admin saves a row.
+-- updated_at is a DATETIME rather than TIMESTAMP, which in SQL Server is a row-version counter, not a time.
+-- Council.EmailPasswordEncrypted (schema version 37) is dropped: its SMTP password is the SMTP_OUTBOUND_PASSWORD row.
+-- =========================================================================
+CREATE TABLE [CouncilCredentialsVault] (
+	[id] INT NOT NULL IDENTITY,
+	[council_id] INT NOT NULL,
+	[credential_key] VARCHAR(64) NOT NULL,
+	[credential_value_encrypted] TEXT NOT NULL,
+	[updated_at] DATETIME NOT NULL DEFAULT GETDATE(),
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CouncilCredentialsVault]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [CouncilCredentialsVault_Council_Key_Idx] ON [CouncilCredentialsVault] ([council_id], [credential_key]);
 GO

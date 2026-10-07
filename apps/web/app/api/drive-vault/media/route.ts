@@ -6,14 +6,12 @@
 //
 // Sprint 6Z-Engine-Upgrade: reading the drive needs a portal session of an Active Admin or Super Admin (401 / 403
 // otherwise), and still the credentials AND DRIVE_VAULT_LIVE=1 (503 otherwise). On any refusal the factory falls back to
-// the photos saved on past editions, then to the event-type icon.
+// the photos saved on past editions, then to the event-type icon. Sprint 6Y: the council's own GOOGLE_DRIVE_PRIVATE_KEY
+// from the credentials vault replaces the server's when it has one.
 import { NextResponse } from 'next/server';
 import { cleanDriveVaultSubfolder, describeError, DRIVE_VAULT_FOLDERS, DRIVE_VAULT_ROOT, FLYER_MAX_PHOTOS, hasAdminRights } from '@kofc/shared';
-import { GoogleDriveVault } from '@/services/google-drive';
-import { liveDriveCredentials } from '@/services/server/secrets';
+import { councilDriveCredentials, driveVaultClient } from '@/services/server/credentials-vault';
 import { requirePortalSession } from '@/services/server/session';
-
-let vault: GoogleDriveVault | null = null;
 
 export async function GET(req: Request) {
   const session = await requirePortalSession(req, hasAdminRights, { available: false });
@@ -27,12 +25,11 @@ export async function GET(req: Request) {
     return NextResponse.json({ available: false, message: describeError(err) }, { status: 400 });
   }
 
-  const creds = liveDriveCredentials();
+  const creds = councilDriveCredentials(session.claims.councilId);
   if (!creds) return NextResponse.json({ available: false, message: 'The Drive vault is not switched on.' }, { status: 503 });
 
   try {
-    vault ??= new GoogleDriveVault(creds);
-    const fileIds = await vault.listImages([DRIVE_VAULT_ROOT, DRIVE_VAULT_FOLDERS.media, folder], FLYER_MAX_PHOTOS);
+    const fileIds = await driveVaultClient(creds).listImages([DRIVE_VAULT_ROOT, DRIVE_VAULT_FOLDERS.media, folder], FLYER_MAX_PHOTOS);
     return NextResponse.json({ available: true, fileIds });
   } catch (err) {
     console.error('[drive-vault] media scan failed:', describeError(err));

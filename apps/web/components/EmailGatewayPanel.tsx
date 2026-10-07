@@ -1,9 +1,10 @@
 'use client';
 // Configure Outbound Email Gateway (Sprint 6Z-Email-Proxy; moved to Council Lookups in Sprint 6Z-Admin-Email-Perms): one
 // council's own SMTP server for portal email. The council's Active Admins and any Super Admin use it (canAdministerCouncil;
-// the drivers and /api/councils/email-gateway apply the same rule). The password goes to the route once, comes back
-// sealed, and only the sealed value is stored (councils.setEmailGateway). A saved password is never shown or sent back:
-// the box shows dots, and leaving it empty keeps the saved one while the host and username stay the same.
+// the drivers and /api/councils/email-gateway apply the same rule). Sprint 6Y: the password goes to the route once and
+// stays on the server, sealed in the Centralized Encrypted Credentials Vault; the route answers only its masked
+// CredentialStatus, and the page stores just the four Council columns (councils.setEmailGateway). The box shows dots
+// for a saved password, and leaving it empty keeps the saved one while the host and username stay the same.
 import { useEffect, useState, type FormEvent } from 'react';
 import {
   councilEmailGateway,
@@ -13,6 +14,7 @@ import {
   EMAIL_PROVIDERS,
   REDACTED_SECRET,
   SMTP_PORTS,
+  type CredentialStatus,
   type EmailGatewaySettings,
   type EmailProvider,
 } from '@kofc/shared';
@@ -23,17 +25,25 @@ import { db } from '@/services/db';
 
 const EMAIL_GATEWAY_ROUTE = '/api/councils/email-gateway';
 
-/** Posts to the gateway route, which seals the password; resolves to the settings to store, or null after a clear. */
-async function saveGatewayOnServer(body: Record<string, unknown>): Promise<EmailGatewaySettings | null> {
-  const res = await fetch(EMAIL_GATEWAY_ROUTE, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const answer = (await res.json().catch(() => null)) as { settings?: EmailGatewaySettings | null; message?: string } | null;
+interface GatewayAnswer {
+  settings: EmailGatewaySettings | null;
+  /** The saved password's masked status; the password itself never leaves the server. */
+  password: CredentialStatus | null;
+}
+
+/** Calls the gateway route: a POST saves (sealing the password in the vault) or clears, no body reads. */
+async function gatewayOnServer(councilId: number, body?: Record<string, unknown>): Promise<GatewayAnswer> {
+  const res = body
+    ? await fetch(EMAIL_GATEWAY_ROUTE, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ councilId, ...body }),
+      })
+    : await fetch(`${EMAIL_GATEWAY_ROUTE}?councilId=${councilId}`, { credentials: 'same-origin' });
+  const answer = (await res.json().catch(() => null)) as (Partial<GatewayAnswer> & { message?: string }) | null;
   if (!res.ok || !answer || answer.settings === undefined) throw new Error(answer?.message ?? `The server answered HTTP ${res.status}.`);
-  return answer.settings;
+  return { settings: answer.settings, password: answer.password ?? null };
 }
 
 const gatewayInput = 'w-full rounded border-4 border-hc-gold bg-black px-3 py-2 text-base text-white placeholder:text-white/70';
@@ -41,7 +51,8 @@ const gatewayInput = 'w-full rounded border-4 border-hc-gold bg-black px-3 py-2 
 export function EmailGatewayPanel({ councilId }: { councilId: number }) {
   const user = useUser();
   const council = useLoad(() => db.councils.get(councilId), [councilId]);
-  const saved = councilEmailGateway(council.data);
+  const vaulted = useLoad(() => gatewayOnServer(councilId), [councilId]);
+  const saved = councilEmailGateway(council.data) !== null && Boolean(vaulted.data?.password);
   const [provider, setProvider] = useState<EmailProvider>('Custom SMTP');
   const [host, setHost] = useState('');
   const [port, setPort] = useState('587');
@@ -75,13 +86,13 @@ export function EmailGatewayPanel({ councilId }: { councilId: number }) {
     }
   };
 
-  const run = async (save: () => Promise<EmailGatewaySettings | null>, done: (s: EmailGatewaySettings | null) => string) => {
+  const run = async (save: () => Promise<GatewayAnswer>, done: (s: EmailGatewaySettings | null) => string) => {
     setBusy(true);
     setMessage(null);
     try {
-      const settings = await save();
+      const { settings } = await save();
       await db.councils.setEmailGateway(user.memberId, row.id, settings);
-      await council.reload();
+      await Promise.all([council.reload(), vaulted.reload()]);
       setMessage({ tone: 'info', text: done(settings) });
     } catch (err) {
       setMessage({ tone: 'error', text: describeError(err) });
@@ -95,8 +106,7 @@ export function EmailGatewayPanel({ councilId }: { councilId: number }) {
     e.preventDefault();
     void run(
       () =>
-        saveGatewayOnServer({
-          councilId: row.id,
+        gatewayOnServer(row.id, {
           EmailProvider: provider,
           SmtpHost: host,
           SmtpPort: Number(port),
@@ -109,7 +119,7 @@ export function EmailGatewayPanel({ councilId }: { councilId: number }) {
 
   const clear = () =>
     void run(
-      () => saveGatewayOnServer({ councilId: row.id, clear: true }),
+      () => gatewayOnServer(row.id, { clear: true }),
       () => `Council ${row.CouncilNumber} is back on the default email route.`,
     );
 
@@ -127,6 +137,11 @@ export function EmailGatewayPanel({ councilId }: { councilId: number }) {
           <Notice tone={message.tone} onDismiss={() => setMessage(null)}>
             {message.text}
           </Notice>
+        </div>
+      ) : null}
+      {vaulted.error ? (
+        <div className="mb-3">
+          <Notice tone="error">The saved password could not be checked on the server: {vaulted.error}</Notice>
         </div>
       ) : null}
       <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2" autoComplete="off">
@@ -175,7 +190,7 @@ export function EmailGatewayPanel({ councilId }: { councilId: number }) {
           />
           {saved ? (
             <span className="text-sm">
-              Saved password: <span aria-label="hidden">{REDACTED_SECRET}</span>
+              Saved password: <span aria-label="hidden">{REDACTED_SECRET}</span> (sealed in the credentials vault {vaulted.data?.password?.updated_at} UTC)
             </span>
           ) : null}
         </label>
@@ -183,7 +198,7 @@ export function EmailGatewayPanel({ councilId }: { councilId: number }) {
           <Button type="submit" variant="gold" disabled={busy || !host.trim() || !username.trim() || (!saved && !password)}>
             {busy ? 'Saving…' : 'Save gateway'}
           </Button>
-          {saved ? (
+          {councilEmailGateway(row) || saved ? (
             <Button variant="danger" disabled={busy} onClick={clear}>
               Remove gateway
             </Button>

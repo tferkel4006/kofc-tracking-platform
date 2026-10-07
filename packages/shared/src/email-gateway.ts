@@ -1,14 +1,14 @@
 // Sprint 6Z-Email-Proxy (Schema 37): a council's own outbound email gateway.
 //
-// Five Council columns name the SMTP server the council's portal email goes out through: EmailProvider, SmtpHost,
-// SmtpPort, SmtpUsername and EmailPasswordEncrypted. Only an Active Admin of the council or an Active Super Admin saves
-// them (councils.setEmailGateway, from the Outbound Email Gateway tab of Council Lookups - Sprint 6Z-Admin-Email-Perms);
+// Four Council columns name the SMTP server the council's portal email goes out through: EmailProvider, SmtpHost,
+// SmtpPort and SmtpUsername. Only an Active Admin of the council or an Active Super Admin saves them
+// (councils.setEmailGateway, from the Outbound Email Gateway tab of Council Lookups - Sprint 6Z-Admin-Email-Perms);
 // councils.create and update never touch them.
 //
-// THE PASSWORD IS NEVER STORED OR SHOWN IN THE CLEAR. The Councils page posts it once to /api/councils/email-gateway,
-// where the server seals it with AES-256-GCM under a key that exists only on the server (EMAIL_GATEWAY_SECRET) and
-// hands back the sealed text. Only that sealed text reaches a data driver, and the page shows dots in its place. The
-// notification route unseals it on the server at send time (apps/web/services/server/smtp.ts).
+// THE PASSWORD IS NOT ON THE COUNCIL ROW. Sprint 6Y (Schema 40) moved it to the Centralized Encrypted Credentials Vault
+// (credentials-vault.ts) as SMTP_OUTBOUND_PASSWORD. The panel posts it once to /api/councils/email-gateway, where the
+// server seals it with AES-256-GCM and keeps it in CouncilCredentialsVault; nothing sealed or plain comes back, only a
+// CredentialStatus. The notification route unseals it on the server at send time (apps/web/services/server/smtp.ts).
 import { BusinessRuleError } from './rules';
 import type { Council } from './types';
 
@@ -25,22 +25,15 @@ export const EMAIL_PROVIDER_PRESETS: Record<EmailProvider, { host: string; port:
 /** 465 opens TLS at once; the others must offer STARTTLS. The server never signs in over a plain connection. */
 export const SMTP_PORTS = [25, 465, 587, 2525] as const;
 
-/** Sealed passwords look like `v1.<iv>.<tag>.<ciphertext>`, each part base64url. */
-export const SEALED_SECRET_PATTERN = /^v1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{2,4100}$/;
-
-/** What shows in place of a saved password. */
-export const REDACTED_SECRET = '••••••••••••';
-
-/** The five Council columns of the gateway. */
+/** The four Council columns of the gateway. */
 export interface EmailGatewaySettings {
   EmailProvider: EmailProvider;
   SmtpHost: string;
   SmtpPort: number;
   SmtpUsername: string;
-  EmailPasswordEncrypted: string;
 }
 
-export const EMAIL_GATEWAY_COLUMNS = ['EmailProvider', 'SmtpHost', 'SmtpPort', 'SmtpUsername', 'EmailPasswordEncrypted'] as const satisfies readonly (keyof EmailGatewaySettings)[];
+export const EMAIL_GATEWAY_COLUMNS = ['EmailProvider', 'SmtpHost', 'SmtpPort', 'SmtpUsername'] as const satisfies readonly (keyof EmailGatewaySettings)[];
 export type EmailGatewayColumn = (typeof EMAIL_GATEWAY_COLUMNS)[number];
 
 /** The gateway columns as one cleared (all NULL) row update. */
@@ -49,7 +42,6 @@ export const CLEARED_EMAIL_GATEWAY: Record<EmailGatewayColumn, null> = {
   SmtpHost: null,
   SmtpPort: null,
   SmtpUsername: null,
-  EmailPasswordEncrypted: null,
 };
 
 const HOSTNAME = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
@@ -58,7 +50,8 @@ export const isEmailProvider = (value: unknown): value is EmailProvider => typeo
 
 /**
  * A councils.setEmailGateway request, checked: a known provider, a dotted host name, one of SMTP_PORTS, a username of
- * 1-255 characters without control characters, and a password already sealed by the server. Rejects INVALID_INPUT.
+ * 1-255 characters without control characters. Rejects INVALID_INPUT, and refuses any credential field outright: a password
+ * belongs in the credentials vault, never on the Council row.
  */
 export function cleanEmailGatewaySettings(input: unknown): EmailGatewaySettings {
   const v = (input ?? {}) as Record<string, unknown>;
@@ -71,17 +64,19 @@ export function cleanEmailGatewaySettings(input: unknown): EmailGatewaySettings 
   const username = typeof v.SmtpUsername === 'string' ? v.SmtpUsername.trim() : '';
   // eslint-disable-next-line no-control-regex
   if (!username || username.length > 255 || /[\x00-\x1f\x7f]/.test(username)) throw fail('The SMTP username is missing, too long or not plain text.', 'SmtpUsername');
-  const sealed = v.EmailPasswordEncrypted;
-  if (typeof sealed !== 'string' || !SEALED_SECRET_PATTERN.test(sealed)) {
-    throw fail('The password must be sealed by the server before it is saved; enter it on the Councils page.', 'EmailPasswordEncrypted');
+  if (v.EmailPasswordEncrypted != null || v.password != null) {
+    throw fail('The SMTP password is kept in the credentials vault, not on the council; enter it in the Outbound Email Gateway tab.', 'password');
   }
-  return { EmailProvider: v.EmailProvider, SmtpHost: host, SmtpPort: port, SmtpUsername: username, EmailPasswordEncrypted: sealed };
+  return { EmailProvider: v.EmailProvider, SmtpHost: host, SmtpPort: port, SmtpUsername: username };
 }
 
-/** The council's gateway when all five columns are filled; otherwise null and email takes the default route. */
+/**
+ * The council's gateway when all four columns are filled; otherwise null and email takes the default route. The SMTP
+ * password is looked up separately, in the credentials vault, by the server.
+ */
 export function councilEmailGateway(council: Partial<Council> | null | undefined): EmailGatewaySettings | null {
   if (!council) return null;
-  const { EmailProvider: provider, SmtpHost, SmtpPort, SmtpUsername, EmailPasswordEncrypted } = council;
-  if (!isEmailProvider(provider) || !SmtpHost || !SmtpPort || !SmtpUsername || !EmailPasswordEncrypted) return null;
-  return { EmailProvider: provider, SmtpHost, SmtpPort: Number(SmtpPort), SmtpUsername, EmailPasswordEncrypted };
+  const { EmailProvider: provider, SmtpHost, SmtpPort, SmtpUsername } = council;
+  if (!isEmailProvider(provider) || !SmtpHost || !SmtpPort || !SmtpUsername) return null;
+  return { EmailProvider: provider, SmtpHost, SmtpPort: Number(SmtpPort), SmtpUsername };
 }

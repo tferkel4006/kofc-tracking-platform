@@ -10,12 +10,13 @@
 // signed in - is logged with the key redacted, as before. A route that mailed whatever any caller sent would let anyone
 // send mail as the council, and the reset email is composed in the browser until the remote driver moves it here.
 //
-// Sprint 6Z-Email-Proxy: when the session's council has its own email gateway (all five Council gateway columns, in the
-// server's data copy), an Admin's email goes out through that SMTP server instead, with the password unsealed only here,
-// and SendGrid is not used. The same Admin rule applies; everyone else is still only logged.
+// Sprint 6Z-Email-Proxy: when the session's council has its own email gateway (all four Council gateway columns, in the
+// server's data copy) and a saved SMTP_OUTBOUND_PASSWORD in the credentials vault (Sprint 6Y), an Admin's email goes out
+// through that SMTP server instead, with the password unsealed only here, and SendGrid is not used. The same Admin rule
+// applies; everyone else is still only logged.
 import { NextResponse } from 'next/server';
 import { buildSendGridMailRequest, councilEmailGateway, describeError, hasAdminRights, logSendGridRequest, type EmailPayload } from '@kofc/shared';
-import { unsealSmtpPassword } from '@/services/server/email-gateway';
+import { credentialsVault } from '@/services/server/credentials-vault';
 import { liveSendGridKey } from '@/services/server/secrets';
 import { memberDirectory, readPortalSession } from '@/services/server/session';
 import { sessionActor } from '@/services/server/session-token';
@@ -65,12 +66,13 @@ export async function POST(req: Request) {
   const claims = await readPortalSession(req);
   const mayGoLive = claims !== null && hasAdminRights(sessionActor(claims));
 
+  const vault = credentialsVault();
   const gateway = mayGoLive ? councilEmailGateway(await (await memberDirectory()).councils.get(claims.councilId)) : null;
-  if (claims && gateway) {
-    const password = unsealSmtpPassword(gateway.EmailPasswordEncrypted, claims.councilId);
+  if (claims && gateway && vault.has(claims.councilId, 'SMTP_OUTBOUND_PASSWORD')) {
+    const password = vault.reveal(claims.councilId, 'SMTP_OUTBOUND_PASSWORD');
     if (password === null) {
       return NextResponse.json(
-        { sent: false, simulated: false, message: "The council's SMTP password could not be unsealed. A Super Admin must enter it again on the Councils page." },
+        { sent: false, simulated: false, message: "The council's SMTP password could not be unsealed. An Admin must enter it again in the Outbound Email Gateway tab." },
         { status: 502 },
       );
     }

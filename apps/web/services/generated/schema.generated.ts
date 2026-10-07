@@ -422,13 +422,6 @@ export const TABLES: Record<string, TableMeta> = {
         "default": null
       },
       {
-        "name": "EmailPasswordEncrypted",
-        "kind": "text",
-        "notNull": false,
-        "identity": false,
-        "default": null
-      },
-      {
         "name": "tenant_type",
         "kind": "text",
         "notNull": true,
@@ -5006,6 +4999,63 @@ export const TABLES: Record<string, TableMeta> = {
       }
     ],
     "uniqueKeys": []
+  },
+  "CouncilCredentialsVault": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "council_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "credential_key",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "credential_value_encrypted",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "updated_at",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "council_id",
+        "refTable": "Council",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "council_id",
+        "credential_key"
+      ]
+    ]
   }
 };
 

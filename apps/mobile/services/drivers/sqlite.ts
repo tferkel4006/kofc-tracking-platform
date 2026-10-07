@@ -551,8 +551,10 @@ const DB_NAME = 'kofc.db';
  *     email gateway (Sprint 6Z-Email-Proxy).
  * 38: Shift.IsAllHands - All-Hands shifts with no volunteer cap (Phase 4.5).
  * 39: Council.tenant_type - the multi-tenant white-label gate (Sprint 6Z-Dual-Gate-Model).
+ * 40: CouncilCredentialsVault, and Council.EmailPasswordEncrypted dropped - the Centralized Encrypted Credentials Vault
+ *     (Sprint 6Y). The phone never reads or writes the vault; only the web server does.
  */
-const SCHEMA_VERSION = 39;
+const SCHEMA_VERSION = 40;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -1267,8 +1269,8 @@ export class SqliteDataService implements DataService {
         await this.requireRecord(db, 'Council', councilId);
         const g = settings === null ? CLEARED_EMAIL_GATEWAY : cleanEmailGatewaySettings(settings);
         await db.runAsync(
-          'UPDATE [Council] SET [EmailProvider] = ?, [SmtpHost] = ?, [SmtpPort] = ?, [SmtpUsername] = ?, [EmailPasswordEncrypted] = ? WHERE [id] = ?',
-          [g.EmailProvider, g.SmtpHost, g.SmtpPort, g.SmtpUsername, g.EmailPasswordEncrypted, councilId],
+          'UPDATE [Council] SET [EmailProvider] = ?, [SmtpHost] = ?, [SmtpPort] = ?, [SmtpUsername] = ? WHERE [id] = ?',
+          [g.EmailProvider, g.SmtpHost, g.SmtpPort, g.SmtpUsername, councilId],
         );
       });
       return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [councilId]))!;

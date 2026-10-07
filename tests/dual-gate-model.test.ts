@@ -37,7 +37,7 @@ afterEach(() => clearCouncilGates());
 describe('schema 39', () => {
   it('appends Council.tenant_type defaulting to KOFC and bumps the phone database version', () => {
     expect(read('Schema.sql')).toMatch(/ALTER TABLE \[Council\] ADD \[tenant_type\] VARCHAR\(20\) NOT NULL DEFAULT 'KOFC';/);
-    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = 39;/);
+    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = (39|[4-9]\d);/);
     expect(read('data_dictionary.md')).toMatch(/tenant_type \(VARCHAR\(20\), NOT NULL, DEFAULT 'KOFC'\)/);
   });
 });

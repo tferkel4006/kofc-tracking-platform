@@ -4,7 +4,9 @@
 // Sprint 6C: a media upload may name its event's folder (`folder`, the event name), filing it under Media / <event name>.
 // The screen then stores only that id in the record's link column.
 //
-// The Drive credentials live only on the server (services/server/secrets.ts), never in the browser bundle.
+// The Drive credentials live only on the server (services/server/secrets.ts), never in the browser bundle. Sprint 6Y:
+// the private key is looked up per council at runtime - the council's GOOGLE_DRIVE_PRIVATE_KEY from the Centralized
+// Encrypted Credentials Vault when it has one, else the server's own (services/server/credentials-vault.ts).
 //
 // Sprint 6Z-Engine-Upgrade: the route now checks the caller's portal session (services/server/session.ts) BEFORE it
 // reads the form: 401 without a session, 403 unless the session is an Active Admin or Super Admin (the same members
@@ -12,11 +14,8 @@
 // route answers 503 { archived: false } and the screen keeps the file as a browser blob link.
 import { NextResponse } from 'next/server';
 import { assertDriveVaultUpload, cleanDriveVaultSubfolder, describeError, hasAdminRights } from '@kofc/shared';
-import { GoogleDriveVault } from '@/services/google-drive';
-import { driveVaultOffReason, liveDriveCredentials } from '@/services/server/secrets';
+import { councilDriveCredentials, councilDriveOffReason, driveVaultClient } from '@/services/server/credentials-vault';
 import { requirePortalSession } from '@/services/server/session';
-
-let vault: GoogleDriveVault | null = null;
 
 export async function POST(req: Request) {
   const session = await requirePortalSession(req, hasAdminRights, { archived: false });
@@ -36,12 +35,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ archived: false, message: describeError(err) }, { status: 400 });
   }
 
-  const creds = liveDriveCredentials();
-  if (!creds) return NextResponse.json({ archived: false, message: driveVaultOffReason() }, { status: 503 });
+  const creds = councilDriveCredentials(session.claims.councilId);
+  if (!creds) return NextResponse.json({ archived: false, message: councilDriveOffReason(session.claims.councilId) }, { status: 503 });
 
   try {
-    vault ??= new GoogleDriveVault(creds);
-    const fileId = await vault.upload(kind, { name: file.name, mimeType: file.type, data: new Uint8Array(await file.arrayBuffer()) }, folder);
+    const fileId = await driveVaultClient(creds).upload(kind, { name: file.name, mimeType: file.type, data: new Uint8Array(await file.arrayBuffer()) }, folder);
     console.log(`[drive-vault] member ${session.claims.memberId} filed a ${kind} upload: ${fileId}`);
     return NextResponse.json({ archived: true, fileId });
   } catch (err) {
