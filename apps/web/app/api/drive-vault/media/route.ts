@@ -4,16 +4,21 @@
 // does not exist; nothing is created). The page shows them through Drive's thumbnail service, so the viewer's own
 // Google account still decides whether each image opens.
 //
-// Like the upload route this is OPT-IN: with no server-side sessions the route cannot tell who is asking, so it reads the
-// drive only when the credentials are set AND DRIVE_VAULT_LIVE=1. Otherwise it answers 503 { available: false } and the
-// factory falls back to the photos saved on past editions, then to the event-type icon.
+// Sprint 6Z-Engine-Upgrade: reading the drive needs a portal session of an Active Admin or Super Admin (401 / 403
+// otherwise), and still the credentials AND DRIVE_VAULT_LIVE=1 (503 otherwise). On any refusal the factory falls back to
+// the photos saved on past editions, then to the event-type icon.
 import { NextResponse } from 'next/server';
-import { cleanDriveVaultSubfolder, describeError, DRIVE_VAULT_FOLDERS, DRIVE_VAULT_ROOT, FLYER_MAX_PHOTOS } from '@kofc/shared';
-import { driveCredentialsFromEnv, GoogleDriveVault } from '@/services/google-drive';
+import { cleanDriveVaultSubfolder, describeError, DRIVE_VAULT_FOLDERS, DRIVE_VAULT_ROOT, FLYER_MAX_PHOTOS, hasAdminRights } from '@kofc/shared';
+import { GoogleDriveVault } from '@/services/google-drive';
+import { liveDriveCredentials } from '@/services/server/secrets';
+import { requirePortalSession } from '@/services/server/session';
 
 let vault: GoogleDriveVault | null = null;
 
 export async function GET(req: Request) {
+  const session = await requirePortalSession(req, hasAdminRights, { available: false });
+  if ('denied' in session) return session.denied;
+
   let folder: string | null;
   try {
     folder = cleanDriveVaultSubfolder(new URL(req.url).searchParams.get('folder'));
@@ -22,10 +27,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ available: false, message: describeError(err) }, { status: 400 });
   }
 
-  const creds = driveCredentialsFromEnv();
-  if (!creds || process.env.DRIVE_VAULT_LIVE !== '1') {
-    return NextResponse.json({ available: false, message: 'The Drive vault is not switched on.' }, { status: 503 });
-  }
+  const creds = liveDriveCredentials();
+  if (!creds) return NextResponse.json({ available: false, message: 'The Drive vault is not switched on.' }, { status: 503 });
 
   try {
     vault ??= new GoogleDriveVault(creds);

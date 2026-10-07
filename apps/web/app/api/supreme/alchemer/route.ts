@@ -1,16 +1,20 @@
 // POST /api/supreme/alchemer - the server side of the Supreme Compliance Center's "Transmit" button (Sprint 5T).
 //
 // The portal's data driver runs in the browser, so it must never hold the Alchemer API credentials: anything a client
-// component reads from process.env is baked into the public JavaScript bundle. They live here instead, read on the
-// server from ALCHEMER_API_KEY (Alchemer's api_token) and ALCHEMER_API_SECRET (api_token_secret).
+// component reads from process.env is baked into the public JavaScript bundle. They live on the server instead
+// (services/server/secrets.ts: ALCHEMER_API_KEY, Alchemer's api_token, and ALCHEMER_API_SECRET, api_token_secret).
 //
-// SIMULATION ONLY. The portal has no server-side sessions yet, so this route cannot tell who is calling it; forwarding
-// to Alchemer from here would let anyone file answers to the Supreme Council under the council's account. Until the
-// remote driver brings authenticated sessions, the route validates the payload, logs the request it would send (with
-// the credentials redacted) and answers as Alchemer would on success. It only ever talks to api.alchemer.com through
-// buildAlchemerRequest, never to a caller-supplied URL.
+// Sprint 6Z-Engine-Upgrade: the route now needs a portal session (401 without one) of the council leadership that may
+// file Supreme reports - an Active Admin, Financial Secretary or Treasurer, or a Super Admin (maySyncSupremeReports;
+// 403 otherwise).
+//
+// STILL SIMULATED. The route validates the payload, logs the request it would send (with the credentials redacted) and
+// answers as Alchemer would on success. It only ever talks to api.alchemer.com through buildAlchemerRequest, never to a
+// caller-supplied URL.
 import { NextResponse } from 'next/server';
-import { ALL_ALCHEMER_SHORTNAMES, buildAlchemerRequest, BusinessRuleError, cleanAlchemerSurveyId, describeError } from '@kofc/shared';
+import { ALL_ALCHEMER_SHORTNAMES, buildAlchemerRequest, BusinessRuleError, cleanAlchemerSurveyId, describeError, maySyncSupremeReports } from '@kofc/shared';
+import { alchemerCredentialsConfigured } from '@/services/server/secrets';
+import { requirePortalSession } from '@/services/server/session';
 
 const invalid = (message: string) => new BusinessRuleError('INVALID_INPUT', message);
 
@@ -31,6 +35,9 @@ function cleanAnswers(value: unknown): Record<string, string | number> {
 }
 
 export async function POST(req: Request) {
+  const session = await requirePortalSession(req, (actor) => maySyncSupremeReports(actor, actor.councilId), { result_ok: false });
+  if ('denied' in session) return session.denied;
+
   let surveyId: string;
   let answers: Record<string, string | number>;
   try {
@@ -41,8 +48,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ result_ok: false, message: describeError(err) }, { status: 400 });
   }
 
-  const credentialsConfigured = Boolean(process.env.ALCHEMER_API_KEY && process.env.ALCHEMER_API_SECRET);
   // Built with the placeholder credentials, so the log never carries the real pair.
-  console.log('[alchemer] simulated post:', JSON.stringify(buildAlchemerRequest(surveyId, answers), null, 2));
-  return NextResponse.json({ result_ok: true, simulated: true, credentialsConfigured });
+  console.log(`[alchemer] simulated post for member ${session.claims.memberId}:`, JSON.stringify(buildAlchemerRequest(surveyId, answers), null, 2));
+  return NextResponse.json({ result_ok: true, simulated: true, credentialsConfigured: alchemerCredentialsConfigured() });
 }

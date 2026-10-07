@@ -55,6 +55,10 @@ import {
   assertCheckNumberUnused,
   assertExpenseLinks,
   assertExpenseStatus,
+  memberOnboardingState,
+  nextExpenseStatus,
+  nextIntakeSessionStatus,
+  nextOnboardingState,
   assertReportInCouncil,
   buildExpenseReportDetails,
   cleanDisbursementCheck,
@@ -869,6 +873,7 @@ export class SqliteDataService implements DataService {
             [member.id, codeHash],
           );
           if (!token || !isEnrollmentTokenUsable(token, this.now())) throw enrollmentCodeInvalid();
+          nextOnboardingState(memberOnboardingState(UNREGISTERED_PASSWORD, true), 'register', member.id);
           await db.runAsync('UPDATE [MemberEnrollmentToken] SET [ConsumedAt] = ? WHERE [id] = ?', [toTimestamp(this.now()), token.id]);
         }
         // The WHERE clause makes claiming the placeholder atomic: a second signUp changes nothing.
@@ -2296,14 +2301,16 @@ export class SqliteDataService implements DataService {
           [...(linkedEvent ? [eventExpenseSpan(linkedEvent)] : []), ...(linkedMeeting ? [meetingExpenseSpan(linkedMeeting)] : [])],
           this.now(),
         );
-        const fields: Bind[] = [clean.Status, clean.LinkedEventID, clean.LinkedMeetingID];
+        // The workflow engine decides the stored Status: a new sheet starts as Draft, and only a Draft is saved or submitted.
+        const status = nextExpenseStatus(draft?.Status ?? null, clean.Status === 'Submitted' ? 'submit' : 'saveDraft', clean.id);
+        const fields: Bind[] = [status, clean.LinkedEventID, clean.LinkedMeetingID];
         if (draft) {
           // Resubmitting answers the rejection, so its reason goes; a draft keeps it for the member to read.
           await db.runAsync(
             `UPDATE [ExpenseReport] SET [Status] = ?, [LinkedEventID] = ?, [LinkedMeetingID] = ?,
                     [RejectionReason] = CASE WHEN ? = 'Submitted' THEN NULL ELSE [RejectionReason] END
               WHERE [id] = ?`,
-            [...fields, clean.Status, draft.id],
+            [...fields, status, draft.id],
           );
           await db.runAsync('DELETE FROM [ExpenseLineItem] WHERE [ExpenseReportID] = ?', [draft.id]);
         } else {
@@ -2335,11 +2342,11 @@ export class SqliteDataService implements DataService {
         assertExpenseStatus(row, 'Submitted', 'be returned to its submitter');
         // A returned sheet starts its dual approval again (Sprint 5Z-3).
         await db.runAsync(
-          `UPDATE [ExpenseReport] SET [Status] = 'Draft', [RejectionReason] = ?,
+          `UPDATE [ExpenseReport] SET [Status] = ?, [RejectionReason] = ?,
                   [FinancialSecretaryMemberID] = NULL, [FinancialSecretaryApprovedAt] = NULL,
                   [GrandKnightMemberID] = NULL, [GrandKnightApprovedAt] = NULL
             WHERE [id] = ?`,
-          [reason, reportId],
+          [nextExpenseStatus(row.Status, 'return', reportId), reason, reportId],
         );
       });
       return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
@@ -2372,8 +2379,8 @@ export class SqliteDataService implements DataService {
         assertExpenseSignatureStage(row, 'grandKnight');
         assertDistinctExpenseSigners(actor, row);
         await db.runAsync(
-          "UPDATE [ExpenseReport] SET [Status] = 'Approved', [GrandKnightMemberID] = ?, [GrandKnightApprovedAt] = ? WHERE [id] = ?",
-          [actorId, toTimestamp(this.now()), reportId],
+          'UPDATE [ExpenseReport] SET [Status] = ?, [GrandKnightMemberID] = ?, [GrandKnightApprovedAt] = ? WHERE [id] = ?',
+          [nextExpenseStatus(row.Status, 'approve', reportId), actorId, toTimestamp(this.now()), reportId],
         );
       });
       return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
@@ -2388,12 +2395,14 @@ export class SqliteDataService implements DataService {
         const actor = await this.memberWriteActor(db, actorId);
         assertMayDisburseCouncilExpenses(actor, councilId, `record expense checks for council ${councilId}`);
         await this.assertCouncilsExist(db, [councilId]);
+        const paidStatus = new Map<number, string>();
         for (const id of ids) {
           const row = await this.requireExpenseReport(db, id);
           assertReportInCouncil(row, councilId);
           assertExpenseStatus(row, 'Approved', 'be paid');
           assertDualSigned(row);
           assertNoSelfPayout(actor, row);
+          paidStatus.set(id, nextExpenseStatus(row.Status, 'reimburse', id));
         }
         assertCheckNumberUnused(check.CheckNumber, councilId, await this.councilCheckNumbers(db, councilId));
         const amounts = await selectIn<{ Amount: number }>(
@@ -2407,7 +2416,7 @@ export class SqliteDataService implements DataService {
         );
         disbursementId = res.lastInsertRowId;
         for (const id of ids) {
-          await db.runAsync("UPDATE [ExpenseReport] SET [Status] = 'Reimbursed', [DisbursementID] = ? WHERE [id] = ?", [disbursementId, id]);
+          await db.runAsync('UPDATE [ExpenseReport] SET [Status] = ?, [DisbursementID] = ? WHERE [id] = ?', [paidStatus.get(id)!, disbursementId, id]);
         }
       });
       const disbursement = (await db.getFirstAsync<ExpenseDisbursement>('SELECT * FROM [ExpenseDisbursement] WHERE [id] = ?', [
@@ -2853,9 +2862,9 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
         const actor = await this.memberWriteActor(db, actorId);
-        await this.requireEvent(db, eventId);
+        const event = await this.requireEvent(db, eventId);
         assertMayRunEventIntake(actor, eventId, await this.councilIdsOf(db, eventId));
-        await db.runAsync('UPDATE [Event] SET [IntakeSessionStatus] = ? WHERE [id] = ?', [next, eventId]);
+        await db.runAsync('UPDATE [Event] SET [IntakeSessionStatus] = ? WHERE [id] = ?', [nextIntakeSessionStatus(event.IntakeSessionStatus, next, eventId), eventId]);
       });
       return (await this.requireEvent(db, eventId)) as unknown as Event;
     },

@@ -10,6 +10,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@kofc/shared': at('./packages/shared/src/index.ts'),
+      // The web app's own path alias, so tests can load its API route handlers.
+      '@': at('./apps/web'),
       'expo-sqlite': at('./tests/shims/expo-sqlite.ts'),
       'expo-crypto': at('./tests/shims/expo-crypto.ts'),
       'expo-secure-store': at('./tests/shims/expo-secure-store.ts'),

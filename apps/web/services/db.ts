@@ -11,6 +11,7 @@
 // =========================================================================
 import type { DataService } from '@kofc/shared';
 import { postAlchemerViaServer } from './alchemer-transport';
+import { sendEmailViaServer } from './email-transport';
 import { MemoryDataService } from './drivers/memory';
 import { createRemoteDataService } from './drivers/remote';
 
@@ -21,9 +22,9 @@ function createDataService(): DataService {
   const driver = DATA_DRIVER;
   switch (driver) {
     case 'memory':
-      // Supreme reports go through the server route, which holds the Alchemer credentials. The demo council is loaded
+      // Supreme reports and email go through the server routes, which hold the Alchemer and SendGrid credentials. The demo council is loaded
       // with Seed.sql's presentation data (Sprint 5Z-1) so no screen or chart starts blank.
-      return new MemoryDataService({ postAlchemer: postAlchemerViaServer, presentationData: true });
+      return new MemoryDataService({ postAlchemer: postAlchemerViaServer, sendEmail: sendEmailViaServer, presentationData: true });
     case 'remote':
       return createRemoteDataService();
     default:

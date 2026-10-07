@@ -111,7 +111,8 @@ export type BusinessRuleCode =
   | 'AGENDA_EDITOR_REQUIRED'
   | 'AGENDA_CONFLICT'
   | 'ENROLLMENT_CODE_INVALID'
-  | 'RESET_CODE_INVALID';
+  | 'RESET_CODE_INVALID'
+  | 'ILLEGAL_STATE_TRANSITION';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {

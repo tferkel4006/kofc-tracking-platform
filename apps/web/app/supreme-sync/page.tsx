@@ -30,6 +30,7 @@ import { formatDecimalHours, formatMoney } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
+import { readRosterOnServer } from '@/services/roster-transport';
 
 const FORM_TABS = SUPREME_FORM_TYPES.map((id) => ({ id, label: `${SUPREME_FORM_LABELS[id].form} · ${SUPREME_FORM_LABELS[id].title}` }));
 
@@ -171,7 +172,8 @@ function RosterImport({ councilId }: { councilId: number }) {
     setBusy(true);
     setError(null);
     try {
-      setResult(await db.supreme.syncSupremeRoster(user.memberId, councilId, rows));
+      // The preview above is read in the browser; the rows synced are the server's reading (Sprint 6Z-Engine-Upgrade).
+      setResult(await db.supreme.syncSupremeRoster(user.memberId, councilId, await readRosterOnServer(councilId, csv)));
     } catch (err) {
       setError(describeError(err));
     } finally {

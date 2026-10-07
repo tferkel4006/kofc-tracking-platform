@@ -58,6 +58,10 @@ import {
   assertCheckNumberUnused,
   assertExpenseLinks,
   assertExpenseStatus,
+  memberOnboardingState,
+  nextExpenseStatus,
+  nextIntakeSessionStatus,
+  nextOnboardingState,
   assertReportInCouncil,
   buildExpenseReportDetails,
   cleanDisbursementCheck,
@@ -880,6 +884,7 @@ export class MemoryDataService implements DataService {
       if (codeHash === null) throw enrollmentCodeRequired();
       const token = s.rows('MemberEnrollmentToken').find((t) => t.MemberID === member.id && t.TokenHash === codeHash);
       if (!token || !isEnrollmentTokenUsable(token as unknown as { ExpiresAt: string; ConsumedAt: string | null }, this.now())) throw enrollmentCodeInvalid();
+      nextOnboardingState(memberOnboardingState(cred.Password as string, true), 'register', member.id as number);
       (token as Row).ConsumedAt = toTimestamp(this.now());
       (cred as Row).Password = hash;
       (cred as Row).Username = member.Email;
@@ -917,6 +922,7 @@ export class MemoryDataService implements DataService {
       assertPasswordAcceptable(newPassword);
       const hash = await sha256Hex(newPassword); // hashed first: the check-and-write below must not span an await
       const { s, member, cred, token } = await this.liveResetToken(email, code);
+      nextOnboardingState(memberOnboardingState(cred.Password as string, false), 'resetPassword', member.id as number);
       (token as Row).ConsumedAt = toTimestamp(this.now());
       (cred as Row).Password = hash;
       return this.sessionFor(s, member, cred);
@@ -2006,11 +2012,13 @@ export class MemoryDataService implements DataService {
           [...(linkedEvent ? [eventExpenseSpan(linkedEvent)] : []), ...(linkedMeeting ? [meetingExpenseSpan(linkedMeeting)] : [])],
           this.now(),
         );
-        const fields = { Status: clean.Status, LinkedEventID: clean.LinkedEventID, LinkedMeetingID: clean.LinkedMeetingID };
+        // The workflow engine decides the stored Status: a new sheet starts as Draft, and only a Draft is saved or submitted.
+        const status = nextExpenseStatus(draft?.Status ?? null, clean.Status === 'Submitted' ? 'submit' : 'saveDraft', clean.id);
+        const fields = { Status: status, LinkedEventID: clean.LinkedEventID, LinkedMeetingID: clean.LinkedMeetingID };
         let reportId: number;
         if (draft) {
           Object.assign(draft, fields);
-          if (clean.Status === 'Submitted') draft.RejectionReason = null;
+          if (status === 'Submitted') draft.RejectionReason = null;
           reportId = draft.id as number;
           s.remove('ExpenseLineItem', (li) => li.ExpenseReportID === reportId);
         } else {
@@ -2031,7 +2039,7 @@ export class MemoryDataService implements DataService {
         assertMayAuditCouncilExpenses(actor, row.CouncilID as number, `return expense report ${reportId}`);
         assertExpenseStatus(row as unknown as ExpenseReport, 'Submitted', 'be returned to its submitter');
         // A returned sheet starts its dual approval again (Sprint 5Z-3).
-        Object.assign(row, { Status: 'Draft', RejectionReason: reason, ...CLEARED_EXPENSE_SIGNATURES });
+        Object.assign(row, { Status: nextExpenseStatus(row.Status, 'return', reportId), RejectionReason: reason, ...CLEARED_EXPENSE_SIGNATURES });
       });
       return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
     },
@@ -2060,7 +2068,7 @@ export class MemoryDataService implements DataService {
         assertNotSelfApproval(actor, report);
         assertExpenseSignatureStage(report, 'grandKnight');
         assertDistinctExpenseSigners(actor, report);
-        Object.assign(row, { Status: 'Approved', GrandKnightMemberID: actorId, GrandKnightApprovedAt: toTimestamp(this.now()) });
+        Object.assign(row, { Status: nextExpenseStatus(row.Status, 'approve', reportId), GrandKnightMemberID: actorId, GrandKnightApprovedAt: toTimestamp(this.now()) });
       });
       return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
     },
@@ -2088,7 +2096,7 @@ export class MemoryDataService implements DataService {
             .map((li) => li.Amount as number),
         );
         const disbursement = s.insert('ExpenseDisbursement', { ...check, CouncilID: councilId, TotalAmount: total });
-        for (const row of rows) Object.assign(row, { Status: 'Reimbursed', DisbursementID: disbursement.id });
+        for (const row of rows) Object.assign(row, { Status: nextExpenseStatus(row.Status, 'reimburse', row.id as number), DisbursementID: disbursement.id });
         return disbursement.id as number;
       });
       const disbursement = s.rows('ExpenseDisbursement').find((d) => d.id === disbursementId)!;
@@ -2440,7 +2448,7 @@ export class MemoryDataService implements DataService {
         const actor = this.memberWriteActor(s, actorId);
         const event = this.requireEvent(s, eventId);
         assertMayRunEventIntake(actor, eventId, this.councilIdsOf(s, eventId));
-        event.IntakeSessionStatus = next;
+        event.IntakeSessionStatus = nextIntakeSessionStatus(event.IntakeSessionStatus, next, eventId);
         return { ...event } as unknown as Event;
       });
     },

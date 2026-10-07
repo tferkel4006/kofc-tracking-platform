@@ -5,6 +5,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ALL_FEATURES_ON, councilFeatureFlags, type FeatureFlags, type SessionUser } from '@kofc/shared';
 import { db } from '@/services/db';
+import { closeServerSession, openServerSession } from '@/services/session-transport';
 
 interface SessionValue {
   user: SessionUser | null;
@@ -52,10 +53,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async (username: string, password: string) => {
     const found = await db.auth.signIn(username.trim(), password);
+    // Sprint 6Z-Engine-Upgrade: the server checks the same credentials and sets its own session cookie, which its Drive
+    // vault, Supreme and email routes require. A member it does not know (added in this tab) simply gets no cookie.
+    if (found) await openServerSession(username.trim(), password);
     setUser(found);
     return found !== null;
   }, []);
-  const signOut = useCallback(() => setUser(null), []);
+  const signOut = useCallback(() => {
+    setUser(null);
+    void closeServerSession();
+  }, []);
   const [profileVersion, setProfileVersion] = useState(0);
   const profileChanged = useCallback(() => setProfileVersion((v) => v + 1), []);
   const [alertsVersion, setAlertsVersion] = useState(0);

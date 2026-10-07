@@ -32,3 +32,4 @@ export * from './docs';
 export * from './performance';
 export * from './bulletins';
 export * from './marketing';
+export * from './workflow';
