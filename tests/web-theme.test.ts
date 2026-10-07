@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { BRAND, contrastRatio, FONT_BODY, FONT_HEADING } from '@kofc/shared';
+import { BRAND, contrastRatio, FONT_BODY, FONT_HEADING, HIGH_CONTRAST } from '@kofc/shared';
 
 const webRoot = fileURLToPath(new URL('../apps/web/', import.meta.url));
 const css = readFileSync(join(webRoot, 'app/globals.css'), 'utf8');
@@ -35,6 +35,8 @@ describe('web theme matches the shared brand tokens', () => {
     ['color-muted', BRAND.muted],
     ['color-line', BRAND.line],
     ['color-green', BRAND.green],
+    ['color-black', HIGH_CONTRAST.navy],
+    ['color-hc-gold', HIGH_CONTRAST.edge],
   ])('--%s is %s', (name, expected) => {
     expect(token(name)?.toUpperCase()).toBe(expected.toUpperCase());
   });
@@ -68,8 +70,8 @@ describe('portal sources stay on brand', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('hard-codes no hex colour outside the brand tokens', () => {
-    const brand = new Set(Object.values(BRAND).map((c) => c.toUpperCase()));
+  it('hard-codes no hex colour outside the brand and high-contrast tokens', () => {
+    const brand = new Set([...Object.values(BRAND), ...Object.values(HIGH_CONTRAST)].map((c) => c.toUpperCase()));
     const stray = sources.flatMap((s) => (s.text.match(/#[0-9a-fA-F]{6}\b/g) ?? []).filter((c) => !brand.has(c.toUpperCase())).map((c) => `${s.file}: ${c}`));
     expect(stray).toEqual([]);
   });
@@ -87,5 +89,7 @@ describe('brand contrast', () => {
     expect(contrastRatio(BRAND.red, BRAND.white)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(BRAND.navy, BRAND.gold)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(BRAND.gold, BRAND.navy)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(HIGH_CONTRAST.text, HIGH_CONTRAST.navy)).toBeGreaterThanOrEqual(21);
+    expect(contrastRatio(HIGH_CONTRAST.edge, HIGH_CONTRAST.navy)).toBeGreaterThanOrEqual(7);
   });
 });

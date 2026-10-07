@@ -137,6 +137,7 @@ describe('portal permissions', () => {
       'distribution-lists',
       'profile',
       'help',
+      'answers/help',
       'governance/bylaws',
       'answers/sop',
       'resources/bulletins',
@@ -175,13 +176,14 @@ describe('portal permissions', () => {
       'distribution-lists',
       'profile',
       'help',
+      'answers/help',
       'governance/bylaws',
       'answers/sop',
       'resources/bulletins',
       'performance/charts',
     ]);
-    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help', 'governance/bylaws', 'answers/sop', 'resources/bulletins', 'performance/charts']);
-    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help', 'governance/bylaws', 'answers/sop', 'resources/bulletins']);
+    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help', 'answers/help', 'governance/bylaws', 'answers/sop', 'resources/bulletins', 'performance/charts']);
+    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help', 'answers/help', 'governance/bylaws', 'answers/sop', 'resources/bulletins']);
   });
 
   it('gives every member their own expense reports, leadership the audit queue, and only finance officers and Super Admins the check ledger', () => {
@@ -218,7 +220,7 @@ describe('portal permissions', () => {
     it('opens the help center to every member from the Answers pillar (Sprint 6Z)', () => {
       for (const u of [superAdmin, admin, officer, member]) {
         expect(portalAreas(u)).toContain('help');
-        expect(portalSidebar(u).find((g) => g.id === 'answers')?.entries.map((e) => e.item)).toEqual(['help', 'answers/sop']);
+        expect(portalSidebar(u).find((g) => g.id === 'answers')?.entries.map((e) => e.item)).toEqual(['help', 'answers/help', 'answers/sop']);
         // Sprint 6Z: every member reads the bylaws vault and the bulletins board too.
         expect(portalAreas(u)).toEqual(expect.arrayContaining(['governance/bylaws', 'resources/bulletins']));
       }
@@ -271,7 +273,7 @@ describe('portal permissions', () => {
         ],
         ['Performance', ['dashboard', 'performance/charts', 'ledger', 'lessons-registry']],
         ['Resources', ['gallery', 'resources/bulletins']],
-        ['Answers', ['help', 'answers/sop']],
+        ['Answers', ['help', 'answers/help', 'answers/sop']],
         ['Setup', ['members', 'supreme-sync', 'council-lookups', 'charities/registry', 'parishes']],
       ]);
     });
@@ -286,7 +288,7 @@ describe('portal permissions', () => {
         ],
         ['Performance', ['dashboard', 'performance/charts', 'ledger']],
         ['Resources', ['gallery', 'resources/bulletins']],
-        ['Answers', ['help', 'answers/sop']],
+        ['Answers', ['help', 'answers/help', 'answers/sop']],
         ['Setup', ['supreme-sync', 'council-lookups']],
       ]);
     });
@@ -298,7 +300,7 @@ describe('portal permissions', () => {
         ['Finances', [...FIN_READ, 'expenses', 'expenses/authorize', 'charities/vetting', 'charities/propose', 'financials/budget']],
         ['Performance', ['dashboard', 'performance/charts', 'ledger']],
         ['Resources', ['gallery', 'resources/bulletins']],
-        ['Answers', ['help', 'answers/sop']],
+        ['Answers', ['help', 'answers/help', 'answers/sop']],
         ['Setup', ['council-lookups']],
       ]);
     });
@@ -313,7 +315,7 @@ describe('portal permissions', () => {
         // Sprint 5Z-2.5: officers read the executive dashboard.
         ['Performance', ['dashboard', 'performance/charts', 'ledger']],
         ['Resources', ['gallery', 'resources/bulletins']],
-        ['Answers', ['help', 'answers/sop']],
+        ['Answers', ['help', 'answers/help', 'answers/sop']],
       ]);
       expect(shape(member)).toEqual([
         ['Governance', ['meetings', 'elections', 'governance/bylaws']],
@@ -321,7 +323,7 @@ describe('portal permissions', () => {
         ['Finances', ['expenses', 'charities/propose', 'financials/budget']],
         ['Performance', ['ledger']],
         ['Resources', ['gallery', 'resources/bulletins']],
-        ['Answers', ['help', 'answers/sop']],
+        ['Answers', ['help', 'answers/help', 'answers/sop']],
       ]);
     });
 
@@ -496,13 +498,14 @@ describe('portal permissions', () => {
         'distribution-lists',
         'profile',
         'help',
+        'answers/help',
         'governance/bylaws',
         'answers/sop',
         'resources/bulletins',
         'performance/charts',
       ]);
     }
-    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help', 'governance/bylaws', 'answers/sop', 'resources/bulletins', 'performance/charts']);
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help', 'answers/help', 'governance/bylaws', 'answers/sop', 'resources/bulletins', 'performance/charts']);
   });
 
   it('gives council leadership the Supreme sync and the alert dispatch, each for their own council (Sprint 5T)', () => {

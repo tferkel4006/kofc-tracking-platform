@@ -156,3 +156,171 @@ export function docTitle(slug: string, markdown: string): string {
   if (h1) return h1[1].trim();
   return slug.replace(/[-_]+/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
+
+// =========================================================================
+// INTERACTIVE HELP DESK (Sprint 6A, Phase 4)
+// /answers/help searches the task workflows of docs/MEMBER_USER_GUIDE.md. Every task there is a '### N.N Title' heading
+// followed by the technical-writer skill's five parts - Goal, Start point, Steps, Expected result, Common problems - and
+// an optional '> **Who can do this:**' line. parseGuideTasks lifts those parts out; searchGuideTasks ranks them against a
+// member's keywords; phoneTarget reads the phone screen a task starts on, for the desk's mock phone view.
+// =========================================================================
+
+/** The five tabs of the phone app's bottom bar, left to right (MEMBER_USER_GUIDE.md section 1.3). */
+export const PHONE_TABS = ['Home', 'Mtgs', 'Signup', 'Report', 'Donate'] as const;
+export type PhoneTab = (typeof PHONE_TABS)[number];
+
+/** One row of a task's Common problems table. */
+export interface GuideProblem {
+  problem: string;
+  cause: string;
+  fix: string;
+}
+
+/** One task workflow of the member user guide. Text keeps its inline markdown (**bold**, `code`) for parseInline. */
+export interface GuideTask {
+  /** The task number, e.g. '3.1'. */
+  id: string;
+  title: string;
+  /** The '## ' chapter the task sits in, e.g. '3. Sign up for shifts'. */
+  chapter: string;
+  /** The 'Who can do this' line, or '' when the task has none. */
+  who: string;
+  goal: string;
+  startPoint: string;
+  steps: string[];
+  expected: string;
+  problems: GuideProblem[];
+}
+
+const TASK_HEADING = /^###\s+(\d+(?:\.\d+)+)\s+(.+)$/;
+const PART = /^\*\*(Goal|Start point|Steps|Expected result|Common problems):\*\*\s*(.*)$/;
+const STEP = /^\s*\d+[.)]\s+(.*)$/;
+
+/** The task workflows of a user guide, in document order. A '###' heading without a **Goal:** line is not a task. */
+export function parseGuideTasks(markdown: string): GuideTask[] {
+  const lines = markdown
+    .replace(/\r\n?/g, '\n')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split('\n');
+  const tasks: GuideTask[] = [];
+  let chapter = '';
+  let task: GuideTask | null = null;
+  let part = '';
+  const finish = () => {
+    if (task && task.goal) tasks.push(task);
+    task = null;
+    part = '';
+  };
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^##\s/.test(trimmed)) {
+      finish();
+      chapter = trimmed.replace(/^##\s+/, '');
+      continue;
+    }
+    const heading = TASK_HEADING.exec(trimmed);
+    if (heading) {
+      finish();
+      task = { id: heading[1], title: heading[2].trim(), chapter, who: '', goal: '', startPoint: '', steps: [], expected: '', problems: [] };
+      continue;
+    }
+    if (/^###\s/.test(trimmed)) {
+      finish();
+      continue;
+    }
+    const t: GuideTask | null = task;
+    if (!t) continue;
+    const who = /^>\s*\*\*Who can do this:\*\*\s*(.*)$/.exec(trimmed);
+    if (who) {
+      t.who = who[1].trim();
+      continue;
+    }
+    const p = PART.exec(trimmed);
+    if (p) {
+      part = p[1];
+      if (part === 'Goal') t.goal = p[2].trim();
+      else if (part === 'Start point') t.startPoint = p[2].trim();
+      else if (part === 'Expected result') t.expected = p[2].trim();
+      continue;
+    }
+    if (part === 'Steps') {
+      const step = STEP.exec(line);
+      if (step) t.steps.push(step[1].trim());
+      else if (/^\s{2,}\S/.test(line) && !/^\s*[-*+]\s/.test(line) && t.steps.length > 0) t.steps[t.steps.length - 1] += ` ${trimmed}`;
+    } else if (part === 'Common problems' && trimmed.startsWith('|')) {
+      const cells = tableCells(trimmed);
+      const isRule = cells.every((c) => /^:?-{3,}:?$/.test(c));
+      if (!isRule && cells[0] !== 'Problem' && cells.length >= 3) t.problems.push({ problem: cells[0], cause: cells[1], fix: cells[2] });
+    } else if (part === 'Expected result' && trimmed !== '' && !trimmed.startsWith('!') && !trimmed.startsWith('|') && !/^-{3,}$/.test(trimmed)) {
+      t.expected += ` ${trimmed}`;
+    }
+  }
+  finish();
+  return tasks;
+}
+
+/** Inline markdown reduced to its plain words: **bold**, `code` and [link](url) markers dropped. */
+export const plainDocText = (text: string): string =>
+  parseInline(text)
+    .map((s) => s.text)
+    .join('');
+
+const SEARCH_STOPWORDS = new Set(['a', 'an', 'and', 'are', 'can', 'do', 'for', 'how', 'i', 'in', 'is', 'it', 'my', 'of', 'on', 'or', 'the', 'to', 'what', 'where', 'with']);
+
+/** The keywords of a search: lower-case words of two letters or more, without filler words such as 'how' or 'the'. */
+export const guideSearchTerms = (query: string): string[] =>
+  [...new Set(query.toLowerCase().match(/[a-z0-9]+/g) ?? [])].filter((w) => w.length >= 2 && !SEARCH_STOPWORDS.has(w));
+
+/**
+ * The tasks that match a member's keywords, best match first. A keyword in the title counts most, then the goal, the
+ * start point, and last the steps, expected result and problems. A word matches the start of a word ('expense' finds
+ * 'expenses'). A query with no keywords matches nothing.
+ */
+export function searchGuideTasks(tasks: readonly GuideTask[], query: string): GuideTask[] {
+  const terms = guideSearchTerms(query);
+  if (terms.length === 0) return [];
+  const words = (text: string) => plainDocText(text).toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  const scored = tasks.map((task, index) => {
+    const fields: [string[], number][] = [
+      [words(`${task.title} ${task.chapter}`), 6],
+      [words(task.goal), 3],
+      [words(task.startPoint), 2],
+      [words([...task.steps, task.expected, ...task.problems.flatMap((p) => [p.problem, p.cause, p.fix])].join(' ')), 1],
+    ];
+    let score = 0;
+    let matched = 0;
+    for (const term of terms) {
+      const best = Math.max(0, ...fields.map(([ws, weight]) => (ws.some((w) => w.startsWith(term)) ? weight : 0)));
+      if (best > 0) matched += 1;
+      score += best;
+    }
+    // Every keyword found outranks a higher score from fewer keywords.
+    return { task, index, rank: matched * 100 + score };
+  });
+  return scored
+    .filter((s) => s.rank > 0)
+    .sort((a, b) => b.rank - a.rank || a.index - b.index)
+    .map((s) => s.task);
+}
+
+/** The phone screen a task starts on: the bottom tab it opens (null for a header or sign-in screen) and the path in. */
+export interface PhoneTarget {
+  tab: PhoneTab | null;
+  /** The screens after 'Phone app', in plain words, e.g. ['Report tab', 'Activities sub-tab']. */
+  trail: string[];
+}
+
+/** The phone part of a task's start point, or null when the task starts in the web portal or outside the app. */
+export function phoneTarget(startPoint: string): PhoneTarget | null {
+  const plain = plainDocText(startPoint);
+  const phone = /Phone app\s*→\s*(.*?)(?:\.\s*Web portal\b.*)?$/.exec(plain);
+  if (!phone) return null;
+  const trail = phone[1]
+    .replace(/\.$/, '')
+    .split('→')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const first = trail[0] ?? '';
+  const tab = PHONE_TABS.find((t) => first === t || first.startsWith(`${t} `)) ?? null;
+  return { tab, trail };
+}

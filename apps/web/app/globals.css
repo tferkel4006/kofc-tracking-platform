@@ -11,6 +11,10 @@
  *   gold  - priority milestones and selection markers (a fill or bar, never text on white: ~2.3:1)
  *   white - every content surface
  *   green - confirmation only (Sprint 5Z-8: the balanced-ledger badge), always a fill carrying white text (6.8:1)
+ * The high-contrast tokens are the phone's Visually Impaired layout (HIGH_CONTRAST in theme.ts), used on the web by the
+ * SOP Center's reader (Sprint 6A, Phase 4): bold white text on pitch black inside thick hc-gold borders.
+ *   black   - high-contrast surfaces (white text on it is 21:1)
+ *   hc-gold - high-contrast borders and markers, never a fill under text
  */
 @theme {
   --color-*: initial;
@@ -21,6 +25,8 @@
   --color-muted: #4A5568;
   --color-line: #C9D1DC;
   --color-green: #17692F;
+  --color-black: #000000;
+  --color-hc-gold: #FFC72C;
 
   --font-sans: Arial, sans-serif;
   --font-serif: Georgia, "Times New Roman", serif;
@@ -63,6 +69,10 @@
   [data-surface="navy"] :focus-visible,
   [data-surface="navy"]:focus-visible {
     outline-color: var(--color-gold);
+  }
+  /* High-contrast surfaces (the SOP Center reader): white focus rings on pitch black (21:1). */
+  [data-surface="black"] :focus-visible {
+    outline-color: var(--color-white);
   }
   input[type="checkbox"] {
     accent-color: var(--color-navy);

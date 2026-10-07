@@ -61,6 +61,7 @@ export type PortalArea =
   | 'financials/budget'
   | 'messages'
   | 'help'
+  | 'answers/help'
   | 'governance/bylaws'
   | 'answers/sop'
   | 'resources/bulletins'
@@ -495,8 +496,9 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): Po
   // Sprint 5Z-10.8: every member builds their own private distribution lists from the header's Messaging menu; council-wide
   // lists stay with Admins (canPublishDistributionList).
   areas.push('messages', 'distribution-lists', 'profile');
-  // Sprint 6Z: the Online Help Center is the Answers pillar's sidebar link, open to every signed-in member.
-  areas.push('help');
+  // Sprint 6Z: the Online Help Center is the Answers pillar's sidebar link, open to every signed-in member; so is the
+  // Interactive Help Desk (Sprint 6A, Phase 4) that searches the member user guide's task workflows.
+  areas.push('help', 'answers/help');
   // Sprint 6Z: every member reads the council bylaws (canEditBylaws decides editing), the SOP center and the bulletins
   // board; the growth and hours charts have the executive dashboard's audience.
   areas.push('governance/bylaws', 'answers/sop', 'resources/bulletins');
@@ -545,7 +547,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
   },
   { id: 'performance', label: 'Performance', items: ['dashboard', 'performance/charts', 'ledger', 'lessons-registry'] },
   { id: 'resources', label: 'Resources', items: ['gallery', 'resources/bulletins'] },
-  { id: 'answers', label: 'Answers', items: ['help', 'answers/sop'] },
+  { id: 'answers', label: 'Answers', items: ['help', 'answers/help', 'answers/sop'] },
   {
     id: 'setup',
     label: 'Setup',
