@@ -44,7 +44,7 @@ describe('feature flag rules', () => {
 
   it('drops a switched-off desk from the sidebar instead of showing it locked', () => {
     const member = { memberId: 9, councilId: 1, memberType: 'Member' as const, isOfficer: false };
-    const desks = (flags: FeatureFlags) => portalSidebar(member, flags).find((g) => g.id === 'executive')?.entries.map((e) => e.item) ?? [];
+    const desks = (flags: FeatureFlags) => portalSidebar(member, flags).flatMap((g) => g.entries.map((e) => e.item));
     expect(desks(ALL_FEATURES_ON)).toContain('meetings/live');
     expect(desks({ ...ALL_FEATURES_ON, flag_meeting_management: false })).not.toContain('meetings/live');
     // The two donation flags are independent: proposals off leaves the donations desk, and the reverse.

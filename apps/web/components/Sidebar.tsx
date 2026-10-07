@@ -1,13 +1,10 @@
 'use client';
-// The portal's left sidebar (Sprint 5Z-10 redesign): a navy column of high-intent directories from portalSidebar -
-// the Self-Service Hub, Executive Action Desks, the Fraternal Analytics Hub, the Fraternal Scheduler, Financial Ledgers
-// and Administrative Lookups. The Self-Service Hub is always open; the others fold under a header button (▸ closed,
-// ▾ open), the group holding the current page opens itself, and the viewer's choices are remembered in this browser.
-// The Executive Action Desks list every desk: one the viewer may not open is shown with a gold lock badge and says who
-// holds it, instead of a link. The current page carries a gold marker.
+// The portal's left sidebar (Sprint 6Z redesign): a navy column of the seven pillars from portalSidebar - Governance,
+// Faith In Action, Finances, Performance, Resources, Answers and Setup - every pillar always open, with no accordions.
+// The sign-off and meeting desks (PORTAL_LOCKABLE_DESKS) are listed for every member: one the viewer may not open is
+// shown with a gold lock badge and says who holds it, instead of a link. The current page carries a gold marker.
 // Sprint 6A: a module the council's feature flags switch off is left out entirely, never shown locked.
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 import { canOpenArchiveVault, portalSidebar, type FeatureFlags, type PortalNavGroup, type PortalNavItem, type SessionUser } from '@kofc/shared';
 import { cx } from '@/components/ui';
 
@@ -20,8 +17,8 @@ export interface NavEntry {
 }
 
 /**
- * Every sidebar link's route, label and tooltip. 'profile' is reached from the header's member menu, 'messages' and
- * 'distribution-lists' from the header's Messaging menu, and the help center from the header's Help shortcut, not the sidebar.
+ * Every sidebar link's route, label and tooltip. 'profile' is reached from the header's member menu, and 'messages' and
+ * 'distribution-lists' from the header's Messaging menu, not the sidebar.
  */
 export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-lists', NavEntry> = {
   'member-actions': { href: '/member-actions', label: 'Member Actions Hub', hint: 'My shifts, sign-ups, roster, hours' },
@@ -40,7 +37,7 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
   'meetings/live': {
     href: '/meetings/live',
     label: 'Live Meeting Console',
-    hint: 'Run a meeting live: agenda, check-ins, secret ballots',
+    hint: 'Run a meeting live: agenda, check-ins, secret ballots and the hand-vote recorder',
     restrictedTo: 'council officers and Admins',
   },
   elections: { href: '/elections', label: 'Council Officer Nominations', hint: 'Nominate brother Knights for elected office' },
@@ -83,7 +80,8 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
   'supreme-sync': { href: '/supreme-sync', label: 'Supreme Council Sync', hint: 'Audit and file Forms 1728 and 1295' },
   lookups: { href: '/lookups', label: 'Global Governance Matrices', hint: 'Maintain the global lookup tables' },
   parishes: { href: '/parishes', label: 'Parish & Pastors Linkage', hint: 'Parishes and their pastors' },
-  councils: { href: '/councils', label: 'Councils', hint: 'Add, edit and delete councils' },
+  councils: { href: '/councils', label: 'Councils', hint: "Add, edit and delete councils; switch a council's modules on and off" },
+  help: { href: '/help', label: 'Online Help Center', hint: 'Searchable answers from the user manuals, and feedback' },
   profile: { href: '/profile', label: 'My Profile', hint: 'Photo, biography, contact details, skills' },
 };
 
@@ -100,7 +98,7 @@ interface ExternalNavEntry {
 }
 
 export const EXTERNAL_NAV: Partial<Record<PortalNavGroup['id'], ExternalNavEntry[]>> = {
-  admin: [
+  resources: [
     {
       href: 'https://drive.google.com/drive/u/3/folders/1ZGDjpkJG61hzWvDFRg4IZHI440ZYDjyH',
       label: '📂 Council Archive Vault',
@@ -127,27 +125,6 @@ function ExternalNavLink({ href, label, hint }: Omit<ExternalNavEntry, 'visible'
       </a>
     </li>
   );
-}
-
-/** Which collapsible groups the viewer has open, remembered per browser. Storage may be blocked; the sidebar works without it. */
-const NAV_STATE_KEY = 'kofc.nav.open';
-type OpenGroups = Partial<Record<PortalNavGroup['id'], boolean>>;
-
-function readOpenGroups(): OpenGroups {
-  try {
-    const raw = typeof window === 'undefined' ? null : window.localStorage.getItem(NAV_STATE_KEY);
-    return raw ? (JSON.parse(raw) as OpenGroups) : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeOpenGroups(open: OpenGroups): void {
-  try {
-    window.localStorage.setItem(NAV_STATE_KEY, JSON.stringify(open));
-  } catch {
-    // a private window or blocked storage: the choice lasts only for this page view
-  }
 }
 
 const isCurrent = (pathname: string, item: PortalNavItem): boolean => pathname === NAV[item].href;
@@ -199,57 +176,25 @@ function LockedEntry({ item }: { item: PortalNavItem }) {
 
 export function Sidebar({ user, pathname, features }: { user: SessionUser; pathname: string; features: FeatureFlags }) {
   const groups = portalSidebar(user, features);
-  const [open, setOpen] = useState<OpenGroups>(readOpenGroups);
-  const currentGroup = groups.find((g) => g.entries.some((e) => !e.locked && isCurrent(pathname, e.item)))?.id;
-  useEffect(() => {
-    if (currentGroup) setOpen((now) => (now[currentGroup] ? now : { ...now, [currentGroup]: true }));
-  }, [currentGroup]);
-  const toggle = (id: PortalNavGroup['id']) =>
-    setOpen((now) => {
-      const next = { ...now, [id]: !now[id] };
-      writeOpenGroups(next);
-      return next;
-    });
-
   return (
     <nav data-surface="navy" aria-label="Portal sections" className="w-64 shrink-0 bg-navy py-3 text-white">
       {groups.map((group) => {
-        const expanded = !group.collapsible || !!open[group.id];
-        const listId = `nav-group-${group.id}`;
-        const lockedCount = group.entries.filter((e) => e.locked).length;
+        const headingId = `nav-group-${group.id}`;
         return (
           <div key={group.id} className="border-t border-t-gold pb-2 pt-1 first:border-t-0 first:pt-0">
-            {group.collapsible ? (
-              <h2>
-                <button
-                  type="button"
-                  aria-expanded={expanded}
-                  aria-controls={listId}
-                  onClick={() => toggle(group.id)}
-                  className="flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-xs font-bold uppercase tracking-wide hover:underline"
-                >
-                  <span>{group.label}</span>
-                  <span aria-hidden="true" className="flex items-center gap-1.5 text-gold">
-                    {lockedCount > 0 && lockedCount === group.entries.length ? <LockIcon /> : null}
-                    {expanded ? '▾' : '▸'}
-                  </span>
-                </button>
-              </h2>
-            ) : (
-              <h2 className="px-4 py-2 text-xs font-bold uppercase tracking-wide">{group.label}</h2>
-            )}
-            {expanded ? (
-              <ul id={listId} className="flex flex-col">
-                {group.entries.map(({ item, locked }) =>
-                  locked ? <LockedEntry key={item} item={item} /> : <NavLink key={item} item={item} current={isCurrent(pathname, item)} />,
-                )}
-                {(EXTERNAL_NAV[group.id] ?? [])
-                  .filter((link) => !link.visible || link.visible(user))
-                  .map(({ href, label, hint }) => (
-                    <ExternalNavLink key={href} href={href} label={label} hint={hint} />
-                  ))}
-              </ul>
-            ) : null}
+            <h2 id={headingId} className="px-4 py-2 text-xs font-bold uppercase tracking-wide">
+              {group.label}
+            </h2>
+            <ul aria-labelledby={headingId} className="flex flex-col">
+              {group.entries.map(({ item, locked }) =>
+                locked ? <LockedEntry key={item} item={item} /> : <NavLink key={item} item={item} current={isCurrent(pathname, item)} />,
+              )}
+              {(EXTERNAL_NAV[group.id] ?? [])
+                .filter((link) => !link.visible || link.visible(user))
+                .map(({ href, label, hint }) => (
+                  <ExternalNavLink key={href} href={href} label={label} hint={hint} />
+                ))}
+            </ul>
           </div>
         );
       })}

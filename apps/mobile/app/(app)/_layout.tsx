@@ -1,4 +1,5 @@
-// The signed-in shell: navy header with the council banner, and five bottom tabs.
+// The signed-in shell: navy header with the council banner, and five bottom tabs in the portal's pillar order (Sprint 6Z):
+// Home, then Mtgs (Governance), Signup and Report (Faith In Action), and Donate (Finances).
 // The selected tab is a navy block with a gold bar and a bold gold label (gold on navy ~6.4:1; gold is never
 // text on white, see the shared theme), so the active choice reads at a glance. Messages is no longer a tab (Sprint 5X-Mobile): the header's
 // envelope opens it and carries the unread badge.
@@ -87,9 +88,10 @@ export default function AppLayout() {
       }}
     >
       <Tabs.Screen name="index" options={tab('Home')} />
+      {/* Sprint 6Z: the tabs follow the portal's pillar order - Governance, Faith In Action, Finances. */}
+      <Tabs.Screen name="meetings" options={tab('Mtgs', 'meetings')} />
       <Tabs.Screen name="shifts" options={tab('Signup', 'shifts')} />
       <Tabs.Screen name="log" options={tab('Report')} />
-      <Tabs.Screen name="meetings" options={tab('Mtgs', 'meetings')} />
       <Tabs.Screen name="donate" options={tab('Donate', 'donate')} />
       {/* Opened from the header envelope; not a tab of its own. */}
       <Tabs.Screen name="messages" options={{ ...tab('Messages'), href: null }} />

@@ -60,6 +60,7 @@ export type PortalArea =
   | 'supreme-sync'
   | 'financials/budget'
   | 'messages'
+  | 'help'
   | 'profile';
 
 /** Areas served from a route other than `/${area}`: the budget center lives at /budget (Sprint 5Y-2). */
@@ -484,72 +485,65 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): Po
   // Sprint 5Z-10.8: every member builds their own private distribution lists from the header's Messaging menu; council-wide
   // lists stay with Admins (canPublishDistributionList).
   areas.push('messages', 'distribution-lists', 'profile');
+  // Sprint 6Z: the Online Help Center is the Answers pillar's sidebar link, open to every signed-in member.
+  areas.push('help');
   return withFeatureFlags(areas, flags);
 }
 
 /**
  * A sidebar link: a portal area, except the profile, which the header's member menu opens, and the Communications Hub and
- * the distribution lists, which the header's Messaging menu opens (Sprint 5X; the menu since Sprint 5Z-10.8). The help center is the header's Help shortcut, not a sidebar
- * link (Sprint 5W).
+ * the distribution lists, which the header's Messaging menu opens (Sprint 5X; the menu since Sprint 5Z-10.8). The help
+ * center is the Answers pillar's link (Sprint 6Z) as well as the header's Help shortcut (Sprint 5W).
  */
 export type PortalNavItem = Exclude<PortalArea, 'profile' | 'messages' | 'distribution-lists'>;
 
 export interface PortalNavGroup {
-  id: 'self-service' | 'executive' | 'analytics' | 'scheduler' | 'finance' | 'admin';
+  id: 'governance' | 'faith' | 'finances' | 'performance' | 'resources' | 'answers' | 'setup';
   label: string;
-  /** The Self-Service Hub is always open; the other groups fold. */
-  collapsible: boolean;
-  /**
-   * Sprint 5Z-10: list every link of the group, the ones the viewer may not open shown with a lock badge, so members see
-   * which desks exist and who holds them. Other groups list only what the viewer may open.
-   */
-  showLocked: boolean;
   items: PortalNavItem[];
 }
 
 /**
- * Every sidebar link in its group, in display order (Sprint 5S; regrouped into high-intent directories in Sprint 5Z-10).
- * Each PortalArea but 'profile', 'messages' and 'distribution-lists' (the header's Messaging menu, Sprint 5Z-10.8) appears
- * exactly once.
+ * The seven sidebar pillars, every link in display order (Sprint 6Z replaced the Sprint 5Z-10 accordion directories).
+ * Every pillar is always open. Each PortalArea but 'profile', 'messages' and 'distribution-lists' appears exactly once.
  */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
-  { id: 'self-service', label: 'Self-Service Hub', collapsible: false, showLocked: false, items: ['member-actions', 'expenses', 'charities/propose'] },
+  { id: 'governance', label: 'Governance', items: ['meetings/live', 'meetings/cadence', 'meetings', 'elections', 'elections/appointments'] },
+  { id: 'faith', label: 'Faith In Action', items: ['activities', 'member-actions', 'events', 'calendar'] },
   {
-    id: 'executive',
-    label: 'Executive Action Desks',
-    collapsible: true,
-    showLocked: true,
-    items: ['expenses/audit', 'expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live'],
+    id: 'finances',
+    label: 'Finances',
+    items: [
+      'finance/ledger',
+      'finance/balance-sheet',
+      'finance/dashboard',
+      'expenses',
+      'expenses/queue',
+      'expenses/disbursements',
+      'expenses/audit',
+      'expenses/authorize',
+      'charities/vetting',
+      'charities/propose',
+      'charities/queue',
+      'donations',
+      'financials/budget',
+    ],
   },
+  { id: 'performance', label: 'Performance', items: ['dashboard', 'ledger', 'lessons-registry'] },
+  { id: 'resources', label: 'Resources', items: ['gallery'] },
+  { id: 'answers', label: 'Answers', items: ['help'] },
   {
-    id: 'analytics',
-    label: 'Fraternal Analytics Hub',
-    collapsible: true,
-    showLocked: false,
-    items: ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet'],
-  },
-  {
-    id: 'scheduler',
-    label: 'Fraternal Scheduler',
-    collapsible: true,
-    showLocked: false,
-    items: ['calendar', 'events', 'meetings', 'activities', 'ledger', 'elections', 'gallery', 'lessons-registry'],
-  },
-  {
-    id: 'finance',
-    label: 'Financial Ledgers',
-    collapsible: true,
-    showLocked: false,
-    items: ['donations', 'expenses/queue', 'expenses/disbursements', 'charities/queue', 'financials/budget'],
-  },
-  {
-    id: 'admin',
-    label: 'Administrative Lookups',
-    collapsible: true,
-    showLocked: false,
-    items: ['members', 'council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils'],
+    id: 'setup',
+    label: 'Setup',
+    items: ['councils', 'members', 'supreme-sync', 'council-lookups', 'charities/registry', 'lookups', 'parishes'],
   },
 ];
+
+/**
+ * The sign-off and meeting desks (Sprint 5Z-10): every member sees them listed, the ones they may not open with a lock
+ * badge, so members know which desks exist and who holds them. Every other link shows only to those who may open it.
+ */
+export const PORTAL_LOCKABLE_DESKS: readonly PortalNavItem[] = ['meetings/live', 'meetings/cadence', 'expenses/audit', 'expenses/authorize', 'charities/vetting'];
 
 /** One sidebar entry (Sprint 5Z-10): the link, and whether the viewer may open it. */
 export interface PortalNavEntry {
@@ -562,17 +556,18 @@ export interface PortalSidebarGroup extends Omit<PortalNavGroup, 'items'> {
 }
 
 /**
- * The sidebar for `u` as the portal draws it (Sprint 5Z-10): the links portalAreas allows, plus - in groups that show
- * locked links - every other link of the group with `locked` set. A group with no entries is dropped.
+ * The sidebar for `u` as the portal draws it: the links portalAreas allows, plus every lockable desk the viewer may not
+ * open, with `locked` set. A pillar with no entries is dropped.
  */
 export function portalSidebar(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): PortalSidebarGroup[] {
   const allowed = new Set<string>(portalAreas(u, flags));
-  // Sprint 6A: a switched-off module is gone, not locked - it is hidden even in groups that show locked desks.
+  // Sprint 6A: a switched-off module is gone, not locked - a lockable desk is hidden too.
   const featured = new Set<string>(withFeatureFlags(PORTAL_NAV_GROUPS.flatMap((g) => g.items), flags));
+  const lockable = new Set<string>(PORTAL_LOCKABLE_DESKS);
   return PORTAL_NAV_GROUPS.map(({ items, ...g }) => ({
     ...g,
     entries: items
-      .filter((item) => featured.has(item) && (g.showLocked || allowed.has(item)))
+      .filter((item) => featured.has(item) && (lockable.has(item) || allowed.has(item)))
       .map((item) => ({ item, locked: !allowed.has(item) })),
   })).filter((g) => g.entries.length > 0);
 }

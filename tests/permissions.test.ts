@@ -39,6 +39,7 @@ import {
   canPublishDistributionList,
   portalSidebar,
   PORTAL_NAV_GROUPS,
+  PORTAL_LOCKABLE_DESKS,
 } from '@kofc/shared';
 
 const actor = (over: Partial<Parameters<typeof portalAreas>[0]> = {}) => ({
@@ -135,6 +136,7 @@ describe('portal permissions', () => {
       'messages',
       'distribution-lists',
       'profile',
+      'help',
     ]);
     expect(portalAreas(admin)).toEqual([
       'member-actions',
@@ -168,9 +170,10 @@ describe('portal permissions', () => {
       'messages',
       'distribution-lists',
       'profile',
+      'help',
     ]);
-    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
-    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
+    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help']);
+    expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help']);
   });
 
   it('gives every member their own expense reports, leadership the audit queue, and only finance officers and Super Admins the check ledger', () => {
@@ -188,26 +191,27 @@ describe('portal permissions', () => {
     expect(portalAreas(actor({ isOfficer: true, roles: ['Grand Knight'] })).filter((a) => a.startsWith('expenses/'))).toEqual(['expenses/authorize']);
   });
 
-  describe('sidebar accordion groups (Sprint 5S, election desks Sprint 5U, high-intent directories Sprint 5Z-10)', () => {
-    const shape = (u: Parameters<typeof portalNavGroups>[0]) => portalNavGroups(u).map((g) => [g.label, g.items]);
+  describe('sidebar pillars (Sprint 5S, election desks Sprint 5U, lockable desks Sprint 5Z-10, seven pillars Sprint 6Z)', () => {
+    const shape = (u: Parameters<typeof portalSidebar>[0]) =>
+      portalSidebar(u).map((g) => [g.label, g.entries.filter((e) => !e.locked).map((e) => e.item)]);
+    const FIN_READ = ['finance/ledger', 'finance/balance-sheet', 'finance/dashboard'];
 
-    it('files every area but the profile and the Messaging menu into exactly one group; help (5W) and messaging (5X, 5Z-10.8) live in the header', () => {
+    it('files every area but the profile and the Messaging menu into exactly one of the seven pillars; messaging (5X, 5Z-10.8) lives in the header', () => {
       const filed = PORTAL_NAV_GROUPS.flatMap((g) => g.items);
       expect(new Set(filed).size).toBe(filed.length);
-      expect(filed as string[]).not.toContain('help');
       expect(filed as string[]).not.toContain('messages');
       expect(filed as string[]).not.toContain('distribution-lists');
       const everyArea = portalAreas(superAdmin).filter((a) => a !== 'profile' && a !== 'messages' && a !== 'distribution-lists');
       expect([...everyArea].sort()).toEqual([...filed].sort());
-      // Sprint 5Z-10: the high-intent directories.
-      expect(PORTAL_NAV_GROUPS.map((g) => [g.label, g.collapsible, g.showLocked])).toEqual([
-        ['Self-Service Hub', false, false],
-        ['Executive Action Desks', true, true],
-        ['Fraternal Analytics Hub', true, false],
-        ['Fraternal Scheduler', true, false],
-        ['Financial Ledgers', true, false],
-        ['Administrative Lookups', true, false],
-      ]);
+      expect(PORTAL_NAV_GROUPS.map((g) => g.label)).toEqual(['Governance', 'Faith In Action', 'Finances', 'Performance', 'Resources', 'Answers', 'Setup']);
+      for (const desk of PORTAL_LOCKABLE_DESKS) expect(filed).toContain(desk);
+    });
+
+    it('opens the help center to every member from the Answers pillar (Sprint 6Z)', () => {
+      for (const u of [superAdmin, admin, officer, member]) {
+        expect(portalAreas(u)).toContain('help');
+        expect(portalSidebar(u).find((g) => g.id === 'answers')?.entries).toEqual([{ item: 'help', locked: false }]);
+      }
     });
 
     it('leaves the profile out of the sidebar for every role; the header menu opens it', () => {
@@ -242,90 +246,105 @@ describe('portal permissions', () => {
       }
     });
 
-    it('shows a Super Admin every group in full', () => {
-      expect(shape(superAdmin)).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
-        ['Executive Action Desks', ['expenses/audit', 'expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live']],
-        ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
-        ['Fraternal Scheduler', ['calendar', 'events', 'meetings', 'activities', 'ledger', 'elections', 'gallery', 'lessons-registry']],
-        ['Financial Ledgers', ['donations', 'expenses/queue', 'expenses/disbursements', 'charities/queue', 'financials/budget']],
-        ['Administrative Lookups', ['members', 'council-lookups', 'charities/registry', 'elections/appointments', 'supreme-sync', 'lookups', 'parishes', 'councils']],
-      ]);
+    it('shows a Super Admin every pillar in full', () => {
+      expect(shape(superAdmin)).toEqual(PORTAL_NAV_GROUPS.map((g) => [g.label, g.items]));
+      expect(portalNavGroups(superAdmin)).toEqual(PORTAL_NAV_GROUPS);
     });
 
-    it('shows a council Admin everything but the global tables, councils and the check ledger', () => {
+    it('shows a council Admin everything but the global tables, councils, appointments and the check ledgers', () => {
       expect(shape(admin)).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
-        ['Executive Action Desks', ['expenses/audit', 'expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live']],
-        ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
-        ['Fraternal Scheduler', ['calendar', 'events', 'meetings', 'activities', 'ledger', 'elections', 'gallery', 'lessons-registry']],
-        ['Financial Ledgers', ['donations', 'expenses/queue', 'financials/budget']],
-        ['Administrative Lookups', ['members', 'council-lookups', 'charities/registry', 'supreme-sync', 'parishes']],
+        ['Governance', ['meetings/live', 'meetings/cadence', 'meetings', 'elections']],
+        ['Faith In Action', ['activities', 'member-actions', 'events', 'calendar']],
+        [
+          'Finances',
+          [...FIN_READ, 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'charities/vetting', 'charities/propose', 'donations', 'financials/budget'],
+        ],
+        ['Performance', ['dashboard', 'ledger', 'lessons-registry']],
+        ['Resources', ['gallery']],
+        ['Answers', ['help']],
+        ['Setup', ['members', 'supreme-sync', 'council-lookups', 'charities/registry', 'parishes']],
       ]);
     });
 
-    it('shows a Treasurer the full financial ledgers and the donation lookups', () => {
+    it('shows a Treasurer the full finances and the donation lookups', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Treasurer'] }))).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
-        ['Executive Action Desks', ['charities/vetting', 'meetings/live']],
-        ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
-        ['Fraternal Scheduler', ['calendar', 'meetings', 'ledger', 'elections', 'gallery']],
-        ['Financial Ledgers', ['donations', 'expenses/queue', 'expenses/disbursements', 'charities/queue', 'financials/budget']],
-        ['Administrative Lookups', ['council-lookups', 'supreme-sync']],
+        ['Governance', ['meetings/live', 'meetings', 'elections']],
+        ['Faith In Action', ['member-actions', 'calendar']],
+        [
+          'Finances',
+          [...FIN_READ, 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/vetting', 'charities/propose', 'charities/queue', 'donations', 'financials/budget'],
+        ],
+        ['Performance', ['dashboard', 'ledger']],
+        ['Resources', ['gallery']],
+        ['Answers', ['help']],
+        ['Setup', ['supreme-sync', 'council-lookups']],
       ]);
     });
 
-    it('files the Council Lookups (agenda templates, Sprint 5Y-6) and the Appointed Leadership Matrix under Administrative Lookups for a Grand Knight who is a plain Member', () => {
+    it('files the Council Lookups (agenda templates, Sprint 5Y-6) under Setup and the Appointed Leadership Matrix under Governance for a Grand Knight who is a plain Member', () => {
       expect(shape(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
-        ['Executive Action Desks', ['expenses/authorize', 'charities/vetting', 'meetings/cadence', 'meetings/live']],
-        ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
-        ['Fraternal Scheduler', ['calendar', 'meetings', 'ledger', 'elections', 'gallery']],
-        ['Financial Ledgers', ['financials/budget']],
-        ['Administrative Lookups', ['council-lookups', 'elections/appointments']],
+        ['Governance', ['meetings/live', 'meetings/cadence', 'meetings', 'elections', 'elections/appointments']],
+        ['Faith In Action', ['member-actions', 'calendar']],
+        ['Finances', [...FIN_READ, 'expenses', 'expenses/authorize', 'charities/vetting', 'charities/propose', 'financials/budget']],
+        ['Performance', ['dashboard', 'ledger']],
+        ['Resources', ['gallery']],
+        ['Answers', ['help']],
+        ['Setup', ['council-lookups']],
       ]);
     });
 
-    it('drops the Administrative Lookups group for plain members and other officers', () => {
+    it('drops the Setup pillar for plain members and other officers', () => {
       expect(shape(officer)).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
-        // Sprint 5Z-2: officers (Trustees included) vet charitable requests; Sprint 5Z-10: they run the live console.
-        ['Executive Action Desks', ['charities/vetting', 'meetings/live']],
-        // Sprint 5Z-2.5 and 5Z-8: officers read the executive and financial dashboards.
-        ['Fraternal Analytics Hub', ['dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet']],
-        ['Fraternal Scheduler', ['calendar', 'meetings', 'ledger', 'elections', 'gallery']],
-        ['Financial Ledgers', ['financials/budget']],
+        // Sprint 5Z-10: officers run the live console.
+        ['Governance', ['meetings/live', 'meetings', 'elections']],
+        ['Faith In Action', ['member-actions', 'calendar']],
+        // Sprint 5Z-2: officers (Trustees included) vet charitable requests; Sprint 5Z-8: they read the general ledger.
+        ['Finances', [...FIN_READ, 'expenses', 'charities/vetting', 'charities/propose', 'financials/budget']],
+        // Sprint 5Z-2.5: officers read the executive dashboard.
+        ['Performance', ['dashboard', 'ledger']],
+        ['Resources', ['gallery']],
+        ['Answers', ['help']],
       ]);
       expect(shape(member)).toEqual([
-        ['Self-Service Hub', ['member-actions', 'expenses', 'charities/propose']],
-        ['Fraternal Scheduler', ['calendar', 'meetings', 'ledger', 'elections', 'gallery']],
-        ['Financial Ledgers', ['financials/budget']],
+        ['Governance', ['meetings', 'elections']],
+        ['Faith In Action', ['member-actions', 'calendar']],
+        ['Finances', ['expenses', 'charities/propose', 'financials/budget']],
+        ['Performance', ['ledger']],
+        ['Resources', ['gallery']],
+        ['Answers', ['help']],
       ]);
     });
 
-    it('shows every Executive Action Desk, locking the ones the viewer may not open (Sprint 5Z-10)', () => {
+    it('never folds a pillar: the sidebar has no accordion state (Sprint 6Z)', () => {
+      for (const g of portalSidebar(superAdmin)) expect(Object.keys(g).sort()).toEqual(['entries', 'id', 'label']);
+    });
+
+    it('lists every sign-off and meeting desk in its pillar, locking the ones the viewer may not open (Sprint 5Z-10)', () => {
       const desks = (u: Parameters<typeof portalSidebar>[0]) =>
         portalSidebar(u)
-          .find((g) => g.id === 'executive')
-          ?.entries.map((e) => [e.item, e.locked]);
+          .flatMap((g) => g.entries)
+          .filter((e) => (PORTAL_LOCKABLE_DESKS as readonly string[]).includes(e.item))
+          .map((e) => [e.item, e.locked]);
       expect(desks(member)).toEqual([
+        ['meetings/live', true],
+        ['meetings/cadence', true],
         ['expenses/audit', true],
         ['expenses/authorize', true],
         ['charities/vetting', true],
-        ['meetings/cadence', true],
-        ['meetings/live', true],
       ]);
       expect(desks(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual([
+        ['meetings/live', false],
+        ['meetings/cadence', false],
         ['expenses/audit', true],
         ['expenses/authorize', false],
         ['charities/vetting', false],
-        ['meetings/cadence', false],
-        ['meetings/live', false],
       ]);
-      expect(desks(admin)?.every(([, locked]) => !locked)).toBe(true);
-      // Other groups list only what the viewer may open.
-      for (const g of portalSidebar(member).filter((x) => x.id !== 'executive')) expect(g.entries.every((e) => !e.locked)).toBe(true);
-      expect(portalSidebar(member).map((g) => g.label)).toEqual(['Self-Service Hub', 'Executive Action Desks', 'Fraternal Scheduler', 'Financial Ledgers']);
+      expect(desks(admin).every(([, locked]) => !locked)).toBe(true);
+      // Every other link shows only to those who may open it.
+      for (const e of portalSidebar(member).flatMap((g) => g.entries)) {
+        if (e.locked) expect(PORTAL_LOCKABLE_DESKS).toContain(e.item);
+      }
+      expect(portalSidebar(member).map((g) => g.label)).toEqual(['Governance', 'Faith In Action', 'Finances', 'Performance', 'Resources', 'Answers']);
     });
   });
 
@@ -466,9 +485,10 @@ describe('portal permissions', () => {
         'messages',
         'distribution-lists',
         'profile',
+        'help',
       ]);
     }
-    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile']);
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help']);
   });
 
   it('gives council leadership the Supreme sync and the alert dispatch, each for their own council (Sprint 5T)', () => {
