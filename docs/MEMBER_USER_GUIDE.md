@@ -95,7 +95,7 @@ The web portal sidebar has seven groups, called pillars. Every member sees these
 | **Answers** | Online Help Center, SOP Center |
 
 <!-- KEEP_IMAGE: member actions hub placeholder -->
-![Image: Member Actions Hub]
+![Member Actions Hub (placeholder)](../generated/mobile_app_catalog/member_actions_hub.png)
 <!-- /KEEP_IMAGE -->
 
 Some officer desks show a gold **Locked** badge. The badge tells you that the desk exists. Point at the badge to see who holds the desk.
@@ -108,7 +108,7 @@ The header at the top right of the portal has four controls.
 - **Your name and photo** opens the member menu. The member menu holds **My Profile** and **Sign out**.
 
 <!-- KEEP_IMAGE: member dashboard setup placeholder -->
-![Image: Member Dashboard Setup]
+![Member Dashboard Setup (placeholder)](../generated/mobile_app_catalog/member_dashboard_setup.png)
 <!-- /KEEP_IMAGE -->
 
 ---
@@ -173,11 +173,11 @@ A used code does not work a second time.
 7. Tap **Create password**. The app uses the setup code now. You cannot use the code again.
 
 <!-- KEEP_IMAGE: onboarding email check placeholder -->
-![Image: Onboarding Email Check]
+![Onboarding Email Check (placeholder)](../generated/mobile_app_catalog/onboarding_email_check.png)
 <!-- /KEEP_IMAGE -->
 
 <!-- KEEP_IMAGE: create password screen placeholder -->
-![Image: Create Password Screen]
+![Create Password Screen (placeholder)](../generated/mobile_app_catalog/create_password_screen.png)
 <!-- /KEEP_IMAGE -->
 
 **Expected result:** The **Home** tab opens. The phone keeps you signed in until you sign out.
@@ -248,7 +248,7 @@ The phone also turns on biometric sign-in for your account (see 2.4).
 3. Select **Sign in**.
 
 <!-- KEEP_IMAGE: portal sign-in placeholder -->
-![Image: Portal Sign-In]
+![Portal Sign-In (placeholder)](../generated/mobile_app_catalog/portal_sign_in.png)
 <!-- /KEEP_IMAGE -->
 
 **Expected result:** The portal opens with the sidebar on the left.
@@ -345,15 +345,15 @@ A full shift still takes extra volunteers. An extra volunteer is an honorary vol
 4. Tap **Sign up**. On a full shift, tap **Sign up as honorary volunteer**.
 
 <!-- KEEP_IMAGE: shift feed filters placeholder -->
-![Image: Shift Feed Filters]
+![Shift Feed Filters (placeholder)](../generated/mobile_app_catalog/shift_feed_filters.png)
 <!-- /KEEP_IMAGE -->
 
 <!-- KEEP_IMAGE: phone shift feed capture -->
-![Phone: open signups shift feed with council filter (placeholder)](../generated/mobile_visual_catalog/shift_feed.png)
+![Phone: open signups shift feed with council filter (placeholder)](../generated/mobile_app_catalog/shift_feed.png)
 <!-- /KEEP_IMAGE -->
 
 <!-- KEEP_IMAGE: phone shift signup capture -->
-![Phone: signing up for an open shift (placeholder)](../generated/mobile_visual_catalog/shift_signup.png)
+![Phone: signing up for an open shift (placeholder)](../generated/mobile_app_catalog/shift_signup.png)
 <!-- /KEEP_IMAGE -->
 
 **Expected result:** The shift card shows **YOU'RE SIGNED UP**. The shift also shows under **My shifts** on the **Home** tab.
@@ -379,7 +379,7 @@ A full shift still takes extra volunteers. An extra volunteer is an honorary vol
 3. Select **Register**.
 
 <!-- KEEP_IMAGE: registration desk placeholder -->
-![Image: Registration Desk]
+![Registration Desk (placeholder)](../generated/mobile_app_catalog/registration_desk.png)
 <!-- /KEEP_IMAGE -->
 
 **Expected result:** The **Register** button changes to a **Registered** pill.
@@ -402,11 +402,11 @@ A full shift still takes extra volunteers. An extra volunteer is an honorary vol
 2. Read the date, the time and the location of each shift.
 
 <!-- KEEP_IMAGE: home dashboard placeholder -->
-![Image: Home Dashboard With Badge]
+![Home Dashboard With Badge (placeholder)](../generated/mobile_app_catalog/home_dashboard_with_badge.png)
 <!-- /KEEP_IMAGE -->
 
 <!-- KEEP_IMAGE: legacy absence screen placeholder (the phone absence button was removed in Sprint 6A) -->
-![Image: Report Absence]
+![Report Absence (placeholder)](../generated/mobile_app_catalog/report_absence.png)
 <!-- /KEEP_IMAGE -->
 
 **Expected result:** A shift within 48 hours shows in red. The phone shows **WITHIN 2 DAYS**. The web shows **Within 48 hours**.
@@ -454,6 +454,10 @@ Each tile shows a gold status line.
 | **+15 MIN** | You logged no time on the activity today. |
 | ***n* H *n* M TODAY** | The time that the platform saved for you today. |
 | **+*n* M QUEUED** | Taps that wait for the slide bar. The platform has not saved the taps yet. |
+
+<!-- KEEP_IMAGE: rapid-tap grid placeholder -->
+![Phone: Rapid-Tap grid of navy 15-minute activity tiles (placeholder)](../generated/mobile_app_catalog/log_hours_grid.png)
+<!-- /KEEP_IMAGE -->
 
 ### Concept: the safety gates
 
@@ -510,11 +514,15 @@ You get a text reminder when you signed up for a shift and logged no hours.
 6. Read the tile status line. Check that the total is correct.
 
 <!-- KEEP_IMAGE: log time picker placeholder -->
-![Image: Log Time Picker]
+![Log Time Picker (placeholder)](../generated/mobile_app_catalog/log_time_picker.png)
 <!-- /KEEP_IMAGE -->
 
 <!-- KEEP_IMAGE: phone log time activity capture -->
-![Phone: Log time, an activity (placeholder)](../generated/mobile_visual_catalog/log_time_activity.png)
+![Phone: Log time, an activity (placeholder)](../generated/mobile_app_catalog/log_time_activity.png)
+<!-- /KEEP_IMAGE -->
+
+<!-- KEEP_IMAGE: pocket gate biometric scan placeholder -->
+![Phone: Face ID prompt that confirms a tap (placeholder)](../generated/mobile_app_catalog/pocket_gate_faceid.png)
 <!-- /KEEP_IMAGE -->
 
 **Expected result:** A message shows the new total, for example *"+15 min · Parish Maintenance (1 h 15 m today)"*.
@@ -545,6 +553,10 @@ The tile status line shows today's total, for example **1 H 15 M TODAY**.
 4. Check the queue total above the slide bar, for example **1 h queued**.
 5. Put your thumb on the gold circle at the left of **Slide to Log Hours**.
 6. Drag the circle to the right end of the bar. Then let go.
+
+<!-- KEEP_IMAGE: slide to commit bar placeholder -->
+![Phone: Slide to Log Hours bar with queued total (placeholder)](../generated/mobile_app_catalog/slide_to_commit_bar.png)
+<!-- /KEEP_IMAGE -->
 
 **Expected result:** A message shows *"Logged 1 h for today."* The slide bar closes.
 The tile status line shows the new total for today.
@@ -595,7 +607,7 @@ Time that you saved earlier today stays saved.
 5. Tap **Save time**. The new total replaces any earlier total for the shift.
 
 <!-- KEEP_IMAGE: phone log time shift capture -->
-![Phone: Log time, a shift I worked (placeholder)](../generated/mobile_visual_catalog/log_time_shift.png)
+![Phone: Log time, a shift I worked (placeholder)](../generated/mobile_app_catalog/log_time_shift.png)
 <!-- /KEEP_IMAGE -->
 
 **Expected result:** A message shows *"Saved 3 h to Morning Setup"*. The shift card shows **LOGGED 3 H · TAP TO CHANGE**.
@@ -644,7 +656,7 @@ Time that you saved earlier today stays saved.
 2. Log hours for each shift with **Hours needed** (4.5).
 
 <!-- KEEP_IMAGE: hour ledger history placeholder -->
-![Image: Hour Ledger History]
+![Hour Ledger History (placeholder)](../generated/mobile_app_catalog/hour_ledger_history.png)
 <!-- /KEEP_IMAGE -->
 
 **Expected result:** Every past shift shows one of four statuses.
@@ -763,6 +775,10 @@ The **Agenda** sub-tab opens on the live meeting by default. With no live meetin
 5. Scroll to the navy section heading.
 6. Find the gold line with the **ON THE FLOOR** tag.
 7. Keep the screen open. The gold highlight moves when the Grand Knight moves to the next line.
+
+<!-- KEEP_IMAGE: live agenda gold highlight placeholder -->
+![Phone: live agenda with the gold frame on the current line (placeholder)](../generated/mobile_app_catalog/live_agenda_highlight.png)
+<!-- /KEEP_IMAGE -->
 
 **Expected result:** The gold highlight stays on the line under discussion. The countdown in the banner goes down each second.
 
@@ -983,11 +999,11 @@ A donation without a session is a standalone donation.
 <!-- /KEEP_IMAGE -->
 
 <!-- KEEP_IMAGE: donate method tiles placeholder -->
-![Image: Donate Method Tiles]
+![Donate Method Tiles (placeholder)](../generated/mobile_app_catalog/donate_method_tiles.png)
 <!-- /KEEP_IMAGE -->
 
 <!-- KEEP_IMAGE: QR code presentation placeholder -->
-![Image: QR Code Presentation]
+![QR Code Presentation (placeholder)](../generated/mobile_app_catalog/qr_code_presentation.png)
 <!-- /KEEP_IMAGE -->
 
 **Expected result:** A message confirms the amount, the method and the event.
@@ -1127,11 +1143,11 @@ The Trustees ask the Shepherd for a status report 6 months after the filing date
 4. Send the reply. Everyone in the thread gets the reply.
 
 <!-- KEEP_IMAGE: phone messages inbox capture -->
-![Phone: Messages inbox with unread badge (placeholder)](../generated/mobile_visual_catalog/messages_inbox.png)
+![Phone: Messages inbox with unread badge (placeholder)](../generated/mobile_app_catalog/messages_inbox.png)
 <!-- /KEEP_IMAGE -->
 
 <!-- KEEP_IMAGE: phone message thread capture -->
-![Phone: message thread with replies (placeholder)](../generated/mobile_visual_catalog/messages_thread.png)
+![Phone: message thread with replies (placeholder)](../generated/mobile_app_catalog/messages_thread.png)
 <!-- /KEEP_IMAGE -->
 
 **Expected result:** The reply shows in the thread. On the phone, a **Replying to** line names the earlier message.
@@ -1201,7 +1217,7 @@ The Trustees ask the Shepherd for a status report 6 months after the filing date
 <!-- /KEEP_IMAGE -->
 
 <!-- KEEP_IMAGE: profile skills placeholder -->
-![Image: My Profile Skills]
+![My Profile Skills (placeholder)](../generated/mobile_app_catalog/my_profile_skills.png)
 <!-- /KEEP_IMAGE -->
 
 **Expected result:** The header shows your new photo. Admins can find you by skill.
