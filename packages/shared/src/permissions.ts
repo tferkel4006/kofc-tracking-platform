@@ -63,6 +63,7 @@ export type PortalArea =
   | 'help'
   | 'answers/help'
   | 'governance/bylaws'
+  | 'governance/advisor'
   | 'answers/sop'
   | 'resources/bulletins'
   | 'performance/charts'
@@ -500,8 +501,9 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): Po
   // Interactive Help Desk (Sprint 6A, Phase 4) that searches the member user guide's task workflows.
   areas.push('help', 'answers/help');
   // Sprint 6Z: every member reads the council bylaws (canEditBylaws decides editing), the SOP center and the bulletins
-  // board; the growth and hours charts have the executive dashboard's audience.
-  areas.push('governance/bylaws', 'answers/sop', 'resources/bulletins');
+  // board; the growth and hours charts have the executive dashboard's audience. Sprint 6B (Phase 4): the Constitutional
+  // Advisor only reads the bylaws, so it has the bylaws' audience.
+  areas.push('governance/bylaws', 'governance/advisor', 'answers/sop', 'resources/bulletins');
   if (isAdmin(u) || canViewExecutiveDashboard(u, u.councilId)) areas.push('performance/charts');
   return withFeatureFlags(areas, flags);
 }
@@ -524,7 +526,7 @@ export interface PortalNavGroup {
  * Every pillar is always open. Each PortalArea but 'profile', 'messages' and 'distribution-lists' appears exactly once.
  */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
-  { id: 'governance', label: 'Governance', items: ['meetings/live', 'meetings/cadence', 'meetings', 'elections', 'elections/appointments', 'governance/bylaws'] },
+  { id: 'governance', label: 'Governance', items: ['meetings/live', 'meetings/cadence', 'meetings', 'elections', 'elections/appointments', 'governance/bylaws', 'governance/advisor'] },
   { id: 'faith', label: 'Faith In Action', items: ['activities', 'member-actions', 'events', 'calendar'] },
   {
     id: 'finances',
