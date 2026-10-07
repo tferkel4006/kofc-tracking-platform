@@ -63,6 +63,10 @@ export interface Council {
   flag_charity_proposals?: number;
   flag_complex_shifts?: number;
   flag_meeting_management?: number;
+  /** Sprint 6Z (Schema 35): the council's bylaws as light markdown (bylaws.ts); written only by councils.setBylaws. */
+  BylawsMarkdown?: string | null;
+  /** When councils.setBylaws last saved BylawsMarkdown (ISO date-time). */
+  BylawsUpdatedAt?: string | null;
 }
 
 export interface AffiliatedCouncils {

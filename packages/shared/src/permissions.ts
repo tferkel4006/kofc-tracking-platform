@@ -61,6 +61,10 @@ export type PortalArea =
   | 'financials/budget'
   | 'messages'
   | 'help'
+  | 'governance/bylaws'
+  | 'answers/sop'
+  | 'resources/bulletins'
+  | 'performance/charts'
   | 'profile';
 
 /** Areas served from a route other than `/${area}`: the budget center lives at /budget (Sprint 5Y-2). */
@@ -97,6 +101,12 @@ export const canManageAgendaTemplates = (u: Actor, councilId: number): boolean =
  * The Cadence Engine panel (Sprint 5Z-6), mirroring assertMayScheduleCouncilCadence (activity status is checked there):
  * the council's Admins and Grand Knight, and any Super Admin - the same keepers as the agenda templates.
  */
+/**
+ * The Council Bylaws Data Vault's Edit button (Sprint 6Z), mirroring assertMayEditBylaws (activity status is checked
+ * there): the council's meeting keepers, as for the agenda templates.
+ */
+export const canEditBylaws = (u: Actor, councilId: number): boolean => canManageAgendaTemplates(u, councilId);
+
 export const canManageCouncilCadence = (u: Actor, councilId: number): boolean => canManageAgendaTemplates(u, councilId);
 
 export const canOpenCouncilLookups = (u: Actor): boolean => isAdmin(u) || isFinanceOfficer(u) || (u.roles ?? []).includes(GRAND_KNIGHT_ROLE);
@@ -487,6 +497,10 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): Po
   areas.push('messages', 'distribution-lists', 'profile');
   // Sprint 6Z: the Online Help Center is the Answers pillar's sidebar link, open to every signed-in member.
   areas.push('help');
+  // Sprint 6Z: every member reads the council bylaws (canEditBylaws decides editing), the SOP center and the bulletins
+  // board; the growth and hours charts have the executive dashboard's audience.
+  areas.push('governance/bylaws', 'answers/sop', 'resources/bulletins');
+  if (isAdmin(u) || canViewExecutiveDashboard(u, u.councilId)) areas.push('performance/charts');
   return withFeatureFlags(areas, flags);
 }
 
@@ -508,7 +522,7 @@ export interface PortalNavGroup {
  * Every pillar is always open. Each PortalArea but 'profile', 'messages' and 'distribution-lists' appears exactly once.
  */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
-  { id: 'governance', label: 'Governance', items: ['meetings/live', 'meetings/cadence', 'meetings', 'elections', 'elections/appointments'] },
+  { id: 'governance', label: 'Governance', items: ['meetings/live', 'meetings/cadence', 'meetings', 'elections', 'elections/appointments', 'governance/bylaws'] },
   { id: 'faith', label: 'Faith In Action', items: ['activities', 'member-actions', 'events', 'calendar'] },
   {
     id: 'finances',
@@ -529,9 +543,9 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
       'financials/budget',
     ],
   },
-  { id: 'performance', label: 'Performance', items: ['dashboard', 'ledger', 'lessons-registry'] },
-  { id: 'resources', label: 'Resources', items: ['gallery'] },
-  { id: 'answers', label: 'Answers', items: ['help'] },
+  { id: 'performance', label: 'Performance', items: ['dashboard', 'performance/charts', 'ledger', 'lessons-registry'] },
+  { id: 'resources', label: 'Resources', items: ['gallery', 'resources/bulletins'] },
+  { id: 'answers', label: 'Answers', items: ['help', 'answers/sop'] },
   {
     id: 'setup',
     label: 'Setup',

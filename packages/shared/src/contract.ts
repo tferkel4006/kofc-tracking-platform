@@ -420,8 +420,11 @@ export interface MeetingSchedules {
 
 // 9. COUNCIL-LEVEL MAINTENANCE (Sprint 5G)
 /** A council row without its generated id. */
-/** A council row without its generated id or its feature flags (councils.setFeatureFlags, Sprint 6A). */
-export type NewCouncil = Omit<Council, 'id' | FeatureFlagName>;
+/**
+ * A council row without its generated id, its feature flags (councils.setFeatureFlags, Sprint 6A) or its bylaws
+ * (councils.setBylaws, Sprint 6Z).
+ */
+export type NewCouncil = Omit<Council, 'id' | FeatureFlagName | 'BylawsMarkdown' | 'BylawsUpdatedAt'>;
 /** A parish row without its generated id. */
 export type NewParish = Omit<Parish, 'id'>;
 /** A pastor row without its generated id. */
@@ -1765,6 +1768,13 @@ export interface DataService {
      * for an unknown council, INVALID_INPUT for an unknown flag or a value that is not a boolean.
      */
     setFeatureFlags(actorId: number, councilId: number, changes: FeatureFlagChanges): Promise<Council>;
+    /**
+     * Saves the council's bylaws (Sprint 6Z, bylaws.ts) - trimmed; '' clears them - stamps BylawsUpdatedAt, and resolves
+     * to the updated council. Only an Active Admin or Grand Knight of the council, or an Active Super Admin, may
+     * (ADMIN_REQUIRED or COUNCIL_ACCESS_DENIED, nothing written); RECORD_NOT_FOUND for an unknown council, INVALID_INPUT
+     * for text that is not a string or is longer than BYLAWS_MAX_LENGTH.
+     */
+    setBylaws(actorId: number, councilId: number, markdown: string): Promise<Council>;
   };
 
   /**

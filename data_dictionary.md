@@ -96,6 +96,8 @@ The core multi-tenant anchor entity representing individual local councils.
 •	flag_charity_proposals (BIT, NOT NULL, DEFAULT 1) — Sprint 6A patch feature flag: 0 hides Propose Charity Grant (the member grant form and its progress tracking) and the Charity Vetting Queue. The charities registry and the charitable disbursements ledger stay with the financial engine.
 •	flag_complex_shifts (BIT, NOT NULL, DEFAULT 1) — Sprint 6A feature flag: 0 hides the event planner, the shift tabs of Member Actions, shift hour reports, and the phone app Signup tab and My shifts list. Activity hours stay.
 •	flag_meeting_management (BIT, NOT NULL, DEFAULT 1) — Sprint 6A feature flag: 0 hides the meeting center, cadence manager and live console, and the phone app Mtgs tab. Only an Active Super Admin changes any flag (councils.setFeatureFlags, from the Councils page); councils.create and update never touch them. Hidden data stays and returns when the flag is set back to 1.
+•	BylawsMarkdown (VARCHAR(MAX), NULL) — Sprint 6Z Council Bylaws Data Vault (schema version 35): the council's own bylaws as light markdown, '# ' for an article and '## ' for a section. Every member of the council reads them; only an Active Admin or Grand Knight of the council, or an Active Super Admin, saves them (councils.setBylaws). NULL until first saved.
+•	BylawsUpdatedAt (DATETIME, NULL) — Sprint 6Z: when councils.setBylaws last saved BylawsMarkdown.
 [AffiliatedCouncils]
 Many-to-many relationship mapping shared data permissions between distinct councils.
 •	PrimaryCouncilID (INTEGER, NOT NULL) — Composite Primary Key / Foreign Key references Council(id).

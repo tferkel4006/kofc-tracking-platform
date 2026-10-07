@@ -102,6 +102,8 @@ import {
   cleanActivity,
   cleanCouncil,
   cleanFeatureFlagChanges,
+  assertMayEditBylaws,
+  cleanBylawsText,
   nextQuarterHourTotal,
   cleanCouncilIds,
   cleanFeedbackText,
@@ -1129,6 +1131,15 @@ export class MemoryDataService implements DataService {
       assertMayMaintainCouncils(this.memberWriteActor(s, actorId), `change the feature flags of council ${councilId}`);
       const row = this.requireRecord(s, 'Council', councilId);
       Object.assign(row, cleanFeatureFlagChanges(changes));
+      return { ...row } as unknown as Council;
+    },
+
+    setBylaws: async (actorId, councilId, markdown) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const row = this.requireRecord(s, 'Council', councilId);
+      assertMayEditBylaws(actor, councilId);
+      Object.assign(row, { BylawsMarkdown: cleanBylawsText(markdown), BylawsUpdatedAt: new Date().toISOString() });
       return { ...row } as unknown as Council;
     },
   };

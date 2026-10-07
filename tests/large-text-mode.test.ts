@@ -86,7 +86,7 @@ describe('large text layout tokens', () => {
 describe('schema 34', () => {
   it('adds the member column, off by default', () => {
     expect(read('Schema.sql')).toMatch(/ALTER TABLE \[Member\] ADD \[flag_large_text_mode\] BIT NOT NULL DEFAULT 0;/);
-    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = 34;/);
+    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = (3[4-9]|[4-9]\d);/);
     expect(read('data_dictionary.md')).toContain('flag_large_text_mode (BIT, NOT NULL, DEFAULT 0)');
   });
 

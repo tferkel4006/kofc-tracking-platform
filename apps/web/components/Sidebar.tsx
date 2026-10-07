@@ -82,6 +82,10 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
   parishes: { href: '/parishes', label: 'Parish & Pastors Linkage', hint: 'Parishes and their pastors' },
   councils: { href: '/councils', label: 'Councils', hint: "Add, edit and delete councils; switch a council's modules on and off" },
   help: { href: '/help', label: 'Online Help Center', hint: 'Searchable answers from the user manuals, and feedback' },
+  'governance/bylaws': { href: '/governance/bylaws', label: 'Constitutional Bylaws', hint: "The council's own bylaws, article by article" },
+  'answers/sop': { href: '/answers/sop', label: 'SOP Center', hint: 'Standard operating procedures, kept as markdown files' },
+  'resources/bulletins': { href: '/resources/bulletins', label: 'Bulletins', hint: 'Flyers, minutes and photo albums filed in Google Drive' },
+  'performance/charts': { href: '/performance/charts', label: 'Growth & Hours Charts', hint: 'Membership growth velocity and council hours by month' },
   profile: { href: '/profile', label: 'My Profile', hint: 'Photo, biography, contact details, skills' },
 };
 

@@ -378,6 +378,20 @@ export const TABLES: Record<string, TableMeta> = {
           "kind": "literal",
           "value": 1
         }
+      },
+      {
+        "name": "BylawsMarkdown",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "BylawsUpdatedAt",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [],

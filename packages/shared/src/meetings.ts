@@ -116,6 +116,12 @@ export function assertMayManageAgendaTemplates(actor: MemberWriteActor, councilI
 
 export const mayManageAgendaTemplates = (actor: MemberWriteActor, councilId: number): boolean => agendaDenial(actor, councilId) === null;
 
+/** councils.setBylaws (Sprint 6Z): the council's meeting keepers, as for its agenda templates. */
+export function assertMayEditBylaws(actor: MemberWriteActor, councilId: number): void {
+  const denial = meetingKeeperDenial(actor, councilId, 'edit its bylaws', `edit the bylaws of council ${councilId}`);
+  if (denial) throw denial;
+}
+
 /** An agenda template's text, trimmed; '' means "remove the template". Rejects INVALID_INPUT past the cap. */
 export const cleanAgendaTemplateText = (value: unknown): string => assertText(value, 'Agenda template', AGENDA_TEMPLATE_MAX_LENGTH, false);
 

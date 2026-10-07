@@ -2030,3 +2030,15 @@ GO
 -- =========================================================================
 ALTER TABLE [Member] ADD [flag_large_text_mode] BIT NOT NULL DEFAULT 0;
 GO
+
+-- =========================================================================
+-- Sprint 6Z: COUNCIL BYLAWS DATA VAULT (schema version 35)
+-- Council.BylawsMarkdown holds the council's own bylaws as light markdown: '# ' starts an article, '## ' a section
+-- (bylaws.ts parses it into numbered clauses for the parliamentary engines). Every member of the council reads them;
+-- only an Active Admin or Grand Knight of the council, or an Active Super Admin, saves them (councils.setBylaws), which
+-- also stamps BylawsUpdatedAt. councils.create and update never touch either column. NULL until first saved.
+-- =========================================================================
+ALTER TABLE [Council] ADD [BylawsMarkdown] VARCHAR(MAX) NULL;
+GO
+ALTER TABLE [Council] ADD [BylawsUpdatedAt] DATETIME NULL;
+GO

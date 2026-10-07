@@ -26,3 +26,7 @@ export * from './features';
 export * from './agenda';
 export * from './onboarding';
 export * from './drive-vault';
+export * from './bylaws';
+export * from './docs';
+export * from './performance';
+export * from './bulletins';
