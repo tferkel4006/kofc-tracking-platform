@@ -162,6 +162,11 @@ export interface Event {
    * EVENT_INTAKE_SESSION_STATUSES. Default 'Inactive'.
    */
   IntakeSessionStatus?: EventIntakeSessionStatus;
+  /**
+   * VARCHAR(128) (Sprint 6C, Schema 36): the Drive file id of the event's flyer from the Marketing Factory; written only
+   * by events.setFlyerFile. NULL until a flyer is filed.
+   */
+  GoogleDriveFlyerFileID?: string | null;
 }
 
 /** Event.IntakeSessionStatus values (Sprint 5Z-7). */

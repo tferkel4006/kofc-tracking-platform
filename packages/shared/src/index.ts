@@ -31,3 +31,4 @@ export * from './advisor';
 export * from './docs';
 export * from './performance';
 export * from './bulletins';
+export * from './marketing';

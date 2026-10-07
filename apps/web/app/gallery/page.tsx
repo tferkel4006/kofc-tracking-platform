@@ -150,9 +150,11 @@ function UploadPhotos({ events, onUploaded }: { events: CouncilEvent[]; onUpload
     setMessage(null);
     try {
       // Sprint 6D: an Admin's photos go to the Drive vault's Media folder and only their file ids are stored. Otherwise
-      // the memory driver has no file store, so each photo is a browser blob link (as meeting minutes are).
+      // the memory driver has no file store, so each photo is a browser blob link (as meeting minutes are). Sprint 6C: the
+      // photos go to the event's own folder (Media / <event name>), where the Marketing Factory finds them next year.
+      const folder = events.find((e) => e.id === eventId)?.EventName;
       const refs: string[] = [];
-      for (const f of files) refs.push((await archiveToDriveVault(user, 'media', f.file)) ?? f.url);
+      for (const f of files) refs.push((await archiveToDriveVault(user, 'media', f.file, folder)) ?? f.url);
       const event = await db.events.uploadPhotos(user.memberId, eventId, refs);
       setMessage({ tone: 'info', text: `${files.length} photo${files.length === 1 ? '' : 's'} added to ${event.EventName}.` });
       setFiles([]);

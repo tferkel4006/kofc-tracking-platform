@@ -177,7 +177,7 @@ export interface MessagePageOptions {
 
 // 4. EVENTS, SHIFTS AND THE POST-EVENT LEDGER
 /** An event row without its generated id or its photo gallery (appended to by events.uploadPhotos). */
-export type NewEvent = Omit<Event, 'id' | 'PhotoGalleryURL'>;
+export type NewEvent = Omit<Event, 'id' | 'PhotoGalleryURL' | 'GoogleDriveFlyerFileID'>;
 /** Fields to change on an event; `null` clears an optional field. Omitted fields are left alone. */
 export type EventChanges = { [K in keyof NewEvent]?: NewEvent[K] | null };
 /** A shift without its generated id; NumberVolunteersSignedUp always starts at 0. */
@@ -2102,6 +2102,13 @@ export interface DataService {
      * gallery that would exceed PHOTO_GALLERY_MAX_LENGTH characters. Nothing is written when it rejects.
      */
     uploadPhotos(actorId: number, eventId: number, photoPaths: readonly string[]): Promise<Event>;
+    /**
+     * Sprint 6C: records the Drive file id of the event's flyer from the Marketing Factory in GoogleDriveFlyerFileID
+     * (`null` clears it) and resolves to the updated event. The same writers as uploadPhotos (ADMIN_REQUIRED,
+     * COUNCIL_ACCESS_DENIED); MEMBER_NOT_FOUND for an unknown actor, EVENT_NOT_FOUND for an unknown event, INVALID_INPUT
+     * for a value that is not a bare Drive file id (isDriveFileId). Nothing is written when it rejects.
+     */
+    setFlyerFile(actorId: number, eventId: number, fileId: string | null): Promise<Event>;
     listShifts(eventId: number): Promise<Shift[]>;
     /**
      * Every signup on the event's shifts with the member's name and any hours logged in EventTime

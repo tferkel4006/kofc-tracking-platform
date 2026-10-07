@@ -18,6 +18,7 @@ import {
   assertNoShowWithoutHours,
   assertMayChangeDonation,
   appendPhotoPaths,
+  cleanFlyerFileId,
   assertMayAttachEventMedia,
   assertMayAuditCouncilExpenses,
   assertMayDisburseCouncilExpenses,
@@ -2273,6 +2274,17 @@ export class MemoryDataService implements DataService {
         const event = this.requireEvent(s, eventId);
         assertMayAttachEventMedia(actor, event as unknown as CouncilEvent, this.councilIdsOf(s, eventId), `add photos to event ${eventId}`);
         (event as Row).PhotoGalleryURL = appendPhotoPaths(event.PhotoGalleryURL as string | null, photoPaths);
+        return { ...event } as unknown as CouncilEvent;
+      });
+    },
+
+    setFlyerFile: async (actorId, eventId, fileId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const event = this.requireEvent(s, eventId);
+        assertMayAttachEventMedia(actor, event as unknown as CouncilEvent, this.councilIdsOf(s, eventId), `file a flyer for event ${eventId}`);
+        (event as Row).GoogleDriveFlyerFileID = cleanFlyerFileId(fileId);
         return { ...event } as unknown as CouncilEvent;
       });
     },

@@ -227,6 +227,7 @@ Multi-day calendar activities managed by councils.
 •	PlannedNumberAttendees (INTEGER, NULL) — Initial attendance estimate.
 •	ActualNumberAttendees (INTEGER, NULL) — Verified post-event foot-traffic count.
 •	PhotoGalleryURL (VARCHAR(2000), NULL) — Comma-separated local photo reference paths, appended to (never overwritten) through events.uploadPhotos by the event's owner, an Admin, Financial Secretary or Treasurer of a linked council, or a Super Admin.
+•	GoogleDriveFlyerFileID (VARCHAR(128), NULL) — Sprint 6C Marketing Factory (schema version 36): the Google Drive file id of the event's finished flyer, filed under Fraternal Enterprise Suite / Flyers. Written only by events.setFlyerFile (the event media rule above); NULL clears it. events.create, update and copy never touch it.
 •	IsAnnual (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y: the event recurs every fraternal year. budget.prePopulateNextYear gives each annual event of the council a budget line; a copied (twin) annual event stays annual.
 •	IsMultiDay (BIT, NOT NULL, DEFAULT 0) — Sprint 5Y-5: the event spans more than one day. Sprint 5Y-6: set by the event form's Multi-Day Assembly / Extended Event box through events.create and events.update; unticked, the form ends the event the day it starts. A copied (twin) multi-day event stays multi-day.
 •	MissionAreaID (INTEGER, NULL) — Sprint 5Z-1: Foreign Key references CouncilMissionArea(id). The council mission area (Faith, Family, Community, Life) the event is filed under; NULL while unfiled.

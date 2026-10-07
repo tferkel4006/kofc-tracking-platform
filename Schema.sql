@@ -2042,3 +2042,13 @@ ALTER TABLE [Council] ADD [BylawsMarkdown] VARCHAR(MAX) NULL;
 GO
 ALTER TABLE [Council] ADD [BylawsUpdatedAt] DATETIME NULL;
 GO
+
+-- =========================================================================
+-- Sprint 6C: AI GENERATIVE MARKETING FACTORY (schema version 36)
+-- Event.GoogleDriveFlyerFileID holds the Google Drive file id of the event's finished flyer, filed by the Marketing
+-- Factory (/resources/marketing) under Fraternal Enterprise Suite / Flyers in the council's shared drive. Only
+-- events.setFlyerFile writes it (the event's owner, an Admin, Financial Secretary or Treasurer of a linked council, or a
+-- Super Admin - the event media rule); events.create, update and copy never touch it. NULL until a flyer is filed.
+-- =========================================================================
+ALTER TABLE [Event] ADD [GoogleDriveFlyerFileID] VARCHAR(128) NULL;
+GO

@@ -66,6 +66,7 @@ export type PortalArea =
   | 'governance/advisor'
   | 'answers/sop'
   | 'resources/bulletins'
+  | 'resources/marketing'
   | 'performance/charts'
   | 'profile';
 
@@ -200,6 +201,13 @@ export const calendarHidesEnded = (u: Actor): boolean => !isAdmin(u) && !u.isOff
 
 /** Seated officers, Admins and Super Admins see the sidebar's Council Archive Vault link (Sprint 5Z-Demo-Final). */
 export const canOpenArchiveVault = (u: Actor): boolean => isAdmin(u) || u.isOfficer;
+
+/**
+ * The AI Generative Marketing Factory (Sprint 6C, Phase 4): the council's event planners and officers - Admins, Super
+ * Admins and seated officers, the Council Archive Vault's audience. Filing a flyer on an event follows
+ * canAttachEventMedia (events.setFlyerFile), and only an Admin's flyer reaches the Drive vault.
+ */
+export const canOpenMarketingFactory = (u: Actor): boolean => canOpenArchiveVault(u);
 
 /** Admins record post-event results for their councils' events, and the event's owner may too. */
 export const canRecordLedger = (u: Actor, event: Pick<Event, 'OwnerID'>, eventCouncilIds: readonly number[]): boolean =>
@@ -505,6 +513,7 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): Po
   // Advisor only reads the bylaws, so it has the bylaws' audience.
   areas.push('governance/bylaws', 'governance/advisor', 'answers/sop', 'resources/bulletins');
   if (isAdmin(u) || canViewExecutiveDashboard(u, u.councilId)) areas.push('performance/charts');
+  if (canOpenMarketingFactory(u)) areas.push('resources/marketing');
   return withFeatureFlags(areas, flags);
 }
 
@@ -548,7 +557,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
     ],
   },
   { id: 'performance', label: 'Performance', items: ['dashboard', 'performance/charts', 'ledger', 'lessons-registry'] },
-  { id: 'resources', label: 'Resources', items: ['gallery', 'resources/bulletins'] },
+  { id: 'resources', label: 'Resources', items: ['gallery', 'resources/bulletins', 'resources/marketing'] },
   { id: 'answers', label: 'Answers', items: ['help', 'answers/help', 'answers/sop'] },
   {
     id: 'setup',

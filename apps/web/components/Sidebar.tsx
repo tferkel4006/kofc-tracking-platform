@@ -91,6 +91,11 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
   'answers/help': { href: '/answers/help', label: 'Interactive Help Desk', hint: 'Type what you need to do and see the steps from the member guide' },
   'answers/sop': { href: '/answers/sop', label: 'SOP Center', hint: 'Standard operating procedures, kept as markdown files' },
   'resources/bulletins': { href: '/resources/bulletins', label: 'Bulletins', hint: 'Flyers, minutes and photo albums filed in Google Drive' },
+  'resources/marketing': {
+    href: '/resources/marketing',
+    label: 'Marketing Factory',
+    hint: 'Turn an event into a printable flyer with past photos, and file it in Google Drive',
+  },
   'performance/charts': { href: '/performance/charts', label: 'Growth & Hours Charts', hint: 'Membership growth velocity and council hours by month' },
   profile: { href: '/profile', label: 'My Profile', hint: 'Photo, biography, contact details, skills' },
 };

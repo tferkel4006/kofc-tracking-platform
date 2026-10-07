@@ -70,7 +70,7 @@ describe('schema 35', () => {
   it('adds the two council columns and bumps the phone database', () => {
     expect(read('Schema.sql')).toMatch(/ALTER TABLE \[Council\] ADD \[BylawsMarkdown\] VARCHAR\(MAX\) NULL;/);
     expect(read('Schema.sql')).toMatch(/ALTER TABLE \[Council\] ADD \[BylawsUpdatedAt\] DATETIME NULL;/);
-    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = 35;/);
+    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = (3[5-9]|[4-9]\d);/);
     expect(read('data_dictionary.md')).toContain('BylawsMarkdown (VARCHAR(MAX), NULL)');
   });
 });

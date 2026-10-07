@@ -1,6 +1,8 @@
 // Server-only Google Drive client for the archival vault (Sprint 6D). Signs in as a Google service account (a signed
 // JWT exchanged for an access token), finds or creates Fraternal Enterprise Suite / Minutes | Vouchers | Media in the
-// council's shared drive, and uploads a file there with Drive API v3, returning the new file id.
+// council's shared drive, and uploads a file there with Drive API v3, returning the new file id. Sprint 6C: media may go
+// to an event's own folder (Media / <event name>), finished flyers go to Flyers, and listImages reads the image ids in an
+// existing folder (the Marketing Factory's past-photo scan) without creating anything.
 //
 // The credentials are read on the server from GOOGLE_DRIVE_CLIENT_EMAIL, GOOGLE_DRIVE_PRIVATE_KEY (the service
 // account's PEM key; literal \n sequences are accepted) and GOOGLE_DRIVE_SHARED_DRIVE_ID (the shared drive the service
@@ -53,9 +55,12 @@ export class GoogleDriveVault {
     private readonly http: Fetch = fetch,
   ) {}
 
-  /** Uploads `data` into the folder for `kind` and returns the new Drive file id. */
-  async upload(kind: DriveVaultKind, file: { name: string; mimeType: string; data: Uint8Array }): Promise<string> {
-    const folderId = await this.ensureFolderPath(driveVaultFolderPath(kind));
+  /**
+   * Uploads `data` into the folder for `kind` (for media, the event's own `subfolder` when given, already cleaned by
+   * cleanDriveVaultSubfolder) and returns the new Drive file id.
+   */
+  async upload(kind: DriveVaultKind, file: { name: string; mimeType: string; data: Uint8Array }, subfolder?: string | null): Promise<string> {
+    const folderId = await this.ensureFolderPath(driveVaultFolderPath(kind, subfolder));
     const boundary = `kofc-vault-${Date.now().toString(36)}`;
     const metadata = JSON.stringify({ name: file.name, parents: [folderId] });
     const body = Buffer.concat([
@@ -83,19 +88,44 @@ export class GoogleDriveVault {
     return parent;
   }
 
-  private async findOrCreateFolder(name: string, parentId: string): Promise<string> {
-    const q = `name = ${literal(name)} and mimeType = '${FOLDER_MIME}' and ${literal(parentId)} in parents and trashed = false`;
-    const params = new URLSearchParams({
+  /**
+   * The ids of up to `max` images (newest first) filed directly in the folder at `path`, or [] when any folder on the path
+   * does not exist. Creates nothing.
+   */
+  async listImages(path: readonly string[], max: number): Promise<string[]> {
+    let parent = this.creds.sharedDriveId;
+    for (const name of path) {
+      const found = await this.findFolder(name, parent);
+      if (!found) return [];
+      parent = found;
+    }
+    const params = this.queryParams(`${literal(parent)} in parents and mimeType contains 'image/' and trashed = false`, 'files(id)', max);
+    params.set('orderBy', 'createdTime desc');
+    const listed = await this.call<{ files?: { id: string }[] }>(`${FILES_URL}?${params}`, { method: 'GET' });
+    return (listed.files ?? []).map((f) => f.id).slice(0, max);
+  }
+
+  private queryParams(q: string, fields: string, pageSize: number): URLSearchParams {
+    return new URLSearchParams({
       q,
       corpora: 'drive',
       driveId: this.creds.sharedDriveId,
       includeItemsFromAllDrives: 'true',
       supportsAllDrives: 'true',
-      fields: 'files(id)',
-      pageSize: '1',
+      fields,
+      pageSize: String(pageSize),
     });
-    const found = await this.call<{ files?: { id: string }[] }>(`${FILES_URL}?${params}`, { method: 'GET' });
-    if (found.files?.[0]?.id) return found.files[0].id;
+  }
+
+  private async findFolder(name: string, parentId: string): Promise<string | null> {
+    const q = `name = ${literal(name)} and mimeType = '${FOLDER_MIME}' and ${literal(parentId)} in parents and trashed = false`;
+    const found = await this.call<{ files?: { id: string }[] }>(`${FILES_URL}?${this.queryParams(q, 'files(id)', 1)}`, { method: 'GET' });
+    return found.files?.[0]?.id ?? null;
+  }
+
+  private async findOrCreateFolder(name: string, parentId: string): Promise<string> {
+    const existing = await this.findFolder(name, parentId);
+    if (existing) return existing;
     const created = await this.call<{ id: string }>(`${FILES_URL}?supportsAllDrives=true&fields=id`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

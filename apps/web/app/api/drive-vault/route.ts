@@ -1,6 +1,7 @@
 // POST /api/drive-vault - the portal's file ingestion route for the Google Drive archival vault (Sprint 6D).
-// Takes multipart form data { kind: 'minutes' | 'voucher' | 'media', file }, files it under
-// Fraternal Enterprise Suite / Minutes | Vouchers | Media in the council's shared drive and answers { fileId }.
+// Takes multipart form data { kind: 'minutes' | 'voucher' | 'media' | 'flyer', file, folder? }, files it under
+// Fraternal Enterprise Suite / Minutes | Vouchers | Media | Flyers in the council's shared drive and answers { fileId }.
+// Sprint 6C: a media upload may name its event's folder (`folder`, the event name), filing it under Media / <event name>.
 // The screen then stores only that id in the record's link column.
 //
 // The Drive credentials live here on the server (services/google-drive.ts), never in the browser bundle.
@@ -12,7 +13,7 @@
 // keeps the file as it did before Sprint 6D (a browser blob link). Turn DRIVE_VAULT_LIVE on only behind an
 // authenticating proxy, or once the remote driver brings server sessions.
 import { NextResponse } from 'next/server';
-import { assertDriveVaultUpload, describeError } from '@kofc/shared';
+import { assertDriveVaultUpload, cleanDriveVaultSubfolder, describeError } from '@kofc/shared';
 import { driveCredentialsFromEnv, GoogleDriveVault } from '@/services/google-drive';
 
 let vault: GoogleDriveVault | null = null;
@@ -20,12 +21,14 @@ let vault: GoogleDriveVault | null = null;
 export async function POST(req: Request) {
   let kind;
   let file: File;
+  let folder: string | null;
   try {
     const form = await req.formData();
     const entry = form.get('file');
     if (!(entry instanceof File)) throw new Error('Attach the file as "file".');
     file = entry;
     kind = assertDriveVaultUpload({ kind: form.get('kind'), name: file.name, mimeType: file.type || 'application/octet-stream', size: file.size });
+    folder = kind === 'media' ? cleanDriveVaultSubfolder(form.get('folder')) : null;
   } catch (err) {
     return NextResponse.json({ archived: false, message: describeError(err) }, { status: 400 });
   }
@@ -40,7 +43,7 @@ export async function POST(req: Request) {
 
   try {
     vault ??= new GoogleDriveVault(creds);
-    const fileId = await vault.upload(kind, { name: file.name, mimeType: file.type, data: new Uint8Array(await file.arrayBuffer()) });
+    const fileId = await vault.upload(kind, { name: file.name, mimeType: file.type, data: new Uint8Array(await file.arrayBuffer()) }, folder);
     return NextResponse.json({ archived: true, fileId });
   } catch (err) {
     console.error('[drive-vault] upload failed:', describeError(err));

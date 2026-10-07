@@ -122,6 +122,7 @@ export function createRemoteDataService(): DataService {
       setNoShow: notImplemented('events.setNoShow'),
       listCalendarRange: notImplemented('events.listCalendarRange'),
       uploadPhotos: notImplemented('events.uploadPhotos'),
+      setFlyerFile: notImplemented('events.setFlyerFile'),
       listByCouncil: notImplemented('events.listByCouncil'),
       listShifts: notImplemented('events.listShifts'),
       listTurnout: notImplemented('events.listTurnout'),

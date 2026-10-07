@@ -1234,6 +1234,13 @@ export const TABLES: Record<string, TableMeta> = {
           "kind": "literal",
           "value": "Inactive"
         }
+      },
+      {
+        "name": "GoogleDriveFlyerFileID",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [

@@ -18,6 +18,7 @@ import {
   assertNoShowWithoutHours,
   assertMayChangeDonation,
   appendPhotoPaths,
+  cleanFlyerFileId,
   assertMayAttachEventMedia,
   assertMayAuditCouncilExpenses,
   assertMayDisburseCouncilExpenses,
@@ -537,8 +538,9 @@ const DB_NAME = 'kofc.db';
  * 33: PasswordResetToken - self-service password resets; the welcome setup code becomes mandatory (Sprint 6B Security).
  * 34: Member.flag_large_text_mode - the member's Large Text Layout Mode preference (Sprint 6C).
  * 35: Council.BylawsMarkdown and Council.BylawsUpdatedAt - the Council Bylaws Data Vault (Sprint 6Z).
+ * 36: Event.GoogleDriveFlyerFileID - the Marketing Factory's filed flyer (Sprint 6C, Phase 4).
  */
-const SCHEMA_VERSION = 35;
+const SCHEMA_VERSION = 36;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -2651,6 +2653,17 @@ export class SqliteDataService implements DataService {
         assertMayAttachEventMedia(actor, event, await this.councilIdsOf(db, eventId), `add photos to event ${eventId}`);
         const gallery = appendPhotoPaths(event.PhotoGalleryURL, photoPaths);
         await db.runAsync('UPDATE [Event] SET [PhotoGalleryURL] = ? WHERE [id] = ?', [gallery, eventId]);
+      });
+      return this.requireEvent(db, eventId);
+    },
+
+    setFlyerFile: async (actorId, eventId, fileId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const event = await this.requireEvent(db, eventId);
+        assertMayAttachEventMedia(actor, event, await this.councilIdsOf(db, eventId), `file a flyer for event ${eventId}`);
+        await db.runAsync('UPDATE [Event] SET [GoogleDriveFlyerFileID] = ? WHERE [id] = ?', [cleanFlyerFileId(fileId), eventId]);
       });
       return this.requireEvent(db, eventId);
     },
