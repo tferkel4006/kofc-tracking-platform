@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { councilLabel, countUnreadMessages, describeError } from '@kofc/shared';
+import { councilLabel, countUnreadMessages, describeError, isFraternalTenant, TENANT_VOCABULARY, whiteLabel } from '@kofc/shared';
 import { AlertBell } from '@/components/AlertBell';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { NAV, Sidebar } from '@/components/Sidebar';
@@ -89,6 +89,7 @@ const MESSAGING_MENU = ['messages', 'distribution-lists'] as const;
  * a single shortcut since Sprint 5X). Escape, a click elsewhere or following a link closes it.
  */
 function MessagingMenu({ pathname }: { pathname: string }) {
+  const { tenantType } = useSession();
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const current = MESSAGING_MENU.some((item) => NAV[item].href === pathname);
@@ -149,8 +150,8 @@ function MessagingMenu({ pathname }: { pathname: string }) {
                 aria-current={here ? 'page' : undefined}
                 className={cx('block border-l-8 px-4 py-2 hover:underline', i > 0 && 'border-t border-t-line', here ? 'border-l-gold' : 'border-l-transparent')}
               >
-                <span className="block text-sm font-bold">{label}</span>
-                <span className="block text-xs text-muted">{hint}</span>
+                <span className="block text-sm font-bold">{whiteLabel(label, tenantType)}</span>
+                <span className="block text-xs text-muted">{whiteLabel(hint, tenantType)}</span>
               </Link>
             );
           })}
@@ -421,7 +422,7 @@ function SignIn() {
 }
 
 function Frame({ children }: { children: ReactNode }) {
-  const { user, features, featuresLoaded } = useSession();
+  const { user, features, featuresLoaded, tenantType } = useSession();
   const pathname = usePathname();
   const council = useLoad(() => (user ? db.councils.get(user.councilId) : Promise.resolve(null)), [user?.councilId]);
   if (!user) return null;
@@ -429,9 +430,10 @@ function Frame({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col">
       <header data-surface="navy" className="flex items-center gap-4 border-b-4 border-gold bg-navy px-6 py-3 text-white">
-        <BrandMark />
+        {/* Sprint 6Z-Dual-Gate-Model: the order's emblem and name belong to Knights of Columbus councils only. */}
+        {isFraternalTenant(tenantType) ? <BrandMark /> : null}
         <div className="flex-1">
-          <p className="font-serif text-xl font-bold leading-tight">Knights of Columbus</p>
+          <p className="font-serif text-xl font-bold leading-tight">{TENANT_VOCABULARY[tenantType].organizationName}</p>
           <p className="text-sm">{council.data ? councilLabel(council.data) : ' '}</p>
         </div>
         <MessagingMenu pathname={pathname} />
@@ -440,7 +442,7 @@ function Frame({ children }: { children: ReactNode }) {
         <MemberMenu />
       </header>
       <div className="flex flex-1">
-        <Sidebar user={user} pathname={pathname} features={features} />
+        <Sidebar user={user} pathname={pathname} features={features} tenant={tenantType} />
         {/* Sprint 6A: pages wait for the council's feature flags, so a switched-off module never flashes into view. */}
         <main className="min-w-0 flex-1 bg-white p-6">{featuresLoaded ? children : null}</main>
       </div>

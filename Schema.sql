@@ -2083,3 +2083,15 @@ GO
 -- =========================================================================
 ALTER TABLE [Shift] ADD [IsAllHands] BIT NOT NULL DEFAULT 0;
 GO
+
+-- =========================================================================
+-- Sprint 6Z-Dual-Gate-Model: MULTI-TENANT WHITE-LABEL GATE (schema version 39)
+-- Council.tenant_type names the kind of organization the council row belongs to. 'KOFC' (the default) is a Knights of
+-- Columbus council and keeps every fraternal extension: Supreme Council reporting and roster sync, the Constitutional
+-- Advisor, the Catholic liturgical overlay and the order's vocabulary. Any other value (TENANT_TYPES: 'GENERIC'; rules
+-- layer, no CHECK) is a white-labelled community organization: the fraternal extensions are hidden and their driver
+-- operations rejected (isFraternalExtension, assertFraternalExtension), and the portal's labels use neutral words
+-- (whiteLabel). Every existing council stays a Knights of Columbus council (DEFAULT 'KOFC').
+-- =========================================================================
+ALTER TABLE [Council] ADD [tenant_type] VARCHAR(20) NOT NULL DEFAULT 'KOFC';
+GO

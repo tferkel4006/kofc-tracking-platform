@@ -23,6 +23,7 @@ import {
   assertMayAuditCouncilExpenses,
   assertMayDisburseCouncilExpenses,
   assertMayDispatchCouncilAlerts,
+  assertFraternalExtension,
   assertMaySyncSupremeReports,
   alertHistoryThreshold,
   cleanAlertFilters,
@@ -253,6 +254,7 @@ import {
   type CleanDonation,
   type ElectionRows,
   type EventFunds,
+  type GateCouncil,
   type MaintainedTable,
   type MemberWriteActor,
   type MessagingRows,
@@ -2488,6 +2490,12 @@ export class MemoryDataService implements DataService {
     }
   }
 
+  /** Sprint 6Z-Dual-Gate-Model: FRATERNAL_EXTENSION_REQUIRED unless the council is a Knights of Columbus council. */
+  private assertFraternalCouncil(s: MemoryStore, councilId: number, operation: string): void {
+    const council = s.rows('Council').find((c) => c.id === councilId) as unknown as GateCouncil | undefined;
+    assertFraternalExtension(councilId, operation, council ?? null);
+  }
+
   /** Friendly errors for the two foreign keys the generic constraint message would explain poorly. */
   private assertOwnerAndCategory(s: MemoryStore, fields: EventChanges): void {
     if (fields.OwnerID != null) this.requireMember(s, fields.OwnerID);
@@ -3577,6 +3585,7 @@ export class MemoryDataService implements DataService {
       const result = s.transaction((): SupremeRosterSyncResult => {
         assertMayImportSupremeRoster(this.memberWriteActor(s, actorId), councilId);
         this.assertCouncilsExist(s, [councilId]);
+        this.assertFraternalCouncil(s, councilId, 'import the Supreme Council roster');
         const memberTypeId = s.rows('MemberType').find((t) => t.Type === 'Member')?.id as number;
         const ids = { activeStatusId: this.activeStatusId(s) as number, memberTypeId };
         const out: SupremeRosterSyncResult = { created: [], updated: [], skipped: [] };
@@ -3628,6 +3637,7 @@ export class MemoryDataService implements DataService {
       const s = await this.ready();
       assertMaySyncSupremeReports(this.memberWriteActor(s, actorId), councilId, `read the Supreme sync history of council ${councilId}`);
       this.assertCouncilsExist(s, [councilId]);
+      this.assertFraternalCouncil(s, councilId, 'read the Supreme Council sync history');
       return buildSyncHistory(
         s.rows('SupremeReportingSync').filter((r) => r.CouncilID === councilId).map((r) => ({ ...r })) as unknown as SupremeReportingSync[],
         s.rows('Member') as unknown as Member[],
@@ -3647,6 +3657,7 @@ export class MemoryDataService implements DataService {
     const period = resolveSupremePeriod(form, choice, this.now());
     assertMaySyncSupremeReports(this.memberWriteActor(s, actorId), councilId, `file Supreme reports for council ${councilId}`);
     this.assertCouncilsExist(s, [councilId]);
+    this.assertFraternalCouncil(s, councilId, 'file a Supreme Council report');
     return compileSupremeSnapshot(form, period, this.supremeSnapshotRows(s, councilId, period));
   }
 

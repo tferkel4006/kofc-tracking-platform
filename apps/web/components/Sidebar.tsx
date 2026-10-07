@@ -4,8 +4,19 @@
 // The sign-off and meeting desks (PORTAL_LOCKABLE_DESKS) are listed for every member: one the viewer may not open is
 // shown with a gold lock badge and says who holds it, instead of a link. The current page carries a gold marker.
 // Sprint 6A: a module the council's feature flags switch off is left out entirely, never shown locked.
+// Sprint 6Z-Dual-Gate-Model: a white-label tenant loses the fraternal areas the same way, and every label, tooltip and
+// pillar name is drawn through whiteLabel in the tenant's vocabulary.
 import Link from 'next/link';
-import { canOpenArchiveVault, portalSidebar, type FeatureFlags, type PortalNavGroup, type PortalNavItem, type SessionUser } from '@kofc/shared';
+import {
+  canOpenArchiveVault,
+  portalSidebar,
+  whiteLabel,
+  type FeatureFlags,
+  type PortalNavGroup,
+  type PortalNavItem,
+  type SessionUser,
+  type TenantType,
+} from '@kofc/shared';
 import { cx } from '@/components/ui';
 
 export interface NavEntry {
@@ -155,30 +166,30 @@ function LockIcon() {
 }
 
 /** One dense sidebar link: the label only, with its description as the tooltip; gold marker when current. */
-function NavLink({ item, current }: { item: PortalNavItem; current: boolean }) {
+function NavLink({ item, current, tenant }: { item: PortalNavItem; current: boolean; tenant: TenantType }) {
   const { href, label, hint } = NAV[item];
   return (
     <li>
       <Link
         href={href}
-        title={hint}
+        title={whiteLabel(hint, tenant)}
         aria-current={current ? 'page' : undefined}
         className={cx('flex items-center gap-2 border-l-8 py-1.5 pl-6 pr-3 text-sm', current ? 'border-gold bg-white font-bold text-navy' : 'border-transparent hover:underline')}
       >
-        {label}
+        {whiteLabel(label, tenant)}
       </Link>
     </li>
   );
 }
 
 /** A desk the viewer may not open: its name, a gold lock badge (navy on gold, 6.4:1) and who holds it. Not a link. */
-function LockedEntry({ item }: { item: PortalNavItem }) {
+function LockedEntry({ item, tenant }: { item: PortalNavItem; tenant: TenantType }) {
   const { label, restrictedTo } = NAV[item];
-  const who = restrictedTo ? `Restricted to ${restrictedTo}` : 'Restricted to authorized roles';
+  const who = whiteLabel(restrictedTo ? `Restricted to ${restrictedTo}` : 'Restricted to authorized roles', tenant);
   return (
     <li>
       <span aria-disabled="true" title={who} className="flex items-center justify-between gap-2 border-l-8 border-transparent py-1.5 pl-6 pr-3 text-sm">
-        <span>{label}</span>
+        <span>{whiteLabel(label, tenant)}</span>
         <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gold px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide text-navy">
           <LockIcon />
           Locked
@@ -189,8 +200,8 @@ function LockedEntry({ item }: { item: PortalNavItem }) {
   );
 }
 
-export function Sidebar({ user, pathname, features }: { user: SessionUser; pathname: string; features: FeatureFlags }) {
-  const groups = portalSidebar(user, features);
+export function Sidebar({ user, pathname, features, tenant }: { user: SessionUser; pathname: string; features: FeatureFlags; tenant: TenantType }) {
+  const groups = portalSidebar(user, features, tenant);
   return (
     <nav data-surface="navy" aria-label="Portal sections" className="w-64 shrink-0 bg-navy py-3 text-white">
       {groups.map((group) => {
@@ -198,16 +209,20 @@ export function Sidebar({ user, pathname, features }: { user: SessionUser; pathn
         return (
           <div key={group.id} className="border-t border-t-gold pb-2 pt-1 first:border-t-0 first:pt-0">
             <h2 id={headingId} className="px-4 py-2 text-xs font-bold uppercase tracking-wide">
-              {group.label}
+              {whiteLabel(group.label, tenant)}
             </h2>
             <ul aria-labelledby={headingId} className="flex flex-col">
               {group.entries.map(({ item, locked }) =>
-                locked ? <LockedEntry key={item} item={item} /> : <NavLink key={item} item={item} current={isCurrent(pathname, item)} />,
+                locked ? (
+                  <LockedEntry key={item} item={item} tenant={tenant} />
+                ) : (
+                  <NavLink key={item} item={item} current={isCurrent(pathname, item)} tenant={tenant} />
+                ),
               )}
               {(EXTERNAL_NAV[group.id] ?? [])
                 .filter((link) => !link.visible || link.visible(user))
                 .map(({ href, label, hint }) => (
-                  <ExternalNavLink key={href} href={href} label={label} hint={hint} />
+                  <ExternalNavLink key={href} href={href} label={whiteLabel(label, tenant)} hint={whiteLabel(hint, tenant)} />
                 ))}
             </ul>
           </div>

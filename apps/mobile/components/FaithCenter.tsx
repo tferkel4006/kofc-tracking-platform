@@ -6,6 +6,8 @@
 //     until tomorrow;
 //   - HolyDayBadge is the crimson '[ 🟥 HOLY DAY OF OBLIGATION ]' sub-badge line.
 // Verses are only from the New American Bible, Revised Edition (DAILY_VERSES), shown with the NABRE notice.
+// Sprint 6Z-Dual-Gate-Model: the Faith Center is a Knights of Columbus extension. For a white-label tenant the provider
+// gives no context (so the praying hands draw nothing) and no modal, and the banner draws nothing.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +16,7 @@ import {
   dailyVerse,
   HOLY_DAY_BADGE,
   isFirstOpenOfDay,
+  isFraternalTenant,
   liturgicalBanner,
   LITURGICAL_COLORS,
   NABRE_NOTICE,
@@ -21,6 +24,7 @@ import {
   toIsoDate,
 } from '@kofc/shared';
 import { AppText, Button } from '@/components/ui';
+import { useTenantType } from '@/lib/app-context';
 import { useTheme } from '@/lib/layout-mode';
 import { readDailyFlag, writeDailyFlag } from '@/services/daily-flags';
 
@@ -118,8 +122,10 @@ function DailyQuoteModal({ visible, onClose }: { visible: boolean; onClose: () =
 
 /** Mount once round the signed-in tabs. Opens the Daily Bible Quote on the first launch of each calendar day. */
 export function FaithCenterProvider({ children }: { children: ReactNode }) {
+  const fraternal = isFraternalTenant(useTenantType());
   const [visible, setVisible] = useState(false);
   useEffect(() => {
+    if (!fraternal) return;
     let live = true;
     const today = toIsoDate(new Date());
     void readDailyFlag('faith.verseShown').then((last) => {
@@ -130,13 +136,14 @@ export function FaithCenterProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false;
     };
-  }, []);
+  }, [fraternal]);
   const open = useCallback(() => setVisible(true), []);
   const value = useMemo(() => ({ open }), [open]);
+  // The provider stays mounted either way, so the tabs below are not remounted when the tenant type loads.
   return (
-    <FaithCenterContext.Provider value={value}>
+    <FaithCenterContext.Provider value={fraternal ? value : null}>
       {children}
-      <DailyQuoteModal visible={visible} onClose={() => setVisible(false)} />
+      {fraternal ? <DailyQuoteModal visible={visible} onClose={() => setVisible(false)} /> : null}
     </FaithCenterContext.Provider>
   );
 }
@@ -166,6 +173,7 @@ export function PrayingHandsButton() {
  * weekday), and the crimson Holy Day badge when it is one. Closing it hides it until tomorrow.
  */
 export function LiturgicalBanner() {
+  const fraternal = isFraternalTenant(useTenantType());
   const { color, space, border, touchTarget } = useTheme();
   const today = toIsoDate(new Date());
   const [closed, setClosed] = useState(true);
@@ -176,7 +184,7 @@ export function LiturgicalBanner() {
       live = false;
     };
   }, [today]);
-  if (closed) return null;
+  if (closed || !fraternal) return null;
   const banner = liturgicalBanner(today);
   return (
     <View

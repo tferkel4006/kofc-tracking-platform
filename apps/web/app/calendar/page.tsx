@@ -22,6 +22,7 @@ import {
   formatTimeRange,
   HOLY_DAY_BADGE,
   isAllHandsShift,
+  isFraternalTenant,
   isShiftUrgent,
   observancesBetween,
   shiftNeedsVolunteers,
@@ -42,7 +43,7 @@ import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/Counci
 import { DriveButtons } from '@/components/DriveLinks';
 import { Button, cx, Empty, Field, NewMemberBadge, Notice, PageTitle, Pill, Select, Tabs } from '@/components/ui';
 import { formatPersonName } from '@/lib/format';
-import { useFeatureFlags, useUser } from '@/lib/session';
+import { useFeatureFlags, useTenantType, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
@@ -454,7 +455,10 @@ function MasterCalendar() {
   const entries = (data.data?.entries ?? []).filter((e) => (e.kind === 'event' ? layers.events : layers.meetings));
   const feed = data.data?.feed ?? [];
   const birthdays = layers.birthdays ? (data.data?.birthdays ?? []) : [];
-  const observances = layers.observances ? observancesBetween(from, to) : [];
+  // Sprint 6Z-Dual-Gate-Model: the Church's feasts are a Knights of Columbus extension; a white-label tenant keeps the
+  // federal holidays only.
+  const fraternal = isFraternalTenant(useTenantType());
+  const observances = layers.observances ? observancesBetween(from, to).filter((o) => fraternal || o.kind === 'holiday') : [];
   const observancesOn = (date: string) => observances.filter((o) => o.date === date);
   const birthdaysOn = (date: string) => birthdays.filter((b) => b.date === date);
   const byEventDay = shiftsByEventDay(feed);

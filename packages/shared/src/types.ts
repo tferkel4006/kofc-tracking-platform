@@ -76,7 +76,11 @@ export interface Council {
   SmtpPort?: number | null;
   SmtpUsername?: string | null;
   /** The SMTP password sealed by the server (AES-256-GCM, `v1.<iv>.<tag>.<ciphertext>`); never the password itself. */
-  EmailPasswordEncrypted?: string | null;
+  EmailPasswordEncrypted?: string | null;  /**
+   * Sprint 6Z-Dual-Gate-Model (Schema 39): 'KOFC' (the default) or another TENANT_TYPES value for a white-labelled
+   * organization (tenant.ts). A missing or NULL value reads as 'KOFC'.
+   */
+  tenant_type?: string | null;
 }
 
 export interface AffiliatedCouncils {

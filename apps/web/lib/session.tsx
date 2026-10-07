@@ -3,7 +3,16 @@
 // The memory driver lives in the browser tab (see services/db.ts), so a reload starts a fresh seeded
 // database and asks for sign-in again. That is the mock; the remote driver will hold real sessions.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ALL_FEATURES_ON, councilFeatureFlags, type FeatureFlags, type SessionUser } from '@kofc/shared';
+import {
+  ALL_FEATURES_ON,
+  councilFeatureFlags,
+  councilTenantType,
+  DEFAULT_TENANT_TYPE,
+  registerCouncilGates,
+  type FeatureFlags,
+  type SessionUser,
+  type TenantType,
+} from '@kofc/shared';
 import { db } from '@/services/db';
 import { closeServerSession, openServerSession } from '@/services/session-transport';
 
@@ -33,6 +42,11 @@ interface SessionValue {
    */
   features: FeatureFlags;
   featuresLoaded: boolean;
+  /**
+   * The signed-in member's council tenant type (Sprint 6Z-Dual-Gate-Model): 'KOFC' until the council has loaded, like
+   * the flags. A white-label tenant hides the fraternal areas and relabels the portal (whiteLabel).
+   */
+  tenantType: TenantType;
   /** Call after a Super Admin changes feature flags, so the sidebar and pages catch up at once. */
   featuresChanged(): void;
 }
@@ -75,15 +89,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const messagesChanged = useCallback(() => setMessagesVersion((v) => v + 1), []);
   const [featuresVersion, setFeaturesVersion] = useState(0);
   const featuresChanged = useCallback(() => setFeaturesVersion((v) => v + 1), []);
-  const [loadedFeatures, setLoadedFeatures] = useState<{ councilId: number; flags: FeatureFlags } | null>(null);
+  const [loadedFeatures, setLoadedFeatures] = useState<{ councilId: number; flags: FeatureFlags; tenantType: TenantType } | null>(null);
   const councilId = user?.councilId;
   useEffect(() => {
     if (councilId === undefined) return;
     let live = true;
     db.councils.get(councilId).then(
-      (council) => live && setLoadedFeatures({ councilId, flags: councilFeatureFlags(council) }),
+      (council) => {
+        if (!live) return;
+        registerCouncilGates(council);
+        setLoadedFeatures({ councilId, flags: councilFeatureFlags(council), tenantType: councilTenantType(council) });
+      },
       // An unreadable council keeps every module on rather than locking the portal.
-      () => live && setLoadedFeatures({ councilId, flags: ALL_FEATURES_ON }),
+      () => live && setLoadedFeatures({ councilId, flags: ALL_FEATURES_ON, tenantType: DEFAULT_TENANT_TYPE }),
     );
     return () => {
       live = false;
@@ -91,6 +109,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [councilId, featuresVersion]);
   const featuresLoaded = loadedFeatures !== null && loadedFeatures.councilId === councilId;
   const features = featuresLoaded ? loadedFeatures.flags : ALL_FEATURES_ON;
+  const tenantType = featuresLoaded ? loadedFeatures.tenantType : DEFAULT_TENANT_TYPE;
 
   const value = useMemo(
     () => ({
@@ -107,9 +126,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       messagesChanged,
       features,
       featuresLoaded,
+      tenantType,
       featuresChanged,
     }),
-    [user, ready, startupError, signIn, signOut, profileVersion, profileChanged, alertsVersion, alertsChanged, messagesVersion, messagesChanged, features, featuresLoaded, featuresChanged],
+    [user, ready, startupError, signIn, signOut, profileVersion, profileChanged, alertsVersion, alertsChanged, messagesVersion, messagesChanged, features, featuresLoaded, tenantType, featuresChanged],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
@@ -130,4 +150,9 @@ export function useUser(): SessionUser {
 /** The signed-in member's council feature flags (Sprint 6A). */
 export function useFeatureFlags(): FeatureFlags {
   return useSession().features;
+}
+
+/** The signed-in member's council tenant type (Sprint 6Z-Dual-Gate-Model). */
+export function useTenantType(): TenantType {
+  return useSession().tenantType;
 }

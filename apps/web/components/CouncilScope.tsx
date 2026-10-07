@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 import { useState, type ReactNode } from 'react';
 import { councilLabel, isSuperAdmin, portalAreaHref, portalAreas, sortCouncils, type Council, type PortalArea } from '@kofc/shared';
 import { Field, Notice, Select } from '@/components/ui';
-import { useFeatureFlags, useUser } from '@/lib/session';
+import { useFeatureFlags, useTenantType, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
@@ -12,8 +12,13 @@ import { db } from '@/services/db';
 export function RequireArea({ area, children }: { area: PortalArea; children: ReactNode }) {
   const user = useUser();
   const features = useFeatureFlags();
-  const areas = portalAreas(user, features);
+  const tenantType = useTenantType();
+  const areas = portalAreas(user, features, tenantType);
   if (areas.includes(area)) return <>{children}</>;
+  if (portalAreas(user, features).includes(area)) {
+    // Sprint 6Z-Dual-Gate-Model: a Knights of Columbus extension, and this council is a white-label tenant.
+    return <Notice tone="info">This section is part of the Knights of Columbus extensions, which your organization does not use.</Notice>;
+  }
   if (portalAreas(user).includes(area)) {
     // Sprint 6A: the role may open it, but the council has switched the module off.
     return <Notice tone="info">Your council has switched this section off. A Super Admin can turn it back on from the Councils page.</Notice>;

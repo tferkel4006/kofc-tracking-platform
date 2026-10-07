@@ -12,6 +12,7 @@
 import type { CouncilLookupTableName, SessionUser } from './contract';
 import { budgetWindowOf } from './budget';
 import { ALL_FEATURES_ON, withFeatureFlags, type FeatureFlags } from './features';
+import { DEFAULT_TENANT_TYPE, withTenantGate, type TenantType } from './tenant';
 import { AGENDA_EDITOR_ROLE_NAMES } from './agenda';
 import { GRAND_KNIGHT_ROLE } from './elections';
 import { FINANCE_LOOKUP_TABLES, FINANCIAL_SECRETARY_ROLE_NAME, holdsExecutiveRole, holdsFinanceRole } from './rules';
@@ -464,8 +465,10 @@ export const canDesignateBudgetDirector = (u: Actor, member: Pick<Member, 'Counc
  * Sections shown in the portal's navigation. The ledger is open to everyone because event owners use it, and the
  * meeting center because a meeting's owner may be any member (it is read-only for everyone else without rights).
  * Sprint 6A: `flags` are the council's feature flags (features.ts); a module switched off is left out for every role.
+ * Sprint 6Z-Dual-Gate-Model: `tenant` is the council's tenant type (tenant.ts); a white-label tenant loses the fraternal
+ * areas for every role.
  */
-export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): PortalArea[] {
+export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, tenant: TenantType = DEFAULT_TENANT_TYPE): PortalArea[] {
   // Admins and Super Admins volunteer too, so the member hub leads everyone's navigation, then the shared views.
   const areas: PortalArea[] = ['member-actions', 'calendar', 'gallery'];
   if (canMaintainLookups(u)) areas.push('lookups');
@@ -514,7 +517,7 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): Po
   areas.push('governance/bylaws', 'governance/advisor', 'answers/sop', 'resources/bulletins');
   if (isAdmin(u) || canViewExecutiveDashboard(u, u.councilId)) areas.push('performance/charts');
   if (canOpenMarketingFactory(u)) areas.push('resources/marketing');
-  return withFeatureFlags(areas, flags);
+  return withTenantGate(withFeatureFlags(areas, flags), tenant);
 }
 
 /**
@@ -586,10 +589,11 @@ export interface PortalSidebarGroup extends Omit<PortalNavGroup, 'items'> {
  * The sidebar for `u` as the portal draws it: the links portalAreas allows, plus every lockable desk the viewer may not
  * open, with `locked` set. A pillar with no entries is dropped.
  */
-export function portalSidebar(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): PortalSidebarGroup[] {
-  const allowed = new Set<string>(portalAreas(u, flags));
-  // Sprint 6A: a switched-off module is gone, not locked - a lockable desk is hidden too.
-  const featured = new Set<string>(withFeatureFlags(PORTAL_NAV_GROUPS.flatMap((g) => g.items), flags));
+export function portalSidebar(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, tenant: TenantType = DEFAULT_TENANT_TYPE): PortalSidebarGroup[] {
+  const allowed = new Set<string>(portalAreas(u, flags, tenant));
+  // Sprint 6A: a switched-off module is gone, not locked - a lockable desk is hidden too. So is a fraternal area for a
+  // white-label tenant (Sprint 6Z-Dual-Gate-Model).
+  const featured = new Set<string>(withTenantGate(withFeatureFlags(PORTAL_NAV_GROUPS.flatMap((g) => g.items), flags), tenant));
   const lockable = new Set<string>(PORTAL_LOCKABLE_DESKS);
   return PORTAL_NAV_GROUPS.map(({ items, ...g }) => ({
     ...g,
@@ -600,7 +604,7 @@ export function portalSidebar(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): 
 }
 
 /** The sidebar for `u`: each group holding only the links portalAreas allows; empty groups are dropped. */
-export function portalNavGroups(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON): PortalNavGroup[] {
-  const allowed = new Set<string>(portalAreas(u, flags));
+export function portalNavGroups(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, tenant: TenantType = DEFAULT_TENANT_TYPE): PortalNavGroup[] {
+  const allowed = new Set<string>(portalAreas(u, flags, tenant));
   return PORTAL_NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((item) => allowed.has(item)) })).filter((g) => g.items.length > 0);
 }

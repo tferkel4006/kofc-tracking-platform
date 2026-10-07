@@ -23,6 +23,7 @@ import {
   assertMayAuditCouncilExpenses,
   assertMayDisburseCouncilExpenses,
   assertMayDispatchCouncilAlerts,
+  assertFraternalExtension,
   assertMaySyncSupremeReports,
   alertHistoryThreshold,
   cleanAlertFilters,
@@ -258,6 +259,7 @@ import {
   type CleanGlobalCharity,
   type CouncilAdminDetails,
   type EventFunds,
+  type GateCouncil,
   type MaintainedTable,
   type MemberWriteActor,
   type MessagingRows,
@@ -548,8 +550,9 @@ const DB_NAME = 'kofc.db';
  * 37: Council.EmailProvider, SmtpHost, SmtpPort, SmtpUsername and EmailPasswordEncrypted - the council's outbound
  *     email gateway (Sprint 6Z-Email-Proxy).
  * 38: Shift.IsAllHands - All-Hands shifts with no volunteer cap (Phase 4.5).
+ * 39: Council.tenant_type - the multi-tenant white-label gate (Sprint 6Z-Dual-Gate-Model).
  */
-const SCHEMA_VERSION = 38;
+const SCHEMA_VERSION = 39;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -2913,6 +2916,12 @@ export class SqliteDataService implements DataService {
     }
   }
 
+  /** Sprint 6Z-Dual-Gate-Model: FRATERNAL_EXTENSION_REQUIRED unless the council is a Knights of Columbus council. */
+  private async assertFraternalCouncil(db: SQLite.SQLiteDatabase, councilId: number, operation: string): Promise<void> {
+    const council = await db.getFirstAsync<GateCouncil>('SELECT [id], [tenant_type] FROM [Council] WHERE [id] = ?', [councilId]);
+    assertFraternalExtension(councilId, operation, council);
+  }
+
   /** Friendly errors for the two foreign keys the generic constraint message would explain poorly. */
   private async assertOwnerAndCategory(db: SQLite.SQLiteDatabase, fields: EventChanges): Promise<void> {
     if (fields.OwnerID != null) await this.requireMember(db, fields.OwnerID);
@@ -4195,6 +4204,7 @@ export class SqliteDataService implements DataService {
       await db.withTransactionAsync(async () => {
         assertMayImportSupremeRoster(await this.memberWriteActor(db, actorId), councilId);
         await this.assertCouncilsExist(db, [councilId]);
+        await this.assertFraternalCouncil(db, councilId, 'import the Supreme Council roster');
         const ids = {
           activeStatusId: (await db.getFirstAsync<{ id: number }>("SELECT [id] FROM [MemberStatus] WHERE [Status] = 'Active'"))!.id,
           memberTypeId: (await db.getFirstAsync<{ id: number }>("SELECT [id] FROM [MemberType] WHERE [Type] = 'Member'"))!.id,
@@ -4257,6 +4267,7 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       assertMaySyncSupremeReports(await this.memberWriteActor(db, actorId), councilId, `read the Supreme sync history of council ${councilId}`);
       await this.assertCouncilsExist(db, [councilId]);
+      await this.assertFraternalCouncil(db, councilId, 'read the Supreme Council sync history');
       const syncs = await db.getAllAsync<SupremeReportingSync>('SELECT * FROM [SupremeReportingSync] WHERE [CouncilID] = ?', [councilId]);
       const members = await selectIn<Member>(
         db,
@@ -4279,6 +4290,7 @@ export class SqliteDataService implements DataService {
     const period = resolveSupremePeriod(form, choice, this.now());
     assertMaySyncSupremeReports(await this.memberWriteActor(db, actorId), councilId, `file Supreme reports for council ${councilId}`);
     await this.assertCouncilsExist(db, [councilId]);
+    await this.assertFraternalCouncil(db, councilId, 'file a Supreme Council report');
     let rows!: SupremeSnapshotRows;
     await db.withTransactionAsync(async () => {
       rows = await this.supremeSnapshotRows(db, councilId, period);

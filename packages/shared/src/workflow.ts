@@ -12,8 +12,12 @@
 //   - Expense vouchers:   Draft -> Submitted -> Approved -> Reimbursed, with Submitted -> Draft when leadership returns it.
 //   - Member onboarding:  Provisioned -> Invited (setup code) -> Registered (password set).
 //   - Event tracking:     Upcoming -> In Progress -> Completed by the calendar, with the gate intake opened and closed.
+//   - Tenant gates:       a council's feature flags and its tenant type decide which operations may run at all
+//                         (isFeatureEnabled, isFraternalExtension; Sprint 6Z-Dual-Gate-Model).
+import { councilFeatureFlags, FEATURE_FLAG_LABELS, type FeatureFlagName } from './features';
 import { BusinessRuleError, toIsoDate, UNREGISTERED_PASSWORD, type BusinessRuleCode } from './rules';
-import type { Event, EventIntakeSessionStatus, ExpenseReportStatus } from './types';
+import { councilTenantType, TENANT_TYPES, type TenantType } from './tenant';
+import type { Council, Event, EventIntakeSessionStatus, ExpenseReportStatus } from './types';
 
 /** One action of a workflow: the states it may start from and the state it leads to. */
 export interface WorkflowTransition<S extends string> {
@@ -221,3 +225,108 @@ export const nextIntakeSessionStatus = (current: unknown, requested: EventIntake
     requested === 'Active' ? 'open' : 'close',
     eventId === undefined ? "The event's gate intake" : `Event ${eventId}'s gate intake`,
   );
+
+// ---- Tenant gates (Sprint 6Z-Dual-Gate-Model) ------------------------------------------------------------------------
+//
+// Two gates stand in front of every module. The feature gate is a council's on/off switch for one module (features.ts);
+// the tenant gate is its tenant type (tenant.ts), which keeps the fraternal extensions to Knights of Columbus councils.
+// Each is declared as a workflow, so the guards ask canTransition whether the operation may run from the council's
+// current state, exactly as a record's status is checked before a write.
+
+/** A council row as the gates read it: its id, its tenant type and its feature flags. Missing columns read as defaults. */
+export type GateCouncil = Partial<Pick<Council, 'tenant_type' | FeatureFlagName>> & { id: number };
+
+/** A module behind its feature flag: in use while On; a Super Admin switches it between On and Off. */
+export type FeatureGateState = 'On' | 'Off';
+export const FEATURE_GATE_WORKFLOW = defineWorkflow<FeatureGateState, 'use' | 'switchOn' | 'switchOff'>({
+  name: 'Feature',
+  states: ['On', 'Off'],
+  initial: 'On',
+  terminal: [],
+  transitions: {
+    use: { from: ['On'], to: 'On' },
+    switchOn: { from: ['Off', 'On'], to: 'On' },
+    switchOff: { from: ['On', 'Off'], to: 'Off' },
+  },
+  conflictCode: 'FEATURE_DISABLED',
+});
+
+/**
+ * The council's tenant: a fraternal operation runs only for a Knights of Columbus council. A council is white-labelled
+ * or restored by changing its tenant_type; core operations are open to both and pass no tenant gate.
+ */
+export const TENANT_GATE_WORKFLOW = defineWorkflow<TenantType, 'runFraternal' | 'whiteLabel' | 'restoreFraternal'>({
+  name: 'Tenant',
+  states: TENANT_TYPES,
+  initial: 'KOFC',
+  terminal: [],
+  transitions: {
+    runFraternal: { from: ['KOFC'], to: 'KOFC' },
+    whiteLabel: { from: ['KOFC', 'GENERIC'], to: 'GENERIC' },
+    restoreFraternal: { from: ['GENERIC', 'KOFC'], to: 'KOFC' },
+  },
+  conflictCode: 'FRATERNAL_EXTENSION_REQUIRED',
+});
+
+/**
+ * The council rows the clients have loaded, by id, so a guard can be asked about a council id alone. The web session and
+ * the phone app register the signed-in member's council when it loads (registerCouncilGates); drivers, which read the
+ * row themselves, pass it to the guard instead.
+ */
+const gateRegistry = new Map<number, GateCouncil>();
+
+/** Records (or refreshes) a loaded council row for the id-only guards. Ignores a missing row. */
+export function registerCouncilGates(council: GateCouncil | null | undefined): void {
+  if (council && Number.isInteger(council.id)) gateRegistry.set(council.id, { ...council });
+}
+
+/** Forgets every registered council (sign-out, tests). */
+export function clearCouncilGates(): void {
+  gateRegistry.clear();
+}
+
+/** The row a guard reads: the one passed in, else the registered one, else null (every default applies). */
+const gateCouncil = (councilId: number, council: GateCouncil | null | undefined): GateCouncil | null =>
+  council ?? gateRegistry.get(councilId) ?? null;
+
+/** The feature gate's state for one flag of the council. */
+export const featureGateState = (councilId: number, flagName: FeatureFlagName, council?: GateCouncil | null): FeatureGateState =>
+  councilFeatureFlags(gateCouncil(councilId, council))[flagName] ? 'On' : 'Off';
+
+/**
+ * Whether the council's `flagName` module is switched on. A council that is neither passed nor registered reads as
+ * every module on, as councilFeatureFlags reads a missing column, so an unloaded council never locks the apps.
+ */
+export const isFeatureEnabled = (councilId: number, flagName: FeatureFlagName, council?: GateCouncil | null): boolean =>
+  canTransition(FEATURE_GATE_WORKFLOW, featureGateState(councilId, flagName, council), 'use');
+
+/** Rejects FEATURE_DISABLED when the council has switched the `flagName` module off. */
+export function assertFeatureEnabled(councilId: number, flagName: FeatureFlagName, council?: GateCouncil | null): void {
+  if (isFeatureEnabled(councilId, flagName, council)) return;
+  const { label } = FEATURE_FLAG_LABELS[flagName];
+  throw new BusinessRuleError('FEATURE_DISABLED', `Council ${councilId} has switched ${label} off, so it cannot be used.`, {
+    councilId,
+    flag: flagName,
+  });
+}
+
+/**
+ * Whether the council is a Knights of Columbus council (tenant_type 'KOFC'), the only tenant whose fraternal extensions
+ * run. A council that is neither passed nor registered reads as 'KOFC', the column's default.
+ */
+export const isFraternalExtension = (councilId: number, council?: GateCouncil | null): boolean =>
+  canTransition(TENANT_GATE_WORKFLOW, councilTenantType(gateCouncil(councilId, council)), 'runFraternal');
+
+/**
+ * Rejects FRATERNAL_EXTENSION_REQUIRED when the council is a white-label tenant. `operation` names what was attempted,
+ * e.g. 'file a Supreme Council report'.
+ */
+export function assertFraternalExtension(councilId: number, operation: string, council?: GateCouncil | null): void {
+  if (isFraternalExtension(councilId, council)) return;
+  const tenant = councilTenantType(gateCouncil(councilId, council));
+  throw new BusinessRuleError(
+    'FRATERNAL_EXTENSION_REQUIRED',
+    `Council ${councilId} is not a Knights of Columbus council, so it cannot ${operation}.`,
+    { councilId, tenantType: tenant, operation },
+  );
+}

@@ -8,11 +8,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import {
   ALL_FEATURES_ON,
   councilFeatureFlags,
+  councilTenantType,
   countUnreadMessages,
+  DEFAULT_TENANT_TYPE,
   prefersLargeText,
+  registerCouncilGates,
   startNotificationScheduler,
   type FeatureFlags,
   type SessionUser,
+  type TenantType,
 } from '@kofc/shared';
 import { LayoutModeProvider } from '@/lib/layout-mode';
 import { configureAlertDisplay, registerForPushAlerts, unregisterPushAlerts } from '@/lib/push-registration';
@@ -34,7 +38,12 @@ interface AppContextValue {
   refreshUnread(): Promise<void>;
   /** The member's council feature flags (Sprint 6A); every module reads as on until the council has loaded. */
   features: FeatureFlags;
-  /** Re-reads the flags, e.g. on a pull-to-refresh after a Super Admin changed them. */
+  /**
+   * Sprint 6Z-Dual-Gate-Model: the member's council tenant type, 'KOFC' until the council has loaded. A white-label
+   * tenant hides the Catholic Faith Center.
+   */
+  tenantType: TenantType;
+  /** Re-reads the flags and the tenant type, e.g. on a pull-to-refresh after a Super Admin changed them. */
   refreshFeatures(): Promise<void>;
   /** Sprint 6C: the member chose the large text layout (Member.flag_large_text_mode). False while signed out. */
   largeText: boolean;
@@ -105,10 +114,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const councilId = user?.councilId;
   const [features, setFeatures] = useState<FeatureFlags>(ALL_FEATURES_ON);
+  const [tenantType, setTenantType] = useState<TenantType>(DEFAULT_TENANT_TYPE);
   const refreshFeatures = useCallback(async () => {
-    if (councilId === undefined) return setFeatures(ALL_FEATURES_ON);
+    if (councilId === undefined) {
+      setTenantType(DEFAULT_TENANT_TYPE);
+      return setFeatures(ALL_FEATURES_ON);
+    }
     try {
-      setFeatures(councilFeatureFlags(await db.councils.get(councilId)));
+      const council = await db.councils.get(councilId);
+      registerCouncilGates(council);
+      setFeatures(councilFeatureFlags(council));
+      setTenantType(councilTenantType(council));
     } catch {
       // an unreadable council keeps the last flags rather than locking the app
     }
@@ -182,6 +198,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       unread,
       refreshUnread,
       features,
+      tenantType,
       refreshFeatures,
       largeText,
       setLargeText,
@@ -203,6 +220,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       unread,
       refreshUnread,
       features,
+      tenantType,
       refreshFeatures,
       largeText,
       setLargeText,
@@ -241,4 +259,9 @@ export function useUser(): SessionUser {
 /** The member's council feature flags (Sprint 6A). */
 export function useFeatureFlags(): FeatureFlags {
   return useApp().features;
+}
+
+/** The member's council tenant type (Sprint 6Z-Dual-Gate-Model). */
+export function useTenantType(): TenantType {
+  return useApp().tenantType;
 }

@@ -23,6 +23,7 @@ export * from './meetings';
 export * from './finance';
 export * from './assembly';
 export * from './features';
+export * from './tenant';
 export * from './agenda';
 export * from './onboarding';
 export * from './drive-vault';
