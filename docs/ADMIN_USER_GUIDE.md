@@ -1,634 +1,1424 @@
-# Knights of Columbus Tracking Platform — Administrator Operations Manual
+# Knights of Columbus Tracking Platform — Administrator User Guide
 
-**Audience:** Council Admins, Super Admins, council officers, Treasurers and Financial Secretaries.
-**Covers:** the desktop portal's management screens: planning, roster, meetings, audits, ledger, lookups, donations, executive summaries and the annual budget.
+**Audience:** Council Admins, Super Admins, the Grand Knight (GK), the Deputy Grand Knight (DGK), the Financial Secretary (FS), the Treasurer, Trustees and other council officers.
 
-> Administrators volunteer too. For signing up, logging hours and taking donations on the phone, see [MEMBER_USER_GUIDE.md](MEMBER_USER_GUIDE.md).
+**Covers:** the management pages of the web portal, grouped by the seven sidebar pillars.
+
+> **Every administrator is also a member.** Signing up, logging hours and taking donations are in the [Member User Guide](MEMBER_USER_GUIDE.md).
+> The full access table is in the [Role Permissions Matrix](ROLE_PERMISSIONS_MATRIX.md).
 
 ---
 
 ## Contents
 
-1. [Roles and what each one sees](#1-roles-and-what-each-one-sees)
-2. [Choosing the council you are working on](#2-choosing-the-council-you-are-working-on)
-3. [Building multi-day events](#3-building-multi-day-events)
-4. [Copying an event as a twin](#4-copying-an-event-as-a-twin)
-5. [The member roster and the trade skills drawer](#5-the-member-roster-and-the-trade-skills-drawer)
-6. [Meetings](#6-meetings)
-7. [Executive audits: no-shows and shifts awaiting hours](#7-executive-audits-no-shows-and-shifts-awaiting-hours)
-8. [The post-event ledger and lessons learned](#8-the-post-event-ledger-and-lessons-learned)
-9. [Configuring council lookups](#9-configuring-council-lookups)
-10. [The donations workspace](#10-the-donations-workspace)
-11. [Interpreting the executive scorecard (monthly summaries)](#11-interpreting-the-executive-scorecard-monthly-summaries)
-12. [Annual budget projections](#12-annual-budget-projections)
-13. [Super Admin: system lookups and councils](#13-super-admin-system-lookups-and-councils)
-14. [Data protection rules](#14-data-protection-rules)
-15. [Administrator troubleshooting reference](#15-administrator-troubleshooting-reference)
-16. [Consolidated Automated Communications Matrix](#16-consolidated-automated-communications-matrix)
+1. [Roles and access](#1-roles-and-access)
+2. [The seven pillars](#2-the-seven-pillars)
+3. [Module feature flags](#3-module-feature-flags)
+4. [Governance](#4-governance)
+5. [Faith In Action](#5-faith-in-action)
+6. [Finances](#6-finances)
+7. [Performance](#7-performance)
+8. [Resources and the Google Drive archive vault](#8-resources-and-the-google-drive-archive-vault)
+9. [Answers](#9-answers)
+10. [Setup and the Supreme roster sync](#10-setup-and-the-supreme-roster-sync)
+11. [Data protection rules](#11-data-protection-rules)
+12. [Troubleshooting reference](#12-troubleshooting-reference)
+13. [Automated messages reference](#13-automated-messages-reference)
+14. [Appendix: QR code files](#appendix-qr-code-files)
+
+### How to read a tutorial
+
+Every tutorial starts with a **Prerequisite (who can do this)** line. The line states the access privilege that the task needs. Stop when your role is not on the line.
+
+Every tutorial then has five parts: **Goal**, **Start point**, **Steps**, **Expected result** and **Common problems**.
+A **Warning** line comes before the steps when the task deletes data, sends messages, posts money or cannot be undone.
 
 ---
 
-## 1. Roles and what each one sees
+## 1. Roles and access
 
-The sidebar is folded into six groups: **Self-Service Hub** (always open: Member Actions Hub, My Expense Reports, Propose Charity Grant), **Executive Action Desks** (FS Expense Audit, GK Expense Authorize, Charity Vetting Queue, Annual Cadence Manager and Live Meeting Console), **Fraternal Analytics Hub** (Executive Dashboard, Financial Dashboard, General Ledger Spreadsheet, Balance Sheet; read by every seated officer), **Fraternal Scheduler** (calendar, events, meetings, activities, the Post-event Ledger, nominations, the photo gallery and the Lessons Registry), **Financial Ledgers** and **Administrative Lookups**. Select a group's heading to open or close it; the group holding the page you are on opens by itself, and the portal remembers your choices in this browser. Every group but Executive Action Desks shows only the sections your role can use, and a group with nothing for your role is not shown. Executive Action Desks lists every desk: one your role cannot open carries a gold **Locked** badge, and pointing at it says who holds it. **My Profile** is in the member menu: select your name and photo at the top right. **Online Help Center** is the **Help** link (question-mark icon) at the top right, just left of the alert bell. Everyone sees Member Actions Hub, Post-event Ledger, My Expense Reports, My Profile and Online Help Center. The header's **Messaging** menu (envelope icon) holds **Council Messages & Alerts** and **My Distribution Lists** for every member. On My Distribution Lists, members build private lists that only they can see; as an Admin you also get the **Reach** control, which makes a list **Council-wide** so the whole council can see it.
+### 1.1 Member types and officer roles
 
-Expense reports are approved by two signatures (Sprint 5Z-4). On the **FS Audit Desk** the council's **Financial Secretary** audits each submitted report's receipts and presses **📜 Issue Written Order**. The report then moves to the **GK Authorization Desk**, where the **Grand Knight** presses **✍️ Counter-Sign Voucher**, which approves it and releases it to the Treasurer. A Super Admin may sign either line, but never both lines of the same report: the officer who issued the order sees the counter-sign button locked with a **🔒 Collusion Guard** tag. Council Admins can open both desks to follow the work, but only the seat holders (or a Super Admin) sign. The **Leadership Auditing Queue** shows where every submitted report stands and is where leadership uses **Reject & Return**; returning a report clears its signatures. Expense checks are issued only by the council's **Financial Secretary** or **Treasurer**, or a Super Admin. **Bulk Check Disbursements** lists only reports that carry both signatures, and the system refuses to pay any other. An Admin without a finance role does not see it. Nobody, a Super Admin included, may sign or pay an expense report they submitted.
+A member has one member type. A member may also hold one or more officer roles.
 
-| Section | Member | Officer | Treasurer / Fin. Secretary | Admin | Super Admin |
-|---|:-:|:-:|:-:|:-:|:-:|
-| Member Actions | ✔ | ✔ | ✔ | ✔ | ✔ |
-| System lookups | | | | | ✔ |
-| Councils | | | | | ✔ |
-| Council lookups | | | Donation lookups only | ✔ own council | ✔ any council |
-| Parishes & pastors, Member roster, Activities catalog | | | | ✔ own council | ✔ any council |
-| Event planner | | | | ✔ | ✔ |
-| Meeting center | | ✔ own council | | ✔ | ✔ |
-| Distribution lists | | | | ✔ | ✔ |
-| Donations | | | ✔ own council | ✔ | ✔ |
-| Post-event ledger | Owners of an event | Owners of an event | Owners of an event | ✔ | ✔ |
-| Lessons registry | | | | ✔ (read all councils) | ✔ |
-| Executive Summaries | | | Monthly summary only | ✔ incl. audits | ✔ incl. audits |
-| Annual Budget Projections | Read own council (edit if Budget Director) | Read own council | ✔ own council | ✔ own council | ✔ any council |
+| Member type | Scope |
+| --- | --- |
+| **Member** | The member's own records and the shared member pages. |
+| **Admin** | The Admin's own council only. |
+| **Super Admin** | Every council. |
 
-Key points:
-- **Admins act only on their own council.** Super Admins act on any council.
-- **Treasurers and Financial Secretaries** have Admin-level access to their own council's **donations**, **donation lookups** and **monthly summaries**. The personnel audits, which name members and their no-show reasons, remain for Admins and Super Admins only.
-- **Officers** (any role flagged *Officer*) may schedule meetings, invite members and upload minutes for their council.
-- An **event's owner** may record that event's post-event results and lessons, even as an ordinary member.
-- These rules are enforced by the data service as well as the screens. A refused action shows a message and **changes nothing**.
+| Officer role | Extra access |
+| --- | --- |
+| **Grand Knight** and **Deputy Grand Knight** | The executive dashboard and the charity vetting desk. The GK also counter-signs expenses and keeps the cadence and agenda templates. |
+| **Financial Secretary** | Issues written orders on expenses. Posts to the general ledger. Pays checks. |
+| **Treasurer** | Posts to the general ledger. Pays checks. |
+| **Trustee** | Vets charity requests. Follows up on grants after 6 months. |
+| **Recorder** | Edits the live agenda. Records hand tallies. |
+| Any other seated officer | Reads the dashboards. Schedules meetings. Runs the live console. |
 
+### 1.2 Access rules
+
+- An Admin acts only on the Admin's own council. A Super Admin acts on any council.
+- The data service checks every rule. A refused action shows a message and changes nothing.
+- Nobody signs or pays an expense report that the same person submitted. The rule includes Super Admins.
+- One person never signs both lines of the same expense report.
+
+> **Caution:** finance access follows the role names **Treasurer** and **Financial Secretary**.
+> A renamed role removes finance access from the officers who hold the role. Keep both names exactly as written.
+
+<!-- KEEP_IMAGE: member actions hub with the role-filtered sidebar -->
 ![Member Actions Hub with the role-filtered sidebar (/member-actions)](../generated/dashboard_visual_catalog/member-actions.png)
+<!-- /KEEP_IMAGE -->
 
-**Expense desks**
+### 1.3 Choose the council
 
-![My Expense Reports (/expenses)](../generated/dashboard_visual_catalog/expenses.png)
+Most management pages have a **Council** selector at the top.
 
-![FS Audit Desk (/expenses/audit)](../generated/dashboard_visual_catalog/expenses_audit.png)
+- An Admin sees the Admin's own council.
+- A Super Admin may choose any council.
 
-![GK Authorization Desk (/expenses/authorize)](../generated/dashboard_visual_catalog/expenses_authorize.png)
-
-![Leadership Auditing Queue (/expenses/queue)](../generated/dashboard_visual_catalog/expenses_queue.png)
-
-![Bulk Check Disbursements (/expenses/disbursements)](../generated/dashboard_visual_catalog/expenses_disbursements.png)
+The navy header shows your own council, your name, your member type and your officer status.
 
 ---
 
-## 2. Choosing the council you are working on
+## 2. The seven pillars
 
-Most management screens have a **Council** selector at the top:
-- **Admins** see their own council.
-- **Super Admins** can switch to any council.
+### 2.1 Concept: pillar navigation
 
-The navy header always shows the council you belong to, next to your name, member type and officer status.
+The sidebar has seven pillars. Every pillar is always open. A pillar shows only the links that your role may open.
+A pillar with no allowed links does not show.
+
+Five officer desks show to every member, even without access. A desk without access shows a gold **Locked** badge.
+The five desks are **Live Meeting Console**, **Annual Cadence Manager**, **FS Expense Audit**, **GK Expense Authorize** and **Charity Vetting Queue**.
+
+| Pillar | Links, in sidebar order | Main audience |
+| --- | --- | --- |
+| **Governance** | Live Meeting Console, Annual Cadence Manager, Meeting Center, Council Officer Nominations, Appointed Leadership Matrix, Constitutional Bylaws | Officers, the GK, Admins |
+| **Faith In Action** | Standalone Activities, Member Actions Hub, Event Planner, Visual Master Calendar | Admins plan. Members volunteer. |
+| **Finances** | General Ledger Spreadsheet, Balance Sheet, Financial Dashboard, My Expense Reports, Leadership Auditing Queue, Bulk Check Disbursements, FS Expense Audit, GK Expense Authorize, Charity Vetting Queue, Propose Charity Grant, Charitable Disbursements Ledger, Recorded Donations History, Annual Budget Projections | Finance officers, the GK, Admins |
+| **Performance** | Executive Dashboard, Growth & Hours Charts, Post-event Ledger, Lessons Registry | Seated officers, Admins |
+| **Resources** | Fraternal Photo Gallery, Bulletins, 📂 Council Archive Vault | Every member. The vault link shows to officers and Admins only. |
+| **Answers** | Online Help Center, SOP Center | Every member |
+| **Setup** | Councils, Affiliated Roster, Supreme Council Sync, Council Lookup Tables, Global Charities Registry, Global Governance Matrices, Parish & Pastors Linkage | Admins, finance officers, Super Admins |
+
+Three pages open from the header, not from the sidebar.
+
+- **Messaging** (envelope icon) → **Council Messages & Alerts** and **My Distribution Lists**.
+- **Help** (question-mark icon) → **Online Help Center**.
+- Your name → **My Profile**.
 
 ---
 
-## 3. Building multi-day events
+## 3. Module feature flags
 
-**Path:** sidebar → **Event Planner**
+### 3.1 Concept: backend logic of the flags
 
-The planner is a split screen: the event list is on the left, and the selected event is on the right.
+Each council row has five on/off columns. Each column is a module feature flag. A new council has every flag on.
 
-### 3.1 Create the event
+| Flag column | Label on the Councils page | Web pages hidden when off | Phone tab hidden when off |
+| --- | --- | --- | --- |
+| `flag_mobile_elections` | **Officer elections** | Council Officer Nominations, Appointed Leadership Matrix | None |
+| `flag_fundraising_inflow` | **Fundraising inflow** | Recorded Donations History | **Donate** |
+| `flag_charity_proposals` | **Charity proposals** | Propose Charity Grant, Charity Vetting Queue | None |
+| `flag_complex_shifts` | **Event shifts** | Event Planner, the shift tabs of Member Actions Hub | **Signup**, and the shift mode of **Report** |
+| `flag_meeting_management` | **Meeting management** | Meeting Center, Annual Cadence Manager, Live Meeting Console | **Mtgs** |
 
+The flags follow four rules.
+
+1. A flag that is off hides the module from every member of the council. The rule includes Admins.
+2. A hidden desk does not show a **Locked** badge. The desk is gone from the sidebar.
+3. A hidden page refuses a typed web address. The phone sends a member on a hidden screen back to **Home**.
+4. A flag never deletes data. A flag that is switched back on restores the module with all records.
+
+The financial engine and the activity hour log have no flag. Both stay on for every council.
+
+### 3.2 Switch a module on or off
+
+> **Prerequisite (who can do this):** You must have Super Admin privileges. Council Admins do not see the panel.
+> **Warning:** a switched-off module disappears at once for every member of the council, on the web and on the phone.
+
+**Goal:** Turn one optional module on or off for one council.
+
+**Start point:** Sidebar → Setup → **Councils** → **Module feature flags** panel.
+
+**Steps:**
+1. Choose the council in the panel.
+2. Find the module by its label.
+3. Turn the switch off to hide the module. Turn the switch on to show the module.
+
+**Expected result:** The platform saves each switch at once. Members of the council see the change the next time each page loads.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A member still sees a phone tab. | The phone read the flags before the change. | Ask the member to sign out and sign in again. |
+| *"… is not a feature flag"* | The request named an unknown flag. | Use one of the five flags in 3.1. |
+
+---
+
+## 4. Governance
+
+### 4.1 Run a live meeting
+
+> **Prerequisite (who can do this):** You must be a seated officer of the council, a council Admin, the meeting owner or a Super Admin. Other members see the desk as **Locked**.
+> **Warning:** **Passed**, **Failed** and **Tabled** record the council's decision on the motion.
+
+**Goal:** Chair a council meeting from one screen.
+
+**Start point:** Sidebar → Governance → **Live Meeting Console**.
+
+**Steps:**
+1. Choose the meeting in **Meeting**.
+2. Select **Start live console**.
+3. Check in members in **Live attendance**. Use **Find a member** to search.
+4. Select a line in **Order of Business** to put the line on the floor.
+5. Set **Allotted minutes** for the topic.
+6. For a motion, select **Launch secret smartphone ballot**. Members vote **Approve**, **Deny** or **Abstain** on their phones.
+7. Select **Passed**, **Failed** or **Tabled**.
+8. Select **Close the console** after the last item.
+
+<!-- KEEP_IMAGE: live meeting console capture -->
+![Live Meeting Console (/meetings/live)](../generated/dashboard_visual_catalog/meetings_live.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** The top bar shows **Now on the floor** and the countdown. Phones that follow the agenda show the same line.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| *"Start the console first"* | The console is not live. | Select **Start live console**. |
+| *"Decide the open ballot first"* | A ballot is still open. | Decide the open motion. Then continue. |
+| **Passed** is greyed out. | The smartphone ballot has no more Approve votes than Deny votes. | Select **Failed** or **Tabled**. |
+| *"No meeting from the past week on is yours to run."* | No meeting is in range for you. | Schedule the meeting in the **Meeting Center**. |
+
+### 4.2 Record a hand tally
+
+> **Prerequisite (who can do this):** You must be the council's Grand Knight or Recorder, a council Admin or a Super Admin.
+> **Warning:** **Save tally & decide the motion** decides the motion. A tie fails the motion.
+
+**Goal:** Record a vote by raised hands.
+
+**Start point:** Sidebar → Governance → **Live Meeting Console** → the motion → **Record Hand Tally**.
+
+**Steps:**
+1. Count the hands for the motion. Enter the count in **Approved hands**.
+2. Count the hands against the motion. Enter the count in **Denied hands**.
+3. Select **Save tally & decide the motion**.
+4. Optional: for a passed motion that releases money, choose the posting in **General-ledger posting**. Select **Save link**.
+
+**Expected result:** The motion shows **Passed** or **Failed**. A linked motion shows **Ledger linked**.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| *"Type both counts; at least one hand."* | A count is empty, or both counts are 0. | Enter both counts. |
+| The hand tally is refused. | A smartphone ballot already opened on the motion. | Decide the motion from the ballot result. |
+
+### 4.3 Correct a live agenda line
+
+> **Prerequisite (who can do this):** You must be the council's Grand Knight or Recorder, a council Admin or a Super Admin.
+
+**Goal:** Fix or add an agenda line during the meeting.
+
+**Start point:** Sidebar → Governance → **Live Meeting Console** → **Order of Business**.
+
+**Steps:**
+1. Select the line. The line opens for editing.
+2. Correct the text. Press Enter to save. Press Escape to cancel.
+3. For a new topic, select **Blank last-minute line - click to write it**.
+
+**Expected result:** The corrected line shows on the console and on members' phones.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A line does not open for editing. | The DGK and other officers do not edit the agenda. | Ask the GK or the Recorder. |
+
+### 4.4 Lay down the year's meetings with a cadence
+
+> **Prerequisite (who can do this):** You must be a council Admin, the Grand Knight or a Super Admin. Other members see the desk as **Locked**.
+> **Warning:** **Populate the year** creates up to 12 meetings and their invitations.
+
+**Goal:** Create the fraternal year's regular meetings in one step.
+
+**Start point:** Sidebar → Governance → **Annual Cadence Manager**.
+
+**Steps:**
+1. Select **Add cadence**.
+2. Choose the **Meeting type**.
+3. Set **Recurrence pattern: week** and **Recurrence pattern: day**, for example First and Tuesday.
+4. Set **Start time**, **Default location** and **Default recipient group**.
+5. Select **Save cadence**.
+6. Choose the **Fraternal year**. Select **Populate the year**.
+
+<!-- KEEP_IMAGE: annual cadence manager capture -->
+![Annual Cadence Manager (/meetings/cadence)](../generated/dashboard_visual_catalog/meetings_cadence.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** The platform creates one meeting per month, July through June. Each meeting lasts 120 minutes.
+Invitations are released 5 days before each meeting.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A month has no new meeting. | A meeting of the same type already exists on that date. | No action. The platform skips the date. |
+
+### 4.5 Schedule a single meeting
+
+> **Prerequisite (who can do this):** You must be a seated officer of the council, a council Admin or a Super Admin.
+> **Warning:** **Schedule meeting** sends invitations at once.
+
+**Goal:** Create one meeting and invite members.
+
+**Start point:** Sidebar → Governance → **Meeting Center**.
+
+**Steps:**
+1. Select **New meeting**.
+2. Fill in **Meeting name**, **Type**, **Date**, **Location**, **Starts** and **Ends**.
+3. Check the **Agenda**. The **Type** fills the agenda from the council's template.
+4. For a meeting over several days, tick **Multi-Day Assembly / Extended Event**. Set the **End date**.
+5. Choose the invitees: **All active members**, **Officers only** or **Choose members…**.
+6. Select **Schedule meeting**.
+7. After the meeting, select **Upload minutes**. Tick each attendee. Save.
+
+<!-- KEEP_IMAGE: meeting center capture -->
+![Meeting Center (/meetings)](../generated/dashboard_visual_catalog/meetings.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** A message shows *"Meeting scheduled and invitations sent."*
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| New members are not invited. | The members joined after the meeting was scheduled. | Select **Invite all active members**. |
+| A multi-day assembly adds no hours. | Multi-day assemblies add no meeting hours by design. | No action. |
+
+### 4.6 Keep the meeting agenda templates
+
+> **Prerequisite (who can do this):** You must be a council Admin, the Grand Knight or a Super Admin.
+
+**Goal:** Set the default agenda for one meeting type.
+
+**Start point:** Sidebar → Setup → **Council Lookup Tables** → **Meeting Agenda Templates**.
+
+**Steps:**
+1. Choose the **Meeting type**.
+2. Write the outline in **Default agenda outline**.
+3. Select **Save template**.
+4. To remove a template, clear the text. Select **Save template**.
+
+**Expected result:** A new meeting of the type starts with the outline.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A meeting kept the old agenda. | The officer typed an agenda before choosing the type. | Select **Use the template** on the meeting form. |
+
+### 4.7 Manage nominations and appointments
+
+> **Prerequisite (who can do this):** You must be an active member to nominate. You must be the Grand Knight, a council Admin or a Super Admin to appoint officers.
+
+**Goal:** Fill the council's elected and appointed seats.
+
+**Start point:** Sidebar → Governance → **Council Officer Nominations** or **Appointed Leadership Matrix**.
+
+**Steps:**
+1. Open **Council Officer Nominations** to nominate a Brother Knight for office.
+2. Open **Appointed Leadership Matrix** to fill an appointed seat.
+3. Choose the member for each vacant seat. Save.
+
+<!-- KEEP_IMAGE: nominations and elections capture -->
+![Nominations and elections (/elections)](../generated/dashboard_visual_catalog/elections.png)
+<!-- /KEEP_IMAGE -->
+
+<!-- KEEP_IMAGE: appointed positions capture -->
+![Appointed positions (/elections/appointments)](../generated/dashboard_visual_catalog/elections_appointments.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** The seat shows the member's name.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| Both pages are missing. | The council switched off **Officer elections**. | Ask a Super Admin (section 3). |
+
+### 4.8 Concept: the Council Bylaws Data Vault
+
+The vault holds one bylaws document per council. Every member of the council reads the bylaws.
+
+- The vault stores the bylaws as text in the `Council.BylawsMarkdown` column. The limit is 100,000 characters.
+- The vault also stores the save time in `BylawsUpdatedAt`.
+- A line that starts with `# ` starts an article. A line that starts with `## ` starts a section.
+- The vault splits the text into clauses. The clause id `A2.S3` means article 2, section 3. The id `A0` holds text before the first article.
+- The **Parliamentary engine feed** panel lists every clause. **Show the engine feed as JSON** shows the same feed as JSON data in format `kofc.bylaws/v1`.
+- The parliamentary engines read the JSON feed. A motion or a ruling cites a clause by the clause id.
+
+### 4.9 Edit the council bylaws
+
+> **Prerequisite (who can do this):** You must be the council's Grand Knight, a council Admin or a Super Admin. Other members see no **Edit bylaws** button.
+> **Warning:** **Save bylaws** replaces the stored text for every member. The vault keeps no earlier version.
+
+**Goal:** Change the council bylaws.
+
+**Start point:** Sidebar → Governance → **Constitutional Bylaws**.
+
+**Steps:**
+1. Copy the current text to a file as a backup.
+2. Select **Edit bylaws**. An empty vault starts from an outline.
+3. Change the text in **Bylaws text**.
+4. Check the **Preview** panel.
+5. Check the clause ids in **Parliamentary engine feed**.
+6. Select **Save bylaws**.
+
+**Expected result:** A message shows *"The bylaws are saved."*
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A section has no clause id. | The heading has no `## ` at the start. | Add `## ` and a space at the start of the line. |
+| The text stops at the limit. | The text has 100,000 characters. | Shorten the text. |
+
+The SOP Center holds the same procedure: **Answers → SOP Center → Edit the council bylaws**.
+
+---
+
+## 5. Faith In Action
+
+### 5.1 Create an event
+
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
+
+**Goal:** Create an event that volunteers can sign up for.
+
+**Start point:** Sidebar → Faith In Action → **Event Planner**.
+
+**Steps:**
 1. Select **New event**.
-2. Fill in **Event details**:
+2. Fill in **Event name**, **Description**, **Starts**, **Ends** and **Location**.
+3. Choose the **Category** and the **Owner**.
+4. Optional: enter **Budget ($)** and **Planned attendees**.
+5. Tick each council in **Councils sharing this event**.
+6. Tick **Is Annual** for an event that repeats each year (see 6.12).
+7. Save.
 
-| Field | Notes |
-|---|---|
-| **Event name** | Up to 100 characters. |
-| **Description** | What volunteers should know. |
-| **Starts / Ends** | An event may span several days. **Ends** cannot be before **Starts**. |
-| **Location** | Where volunteers report. |
-| **Category** | For example Fellowship, Service, Faith Building or Fundraising. Categories drive the reports and the lessons registry. |
-| **Owner** | A member of the roster. *"The owner may also record the post-event results."* |
-| **Budget ($)** | Optional. Planned spend. |
-| **Planned attendees** | Optional. Expected community turnout. |
-| **Councils sharing this event** | Tick every council co-hosting the event. Its shifts will appear in each of those councils' shift feeds. At least one council is required. |
+<!-- KEEP_IMAGE: event planner capture -->
+![Event Planner split screen (/events)](../generated/dashboard_visual_catalog/events.png)
+<!-- /KEEP_IMAGE -->
 
-3. Save. You will see *"Event created. Add its shifts below."*
+<!-- KEEP_IMAGE: council calendar capture -->
+![Council calendar (/calendar)](../generated/dashboard_visual_catalog/calendar.png)
+<!-- /KEEP_IMAGE -->
 
-### 3.2 Add shifts
+**Expected result:** A message shows *"Event created. Add its shifts below."*
 
-In the **Shifts** panel, fill in the top **New shift** row and select **Add shift**:
-- **Shift name** and optional description.
-- **Date:** it must fall **inside the event's dates**.
-- **Start and end time.**
-- **Volunteers needed:** the minimum number of volunteers. When this many members have signed up, the shift **locks automatically**.
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The date is refused. | **Ends** is before **Starts**. | Correct the dates. |
+| The save is refused. | No council is ticked. | Tick at least one council. |
 
-Repeat for each day and time slot of a multi-day event.
+### 5.2 Add shifts to an event
 
-**Shift status pills**
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
+> **Warning:** a shift with sign-ups or logged hours cannot be deleted.
+
+**Goal:** Give the event the time slots that volunteers fill.
+
+**Start point:** Sidebar → Faith In Action → **Event Planner** → the event → **Shifts** panel.
+
+**Steps:**
+1. Enter the **Shift name**.
+2. Enter a **Date** inside the event dates.
+3. Enter the start time and the end time.
+4. Enter **Volunteers needed**.
+5. Select **Add shift**.
+6. Repeat steps 1 to 5 for each day and time slot.
+
+<!-- KEEP_IMAGE: shift grid placeholder -->
+![Image: Shift Grid]
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** The shift shows in the grid with a status pill.
 
 | Pill | Meaning |
-|---|---|
-| **Full** (navy) | Locked. No more sign-ups. |
-| **Needs *n* soon** (red) | Within 48 hours and still short of volunteers. |
-| **Needs *n*** (gold) | Priority: nobody has signed up yet, or the shift starts within 7 days. |
-| **Needs *n*** (outline) | Open, with time to fill. |
+| --- | --- |
+| **Full** (navy) | The shift has its volunteers. Extra members may join as honorary volunteers. |
+| **Needs *n* soon** (red) | The shift starts within 48 hours and needs volunteers. |
+| **Needs *n*** (gold) | Nobody has signed up, or the shift starts within 7 days. |
+| **Needs *n*** (outline) | The shift has time to fill. |
 
-To change or remove a shift, use **Edit** (then **Save** or **Cancel**) or **Delete** (then **Confirm delete** or **Keep**). A shift that members have signed up for or logged time against cannot be deleted (see §13).
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The shift date is refused. | The date is outside the event dates. | Change the shift date or the event dates. |
+| **Delete** is refused. | Members signed up or logged hours. | Keep the shift. |
 
-![Event Planner split screen (/events)](../generated/dashboard_visual_catalog/events.png)
+### 5.3 Copy an event as a twin
 
-![Council calendar (/calendar)](../generated/dashboard_visual_catalog/calendar.png)
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
 
-![Image: Shift Grid]
+**Goal:** Repeat a past event with the same shift pattern.
 
----
+**Start point:** Sidebar → Faith In Action → **Event Planner** → the past event → **Copy as a twin**.
 
-## 4. Copying an event as a twin
+**Steps:**
+1. Check **New event name**. Change the name if needed.
+2. Set **New first day**.
+3. Select **Copy event**.
+4. Check every shift of the twin.
 
-Use this for recurring projects such as a monthly pancake breakfast or an annual Tootsie Roll drive.
+<!-- KEEP_IMAGE: copy as twin placeholder -->
+![Image: Copy As Twin]
+<!-- /KEEP_IMAGE -->
 
-1. Open the past event in the **Event Planner**.
-2. In the **Copy as a twin** panel:
-   - **New event name:** defaults to the same name. Change it if needed, for example to add the month.
-   - **New first day:** the twin's start date.
-3. Select **Copy event**. You will see *"Copied. The twin is open on the right."*
+**Expected result:** A message shows *"Copied. The twin is open on the right."*
 
 | Copied | Not copied |
-|---|---|
-| Description, location, category, owner, budget, planned attendees | Sign-ups |
-| Council links | Logged hours |
-| Every shift, **moved by the same number of days** so the pattern is kept (a Friday–Sunday event stays Friday–Sunday) | Post-event results (spend, funds, attendees, highlights) and lessons |
+| --- | --- |
+| Details, councils, owner, budget, the **Is Annual** tag | Sign-ups and logged hours |
+| Every shift, moved by the same number of days | Post-event results and lessons |
 
-After copying, review the twin's shifts and adjust anything that changed.
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A shift is on the wrong weekday. | The new first day is on a different weekday. | Pick a first day on the same weekday. |
 
-![Image: Copy As Twin]
+### 5.4 Keep the council activities
 
----
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
 
-## 5. The member roster and the trade skills drawer
+**Goal:** Keep the list of ongoing activities that members log time against.
 
-**Path:** sidebar → **Affiliated Roster**
+**Start point:** Sidebar → Faith In Action → **Standalone Activities**.
 
-### 5.1 Finding members
+**Steps:**
+1. Add an activity with a name, a description and a category.
+2. Save.
 
-- **Search:** by name, email or member number.
-- **Status:** filter by Active, Inactive and so on.
-- The panel title shows *"Members (shown of total)"*. If nothing matches: *"No members match. Clear the search or status filter."*
-
-### 5.2 Adding and editing members
-
-1. Select **Add member** and complete the form. **Email (also the login)** is the address the member will use to onboard.
-2. Save. You will see *"Added *name*. A welcome email with sign-in instructions was queued."* The member then follows the phone onboarding in the member guide.
-3. **Member type:** Admins may grant *Admin* or *Member*. Only a Super Admin may grant *Super Admin* or change a Super Admin's type or status.
-4. Admins cannot move a member to another council.
-5. **Designated Budget Director:** the gold-bordered checkbox on the member form, shown only to the council's Admins and Super Admins. It lets the member prepare the council's annual budget (§12). Members cannot tick it on their own record.
-
-### 5.3 The trade skills drawer
-
-When a project needs specific trades (electricians, carpenters, cooks and so on):
-
-1. Select **Skills** next to the council selector. The **Council skills** drawer opens.
-2. Every skill recorded in the council is listed with the number of members who hold it.
-3. Choose a skill to see **Members with *skill***.
-4. Optional: write a note under **Message everyone with *skill*** and select **Send to *n* members**.
-   - Only **active** members are messaged, and you are never included.
-   - Replies arrive in the **Communications Hub**.
-
-If the drawer says *"No member of this council has recorded a skill yet,"* ask members to add their skills under **My Profile**. You can also edit a member's skills and training for them from their record (**Skills & training**).
-
-![Affiliated Roster (/members)](../generated/dashboard_visual_catalog/members.png)
-
-![Image: Skills Filter Drawer]
-
----
-
-## 6. Meetings
-
-**Path:** sidebar → **Meeting Center** (Admins, Super Admins and council officers)
-
-1. Select **New meeting** and fill in **Meeting name**, **Type**, **Date**, **Location**, **Starts**, **Ends**, **Description** and **Agenda**.
-   - **Type** lists your council's own meeting types. Choosing one fills **Agenda** with your council's template for that type (see below). You can still edit the agenda for this meeting. If you already typed your own agenda, it is kept, and a **Use the template** button offers the template instead.
-   - Tick **Multi-Day Assembly / Extended Event** for a meeting that runs over several days. The **Starts** and **Ends** times disappear and an **End date** appears. The meeting then shows on the calendar across each of its days, with no times. A multi-day assembly adds no meeting hours to members' totals.
-2. **Invite:** choose **All active members**, **Officers only** or **Choose members…**. Invited members get a message in the app.
-3. Select **Schedule meeting**. You will see *"Meeting scheduled and invitations sent."*
-4. **Minutes:** open the meeting and select **Upload minutes** (or **Replace minutes**). Members can then read them from their phones.
-5. **Invitations and attendance:** tick who attended and save. This feeds each member's meeting-hour totals. If members joined the council after the meeting was scheduled, select **Invite all active members** to invite every active member who is missing.
-
-Officers see **Take attendance** on each meeting on their phone's Home tab. Members answer their invitations from the phone's **Meetings** tab with **👍 Count Me In**.
-
-### 6.1 Meeting agenda templates
-
-**Path:** sidebar → **Council Lookups** → **Meeting Agenda Templates** (Council Admins, the Grand Knight and Super Admins)
-
-1. Pick a **Meeting type**.
-2. Write the **Default agenda outline** that meetings of this type should start from, then select **Save template**.
-3. To remove a template, clear the text and save.
-
-Each council keeps its own templates. The **Event** form has the same **Multi-Day Assembly / Extended Event** box: leave it unticked for a one-day event, which then ends the day it starts.
-
-For who may do what across the platform, see the [Role Permissions Matrix](ROLE_PERMISSIONS_MATRIX.md).
-
-![Meeting Center (/meetings)](../generated/dashboard_visual_catalog/meetings.png)
-
-![Annual Cadence Manager (/meetings/cadence)](../generated/dashboard_visual_catalog/meetings_cadence.png)
-
-![Live Meeting Console (/meetings/live)](../generated/dashboard_visual_catalog/meetings_live.png)
-
-![Nominations and elections (/elections)](../generated/dashboard_visual_catalog/elections.png)
-
-![Appointed positions (/elections/appointments)](../generated/dashboard_visual_catalog/elections_appointments.png)
-
-![Photo gallery (/gallery)](../generated/dashboard_visual_catalog/gallery.png)
-
----
-
-## 7. Executive audits: no-shows and shifts awaiting hours
-
-**Path:** sidebar → **Executive Dashboard Summaries** → **Executive audits**. These audits are for the council's Admins and Super Admins only.
-
-### 7.1 No-show audit (last 6 months)
-
-This panel lists every sign-up flagged as a no-show by members of the council **on shifts in the trailing 6 months**, newest first.
-
-| Column | Use |
-|---|---|
-| Member / Member # | Who missed the shift. |
-| Shift date, Event, Shift | Which commitment it was (with the shift number, for reference). |
-| Reason | The reason code and description, for example *Forgot* or *Wrong Time*, or a red **No reason provided** pill. |
-
-- The header's red pill counts **no-shows without a reason**. Follow up on these first.
-- Members see their own rolling **12-month** badge on the phone. The 6-month audit is the council's working view.
-- No-show reasons come from the **No-Show Reason** system lookup (§12).
-- No-shows are recorded on the **Post-event Ledger** turnout grid (§8), or by members reporting their own absence on the phone.
-- Meeting absence is recorded by leaving **Attended** unticked in the Meeting center. Meetings have no separate no-show flag.
-
-### 7.2 Shifts awaiting hours
-
-This panel lists members who signed up for a past shift, were **not** marked as no-shows, and have **not logged hours** yet.
-
-| Column / marker | Meaning |
-|---|---|
-| **Phone** | So you can follow up personally. |
-| **Days since** | Days since the shift. It turns red from day 5. |
-| **First reminder on day 5** | Still within the grace period. |
-| **⚠ Overdue** | Day 5 or later. Shows how many text reminders have been due so far, and the **log by** date. |
-| **Closed: past 3 months** | The logging window has closed and the hours can no longer be recorded. |
-
-- **Reminder cadence:** the first text goes out on **day 5**, then **once a week**, and reminders stop once the shift is more than 3 months old.
-- The header's red pill counts the rows that are past day 5.
-
-![Image: Executive Audits]
-
----
-
-## 8. The post-event ledger and lessons learned
-
-**Path:** sidebar → **Post-event Ledger**. This is open to Admins for their councils' events, and to each event's owner.
-
-1. The left list has two tabs:
-   - **Active queue:** events waiting for results, marked **Results needed**.
-   - **Historic archive:** events with results, marked **Recorded**.
-2. Choose an event and fill in **Results**:
-   - **Spend ($)** and **Actual attendees**.
-   - **Cash raised ($)** and **Electronic raised ($)**. Once cash or electronic donations have been recorded for the event, these fields show **Synced from donations** and are read-only, because the donations are the source of truth. Physical items never count toward these totals.
-   - **Highlights:** short notes that appear on the monthly executive summary.
-3. Select **Save results**. You will see *"Results saved."*
-4. **Fraternal Volunteer Turnout Summary** lists every volunteer, their shift, their logged hours (**—** if none) and their no-show status, with a total.
-   - **Mark no-show:** select it on the volunteer's row, choose the reason from the **No-Show Reason** list, and select **Confirm** (or **Cancel**). The row gets a red edge and a **No-show** pill with the reason.
-   - **Clear:** removes a no-show recorded in error.
-   - Admins mark and clear no-shows on events linked to **their own council**; Super Admins on any event. Rows where the volunteer has **Hours logged** cannot be marked.
-   - Members may report their own absence from their phone, but only an Admin or Super Admin can clear a no-show.
-5. **Lessons learned:** choose a **Category**, write **What did we learn?**, and select **Add lesson**.
-
-### 8.1 Lessons registry
-
-**Path:** sidebar → **Lessons Registry** (Admins and Super Admins)
-
-Search lessons across **every council**:
-- Filter by text, event dates, councils, event categories and lessons categories.
-- The newest events are listed first.
-- Lessons from your own council's events are **marked in gold**. You change them on the post-event ledger, not here.
-
-![Post-event Ledger (/ledger)](../generated/dashboard_visual_catalog/ledger.png)
-
-![Lessons Registry (/lessons-registry)](../generated/dashboard_visual_catalog/lessons-registry.png)
-
----
-
-## 9. Configuring council lookups
-
-**Path:** sidebar → **Council Lookup Tables**
-
-| Tab | Who | Columns |
-|---|---|---|
-| **Activities** | Admins, Super Admins | Activity name, Description, Category |
-| **Donation types** | Admins, Super Admins, Treasurer, Financial Secretary | Donation type (for example *General Fund*, *Coats for Kids*) |
-| **Enabled donation methods** | Admins, Super Admins, Treasurer, Financial Secretary | Method, **QR code image URL** |
-| **Budget categories** | Admins, Super Admins, Treasurer, Financial Secretary | Budget category (fund) the annual budget is grouped under (§12.3) |
-
-- Edit rows in place. Changed rows are marked **Edited**.
-- **Changes are saved together:** select **Save changes**. If any row is refused, **none** are written, so fix the reported row and save again.
-- **Enable a QR method** (Venmo, Zelle, Zeffy, ParishSoft) by adding it and pasting the link to the council's QR image. Until a link is saved, members see *"Your council has not uploaded this QR code yet."*
-- Activities belong to one council and are **not shared** with sister councils.
-- Finance officers see only the two donation tabs and **Budget categories**.
-- A budget category cannot be deleted while budget lines are filed under it. Move those lines to another category first.
-
-![Council Lookup Tables (/council-lookups)](../generated/dashboard_visual_catalog/council-lookups.png)
-
+<!-- KEEP_IMAGE: activities catalog capture -->
 ![Activities catalog (/activities)](../generated/dashboard_visual_catalog/activities.png)
+<!-- /KEEP_IMAGE -->
 
-![Parishes and pastors (/parishes)](../generated/dashboard_visual_catalog/parishes.png)
+**Expected result:** The activity shows as a tile on the phone **Report** tab.
 
----
-
-## 10. The donations workspace
-
-**Path:** sidebar → **Recorded Donations History** (Admins, Super Admins, Treasurer, Financial Secretary)
-
-- **Event donations** summarises each event's donations as **Cash**, **Electronic** and **Items (est.)**. Events whose ledger is driven by donations show **Ledger synced from donations**.
-- **Standalone donations** lists donations not tied to any event.
-- **Record a donation:** choose the **Method**, **Type**, **Amount** (or **Estimated value ($)** for physical items), **Date** and **Event** (or *Standalone (no event)*). Optionally add the **Donor**, a **Description** (required for physical items) and a **Photo link**.
-- **Correcting or deleting a donation:** allowed for the member who recorded it, the event's owner, and the council's finance officers, Admins and any Super Admin. A donation's council and its recorder cannot be changed.
-- Event donations must be dated **on or after the event's start**.
-
-![Recorded Donations History (/donations)](../generated/dashboard_visual_catalog/donations.png)
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A sister council does not see the activity. | Activities belong to one council. | Add the activity in each council. |
 
 ---
 
-## 11. Interpreting the executive scorecard (monthly summaries)
+## 6. Finances
 
-**Path:** sidebar → **Executive Dashboard Summaries**. Choose the **Month** and **Year**.
+### 6.1 Concept: the two-signature expense path
 
-### 11.1 Scorecard tiles
+| Step | Who acts | Where | Status tag |
+| --- | --- | --- | --- |
+| 1. File | The member | **My Expense Reports** | **Submitted** |
+| 2. Written order | The Financial Secretary | **FS Expense Audit** → **📜 Issue Written Order** | **Order Issued** |
+| 3. Counter-sign | The Grand Knight | **GK Expense Authorize** → **✍️ Counter-Sign Voucher** | **Approved** |
+| 4. Pay | The FS or the Treasurer | **Bulk Check Disbursements** | **Reimbursed** |
+| Return | Council leadership | **Leadership Auditing Queue** → **Reject & Return** | **Returned** |
 
-| Tile | What it measures |
-|---|---|
-| **Total labor hours** | Hours logged on the council's event shifts plus its activities in the month. |
-| **Unique Knights participating** | Distinct members who logged any shift or activity time in the month. |
-| **Net balance** | Funds raised (cash + electronic) minus spend, for the month's events. |
-| **Community outreach** | Actual attendees across the month's events. |
+- A Super Admin may sign either line, but never both lines of the same report.
+- The officer who issued the order sees the counter-sign button locked with a **🔒 Collusion Guard** tag.
+- Council Admins open both desks to follow the work. Only the seat holders or a Super Admin sign.
+- A return clears both signatures.
 
-### 11.2 Financial ledger
+<!-- KEEP_IMAGE: my expense reports capture -->
+![My Expense Reports (/expenses)](../generated/dashboard_visual_catalog/expenses.png)
+<!-- /KEEP_IMAGE -->
 
-*"Ledger for *Month Year*"*: **Cash raised**, **Electronic raised**, **Total raised**, **Spend** and **Net balance**, all taken from the post-event results. Figures are summed to the cent.
+### 6.2 Issue a written order
 
-### 11.3 Monthly highlights
+> **Prerequisite (who can do this):** You must be the council's Financial Secretary or a Super Admin. Council Admins read the desk only.
+> **Warning:** the order is a signature. The report moves to the Grand Knight.
 
-The **Highlights** text of each of the month's events, in date order. If none appear, add them in the post-event ledger.
+**Goal:** Approve a report's receipts as the first signature.
 
-### 11.4 Reading the numbers
+**Start point:** Sidebar → Finances → **FS Expense Audit**.
 
-- **Low hours but many unique Knights?** Participation is wide but shallow. Consider longer or more shifts.
-- **A negative net balance** is normal for service events with no fundraising. Check it against the event's budget.
-- **Numbers look low early in the month?** Hours arrive as members log them (up to 3 months later for shifts). Re-check after the reminder cycle.
+**Steps:**
+1. Open the submitted report.
+2. Check each receipt against its line.
+3. Select **📜 Issue Written Order**.
 
-### 11.5 Budget tracking gauges
+<!-- KEEP_IMAGE: FS audit desk capture -->
+![FS Audit Desk (/expenses/audit)](../generated/dashboard_visual_catalog/expenses_audit.png)
+<!-- /KEEP_IMAGE -->
 
-Admins, Treasurers, Financial Secretaries and Super Admins see a **Budget tracking** panel under the scorecard tiles, for the fraternal year of the chosen month (July – June).
+**Expected result:** The report leaves the desk. The member sees **Order Issued**.
 
-- A **Whole budget** gauge, then one gauge per budget category with an approved cap or any spend, compare actual spend so far with the category's **approved** budget. Spend counts exactly what the monthly summaries count: event spend, approved and reimbursed expenses, and charity checks.
-- Gauges fill navy while on track, turn gold with a pulsing **⚠ 85%+ of cap** tag from 85% of the cap, and red with **⚠ Over budget** past 100%. A thin red mark on each gauge shows the 85% line.
-- **Unbudgeted spend** (one-off events, expenses not linked to an event or meeting, charities without a budget line) is shown under the gauges.
-- Until the council approves and finalizes the year's budget (§12.6) there are no caps, so the panel shows only the spend to date.
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The button is refused. | You submitted the report. | Another signer must act. |
 
-![Executive Dashboard Summaries (/dashboard)](../generated/dashboard_visual_catalog/dashboard.png)
+### 6.3 Counter-sign a voucher
 
-**Fraternal Analytics Hub.** The hub's other three pages, read by every seated officer:
+> **Prerequisite (who can do this):** You must be the council's Grand Knight or a Super Admin. Council Admins read the desk only.
+> **Warning:** the counter-signature approves the report for payment.
 
+**Goal:** Give the second signature.
+
+**Start point:** Sidebar → Finances → **GK Expense Authorize**.
+
+**Steps:**
+1. Open the ordered report.
+2. Check the order and the receipts.
+3. Select **✍️ Counter-Sign Voucher**.
+
+<!-- KEEP_IMAGE: GK authorization desk capture -->
+![GK Authorization Desk (/expenses/authorize)](../generated/dashboard_visual_catalog/expenses_authorize.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** The member sees **Approved**. The report shows in **Bulk Check Disbursements**.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| **🔒 Collusion Guard** shows. | You issued the written order. | Another signer must counter-sign. |
+
+### 6.4 Return a report to the member
+
+> **Prerequisite (who can do this):** You must be a council Admin, the Financial Secretary, the Treasurer or a Super Admin.
+> **Warning:** a return clears both signatures.
+
+**Goal:** Send a report back for correction.
+
+**Start point:** Sidebar → Finances → **Leadership Auditing Queue**.
+
+**Steps:**
+1. Find the report.
+2. Select **Reject & Return**.
+3. Write the reason. The member reads the reason.
+4. Confirm.
+
+<!-- KEEP_IMAGE: leadership auditing queue capture -->
+![Leadership Auditing Queue (/expenses/queue)](../generated/dashboard_visual_catalog/expenses_queue.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** The member sees a red **Returned** tag with the reason.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The reason is too vague. | The member cannot fix the report. | Name the receipt and the change. |
+
+### 6.5 Pay approved reports by check
+
+> **Prerequisite (who can do this):** You must be the council's Financial Secretary or Treasurer, or a Super Admin. An Admin without a finance role does not see the page.
+> **Warning:** a recorded check is permanent money out of the council's books.
+
+**Goal:** Record the checks for dual-signed reports.
+
+**Start point:** Sidebar → Finances → **Bulk Check Disbursements**.
+
+**Steps:**
+1. Tick the reports to pay. The page lists only reports with both signatures.
+2. Enter the check number and the payout date for each report.
+3. Save.
+
+<!-- KEEP_IMAGE: bulk check disbursements capture -->
+![Bulk Check Disbursements (/expenses/disbursements)](../generated/dashboard_visual_catalog/expenses_disbursements.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** The member sees **Reimbursed** with the check number.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A report is missing. | The report lacks a signature. | Follow the report in the **Leadership Auditing Queue**. |
+
+### 6.6 Concept: the general ledger
+
+The general ledger is a double-entry ledger. Every transaction has debit lines and credit lines that balance.
+A shared transaction id groups the lines.
+
+| Page | Shows |
+| --- | --- |
+| **General Ledger Spreadsheet** | The chart of accounts with every posting |
+| **Balance Sheet** | Assets against liabilities and equity |
+| **Financial Dashboard** | Cash flow liquidity, the balance sheet summary, **Quick actions** and the **Electronic bank statement audit** |
+
+Seated officers and Admins read the three pages. Only the FS, the Treasurer and Super Admins post, transfer or upload bank statements.
+
+<!-- KEEP_IMAGE: financial dashboard capture -->
 ![Financial Dashboard (/finance/dashboard)](../generated/dashboard_visual_catalog/finance_dashboard.png)
+<!-- /KEEP_IMAGE -->
 
+<!-- KEEP_IMAGE: general ledger spreadsheet capture -->
 ![General Ledger Spreadsheet (/finance/ledger)](../generated/dashboard_visual_catalog/finance_ledger.png)
+<!-- /KEEP_IMAGE -->
 
+<!-- KEEP_IMAGE: balance sheet capture -->
 ![Balance Sheet (/finance/balance-sheet)](../generated/dashboard_visual_catalog/finance_balance-sheet.png)
+<!-- /KEEP_IMAGE -->
 
----
+### 6.7 Post to the ledger or reconcile a bank statement
 
-## 12. Annual budget projections
+> **Prerequisite (who can do this):** You must be the council's Financial Secretary or Treasurer, or a Super Admin.
+> **Warning:** a posting changes the council's books for every reader.
 
-**Path:** sidebar → **Financial Ledgers** → **Annual Budget Projections**. Every member can open it.
+**Goal:** Record a transaction, move funds or match a bank statement.
 
-- **Every member of the council can read the budget.** Members without edit rights see the same spreadsheet as plain text, marked **Transparency view** and **Read only**, with no input boxes, rollup button or custom-line form.
-- **The budget is prepared** by the council's Admins, Treasurer and Financial Secretary, its **Designated Budget Director**, and Super Admins.
-- **Designated Budget Director:** a council Admin or a Super Admin ticks **Designated Budget Director** on the member's record in the **Affiliated Roster** (§5.2). That member can then prepare their own council's budget. Untick it to withdraw the delegation. The member must sign in again for the portal to show their new controls.
+**Start point:** Sidebar → Finances → **Financial Dashboard** → **Quick actions**.
 
-> **The Annual Forecasting Tag System**
->
-> The **Is Annual** checkbox on the **Event** form (Event Planner) and on a **Global Charities Registry** entry is a **financial accounting tag only**.
->
-> - It does **not** duplicate calendar cards, copy the event, or create any future schedule entries. Next year's edition of an event is still planned in the Event Planner (for example with **Copy as twin**, which keeps the tag).
-> - It tells the Budget Engine which events and charities recur each year. When the budget is prepared, the engine reads the **prior fraternal year's actual audited spend** on every tagged event and tagged charity and uses it to **pre-populate baseline estimates** for the year ahead.
-> - An untagged event or charity is still counted in the monthly summaries. It simply gets no line of its own in next year's budget.
->
-> **The budget preparation window runs from May 1st to June 30th, and the budget locks automatically as Finalized on July 1st**, the day the new fraternal year begins.
->
-> - Changes are accepted from **May 1 at 00:00** until **midnight on June 30** (local time).
-> - **Before May 1** the data service refuses every change (*"The … budget opens for drafting on May 1"*).
-> - **From July 1** it refuses every change (*"The … budget was locked as Finalized on July 1"*).
-> - Only a Super Admin override can change a budget outside the window.
+**Steps:**
+1. To post: choose the debit account and the credit account. Enter the amount and the description. Save.
+2. To transfer: choose two asset accounts. Enter the amount. Save.
+3. To reconcile: open **Electronic bank statement audit**. Upload the bank CSV file.
+4. Read the matched rows and the unmatched rows.
 
-### 12.1 The budget year and its window
+**Expected result:** The dashboard shows **✓ Ledger Balanced (Zero Leaks)** when debits equal credits.
 
-Choose the **Fraternal year** (July 1 – June 30). The picker opens on the next year to prepare. The **Budget window** badge shows where that year stands:
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The transfer is refused. | The amount exceeds the source account balance. | Lower the amount. |
+| The CSV file is refused. | The file has no Date column, or no Amount or Withdrawal/Deposit columns. | Export the statement again with a header row. |
+| A bank row stays unmatched. | No posting has the same check number, or the same amount within 5 days. | Post the missing transaction. Upload again. |
 
-| Badge | When | What you can do |
-|---|---|---|
-| **Not Yet Open** | Before May 1 of the year's first calendar year | Read only |
-| **Draft** | May 1 (00:00) – June 30 (midnight) | Run the rollup, add custom lines, edit proposed amounts and notes |
-| **Finalized** | From July 1 | Read only |
+### 6.8 Vet a charity request
 
-### 12.2 Initialize Automated Prior Year Baseline Rollup
+> **Prerequisite (who can do this):** You must be a seated officer, a Trustee or an Admin of the council, or a Super Admin. The Knight Shepherd never vets the Shepherd's own request.
+> **Warning:** a decline stops the request.
 
-The navy **Initialize Automated Prior Year Baseline Rollup** button, next to the year picker, reads the previous fraternal year's actual spend for your council only and fills in the **Pre-Populated Baseline** column:
+**Goal:** Review a member's charity request and move the request forward.
 
-- **Each annual event** of the council: the event's recorded **Spend** plus the approved and reimbursed expense reports linked to it.
-- **Each annual charity** the council paid: the total of that year's charity checks.
-- **Council Meetings**: the approved and reimbursed expense reports linked to the council's meetings.
-- **Last year's custom lines** are carried forward under the same names. Their baseline is **last year's approved amount** for that line, so running costs such as Bank Fees keep their funding level. It is $0.00 if last year's budget was never approved.
+**Start point:** Sidebar → Finances → **Charity Vetting Queue**.
 
-New lines start as **Draft** with a **Proposed Budget Amount** of $0.00 for your review. You can run the rollup again at any time from May 1 to June 30: it refreshes the baselines (and renamed events or charities) but **never changes proposed or approved amounts or notes**, and never removes a line.
+**Steps:**
+1. Claim the request.
+2. Check the organization, the 501(c)(3) status and the amount.
+3. Advance the request, or decline the request.
+4. For an advanced request, select **Place on next agenda**.
 
-### 12.3 The budget spreadsheet
-
-Lines are grouped under **your council's own budget categories** (funds), each with a subtotal, and a council total closes the sheet. Lines not yet filed under a category appear last, under **Uncategorized**.
-
-- Each council keeps its categories under **Council Lookup Tables → Budget categories** (§9). Council 15295 starts with its six funds: Father George Wolf Memorial Fund, Sister Rita Rose Vistica Parish Community Fund, Cathedral School & Student Support, Other Donations & Projects, Council Maintenance & State/Supreme Programs, and Blessed Michael McGivney Fraternal Activities Fund.
-- Every other council adds its own.
-- A rollup files each new line under the same category as the line it continues from last year. File a line once and it stays filed year after year.
-
-Each row shows the **Line Item**, then last year's two figures side by side inside a navy frame, then this year's figures. Last year's figures are its **Approved Cap** (the amount the council voted for that line last year, or — if there was no approved line) and its **Actual Spend** (what the line really cost last year, shown in red when it went over the cap). This year's figures are the **Pre-Populated Baseline**, the **Proposed Budget Amount**, the **Approved Budget Amount** and its **Status** (Draft, Proposed or Approved). Custom lines show $0.00 actual spend, because their spending is not tracked line by line. Every member who can read the budget sees last year's columns. While the budget is in Draft, editors can:
-- type the proposed amount and any **Notes** in the row's boxes (the line becomes **Proposed**);
-- pick the row's **Category**.
-
-The **Approved Budget Amount** is never typed in: it shows **🔒 Locked** until leadership approves and finalizes the whole budget (§12.6).
-
-Each change saves when you leave the box or make the pick. **Saved** appears beside the row, or the reason it was refused. The scorecards above the sheet show the baseline total, the proposed total, the approved total (once approved) and the change from the baseline.
-
-### 12.4 Custom council operational lines
-
-Use **+ Add Custom Council Operational Line** at the top of the spreadsheet for running costs that are not an event or a charity, such as **Bank Fees** or **Bulletin Ads**. Enter the **Line item name**, a **Proposed budget amount** and optionally its **Budget category**. The line is added as **Proposed**; its approved figure stays locked until the council's vote (§12.6). Each name can be used once per council and year (capitals and spacing are ignored). Custom lines are carried into next year's rollup automatically.
-
-### 12.5 Demonstrations: Simulate June Drafting Window
-
-On the demonstration build (in-memory data), Super Admins see a **Simulate June Drafting Window** checkbox. Ticking it treats the chosen year as Draft so the inputs unlock outside the May 1 – June 30 window. It also sends the Super Admin override with each change, so even a Finalized year can be edited for the demo. It does not appear for other roles or on the production data service. It never reopens an approved budget.
-
-### 12.6 Approve & Finalize Entire Budget
-
-After the council votes on the budget, usually at its July meeting, an Admin, Treasurer, Financial Secretary or Super Admin records the vote with the red **Approve & Finalize Entire Budget** button above the spreadsheet, then confirms with **Yes, approve and finalize**.
-
-- In one step, every line's **Proposed Budget Amount** becomes its **Approved Budget Amount**, and the whole year shows **Approved**.
-- The approved year is **frozen for everyone**: no line can be edited, added or rolled up again, and not even a Super Admin override reopens it (*"The … budget was approved and finalized by the council; its figures are frozen"*).
-- The button works from the year's May 1 opening onward, including after the July 1 lock. The Designated Budget Director prepares the budget but cannot approve it.
-- The approved figures become the caps on the dashboard's budget tracking gauges (§11.5).
-
-### 12.7 Historical Performance Review
-
-Admins, Treasurers, Financial Secretaries and Super Admins see a second tab, **Historical Performance Review**.
-
-- The trailing scorecard sums every **approved**, completed fraternal year: total approved budgets, actual spend, and **fiscal efficiency** (actual spend ÷ approved budget), plus how many years stayed within budget.
-- Pick a **Completed fraternal year** (one whose June 30 has passed) to see a read-only sheet of each line's **Final Allocation** beside its **Actual Year-End Spend**, with the variance, the percentage used and a status tag, grouped by category.
-- A **Financial performance KPI** card heads the sheet with the year's allocation, actual spend (including unbudgeted spend), variance, fiscal efficiency and lines within budget.
-- A year the council never approved is listed but has no allocations to measure against.
-
-![Annual Budget Projections (/budget)](../generated/dashboard_visual_catalog/budget.png)
-
----
-
-## 13. Super Admin: system lookups and councils
-
-### 13.1 System lookups
-
-**Path:** sidebar → **Global Governance Matrices** (Super Admins only)
-
-| Table | Holds |
-|---|---|
-| **Member Status** | Active, Inactive, and similar |
-| **Role** | Officer positions (Grand Knight, Treasurer, …), each with an **Officer** flag |
-| **Degree** | First through Fourth |
-| **Member Type** | Super Admin, Admin, Member |
-| **Category** | Event and activity categories |
-| **No-Show Reason** | One-letter code plus description |
-| **Meeting Type** | Regular Monthly, Officer, and similar |
-| **Lessons Learned Category** | Planning, Budgeting, Execution, and similar |
-
-Values marked **Built in** (*"The application depends on this value"*) cannot be renamed or deleted. These are the **Active** member status and the **Super Admin**, **Admin** and **Member** types.
-
-> **Caution:** finance access is granted by the role **names** *Treasurer* and *Financial Secretary*. These roles are not locked, so renaming either one (for example to "Treasurer (2026)") silently removes finance access from the officers who hold it. Keep those two names exactly as they are.
-
-### 13.2 Feedback inbox
-
-Members send feedback and bug reports from **Online Help Center → Submit System Feedback or Bug Report**. Super Admins see the **Feedback inbox** below that form on the same page. It lists each report newest first, with the sender's name, council, phone, email and the time it was submitted (UTC). No one else can read the inbox.
-
-![Online Help Center with the Feedback inbox (/help)](../generated/dashboard_visual_catalog/help.png)
-
-### 13.3 Councils
-
-**Path:** sidebar → **Councils**. Only a Super Admin may add, edit or delete a council. Admins manage their council's parishes, pastors, activities and distribution lists instead.
-
-![Global Governance Matrices (/lookups)](../generated/dashboard_visual_catalog/lookups.png)
-
-![Councils (/councils)](../generated/dashboard_visual_catalog/councils.png)
-
-![Supreme sync (/supreme-sync)](../generated/dashboard_visual_catalog/supreme-sync.png)
-
----
-
-## 14. Data protection rules
-
-- **Nothing cascades.** A record that other records still point to cannot be deleted. You will see a **record in use** message naming what depends on it. For example, a shift with sign-ups, a member with logged hours, or a lookup value in use are all protected, which keeps the council's history of hours, donations and messages intact. Remove or reassign the dependent records first, or leave the record in place.
-- The only exception: deleting a distribution list also clears its member list.
-- **Time windows** protect records: shift hours can be logged up to 3 months back, and activity hours up to 6 months back.
-
----
-
-## 15. Administrator troubleshooting reference
-
-| Symptom / message | Cause | Fix |
-|---|---|---|
-| A section is missing from the sidebar | Your member type or role does not include it (§1). | Ask a Super Admin to check your member type or roles. |
-| *"…cannot …"* refusal when saving | You are acting outside your council, or without the required tier. | Switch the **Council** selector, or ask a Super Admin. |
-| Shift date refused | It is outside the event's Starts–Ends range. | Adjust the event dates or the shift date. |
-| Event date refused | **Ends** is before **Starts**. | Correct the dates. |
-| Delete refused (record in use) | Other records depend on it (§14). | Clear the dependants first, or keep the record. |
-| Cash or electronic fields locked on the ledger | Donations now drive those totals. | Correct the donations in **Donations** instead. |
-| Council lookups save refused | One row failed, so nothing was saved. | Fix the row named in the message and save again. |
-| Member cannot find their QR code | No **QR code image URL** is on file. | Add it under **Council Lookup Tables → Enabled donation methods**. |
-| *"Your role cannot maintain this council's lookups."* | Finance officer on another council, or no finance role. | A council Admin or Super Admin must make the change. |
-| Audits missing from Executive Summaries | Finance officers see the monthly summary only. | Ask an Admin for the audit figures. |
-| Budget inputs and buttons greyed out | The chosen year is **Not Yet Open** or **Finalized** (§12.1), or it is **Approved** (§12.6). | Budgets are edited only from May 1 to June 30, before the council approves them. Pick the year you are preparing. |
-| *"The … budget was approved and finalized by the council"* | The council's vote was recorded (§12.6). | Approved budgets are frozen for everyone; nothing reopens them. |
-| Dashboard says there are no caps to track | The fraternal year's budget has not been approved and finalized. | Record the council's vote with **Approve & Finalize Entire Budget** (§12.6). |
-| *"The … budget opens for drafting on May 1"* | The drafting window for that year has not started. | Wait for May 1, or ask a Super Admin. |
-| *"The … budget was locked as Finalized on July 1"* | The year has started, so the data service refuses changes. | Only a Super Admin override can change a Finalized budget. |
-| Budget shows **Read only** / **Transparency view** | You are not an Admin, Treasurer, Financial Secretary or Designated Budget Director. | Ask a council Admin to tick **Designated Budget Director** on your roster record, then sign in again. |
-| Every budget line is **Uncategorized** | The council has no budget categories, or the lines were never filed. | Add categories under **Council Lookup Tables → Budget categories**, then pick each line's **Category**. |
-| *"…already has a line named…"* | That custom line exists for this council and year. | Edit the existing line's approved amount instead. |
-| An annual event is missing from the budget | It is not tagged **Is Annual**, it is not linked to your council, or it did not start in the prior fraternal year. | Tick **Is Annual** on the event, then run the rollup again. |
-| **Mark no-show** missing on a turnout row | The volunteer has hours logged, or the event is not linked to your council. | Correct the hours first, or ask an Admin of the event's council. |
-| New member cannot sign in | They have not onboarded, or their roster email is wrong. | Check the **Email (also the login)** field. They must create a password on the phone first. |
-
-Quick answers are also in the portal's **Online Help Center**.
-
----
-
-## 16. Consolidated Automated Communications Matrix
-
-This section lists every message the platform prepares on its own, who receives it, and what officers and Admins can see about it.
-
-> **Delivery in this version.** Emails and text messages are **prepared but not yet sent**: the council's email and text-message services are not connected yet. High-priority alerts are always recorded and appear in each recipient's **alert bell**, and they reach phones once push delivery is connected. Until then, use the screens in the **Where to follow it** column and remind members in person or through **Council Messages & Alerts**.
-
-> **Hybrid messaging rule.** Email and text messages are only an external **hook**: a short transactional nudge that tells a member something needs their attention (a shift tomorrow, hours to log, a welcome to the app) and points them back to the platform. They never carry the substance. Conversation notes and replies stay in **Council Messages & Alerts**; double-entry audit narratives stay in the **General Ledger** and on the expense and charity desks; status resolutions (approvals, returns, payments, vetting decisions) stay on the status tags and desks. All of these are reached only by signing in to the platform's private systems, so nothing that names a dollar amount, an audit finding or a member's reason travels over email or text.
-
-### 🏛️ Charity Grant Proposals
-
-| Step | Message | Recipient | Where to follow it |
-|---|---|---|---|
-| Request filed on **Propose Charity Grant** | Tracking message naming the 3 steps: **Vetting → Presentation → Disbursement**, and the follow-up date. | The member who filed it (the Knight Shepherd). | **Charity Vetting Queue**; the Shepherd sees **My requests**. |
-| 1. Vetting | No message. An officer or Trustee other than the Shepherd advances or declines the request. | — | **Charity Vetting Queue**. |
-| 2. Presentation | No message. The request goes on a Monthly meeting at least 10 days out for the council's vote. | — | The meeting's agenda and the **Live Meeting Console**. |
-| 3. Disbursement | No message. The Financial Secretary or Treasurer issues the check. | — | The Shepherd's **My requests** shows the request as paid. |
-| **Six months (about 180 days)** after filing | The Trustees ask the Shepherd for a status report on how the gift was used. | The council's Trustees, who follow up with the Shepherd. | The date is calculated from the filing date and shown in the Shepherd's tracking message. The app does not yet send a reminder on that day, so Trustees should keep their own list. |
-
+<!-- KEEP_IMAGE: propose charity grant capture -->
 ![Propose Charity Grant (/charities/propose)](../generated/dashboard_visual_catalog/charities_propose.png)
+<!-- /KEEP_IMAGE -->
 
+<!-- KEEP_IMAGE: charity vetting queue capture -->
 ![Charity Vetting Queue (/charities/vetting)](../generated/dashboard_visual_catalog/charities_vetting.png)
+<!-- /KEEP_IMAGE -->
 
+**Expected result:** The request goes on a Monthly meeting at least 10 days away. The council votes in the **Live Meeting Console**.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| **Place on next agenda** is refused. | No Monthly meeting is at least 10 days away. | Schedule the meeting. |
+| The desk is missing. | The council switched off **Charity proposals**. | Ask a Super Admin. |
+
+### 6.9 Pay an approved charity grant
+
+> **Prerequisite (who can do this):** You must be the council's Financial Secretary or Treasurer, or a Super Admin.
+> **Warning:** the check is permanent money out of the council's books.
+
+**Goal:** Pay a grant that the council approved.
+
+**Start point:** Sidebar → Finances → **Charitable Disbursements Ledger**.
+
+**Steps:**
+1. Find the approved request.
+2. Enter the check number and the date.
+3. Save.
+
+<!-- KEEP_IMAGE: charity funding queue capture -->
 ![Charity funding queue (/charities/queue)](../generated/dashboard_visual_catalog/charities_queue.png)
+<!-- /KEEP_IMAGE -->
 
-![Global Charities Registry (/charities/registry)](../generated/dashboard_visual_catalog/charities_registry.png)
+**Expected result:** The Shepherd's **My requests** shows the request as paid.
 
-### 💸 Expense Report Tracking
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The request is missing. | The council has not passed the motion. | Check the motion in the meeting. |
 
-The platform does **not** send messages when an expense report changes status. The submitter follows the status tag on **My Expense Reports**; officers follow the desks.
+### 6.10 Record or correct a donation
 
-| Step | Who acts | Status tag the submitter sees |
-|---|---|---|
-| 1. Filed | The member submits the report with receipts. | **Submitted** |
-| 2. Written order | The **Financial Secretary** presses **📜 Issue Written Order** on the **FS Audit Desk**. | **Order Issued** |
-| 3. Authorized | The **Grand Knight** presses **✍️ Counter-Sign Voucher** on the **GK Authorization Desk**. | **Approved** |
-| 4. Paid | The **Financial Secretary** or **Treasurer** records the check under **Bulk Check Disbursements**. | **Reimbursed** |
-| Sent back | Leadership uses **Reject & Return** in the **Leadership Auditing Queue**. Signatures are cleared. | **Returned** (red), with the reason |
+> **Prerequisite (who can do this):** You must be a council Admin, the Treasurer, the Financial Secretary or a Super Admin. The recorder and the event owner may also correct a donation.
 
-### 👥 Volunteer Service Management
+**Goal:** Keep the council's donation records complete.
 
-| Trigger | Message | Recipient | Where to follow it |
-|---|---|---|---|
-| A shift starts in **24 hours** | Reminder email with an attached **calendar file** (shift, event, time, place). | Every volunteer signed up for the shift. | The event's shift roster. |
-| A meeting starts in **24 hours** | Reminder email with an attached **calendar file**, including the agenda. | Every invited member. | **Meetings**. Invitations held back by the drip release show a gold **Drip release** tag until their release day. |
-| **Day 5** after a shift with no hours logged | Text reminder to log hours. | The volunteer. | **Shifts awaiting hours** on the dashboard (§7.2) shows how many reminders have been due and the **log by** date. |
-| **Every 7 days** after that | Follow-up text. Stops once the shift is more than 3 months old. | The volunteer. | Same panel; the row shows **Closed** when the window ends. |
-| An officer sends a high-priority alert | Push alert plus an entry in the recipient's **alert bell** (kept 6 months). | Members holding the chosen skills or signed up for the chosen shifts, including volunteers from sister councils. | **Council Messages & Alerts → Dispatch High-Priority Push Notification Alert**. Only the **Financial Secretary**, **Treasurer** and council **Admins** see this tile. |
-| A member is added to the roster | Welcome email: what the app is, how to get it, how to sign in, and who the council Admin is. | The new member. | The confirmation *"A welcome email with sign-in instructions was queued."* (§5.2). |
+**Start point:** Sidebar → Finances → **Recorded Donations History**.
 
-Reminders never change anyone's hours: members log their own time, and corrections follow §7 and §8.
+**Steps:**
+1. Choose the **Method**, the **Type** and the **Amount**. For items, enter **Estimated value ($)**.
+2. Choose the **Date** and the **Event**, or *Standalone (no event)*.
+3. Optional: add the **Donor**, a **Description** and a **Photo link**. Items need a description.
+4. Save.
 
-![Council Messages & Alerts (/messages)](../generated/dashboard_visual_catalog/messages.png)
+<!-- KEEP_IMAGE: recorded donations history capture -->
+![Recorded Donations History (/donations)](../generated/dashboard_visual_catalog/donations.png)
+<!-- /KEEP_IMAGE -->
 
-![My Distribution Lists (/distribution-lists)](../generated/dashboard_visual_catalog/distribution-lists.png)
+**Expected result:** The donation shows under **Event donations** or **Standalone donations**.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The date is refused. | An event donation is dated before the event start. | Use a date on or after the event start. |
+| The council or the recorder cannot change. | The platform fixes both fields. | Delete the donation. Record the donation again. |
+
+### 6.11 Concept: the annual budget
+
+The budget covers one fraternal year, July 1 to June 30.
+
+| Badge | When | What editors can do |
+| --- | --- | --- |
+| **Not Yet Open** | Before May 1 | Read only |
+| **Draft** | May 1 (00:00) to June 30 (midnight) | Run the rollup, add lines, edit proposed amounts |
+| **Finalized** | From July 1 | Read only |
+| **Approved** | After the council vote | Frozen for everyone |
+
+- Every member reads the budget. Non-editors see a **Transparency view** marked **Read only**.
+- Editors are the council Admins, the Treasurer, the FS, the **Designated Budget Director** and Super Admins.
+- Only a Super Admin override changes a budget outside the window. No override reopens an approved budget.
+
+<!-- KEEP_IMAGE: annual budget projections capture -->
+![Annual Budget Projections (/budget)](../generated/dashboard_visual_catalog/budget.png)
+<!-- /KEEP_IMAGE -->
+
+### 6.12 Prepare the budget with the rollup
+
+> **Prerequisite (who can do this):** You must be a council Admin, the Treasurer, the Financial Secretary, the Designated Budget Director or a Super Admin. The year must be in **Draft**.
+
+**Goal:** Fill the next year's budget from last year's actual spend.
+
+**Start point:** Sidebar → Finances → **Annual Budget Projections**.
+
+**Steps:**
+1. Choose the **Fraternal year**.
+2. Select **Initialize Automated Prior Year Baseline Rollup**.
+3. Type the proposed amount and **Notes** on each line. Each change saves when you leave the box.
+4. Pick the **Category** of each line.
+5. For a running cost, select **+ Add Custom Council Operational Line**. Enter the **Line item name** and the **Proposed budget amount**.
+
+**Expected result:** Each line shows a **Pre-Populated Baseline**. The rollup reads three sources.
+
+| Source | Baseline |
+| --- | --- |
+| Each event tagged **Is Annual** | Last year's recorded spend plus linked approved expenses |
+| Each charity tagged **Is Annual** | Last year's charity checks |
+| Last year's custom lines | Last year's approved amount |
+
+A new rollup refreshes the baselines only. The rollup never changes proposed amounts, approved amounts or notes.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| *"The … budget opens for drafting on May 1"* | The window has not opened. | Wait for May 1. |
+| An annual event is missing. | The event has no **Is Annual** tag, or the event started outside last year. | Tick **Is Annual**. Run the rollup again. |
+| *"…already has a line named…"* | The custom line exists. | Edit the existing line. |
+
+### 6.13 Approve and finalize the budget
+
+> **Prerequisite (who can do this):** You must be a council Admin, the Treasurer, the Financial Secretary or a Super Admin. The Designated Budget Director cannot approve.
+> **Warning:** approval freezes the whole year for everyone. Nothing reopens an approved budget.
+
+**Goal:** Record the council's vote on the budget.
+
+**Start point:** Sidebar → Finances → **Annual Budget Projections**.
+
+**Steps:**
+1. Check every proposed amount.
+2. Select **Approve & Finalize Entire Budget**.
+3. Select **Yes, approve and finalize**. You cannot undo this step.
+
+**Expected result:** Each proposed amount becomes the approved amount. The year shows **Approved**. The dashboard gauges use the approved amounts as caps.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The button is greyed out. | The year has no lines, or the year opens after May 1. | Run the rollup first. |
 
 ---
 
-## Appendix: Council Archive Vault and parish QR codes
+## 7. Performance
 
-- **Council Archive Vault.** Open **Administrative Lookups** in the sidebar and select **📂 Council Archive Vault**. The council's shared Google Drive folder opens in a new browser tab. The link shows only to seated officers, Admins and Super Admins; regular members do not see it. Google Drive's own sharing settings still decide who can open the folder.
-- **App download keys.** The two onboarding codes live in `apps/web/public/assets/images/qr/` for printing or projecting; the web portal no longer shows them.
-- **Collection QR codes.** On the phone's **Donate** screen, tapping Venmo, ParishSoft, Zeffy or Zelle opens a full-screen pop-up with only that channel's code. The phone shows the image link your council set under **Council Lookup Tables → Enabled donation methods** first. If there is none, or it cannot be loaded, it shows the code that comes with the app from `apps/mobile/assets/images/qr/`.
+### 7.1 Read the executive dashboard
 
-To put a real code in place, replace the placeholder file and keep its name:
+> **Prerequisite (who can do this):** You must be a seated officer or an Admin of the council, or a Super Admin. Only Admins and Super Admins see the audits.
 
+**Goal:** Review one month of council activity.
+
+**Start point:** Sidebar → Performance → **Executive Dashboard**.
+
+**Steps:**
+1. Choose the **Month** and the **Year**.
+2. Read the four scorecard tiles.
+3. Read the **Budget tracking** gauges.
+4. Admins: read **Executive audits** for no-shows and shifts that need hours.
+
+<!-- KEEP_IMAGE: executive dashboard capture -->
+![Executive Dashboard Summaries (/dashboard)](../generated/dashboard_visual_catalog/dashboard.png)
+<!-- /KEEP_IMAGE -->
+
+<!-- KEEP_IMAGE: executive audits placeholder -->
+![Image: Executive Audits]
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** The tiles show four measures.
+
+| Tile | Measures |
+| --- | --- |
+| **Total labor hours** | Shift hours plus activity hours in the month |
+| **Unique Knights participating** | Members who logged any time in the month |
+| **Net balance** | Funds raised minus spend for the month's events |
+| **Community outreach** | Actual attendees at the month's events |
+
+A budget gauge turns gold at 85% of the cap. The gauge turns red past 100%.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The hours look low. | Members log shift hours up to 3 months later. | Check the month again later. |
+| The gauges show no caps. | The budget is not approved. | Approve the budget (6.13). |
+
+### 7.2 Read the growth and hours charts
+
+> **Prerequisite (who can do this):** You must be a seated officer or an Admin of the council, or a Super Admin.
+
+**Goal:** See membership growth and labor hours over 12 months.
+
+**Start point:** Sidebar → Performance → **Growth & Hours Charts**.
+
+**Steps:**
+1. Read the new-members chart. The chart counts active members by join month.
+2. Read the labor-hours chart.
+
+**Expected result:** Each chart shows one bar per month.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A new member is missing. | The member has no join date. | Run the Supreme roster sync (10.3). |
+
+### 7.3 Record an event's results
+
+> **Prerequisite (who can do this):** You must be an Admin of a council linked to the event, the event owner or a Super Admin.
+
+**Goal:** Close out an event with spend, funds and lessons.
+
+**Start point:** Sidebar → Performance → **Post-event Ledger** → **Active queue**.
+
+**Steps:**
+1. Choose the event with **Results needed**.
+2. Enter **Spend ($)** and **Actual attendees**.
+3. Enter **Cash raised ($)** and **Electronic raised ($)** if the fields are open.
+4. Write **Highlights** for the monthly summary.
+5. Select **Save results**.
+6. Add lessons: choose a **Category**. Write **What did we learn?**. Select **Add lesson**.
+
+<!-- KEEP_IMAGE: post-event ledger capture -->
+![Post-event Ledger (/ledger)](../generated/dashboard_visual_catalog/ledger.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** A message shows *"Results saved."* The event moves to **Historic archive**.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The cash fields show **Synced from donations**. | Donations drive the totals. | Correct the donations (6.10). |
+
+### 7.4 Mark or clear a no-show
+
+> **Prerequisite (who can do this):** You must be an Admin of a council linked to the event, or a Super Admin.
+> **Warning:** a no-show shows in the member's history and in the executive audits.
+
+**Goal:** Record that a volunteer missed a shift.
+
+**Start point:** Sidebar → Performance → **Post-event Ledger** → the event → **Fraternal Volunteer Turnout Summary**.
+
+**Steps:**
+1. Select **Mark no-show** on the volunteer's row.
+2. Choose the reason.
+3. Select **Confirm**.
+4. To remove a mistake, select **Clear** on the row.
+
+**Expected result:** The row shows a red edge and a **No-show** pill.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| **Mark no-show** is missing. | The volunteer logged hours, or the event is not linked to your council. | Correct the hours first. |
+
+### 7.5 Search the lessons registry
+
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
+
+**Goal:** Learn from other councils' events.
+
+**Start point:** Sidebar → Performance → **Lessons Registry**.
+
+**Steps:**
+1. Filter by text, dates, councils or categories.
+2. Read the lessons. Your council's lessons show in gold.
+
+<!-- KEEP_IMAGE: lessons registry capture -->
+![Lessons Registry (/lessons-registry)](../generated/dashboard_visual_catalog/lessons-registry.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** The newest events show first.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| You cannot edit a lesson here. | The registry is read only. | Edit the lesson on the **Post-event Ledger**. |
+
+---
+
+## 8. Resources and the Google Drive archive vault
+
+### 8.1 Concept: backend logic of the Drive archive vault
+
+The vault files council documents in the council's shared Google Drive. The vault has one root folder and three sub-folders.
+
+| Folder path | Holds | Filled from | Accepted files |
+| --- | --- | --- | --- |
+| `Fraternal Enterprise Suite / Minutes` | Meeting minutes | **Meeting Center** → **Upload minutes** | PDF, text, Word |
+| `Fraternal Enterprise Suite / Vouchers` | Expense receipts | **My Expense Reports** | PDF, images |
+| `Fraternal Enterprise Suite / Media` | Event photos and video | **Fraternal Photo Gallery** | Images, video, PDF |
+
+The vault follows five rules.
+
+1. Only Admin and Super Admin uploads go to the vault.
+2. The largest accepted file is 25 MB.
+3. The record stores only the Drive file id. The id goes in the record's existing link column.
+4. The web server holds the Drive credentials. The browser never sees the credentials.
+5. Live uploads are off by default. The server needs four settings to turn uploads on.
+
+| Server setting | Value |
+| --- | --- |
+| `GOOGLE_DRIVE_CLIENT_EMAIL` | The service account email |
+| `GOOGLE_DRIVE_PRIVATE_KEY` | The service account private key |
+| `GOOGLE_DRIVE_SHARED_DRIVE_ID` | The shared drive id. The service account must be a Content manager. |
+| `DRIVE_VAULT_LIVE` | `1` |
+
+> **Security warning:** the portal has no server-side sessions yet. The upload route cannot confirm that the caller is an Admin.
+> Set `DRIVE_VAULT_LIVE=1` only behind an authenticating proxy. Without the four settings, the screen keeps a browser link for the file.
+
+### 8.2 Turn on live Drive uploads
+
+> **Prerequisite (who can do this):** You must be the platform's server operator. A Super Admin approves the change.
+> **Warning:** an open upload route lets anyone who reaches the server write files to the shared drive.
+
+**Goal:** Send Admin uploads to the shared Google Drive.
+
+**Start point:** The web server's environment settings.
+
+**Steps:**
+1. Create a Google service account.
+2. Add the service account to the shared drive as a Content manager.
+3. Set `GOOGLE_DRIVE_CLIENT_EMAIL`, `GOOGLE_DRIVE_PRIVATE_KEY` and `GOOGLE_DRIVE_SHARED_DRIVE_ID`.
+4. Put the portal behind an authenticating proxy.
+5. Set `DRIVE_VAULT_LIVE` to `1`.
+6. Restart the web server.
+
+**Expected result:** A new Admin upload creates a file under `Fraternal Enterprise Suite`.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| Files stay as browser links. | A setting is missing, or `DRIVE_VAULT_LIVE` is not `1`. | Check all four settings. |
+| *"… is larger than 25 MB."* | The file is too large. | Compress or split the file. |
+
+### 8.3 Open the Council Archive Vault folder
+
+> **Prerequisite (who can do this):** You must be a seated officer, a council Admin or a Super Admin. Members do not see the link.
+
+**Goal:** Open the council's shared Google Drive folder.
+
+**Start point:** Sidebar → Resources → **📂 Council Archive Vault**.
+
+**Steps:**
+1. Select **📂 Council Archive Vault**.
+
+**Expected result:** The Drive folder opens in a new browser tab.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| Google Drive refuses access. | Drive sharing settings decide who opens the folder. | Ask the folder owner to share the folder with you. |
+
+### 8.4 Share photos and bulletins
+
+> **Prerequisite (who can do this):** You must be a signed-in member to read both pages. You must be an Admin or a Super Admin to upload to the gallery vault.
+
+**Goal:** Publish event photos, flyers and minutes for the council.
+
+**Start point:** Sidebar → Resources → **Fraternal Photo Gallery** or **Bulletins**.
+
+**Steps:**
+1. In the gallery, choose the **Event**.
+2. Drag photos onto **Drag and drop photos here**.
+3. In **Bulletins**, filter the cards with **Show**.
+
+<!-- KEEP_IMAGE: photo gallery capture -->
+![Photo gallery (/gallery)](../generated/dashboard_visual_catalog/gallery.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** The photos show in the slideshow. **Bulletins** shows a card for each meeting flyer, set of minutes and event photo album.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A bulletin card is missing. | The meeting or the event has no Drive link. | Add the link on the meeting or the event. |
+
+---
+
+## 9. Answers
+
+### 9.1 Read the feedback inbox
+
+> **Prerequisite (who can do this):** You must have Super Admin privileges.
+
+**Goal:** Read members' feedback and bug reports.
+
+**Start point:** Sidebar → Answers → **Online Help Center** → **Feedback inbox**.
+
+**Steps:**
+1. Scroll below **Submit System Feedback or Bug Report**.
+2. Read each report. The newest report shows first.
+
+<!-- KEEP_IMAGE: online help center capture -->
+![Online Help Center with the Feedback inbox (/help)](../generated/dashboard_visual_catalog/help.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** Each report shows the sender's name, council, phone, email and time (UTC).
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The inbox is missing. | Only Super Admins see the inbox. | Ask a Super Admin. |
+
+### 9.2 Publish a standard operating procedure
+
+> **Prerequisite (who can do this):** You must be a platform maintainer with write access to the code repository.
+> **Warning:** the SOP Center reads the files when the portal is built. A new SOP shows only after a rebuild.
+
+**Goal:** Add a procedure to the **SOP Center**.
+
+**Start point:** The repository folder `docs/sop/`.
+
+**Steps:**
+1. Create a Markdown file in `docs/sop/`.
+2. Start the file with a `# ` title.
+3. Write each task with **Goal**, **Start point**, **Steps**, **Expected result** and **Common problems**.
+4. Rebuild the web portal.
+
+**Expected result:** The SOP shows in Sidebar → Answers → **SOP Center**.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The SOP is missing. | The portal was not rebuilt. | Run the web build again. |
+| A test fails. | The SOP lacks a title or one of the five headings. | Add the missing heading. |
+
+The SOP Center holds the full procedure: **Publish a standard operating procedure**.
+
+---
+
+## 10. Setup and the Supreme roster sync
+
+### 10.1 Add a member
+
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
+> **Warning:** **Add member** sends a welcome email with a setup code at once.
+
+**Goal:** Put a new Brother Knight on the roster.
+
+**Start point:** Sidebar → Setup → **Affiliated Roster**.
+
+**Steps:**
+1. Select **Add member**.
+2. Fill in the form. **Email (also the login)** is the member's sign-in name.
+3. Choose the **Member type**. Admins grant Admin or Member. Only a Super Admin grants Super Admin.
+4. Optional: tick **Designated Budget Director**.
+5. Select **Add member**.
+
+<!-- KEEP_IMAGE: affiliated roster capture -->
+![Affiliated Roster (/members)](../generated/dashboard_visual_catalog/members.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** A message confirms that a welcome email was queued. The member shows a **🆕 New Member** badge for 180 days.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The new member cannot create a password. | The setup code expired after 14 days, or the email is wrong. | Check the email. Select **Send new setup code**. |
+| You cannot move a member to another council. | Admins act on their own council only. | Ask a Super Admin. |
+
+### 10.2 Send a new setup code
+
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
+> **Warning:** a new code replaces the old code.
+
+**Goal:** Help a member who lost or used up the setup code.
+
+**Start point:** Sidebar → Setup → **Affiliated Roster** → the member.
+
+**Steps:**
+1. Open the member's record.
+2. Select **Send new setup code**.
+
+**Expected result:** The member gets a new welcome email. The new code is valid for 14 days.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The member already has a password. | A registered member does not need a code. | Tell the member to use **Forgot Password?**. |
+
+### 10.3 Concept: backend logic of the Supreme roster sync
+
+The sync reads the roster export from Supreme Headquarters. The sync adds new members and updates join dates.
+
+- The input is a CSV file with a header row. Save the Supreme Excel export as CSV first.
+- The columns are Member Number, First Name, Last Name, Email, Phone, Street, Street 2, City, State, Zip, Birth Date, Degree and Date Joined.
+- Header case and spacing do not matter.
+- The file must have the member number, the names, the email and the join date columns.
+
+| Row type | What the sync does |
+| --- | --- |
+| A new member number | Adds the member with the join date. Sends the welcome email with the Expo Go steps and a setup code. |
+| A member number already on the roster | Updates the join date only. Other fields stay unchanged. |
+| A row that fails a check | Skips the row. The result names the reason. |
+
+A setup code has 20 characters, expires after 14 days and works one time. The platform stores only a hash of the code.
+The platform has no background scheduler. An Admin runs the sync by hand.
+
+### 10.4 Run the Supreme roster sync
+
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges. The Treasurer and the FS see the page but not the roster panel.
+> **Warning:** each new row sends a welcome email at once.
+
+**Goal:** Bring the Supreme roster into the platform.
+
+**Start point:** Sidebar → Setup → **Supreme Council Sync** → **Supreme roster sync - new member onboarding**.
+
+**Steps:**
+1. Save the Supreme Excel export as a CSV file.
+2. Choose the file in **Roster file**. You can also paste the rows in **…or paste the export**.
+3. Check the row count on the button.
+4. Select **Sync *n* roster rows from Supreme**.
+5. Read the skipped rows and the reasons.
+
+<!-- KEEP_IMAGE: supreme sync capture -->
+![Supreme sync (/supreme-sync)](../generated/dashboard_visual_catalog/supreme-sync.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** A message counts the new members, the updated join dates and the skipped rows. Each new member shows a **🆕 New Member** badge.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The file is refused. | A required column is missing. | Add the missing column header. |
+| A row is skipped. | The row has a bad email or a missing value. | Correct the row. Sync again. |
+
+### 10.5 File Form 1728 or Form 1295 with Supreme
+
+> **Prerequisite (who can do this):** You must be a council Admin, the Financial Secretary, the Treasurer or a Super Admin.
+> **Warning:** **Transmit Report to Supreme via Alchemer API** sends the report to Supreme.
+
+**Goal:** File a Supreme report from the council's records.
+
+**Start point:** Sidebar → Setup → **Supreme Council Sync**.
+
+**Steps:**
+1. Choose the **Supreme form**.
+2. Choose a completed **Reporting period**. Form 1728 covers a calendar year. Form 1295 covers a half-year.
+3. Check the figures in **Simulate and Audit Compliance Report**.
+4. Enter the **Alchemer survey id**.
+5. Select **Transmit Report to Supreme via Alchemer API**.
+
+**Expected result:** The attempt shows in **Sync history**. A gold dot marks success. A red dot marks a failure with the reason.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The period is not offered. | The period has not ended. | Wait for the period end. |
+| *"The transmission failed and was logged"* | Supreme refused the post. | Read the reason. Correct the figures. Transmit again. |
+
+### 10.6 Find members with a trade skill
+
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
+> **Warning:** **Send to *n* members** sends a message at once.
+
+**Goal:** Find and message members with a skill.
+
+**Start point:** Sidebar → Setup → **Affiliated Roster** → **Skills**.
+
+**Steps:**
+1. Choose a skill in the **Council skills** drawer.
+2. Read **Members with *skill***.
+3. Optional: write a note. Select **Send to *n* members**.
+
+<!-- KEEP_IMAGE: skills filter drawer placeholder -->
+![Image: Skills Filter Drawer]
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** Active members with the skill get the message. Replies arrive in **Council Messages & Alerts**.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| *"No member of this council has recorded a skill yet."* | Members have no skills on file. | Ask members to add skills in **My Profile**. |
+
+### 10.7 Keep the council lookup tables
+
+> **Prerequisite (who can do this):** You must be a council Admin or a Super Admin for every tab. The Treasurer and the FS may edit the donation tabs and **Budget categories** only.
+> **Warning:** **Save changes** saves every row together. One refused row saves nothing.
+
+**Goal:** Keep the council's own lists.
+
+**Start point:** Sidebar → Setup → **Council Lookup Tables**.
+
+**Steps:**
+1. Open the tab: **Activities**, **Donation types**, **Enabled donation methods**, **Budget categories** or **Meeting Agenda Templates**.
+2. Edit the rows. Each changed row shows **Edited**.
+3. For a QR method, paste the image link in **QR code image URL**.
+4. Select **Save changes**.
+
+<!-- KEEP_IMAGE: council lookup tables capture -->
+![Council Lookup Tables (/council-lookups)](../generated/dashboard_visual_catalog/council-lookups.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** The changes save. Phones show the new values on the next load.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| *"Your role cannot maintain this council's lookups."* | You are on another council, or you have no finance role. | Ask a council Admin. |
+| A budget category will not delete. | Budget lines use the category. | Move the lines to another category. |
+
+### 10.8 Keep the global lists, councils, parishes and charities
+
+> **Prerequisite (who can do this):** You must be a Super Admin for **Global Governance Matrices** and **Councils**. You must be a council Admin or a Super Admin for **Parish & Pastors Linkage**. You must be a charity registry keeper for **Global Charities Registry**.
+> **Warning:** a value marked **Built in** cannot be renamed or deleted.
+
+**Goal:** Keep the lists that every council shares.
+
+**Start point:** Sidebar → Setup.
+
+**Steps:**
+1. Open the page.
+2. Edit the row.
+3. Save.
+
+<!-- KEEP_IMAGE: global governance matrices capture -->
+![Global Governance Matrices (/lookups)](../generated/dashboard_visual_catalog/lookups.png)
+<!-- /KEEP_IMAGE -->
+
+<!-- KEEP_IMAGE: councils capture -->
+![Councils (/councils)](../generated/dashboard_visual_catalog/councils.png)
+<!-- /KEEP_IMAGE -->
+
+<!-- KEEP_IMAGE: parishes and pastors capture -->
+![Parishes and pastors (/parishes)](../generated/dashboard_visual_catalog/parishes.png)
+<!-- /KEEP_IMAGE -->
+
+<!-- KEEP_IMAGE: global charities registry capture -->
+![Global Charities Registry (/charities/registry)](../generated/dashboard_visual_catalog/charities_registry.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** Every council sees the new value.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| Finance officers lost access. | A role named Treasurer or Financial Secretary was renamed. | Restore the exact role name. |
+
+---
+
+## 11. Data protection rules
+
+- **Nothing cascades.** The platform refuses to delete a record that other records use. The message names the record in use.
+- Examples: a shift with sign-ups, a member with logged hours, a lookup value in use.
+- One exception: a deleted distribution list also deletes the list's member entries.
+- **Time windows** protect records. Shift hours close after 3 months. Activity hours close after 6 months.
+- **Approved budgets** are frozen for everyone.
+
+---
+
+## 12. Troubleshooting reference
+
+| Symptom or message | Cause | Fix |
+| --- | --- | --- |
+| A page is missing from the sidebar | Your role has no access, or a feature flag is off. | Check section 1 and section 3. |
+| A desk shows **Locked** | Your role cannot open the desk. | Ask the seat holder. |
+| *"…cannot …"* refusal on save | You act outside your council or role. | Switch the **Council** selector, or ask a Super Admin. |
+| Delete refused (record in use) | Other records depend on the record. | Clear the dependants first, or keep the record. |
+| Shift date refused | The date is outside the event dates. | Adjust the shift date or the event dates. |
+| Cash fields locked on the ledger | Donations drive the totals. | Correct the donations. |
+| Budget inputs greyed out | The year is **Not Yet Open**, **Finalized** or **Approved**. | Edit only from May 1 to June 30. |
+| **Transparency view** on the budget | You are not a budget editor. | Ask a council Admin to tick **Designated Budget Director**. Sign in again. |
+| New member cannot create a password | The setup code expired or the email is wrong. | Select **Send new setup code**. |
+| Roster sync file refused | A required column is missing. | Check the CSV header (10.3). |
+| Drive uploads stay as browser links | Live uploads are off. | See 8.2. |
+| **Edit bylaws** missing | You are not the GK or an Admin. | Ask the Grand Knight. |
+| *"Decide the open ballot first"* | A ballot is still open. | Decide the open motion. |
+
+Quick answers are also in **Answers → Online Help Center**.
+
+---
+
+## 13. Automated messages reference
+
+> **Delivery in this version:** the platform prepares emails and texts. The email and text services are not connected yet.
+> High-priority alerts always reach each recipient's bell. Use the screens in the **Where to follow** column.
+
+> **Hybrid messaging rule:** an email or a text is only a short nudge. The nudge sends the member back to the platform.
+> Conversations stay in **Council Messages & Alerts**. Audit notes stay in the **General Ledger** and on the desks.
+> Decisions stay on the status tags and desks. No dollar amount, audit finding or private reason goes by email or text.
+
+### Charity grant requests
+
+| Step | Message | Recipient | Where to follow |
+| --- | --- | --- | --- |
+| Request filed | A tracking message with the three steps and the follow-up date | The Knight Shepherd | **Charity Vetting Queue** |
+| 1. Vetting | None | — | **Charity Vetting Queue** |
+| 2. Presentation | None | — | The meeting agenda and the **Live Meeting Console** |
+| 3. Disbursement | None | — | **Charitable Disbursements Ledger** |
+| 6 months after filing | The Trustees ask the Shepherd for a status report. The app sends no reminder. | The Trustees | The date in the Shepherd's tracking message |
+
+### Expense reports
+
+The platform sends no message when an expense report changes status. The member reads the status tag. Officers follow the desks (6.1).
+
+### Volunteer service and onboarding
+
+| Trigger | Message | Recipient | Where to follow |
+| --- | --- | --- | --- |
+| A shift starts in 24 hours | A reminder email with a calendar file | Every volunteer on the shift | The event's shift roster |
+| A meeting starts in 24 hours | A reminder email with a calendar file and the agenda | Every invitee | **Meeting Center** |
+| Day 5 after a shift with no hours | A text reminder | The volunteer | **Executive Dashboard** → **Shifts awaiting hours** |
+| Every 7 days after that | A follow-up text, until the shift is 3 months old | The volunteer | Same panel. The row shows **Closed** when the window ends. |
+| An officer sends an urgent alert | A phone push alert and a bell entry, kept 6 months | Members with the chosen skills or shifts | **Council Messages & Alerts** → **Dispatch High-Priority Push Notification Alert** |
+| A member is added or synced | A welcome email with the app steps and a setup code | The new member | The confirmation on **Affiliated Roster** or **Supreme Council Sync** |
+| A member requests a password reset | An email with a 6-digit code, valid 15 minutes | The member | None. The member resets the password alone. |
+
+Only the Financial Secretary, the Treasurer, council Admins and Super Admins see the urgent alert tile.
+
+<!-- KEEP_IMAGE: council messages and alerts capture -->
+![Council Messages & Alerts (/messages)](../generated/dashboard_visual_catalog/messages.png)
+<!-- /KEEP_IMAGE -->
+
+<!-- KEEP_IMAGE: distribution lists capture -->
+![My Distribution Lists (/distribution-lists)](../generated/dashboard_visual_catalog/distribution-lists.png)
+<!-- /KEEP_IMAGE -->
+
+---
+
+## Appendix: QR code files
+
+The two onboarding codes are in `apps/web/public/assets/images/qr/`. Print or project the codes for new members.
+The phone **Donate** screen shows the collection codes. The phone shows the council's image link first.
+When the link is missing or broken, the phone shows the code that ships with the app.
+
+To put a real code in place, replace the file. Keep the file name.
+
+<!-- KEEP_IMAGE: QR code file table -->
 | Code | File |
 |---|---|
 | ![Mobile App Expo Go Sync QR code](../apps/web/public/assets/images/qr/expo-go-sync.png) | `apps/web/public/assets/images/qr/expo-go-sync.png` |
@@ -637,3 +1427,4 @@ To put a real code in place, replace the placeholder file and keep its name:
 | ![Venmo collection QR code](../apps/mobile/assets/images/qr/venmo-collection.png) | `apps/mobile/assets/images/qr/venmo-collection.png` |
 | ![Zeffy collection QR code](../apps/mobile/assets/images/qr/zeffy-collection.png) | `apps/mobile/assets/images/qr/zeffy-collection.png` |
 | ![Zelle collection QR code](../apps/mobile/assets/images/qr/zelle-collection.png) | `apps/mobile/assets/images/qr/zelle-collection.png` |
+<!-- /KEEP_IMAGE -->
