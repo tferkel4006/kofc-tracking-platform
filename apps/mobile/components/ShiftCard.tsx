@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
-import { formatShiftWhen, type Event, type LayoutPalette, type Shift } from '@kofc/shared';
+import { formatShiftWhen, volunteerCountLabel, type Event, type LayoutPalette, type Shift } from '@kofc/shared';
 import { AppText, Card, Pill } from '@/components/ui';
 import { useTheme } from '@/lib/layout-mode';
 
@@ -51,7 +51,7 @@ export function ShiftCard({
         </AppText>
       ) : null}
       <AppText variant="small" tone="muted">
-        {shift.NumberVolunteersSignedUp} of {shift.MinNumberVolunteers} volunteers
+        {volunteerCountLabel(shift)}
       </AppText>
       {footer}
     </Card>
@@ -63,4 +63,6 @@ export const PriorityTag = ({ remaining }: { remaining: number }) => (
   <Pill label={`NEEDS ${remaining} MORE`} tone="gold" />
 );
 export const FullTag = () => <Pill label="FULL" tone="outline" />;
+/** Phase 4.5: an All-Hands shift, open to any number of volunteers. */
+export const AllHandsTag = () => <Pill label="ALL HANDS · NO CAP" tone="navy" />;
 export const SignedUpTag = () => <Pill label="YOU'RE SIGNED UP" tone="navy" />;

@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Tabs } from 'expo-router/js-tabs';
 import { mobileTabEnabled, type MobileTab } from '@kofc/shared';
 import { BrandHeader } from '@/components/BrandHeader';
+import { FaithCenterProvider } from '@/components/FaithCenter';
 import { AppText } from '@/components/ui';
 import { useFeatureFlags } from '@/lib/app-context';
 import { useTheme } from '@/lib/layout-mode';
@@ -70,37 +71,41 @@ export default function AppLayout() {
     tabBarIcon: () => null,
     tabBarIconStyle: { display: 'none' as const },
   });
+  // Phase 4.5: the Faith Center wraps the tabs, so the header's praying hands reach the Daily Bible Quote, which also
+  // opens by itself on the first launch of each day.
   return (
-    <Tabs
-      screenOptions={{
-        header: () => <BrandHeader />,
-        tabBarStyle: {
-          backgroundColor: color.white,
-          borderTopColor: large ? color.gold : color.navy,
-          borderTopWidth: large ? 6 : 2,
-          height: tabHeight + insets.bottom,
-          paddingTop: 0,
-        },
-        tabBarItemStyle: { height: tabHeight, padding: 0, justifyContent: 'center', alignItems: 'stretch', borderRadius: 0 },
-        sceneStyle: { backgroundColor: color.white },
-        tabBarLabelStyle: { fontFamily: fontFamily.body, margin: 0 },
-        tabBarBadgeStyle: { backgroundColor: color.gold, color: color.navy, fontFamily: fontFamily.body, fontWeight: '700' },
-      }}
-    >
-      <Tabs.Screen name="index" options={tab('Home')} />
-      {/* Sprint 6Z: the tabs follow the portal's pillar order - Governance, Faith In Action, Finances. */}
-      <Tabs.Screen name="meetings" options={tab('Mtgs', 'meetings')} />
-      <Tabs.Screen name="shifts" options={tab('Signup', 'shifts')} />
-      <Tabs.Screen name="log" options={tab('Report')} />
-      <Tabs.Screen name="donate" options={tab('Donate', 'donate')} />
-      {/* Opened from the header envelope; not a tab of its own. */}
-      <Tabs.Screen name="messages" options={{ ...tab('Messages'), href: null }} />
-      {/* Opened from a meeting card on Home; not a tab of its own. */}
-      <Tabs.Screen name="meeting/[meetingId]" options={{ ...tab('Attendance'), href: null }} />
-      {/* Opened from the expense card on Home. */}
-      <Tabs.Screen name="expenses" options={{ ...tab('Expenses'), href: null }} />
-      {/* Sprint 6C: opened from the member's name in the header (Large Text Layout Mode and sign-out). */}
-      <Tabs.Screen name="settings" options={{ ...tab('Settings'), href: null }} />
-    </Tabs>
+    <FaithCenterProvider>
+      <Tabs
+        screenOptions={{
+          header: () => <BrandHeader />,
+          tabBarStyle: {
+            backgroundColor: color.white,
+            borderTopColor: large ? color.gold : color.navy,
+            borderTopWidth: large ? 6 : 2,
+            height: tabHeight + insets.bottom,
+            paddingTop: 0,
+          },
+          tabBarItemStyle: { height: tabHeight, padding: 0, justifyContent: 'center', alignItems: 'stretch', borderRadius: 0 },
+          sceneStyle: { backgroundColor: color.white },
+          tabBarLabelStyle: { fontFamily: fontFamily.body, margin: 0 },
+          tabBarBadgeStyle: { backgroundColor: color.gold, color: color.navy, fontFamily: fontFamily.body, fontWeight: '700' },
+        }}
+      >
+        <Tabs.Screen name="index" options={tab('Home')} />
+        {/* Sprint 6Z: the tabs follow the portal's pillar order - Governance, Faith In Action, Finances. */}
+        <Tabs.Screen name="meetings" options={tab('Mtgs', 'meetings')} />
+        <Tabs.Screen name="shifts" options={tab('Signup', 'shifts')} />
+        <Tabs.Screen name="log" options={tab('Report')} />
+        <Tabs.Screen name="donate" options={tab('Donate', 'donate')} />
+        {/* Opened from the header envelope; not a tab of its own. */}
+        <Tabs.Screen name="messages" options={{ ...tab('Messages'), href: null }} />
+        {/* Opened from a meeting card on Home; not a tab of its own. */}
+        <Tabs.Screen name="meeting/[meetingId]" options={{ ...tab('Attendance'), href: null }} />
+        {/* Opened from the expense card on Home. */}
+        <Tabs.Screen name="expenses" options={{ ...tab('Expenses'), href: null }} />
+        {/* Sprint 6C: opened from the member's name in the header (Large Text Layout Mode and sign-out). */}
+        <Tabs.Screen name="settings" options={{ ...tab('Settings'), href: null }} />
+      </Tabs>
+    </FaithCenterProvider>
   );
 }

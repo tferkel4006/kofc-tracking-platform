@@ -7,6 +7,7 @@ import {
   describeError,
   formatDate,
   formatTimeRange,
+  isAllHandsShift,
   isUrgent,
   shiftStatus,
   withNewMemberBadge,
@@ -238,9 +239,11 @@ interface ShiftDraft {
   start: string;
   end: string;
   needed: string;
+  /** Phase 4.5: an All-Hands shift has no volunteer cap (Shift.IsAllHands). */
+  allHands: boolean;
 }
 
-const blankShift = (event: Event): ShiftDraft => ({ name: '', description: '', date: event.StartDate, start: '09:00', end: '12:00', needed: '4' });
+const blankShift = (event: Event): ShiftDraft => ({ name: '', description: '', date: event.StartDate, start: '09:00', end: '12:00', needed: '4', allHands: false });
 const draftOf = (s: Shift): ShiftDraft => ({
   name: s.ShiftName,
   description: s.ShiftDescription,
@@ -248,6 +251,7 @@ const draftOf = (s: Shift): ShiftDraft => ({
   start: s.StartTime.slice(0, 5),
   end: s.EndTime.slice(0, 5),
   needed: String(s.MinNumberVolunteers),
+  allHands: isAllHandsShift(s),
 });
 
 function ShiftCells({ draft, set, label }: { draft: ShiftDraft; set: (d: ShiftDraft) => void; label: string }) {
@@ -267,7 +271,17 @@ function ShiftCells({ draft, set, label }: { draft: ShiftDraft; set: (d: ShiftDr
         </div>
       </Td>
       <Td>
-        <Input aria-label={`${label} volunteers needed`} className="w-20" inputMode="numeric" value={draft.needed} onChange={(e) => set({ ...draft, needed: e.target.value })} />
+        <div className="flex flex-col gap-1">
+          {draft.allHands ? (
+            <span className="text-sm font-bold">No cap</span>
+          ) : (
+            <Input aria-label={`${label} volunteers needed`} className="w-20" inputMode="numeric" value={draft.needed} onChange={(e) => set({ ...draft, needed: e.target.value })} />
+          )}
+          <label className="flex items-center gap-1.5 text-xs font-bold">
+            <input type="checkbox" aria-label={`${label} is an All-Hands shift`} checked={draft.allHands} onChange={(e) => set({ ...draft, allHands: e.target.checked })} />
+            All hands
+          </label>
+        </div>
       </Td>
     </>
   );
@@ -288,7 +302,9 @@ function ShiftsPanel({ event }: { event: Event }) {
     ShiftDate: d.date,
     StartTime: d.start,
     EndTime: d.end,
-    MinNumberVolunteers: parseNumberField(d.needed, 'Volunteers needed') as number,
+    // An All-Hands shift keeps a placeholder target of at least 1 (the column is NOT NULL); nothing reads it.
+    MinNumberVolunteers: d.allHands ? Math.max(1, Number.parseInt(d.needed, 10) || 1) : (parseNumberField(d.needed, 'Volunteers needed') as number),
+    IsAllHands: d.allHands ? 1 : 0,
   });
 
   const after = async (ok: boolean) => {
@@ -335,12 +351,14 @@ function ShiftsPanel({ event }: { event: Event }) {
                     <Td>{s.ShiftName}</Td>
                     <Td>{formatDate(s.ShiftDate)}</Td>
                     <Td>{formatTimeRange(s.StartTime, s.EndTime)}</Td>
-                    <Td>{s.MinNumberVolunteers}</Td>
+                    <Td>{isAllHandsShift(s) ? 'All hands' : s.MinNumberVolunteers}</Td>
                   </>
                 )}
                 <Td>{s.NumberVolunteersSignedUp}</Td>
                 <Td>
-                  {status === 'locked' ? (
+                  {isAllHandsShift(s) ? (
+                    <Pill tone="outline">All hands · no cap</Pill>
+                  ) : status === 'locked' ? (
                     <Pill tone="navy">Full</Pill>
                   ) : isUrgent(s.ShiftDate, today) ? (
                     <Pill tone="red">Needs {remaining} soon</Pill>

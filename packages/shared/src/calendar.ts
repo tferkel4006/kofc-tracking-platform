@@ -136,9 +136,9 @@ export function isShiftUrgent(shift: Pick<Shift, 'ShiftDate' | 'StartTime'>, now
   return hours >= 0 && hours <= URGENT_WITHIN_HOURS;
 }
 
-/** True while fewer volunteers are signed up than the shift calls for. */
-export const shiftNeedsVolunteers = (shift: Pick<Shift, 'NumberVolunteersSignedUp' | 'MinNumberVolunteers'>): boolean =>
-  shift.NumberVolunteersSignedUp < shift.MinNumberVolunteers;
+/** True while fewer volunteers are signed up than the shift calls for. Never for an All-Hands shift, which has no cap. */
+export const shiftNeedsVolunteers = (shift: Pick<Shift, 'NumberVolunteersSignedUp' | 'MinNumberVolunteers' | 'IsAllHands'>): boolean =>
+  shift.IsAllHands !== 1 && shift.NumberVolunteersSignedUp < shift.MinNumberVolunteers;
 
 /**
  * The brand tone of a calendar item. Meetings are always navy. An event takes the most pressing tone of `shifts`

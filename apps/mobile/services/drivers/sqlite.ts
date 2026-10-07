@@ -547,8 +547,9 @@ const DB_NAME = 'kofc.db';
  * 36: Event.GoogleDriveFlyerFileID - the Marketing Factory's filed flyer (Sprint 6C, Phase 4).
  * 37: Council.EmailProvider, SmtpHost, SmtpPort, SmtpUsername and EmailPasswordEncrypted - the council's outbound
  *     email gateway (Sprint 6Z-Email-Proxy).
+ * 38: Shift.IsAllHands - All-Hands shifts with no volunteer cap (Phase 4.5).
  */
-const SCHEMA_VERSION = 37;
+const SCHEMA_VERSION = 38;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -2839,7 +2840,9 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
         const row = await this.requireShift(db, id);
-        if (clean.MinNumberVolunteers !== undefined && clean.MinNumberVolunteers < row.NumberVolunteersSignedUp) {
+        // Phase 4.5: an All-Hands shift (as it stands or as changed) has no cap, so its target never blocks a change.
+        const allHands = (clean.IsAllHands ?? row.IsAllHands) === 1;
+        if (!allHands && clean.MinNumberVolunteers !== undefined && clean.MinNumberVolunteers < row.NumberVolunteersSignedUp) {
           throw new BusinessRuleError(
             'INVALID_INPUT',
             `Shift "${row.ShiftName}" already has ${row.NumberVolunteersSignedUp} volunteers signed up, so the volunteer target cannot be lowered to ${clean.MinNumberVolunteers}.`,
@@ -2944,9 +2947,9 @@ export class SqliteDataService implements DataService {
   ): Promise<number> {
     const res = await db.runAsync(
       `INSERT INTO [Shift] ([ShiftName], [ShiftDescription], [ShiftDate], [StartTime], [EndTime], [EventID],
-                            [MinNumberVolunteers], [NumberVolunteersSignedUp])
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-      [shift.ShiftName, shift.ShiftDescription ?? '', shift.ShiftDate, shift.StartTime, shift.EndTime, eventId, shift.MinNumberVolunteers],
+                            [MinNumberVolunteers], [NumberVolunteersSignedUp], [IsAllHands])
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+      [shift.ShiftName, shift.ShiftDescription ?? '', shift.ShiftDate, shift.StartTime, shift.EndTime, eventId, shift.MinNumberVolunteers, shift.IsAllHands ?? 0],
     );
     return res.lastInsertRowId;
   }

@@ -4,9 +4,11 @@
 // off My shifts. When the council switches off flag_complex_shifts, My shifts is gone too.
 // Sprint 5Z-Mobile-Clean: Home holds only work still ahead. Meetings live on the Meetings tab, completed events are
 // gone, and a shift drops off the minute it ends by the device clock, for every member, officers and admins included.
+// Phase 4.5: a closable Liturgical Feast or Saint Day banner sits first, just under the header.
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { isUrgent, toIsoDate, withoutEndedShifts } from '@kofc/shared';
+import { LiturgicalBanner } from '@/components/FaithCenter';
 import { ShiftCard, UrgentTag } from '@/components/ShiftCard';
 import { AppText, Button, Card, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
 import { useApp, useUser } from '@/lib/app-context';
@@ -39,6 +41,7 @@ export default function DashboardScreen() {
   const myShifts = data ? withoutEndedShifts(data.shifts, new Date()).filter(({ signup }) => signup.NoShow !== 1) : [];
   return (
     <Screen refreshing={state.refreshing} onRefresh={() => void Promise.all([state.reload(), refreshFeatures()])}>
+      <LiturgicalBanner />
       <View>
         <AppText variant="heading" accessibilityRole="header">
           Hello, {user.firstName}

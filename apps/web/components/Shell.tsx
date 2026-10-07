@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { councilLabel, describeError } from '@kofc/shared';
+import { councilLabel, countUnreadMessages, describeError } from '@kofc/shared';
 import { AlertBell } from '@/components/AlertBell';
 import { MemberAvatar } from '@/components/MemberAvatar';
 import { NAV, Sidebar } from '@/components/Sidebar';
@@ -45,6 +45,41 @@ function EnvelopeIcon() {
   );
 }
 
+/** How often the envelope re-reads the member's threads, so messages sent from another session show up without a reload. */
+const UNREAD_POLL_MS = 30_000;
+
+/**
+ * Phase 4.5: the number of unread messages addressed to the member, for the envelope's badge. It reloads on every
+ * page change, whenever the Communications Hub reloads its conversations (messagesChanged), and every 30 seconds.
+ */
+function useUnreadMessages(pathname: string): number {
+  const { user, messagesVersion } = useSession();
+  const threads = useLoad(() => (user ? db.messages.listThreads(user.memberId) : Promise.resolve([])), [user?.memberId, pathname, messagesVersion]);
+  const reload = threads.reload;
+  useEffect(() => {
+    const timer = setInterval(() => void reload(), UNREAD_POLL_MS);
+    return () => clearInterval(timer);
+  }, [reload]);
+  return countUnreadMessages(threads.data ?? []);
+}
+
+/**
+ * The envelope's unread count: a bright red bubble with bold white numerals ringed in navy (about 5.9:1), matching the
+ * alert bell. Hidden at zero; 99+ beyond 99.
+ */
+function UnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="unread-messages-badge"
+      className="absolute -right-1.5 -top-1.5 min-w-5 rounded-full border-2 border-navy bg-brand-red px-1 text-center text-xs font-bold leading-4 text-white"
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
 /** The links of the header's Messaging menu (Sprint 5Z-10.8), open to every signed-in member. */
 const MESSAGING_MENU = ['messages', 'distribution-lists'] as const;
 
@@ -57,6 +92,7 @@ function MessagingMenu({ pathname }: { pathname: string }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const current = MESSAGING_MENU.some((item) => NAV[item].href === pathname);
+  const unread = useUnreadMessages(pathname);
   useEffect(() => setOpen(false), [pathname]);
   useEffect(() => {
     if (!open) return;
@@ -79,13 +115,17 @@ function MessagingMenu({ pathname }: { pathname: string }) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls="messaging-menu"
+        aria-label={unread > 0 ? `Messaging: ${unread} unread` : 'Messaging'}
         onClick={() => setOpen((o) => !o)}
         className={cx(
           'flex items-center gap-1.5 rounded px-2 py-2 text-sm font-bold text-white hover:bg-white/10',
           current && 'bg-white/10 underline decoration-gold decoration-2 underline-offset-4',
         )}
       >
-        <EnvelopeIcon />
+        <span className="relative inline-flex">
+          <EnvelopeIcon />
+          <UnreadBadge count={unread} />
+        </span>
         Messaging
         <span aria-hidden="true" className="text-gold">
           {open ? '▴' : '▾'}

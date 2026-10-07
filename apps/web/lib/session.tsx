@@ -23,6 +23,10 @@ interface SessionValue {
   alertsVersion: number;
   /** Call after sending or reading alerts, so the bell's unread count catches up at once. */
   alertsChanged(): void;
+  /** Bumped by messagesChanged(), so the header envelope reloads its unread count (Phase 4.5). */
+  messagesVersion: number;
+  /** Call after sending or reading messages, so the envelope's unread badge catches up at once. */
+  messagesChanged(): void;
   /**
    * The signed-in member's council feature flags (Sprint 6A); every module reads as on until the council has loaded.
    * `featuresLoaded` turns true once it has, so a page of a switched-off module never flashes into view.
@@ -67,6 +71,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const profileChanged = useCallback(() => setProfileVersion((v) => v + 1), []);
   const [alertsVersion, setAlertsVersion] = useState(0);
   const alertsChanged = useCallback(() => setAlertsVersion((v) => v + 1), []);
+  const [messagesVersion, setMessagesVersion] = useState(0);
+  const messagesChanged = useCallback(() => setMessagesVersion((v) => v + 1), []);
   const [featuresVersion, setFeaturesVersion] = useState(0);
   const featuresChanged = useCallback(() => setFeaturesVersion((v) => v + 1), []);
   const [loadedFeatures, setLoadedFeatures] = useState<{ councilId: number; flags: FeatureFlags } | null>(null);
@@ -97,11 +103,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       profileChanged,
       alertsVersion,
       alertsChanged,
+      messagesVersion,
+      messagesChanged,
       features,
       featuresLoaded,
       featuresChanged,
     }),
-    [user, ready, startupError, signIn, signOut, profileVersion, profileChanged, alertsVersion, alertsChanged, features, featuresLoaded, featuresChanged],
+    [user, ready, startupError, signIn, signOut, profileVersion, profileChanged, alertsVersion, alertsChanged, messagesVersion, messagesChanged, features, featuresLoaded, featuresChanged],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

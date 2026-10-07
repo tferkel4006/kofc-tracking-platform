@@ -199,6 +199,11 @@ export interface Shift {
   EventID: number;
   MinNumberVolunteers: number;
   NumberVolunteersSignedUp: number;
+  /**
+   * BIT (Phase 4.5): an All-Hands shift has no volunteer cap. MinNumberVolunteers is kept but never shown or used, any
+   * number of members may sign up, and the shift never reads as full or short of volunteers (isAllHandsShift). Default 0.
+   */
+  IsAllHands?: number;
 }
 
 export interface EventSignup {

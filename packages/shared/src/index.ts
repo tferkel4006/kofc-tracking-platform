@@ -34,3 +34,4 @@ export * from './bulletins';
 export * from './marketing';
 export * from './workflow';
 export * from './email-gateway';
+export * from './liturgical';

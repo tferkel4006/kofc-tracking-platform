@@ -253,6 +253,7 @@ Granular operational work blocks under an overarching parent event.
 •	EventID (INTEGER, NOT NULL) — Foreign Key references Event(id).
 •	MinNumberVolunteers (INTEGER, NOT NULL) — Required recruitment target ceiling.
 •	NumberVolunteersSignedUp (INTEGER, NOT NULL) — Running aggregate enrollment counter.
+•	IsAllHands (BIT, NOT NULL, DEFAULT 0) — Phase 4.5 All-Hands shift (schema version 38): at 1 the shift has no volunteer cap. Any number of members may sign up, the apps hide MinNumberVolunteers and never show the shift as full or short of volunteers (isAllHandsShift), and lowering MinNumberVolunteers below the signups is allowed. Written by events.createShift and updateShift; an event copy carries it. Appended by ALTER TABLE.
 [EventSignup]
 Tracks shift schedules, user availability, and attendance logs.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.

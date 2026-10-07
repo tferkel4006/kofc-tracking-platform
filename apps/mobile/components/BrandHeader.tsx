@@ -3,6 +3,7 @@ import { Image, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { councilLabel, type Council } from '@kofc/shared';
+import { PrayingHandsButton } from '@/components/FaithCenter';
 import { AppText } from '@/components/ui';
 import { useApp } from '@/lib/app-context';
 import { useTheme } from '@/lib/layout-mode';
@@ -22,7 +23,10 @@ export function BrandMark({ size = 40 }: { size?: number }) {
   );
 }
 
-/** A line-drawn envelope (outline plus flap) in white, with the unread count as a gold badge. */
+/**
+ * A line-drawn envelope (outline plus flap) in white, with the unread count (countUnreadMessages) as a bright red
+ * bubble with bold white numerals in a white ring (Phase 4.5; gold until then), matching the portal's envelope.
+ */
 function EnvelopeIcon({ unread }: { unread: number }) {
   const { color, large } = useTheme();
   // Large text layout: drawn twice the size, white lines on black, with a gold-ringed black badge.
@@ -54,14 +58,14 @@ function EnvelopeIcon({ unread }: { unread: number }) {
             height: large ? 34 : 18,
             borderRadius: large ? 17 : 9,
             paddingHorizontal: 4,
-            backgroundColor: large ? color.navy : color.gold,
-            borderWidth: large ? 3 : 0,
-            borderColor: color.gold,
+            backgroundColor: large ? color.navy : color.red,
+            borderWidth: large ? 3 : 2,
+            borderColor: large ? color.gold : color.white,
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <AppText variant="small" tone="navy" style={{ fontSize: 11, lineHeight: 14, fontWeight: '700' }}>
+          <AppText variant="small" tone={large ? 'navy' : 'white'} style={{ fontSize: 11, lineHeight: 14, fontWeight: '700' }}>
             {unread > 99 ? '99+' : unread}
           </AppText>
         </View>
@@ -72,7 +76,8 @@ function EnvelopeIcon({ unread }: { unread: number }) {
 
 /**
  * Navy app bar: logo, then the calling council's number and name directly under the title, then the Messaging
- * envelope (Messages left the bottom tabs in Sprint 5X-Mobile), then the member.
+ * envelope (Messages left the bottom tabs in Sprint 5X-Mobile), then the member. Phase 4.5: praying hands just left of
+ * the envelope open the Daily Bible Quote (FaithCenter.tsx).
  * Sprint 6C: the member's name opens Settings (Large Text Layout Mode). In the large text layout the bar is black with
  * a thick gold edge, the envelope and a Settings button are touchTarget-tall tap areas, and Sign out moves to Settings.
  */
@@ -130,6 +135,7 @@ export function BrandHeader() {
           </AppText>
         </View>
       )}
+      {user ? <PrayingHandsButton /> : null}
       {user ? (
         <Pressable
           accessibilityRole="button"

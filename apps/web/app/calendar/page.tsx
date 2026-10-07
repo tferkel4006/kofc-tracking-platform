@@ -6,28 +6,41 @@
 //   gold border         - a shift still short of volunteers
 // Choosing a day slides open a details card with that day's meetings (and their Drive files), the open shifts
 // with an instant "Sign up", and each event's turnout register.
+// Phase 4.5: a Show filter (All, Events, Meetings, Birthdays), the council's Active members' birthdays as Birthday Flare
+// chips (month and day only, never the year), and under All the U.S. federal holidays and the Church's feasts
+// (observancesBetween), each Holy Day of Obligation with the crimson '[ 🟥 HOLY DAY OF OBLIGATION ]' sub-badge.
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import {
+  birthdaysBetween,
+  CALENDAR_FILTERS,
   calendarDays,
+  calendarLayers,
   calendarTone,
   describeError,
   entriesOn,
   formatTimeRange,
+  HOLY_DAY_BADGE,
+  isAllHandsShift,
   isShiftUrgent,
+  observancesBetween,
   shiftNeedsVolunteers,
   shiftStart,
   stepCalendar,
   toIsoDate,
   URGENT_WITHIN_HOURS,
+  volunteerCountLabel,
+  type BirthdayEntry,
   type CalendarEntry,
+  type CalendarFilter,
   type CalendarTone,
   type CalendarView,
+  type Observance,
   type ShiftFeedItem,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { DriveButtons } from '@/components/DriveLinks';
-import { Button, cx, Empty, NewMemberBadge, Notice, PageTitle, Pill, Tabs } from '@/components/ui';
+import { Button, cx, Empty, Field, NewMemberBadge, Notice, PageTitle, Pill, Select, Tabs } from '@/components/ui';
 import { formatPersonName } from '@/lib/format';
 import { useFeatureFlags, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -40,6 +53,14 @@ const VIEWS = [
 ] as const satisfies readonly { id: CalendarView; label: string }[];
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const OBSERVANCE_LABEL: Record<Observance['kind'], string> = {
+  holiday: 'National holiday',
+  solemnity: 'Solemnity',
+  feast: 'Feast',
+  memorial: 'Memorial',
+  observance: 'Liturgical day',
+};
 
 const TONE_CLASS: Record<CalendarTone, string> = {
   meeting: 'border-navy bg-navy text-white',
@@ -94,6 +115,33 @@ function EntryBadge({ entry, tone }: { entry: CalendarEntry; tone: CalendarTone 
   );
 }
 
+/** The crimson sub-badge line under a Holy Day of Obligation (Phase 4.5). */
+function HolyDayBadge() {
+  return <span className="block rounded-sm bg-crimson px-1 py-0.5 text-center text-[0.65rem] font-bold leading-tight text-white">{HOLY_DAY_BADGE}</span>;
+}
+
+/** A holiday or feast line in a day cell: muted for a national holiday, navy serif for a liturgical day. */
+function ObservanceLine({ observance }: { observance: Observance }) {
+  return (
+    <span className="flex flex-col gap-0.5" title={observance.note ?? observance.title}>
+      <span className={cx('block truncate text-left text-xs', observance.kind === 'holiday' ? 'text-muted' : 'font-serif font-bold italic text-navy')}>
+        {observance.kind === 'holiday' ? '★ ' : '✝ '}
+        {observance.title}
+      </span>
+      {observance.holyDayOfObligation ? <HolyDayBadge /> : null}
+    </span>
+  );
+}
+
+/** The Birthday Flare: a member's birthday as a solid rose chip with white text. */
+function BirthdayFlare({ birthday }: { birthday: BirthdayEntry }) {
+  return (
+    <span className="block truncate rounded border-2 border-birthday bg-birthday px-1.5 py-0.5 text-left text-xs font-bold text-white" title={`Birthday: ${birthday.name}`}>
+      🎂 {birthday.name}
+    </span>
+  );
+}
+
 function Legend() {
   return (
     <ul aria-label="Calendar colour key" className="flex flex-wrap gap-3 text-xs">
@@ -103,6 +151,14 @@ function Legend() {
           {TONE_LABEL[tone]}
         </li>
       ))}
+      <li className="flex items-center gap-1.5">
+        <span aria-hidden="true" className="inline-block h-3 w-5 rounded-sm border-2 border-birthday bg-birthday" />
+        Birthday
+      </li>
+      <li className="flex items-center gap-1.5">
+        <span aria-hidden="true" className="inline-block h-3 w-5 rounded-sm bg-crimson" />
+        Holy Day of Obligation
+      </li>
     </ul>
   );
 }
@@ -112,7 +168,12 @@ function Legend() {
 interface DayModel {
   date: string;
   items: { entry: CalendarEntry; tone: CalendarTone }[];
+  /** Phase 4.5: federal holidays and feasts (the All filter only) and Active members' birthdays. */
+  observances: Observance[];
+  birthdays: BirthdayEntry[];
 }
+
+const dayCount = (day: DayModel) => day.items.length + day.observances.length + day.birthdays.length;
 
 function DayCell({
   day,
@@ -130,13 +191,13 @@ function DayCell({
   onSelect: () => void;
 }) {
   const shown = day.items.slice(0, limit);
-  const more = day.items.length - shown.length;
+  const hidden = day.items.length - shown.length + Math.max(0, day.birthdays.length - limit);
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      aria-label={`${longDay(day.date)}: ${day.items.length === 0 ? 'nothing scheduled' : `${day.items.length} item${day.items.length === 1 ? '' : 's'}`}`}
+      aria-label={`${longDay(day.date)}: ${dayCount(day) === 0 ? 'nothing scheduled' : `${dayCount(day)} item${dayCount(day) === 1 ? '' : 's'}`}${day.observances.some((o) => o.holyDayOfObligation) ? ', Holy Day of Obligation' : ''}`}
       className={cx(
         'flex h-full min-h-28 w-full flex-col gap-1 border-t-4 bg-white p-1.5 text-left align-top hover:bg-white',
         isToday ? 'border-t-gold' : 'border-t-transparent',
@@ -147,10 +208,16 @@ function DayCell({
         {Number(day.date.slice(8))}
         {isToday ? <span className="ml-1 text-xs font-normal">today</span> : null}
       </span>
+      {day.observances.map((o) => (
+        <ObservanceLine key={o.title} observance={o} />
+      ))}
+      {day.birthdays.slice(0, limit).map((b) => (
+        <BirthdayFlare key={`b-${b.memberId}`} birthday={b} />
+      ))}
       {shown.map(({ entry, tone }) => (
         <EntryBadge key={`${entry.kind}-${entry.id}`} entry={entry} tone={tone} />
       ))}
-      {more > 0 ? <span className="text-xs font-bold text-muted">+{more} more</span> : null}
+      {hidden > 0 ? <span className="text-xs font-bold text-muted">+{hidden} more</span> : null}
     </button>
   );
 }
@@ -162,6 +229,7 @@ function ShiftRow({ item, now, onSignUp, busy }: { item: ShiftFeedItem; now: Dat
   const started = shiftStart(shift).getTime() <= now.getTime();
   const urgent = isShiftUrgent(shift, now);
   const needs = shiftNeedsVolunteers(shift);
+  const allHands = isAllHandsShift(shift);
   return (
     <li className={cx('flex flex-col gap-1 rounded border-2 p-2', urgent ? 'border-brand-red' : needs && !started ? 'border-gold' : 'border-line')}>
       <div className="flex items-start justify-between gap-2">
@@ -171,13 +239,21 @@ function ShiftRow({ item, now, onSignUp, busy }: { item: ShiftFeedItem; now: Dat
         </div>
         <span className="flex flex-wrap justify-end gap-1">
           {urgent ? <Pill tone="red">Within {URGENT_WITHIN_HOURS} h</Pill> : null}
-          {isSignedUp ? <Pill tone="navy">Signed up</Pill> : needs ? <Pill tone="gold">Needs {shift.MinNumberVolunteers - shift.NumberVolunteersSignedUp}</Pill> : <Pill tone="outline">Full</Pill>}
+          {isSignedUp ? (
+            <Pill tone="navy">Signed up</Pill>
+          ) : allHands ? (
+            <Pill tone="outline">All hands</Pill>
+          ) : needs ? (
+            <Pill tone="gold">Needs {shift.MinNumberVolunteers - shift.NumberVolunteersSignedUp}</Pill>
+          ) : (
+            <Pill tone="outline">Full</Pill>
+          )}
         </span>
       </div>
       <p className="text-xs">
-        {shift.NumberVolunteersSignedUp} of {shift.MinNumberVolunteers} volunteers signed up
+        {volunteerCountLabel(shift)}
       </p>
-      {!isSignedUp && needs && !started ? (
+      {!isSignedUp && (needs || allHands) && !started ? (
         <div>
           <Button size="sm" onClick={onSignUp} disabled={busy}>
             {busy ? 'Signing up…' : 'Sign up'}
@@ -191,6 +267,8 @@ function ShiftRow({ item, now, onSignUp, busy }: { item: ShiftFeedItem; now: Dat
 function DayDetails({
   date,
   entries,
+  observances,
+  birthdays,
   feed,
   now,
   onClose,
@@ -198,6 +276,8 @@ function DayDetails({
 }: {
   date: string;
   entries: CalendarEntry[];
+  observances: Observance[];
+  birthdays: BirthdayEntry[];
   feed: ShiftFeedItem[];
   now: Date;
   onClose: () => void;
@@ -243,7 +323,27 @@ function DayDetails({
             {message.text}
           </Notice>
         ) : null}
-        {entries.length === 0 ? <Empty>Nothing is scheduled on this day.</Empty> : null}
+        {entries.length === 0 && observances.length === 0 && birthdays.length === 0 ? <Empty>Nothing is scheduled on this day.</Empty> : null}
+
+        {observances.map((o) => (
+          <section key={`o-${o.title}`} className={cx('flex flex-col gap-1 rounded border-2 p-3', o.holyDayOfObligation ? 'border-crimson' : 'border-line')}>
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="font-serif text-base font-bold">{o.title}</h3>
+              <Pill tone="outline">{OBSERVANCE_LABEL[o.kind]}</Pill>
+            </div>
+            {o.holyDayOfObligation ? <HolyDayBadge /> : null}
+            {o.note ? <p className="text-xs text-muted">{o.note}</p> : null}
+          </section>
+        ))}
+
+        {birthdays.length > 0 ? (
+          <section className="flex flex-col gap-1.5 rounded border-2 border-birthday p-3">
+            <h3 className="font-serif text-base font-bold">Birthdays</h3>
+            {birthdays.map((b) => (
+              <BirthdayFlare key={`b-${b.memberId}`} birthday={b} />
+            ))}
+          </section>
+        ) : null}
 
         {meetings.map((m) => (
           <section key={`m-${m.id}`} className="flex flex-col gap-2 rounded border-2 border-navy p-3">
@@ -335,21 +435,28 @@ function MasterCalendar() {
   const [view, setView] = useState<CalendarView>('month');
   const [anchor, setAnchor] = useState(today);
   const [selected, setSelected] = useState<string | null>(null);
+  const [filter, setFilter] = useState<CalendarFilter>('all');
+  const layers = calendarLayers(filter);
 
   const days = useMemo(() => calendarDays(view, anchor), [view, anchor]);
   const from = days[0];
   const to = days[days.length - 1];
   const data = useLoad(async () => {
-    const [entries, feed] = await Promise.all([
+    const [entries, feed, members] = await Promise.all([
       db.events.listCalendarRange(scope.councilId, from, to),
       db.events.listShiftFeed({ memberId: user.memberId, councilIds: [scope.councilId], fromDate: from, toDate: to }),
+      db.members.listByCouncil(scope.councilId, { activeOnly: true }),
     ]);
-    return { entries, feed };
+    return { entries, feed, birthdays: birthdaysBetween(members, from, to) };
   }, [scope.councilId, from, to, user.memberId]);
 
   const now = new Date();
-  const entries = data.data?.entries ?? [];
+  const entries = (data.data?.entries ?? []).filter((e) => (e.kind === 'event' ? layers.events : layers.meetings));
   const feed = data.data?.feed ?? [];
+  const birthdays = layers.birthdays ? (data.data?.birthdays ?? []) : [];
+  const observances = layers.observances ? observancesBetween(from, to) : [];
+  const observancesOn = (date: string) => observances.filter((o) => o.date === date);
+  const birthdaysOn = (date: string) => birthdays.filter((b) => b.date === date);
   const byEventDay = shiftsByEventDay(feed);
   const model: DayModel[] = days.map((date) => ({
     date,
@@ -357,6 +464,8 @@ function MasterCalendar() {
       entry,
       tone: calendarTone(entry, entry.kind === 'event' ? (byEventDay.get(`${entry.id}|${date}`) ?? []).map((f) => f.shift) : [], now),
     })),
+    observances: observancesOn(date),
+    birthdays: birthdaysOn(date),
   }));
   const month = anchor.slice(0, 7);
   const openDay = view === 'day' ? anchor : selected;
@@ -407,7 +516,18 @@ function MasterCalendar() {
             label="Calendar view"
             idPrefix="calendar"
           />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-end gap-2">
+            <Field label="Show" className="w-40">
+              {(id) => (
+                <Select id={id} value={filter} onChange={(e) => setFilter(e.target.value as CalendarFilter)}>
+                  {CALENDAR_FILTERS.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
             <Button variant="secondary" size="sm" onClick={() => go(stepCalendar(view, anchor, -1))} aria-label={`Previous ${view}`}>
               ‹ Prev
             </Button>
@@ -430,7 +550,15 @@ function MasterCalendar() {
         <div id="calendar-panel" role="tabpanel" aria-labelledby={`calendar-tab-${view}`} className={cx('grid items-start gap-4', openDay ? 'xl:grid-cols-[minmax(0,1fr)_26rem]' : '')}>
           {view === 'day' ? (
             <div className="flex flex-col gap-2">
-              {model[0].items.length === 0 ? (
+              {model[0].observances.map((o) => (
+                <div key={`o-${o.title}`} className={cx('flex flex-col gap-1 rounded border-2 px-3 py-2', o.holyDayOfObligation ? 'border-crimson' : 'border-line')}>
+                  <ObservanceLine observance={o} />
+                </div>
+              ))}
+              {model[0].birthdays.map((b) => (
+                <BirthdayFlare key={`b-${b.memberId}`} birthday={b} />
+              ))}
+              {dayCount(model[0]) === 0 ? (
                 <Empty>{data.loading ? 'Loading the day…' : 'Nothing is scheduled on this day.'}</Empty>
               ) : (
                 model[0].items.map(({ entry, tone }) => (
@@ -449,6 +577,8 @@ function MasterCalendar() {
               key={openDay}
               date={openDay}
               entries={entriesOn(entries, openDay)}
+              observances={observancesOn(openDay)}
+              birthdays={birthdaysOn(openDay)}
               feed={feed}
               now={now}
               onClose={() => (view === 'day' ? setView('month') : setSelected(null))}

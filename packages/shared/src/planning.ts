@@ -42,6 +42,7 @@ export const SHIFT_COLUMNS = [
   'StartTime',
   'EndTime',
   'MinNumberVolunteers',
+  'IsAllHands',
 ] as const satisfies readonly (keyof ShiftChanges)[];
 
 const MS_PER_DAY = 86_400_000;
@@ -115,10 +116,10 @@ export function cleanEventFields(input: EventChanges): EventChanges {
 }
 
 /**
- * Event.IsAnnual (Sprint 5Y) and Event.IsMultiDay (Sprint 5Y-6), both BIT NOT NULL: 0, 1, false or true, stored as 0
- * or 1. They cannot be cleared.
+ * Event.IsAnnual (Sprint 5Y), Event.IsMultiDay (Sprint 5Y-6) and Shift.IsAllHands (Phase 4.5), all BIT NOT NULL: 0, 1,
+ * false or true, stored as 0 or 1. They cannot be cleared.
  */
-function bitFlag(value: unknown, field: 'IsAnnual' | 'IsMultiDay'): number {
+function bitFlag(value: unknown, field: 'IsAnnual' | 'IsMultiDay' | 'IsAllHands'): number {
   if (value === 0 || value === 1) return value;
   if (typeof value === 'boolean') return value ? 1 : 0;
   throw new BusinessRuleError('INVALID_INPUT', `${field} must be 0, 1, true or false; received ${JSON.stringify(value)}.`, { field });
@@ -149,6 +150,7 @@ export function cleanShiftFields(input: ShiftChanges & { EventID?: number }): Sh
   if (input.MinNumberVolunteers !== undefined) {
     out.MinNumberVolunteers = assertInteger(input.MinNumberVolunteers, 'Volunteers needed', 1);
   }
+  if (input.IsAllHands !== undefined) out.IsAllHands = bitFlag(input.IsAllHands, 'IsAllHands');
   return out;
 }
 
@@ -205,6 +207,7 @@ export function planEventCopy(
       StartTime: s.StartTime,
       EndTime: s.EndTime,
       MinNumberVolunteers: s.MinNumberVolunteers,
+      ...(s.IsAllHands === 1 ? { IsAllHands: 1 } : {}),
     })),
   };
 }

@@ -82,24 +82,35 @@ export const sortCouncils = <T extends Pick<Council, 'CouncilNumber' | 'CouncilN
 
 export type ShiftStatus = 'locked' | 'priority' | 'open';
 
+/** True for an All-Hands shift (Shift.IsAllHands, Phase 4.5): no volunteer cap, so never full or short. */
+export const isAllHandsShift = (shift: Pick<Shift, 'IsAllHands'>): boolean => shift.IsAllHands === 1;
+
+/** The volunteer line of a shift card: "3 of 5 volunteers", or "3 signed up · all hands welcome" with no cap shown. */
+export const volunteerCountLabel = (shift: Pick<Shift, 'MinNumberVolunteers' | 'NumberVolunteersSignedUp' | 'IsAllHands'>): string =>
+  isAllHandsShift(shift)
+    ? `${shift.NumberVolunteersSignedUp} signed up · all hands welcome`
+    : `${shift.NumberVolunteersSignedUp} of ${shift.MinNumberVolunteers} volunteers`;
+
 /**
+ * An All-Hands shift is always 'open' with nothing `remaining` (Phase 4.5). Otherwise
  * 'locked' once NumberVolunteersSignedUp reaches MinNumberVolunteers (nobody else can join);
  * 'priority' when volunteers are still needed and either nobody has signed up or the shift is close;
  * otherwise 'open'. `remaining` is how many more volunteers it needs.
  */
 export function shiftStatus(
-  shift: Pick<Shift, 'ShiftDate' | 'MinNumberVolunteers' | 'NumberVolunteersSignedUp'>,
+  shift: Pick<Shift, 'ShiftDate' | 'MinNumberVolunteers' | 'NumberVolunteersSignedUp' | 'IsAllHands'>,
   today: Date,
 ): { status: ShiftStatus; remaining: number } {
+  if (isAllHandsShift(shift)) return { status: 'open', remaining: 0 };
   const remaining = Math.max(0, shift.MinNumberVolunteers - shift.NumberVolunteersSignedUp);
   if (remaining === 0) return { status: 'locked', remaining };
   const close = daysUntil(shift.ShiftDate, today) <= PRIORITY_WITHIN_DAYS;
   return { status: shift.NumberVolunteersSignedUp === 0 || close ? 'priority' : 'open', remaining };
 }
 
-/** True once NumberVolunteersSignedUp has reached MinNumberVolunteers; further signups are honorary. */
-export const isShiftFull = (shift: Pick<Shift, 'MinNumberVolunteers' | 'NumberVolunteersSignedUp'>): boolean =>
-  shift.NumberVolunteersSignedUp >= shift.MinNumberVolunteers;
+/** True once NumberVolunteersSignedUp has reached MinNumberVolunteers; further signups are honorary. Never for All-Hands. */
+export const isShiftFull = (shift: Pick<Shift, 'MinNumberVolunteers' | 'NumberVolunteersSignedUp' | 'IsAllHands'>): boolean =>
+  !isAllHandsShift(shift) && shift.NumberVolunteersSignedUp >= shift.MinNumberVolunteers;
 
 /**
  * Applies the council dropdown and the "show full shifts" switch. Full shifts the member already
@@ -113,7 +124,7 @@ export function visibleFeed(
   return items.filter((item) => {
     if (filter.hideSignedUp && item.isSignedUp) return false;
     if (filter.councilId !== 'all' && !item.councilIds.includes(filter.councilId)) return false;
-    const full = item.shift.NumberVolunteersSignedUp >= item.shift.MinNumberVolunteers;
+    const full = isShiftFull(item.shift);
     return filter.showLocked || !full || item.isSignedUp;
   });
 }

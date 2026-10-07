@@ -27,6 +27,16 @@ export const BRAND = {
   green: '#17692F',
 } as const;
 
+/**
+ * Phase 4.5 liturgical tokens, outside BRAND because they mark faith-calendar items only, never navigation or status:
+ *   crimson       - the '[ 🟥 HOLY DAY OF OBLIGATION ]' sub-badge; white text on it
+ *   birthdayFlare - a member's birthday on the calendar grid; white text on it
+ */
+export const LITURGICAL_COLORS = {
+  crimson: '#A50021',
+  birthdayFlare: '#AD1457',
+} as const;
+
 /** Body copy, forms, lists, timestamps. */
 export const FONT_BODY = 'Arial, sans-serif';
 /** Major titles only. */

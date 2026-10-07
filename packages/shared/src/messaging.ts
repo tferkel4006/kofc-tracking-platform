@@ -38,6 +38,12 @@ export function participantIds(
   return [...ids].sort((a, b) => a - b);
 }
 
+/**
+ * Unread messages addressed to the member across every thread: the number on the header envelope (web and phone).
+ */
+export const countUnreadMessages = (threads: readonly Pick<ThreadSummary, 'unreadCount'>[]): number =>
+  threads.reduce((sum, t) => sum + t.unreadCount, 0);
+
 /** The member's threads, most recent activity first. Threads they take no part in are dropped. */
 export function buildThreadSummaries(memberId: number, rows: MessagingRows): ThreadSummary[] {
   const summaries: { summary: ThreadSummary; activity: string }[] = [];

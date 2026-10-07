@@ -10,6 +10,7 @@ import {
   attachmentKind,
   canAdministerCouncil,
   canDispatchCouncilAlerts,
+  countUnreadMessages,
   describeError,
   flattenReplies,
   formatTimestamp,
@@ -22,7 +23,7 @@ import { AlertDispatchDrawer } from '@/components/AlertDispatchDrawer';
 import { RequireArea } from '@/components/CouncilScope';
 import { SkillFilterDrawer } from '@/components/SkillFilterDrawer';
 import { Button, cx, Empty, Field, Notice, PageTitle, Panel, Pill, Textarea } from '@/components/ui';
-import { useUser } from '@/lib/session';
+import { useSession, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
@@ -218,7 +219,12 @@ function Hub() {
   const canDispatch = canDispatchCouncilAlerts(user, user.councilId);
   const [dispatching, setDispatching] = useState(false);
   const reloadThreads = threads.reload;
-  const unread = (threads.data ?? []).reduce((n, t) => n + t.unreadCount, 0);
+  const unread = countUnreadMessages(threads.data ?? []);
+  // Phase 4.5: every reload of the conversations (a message read, sent or replied to) refreshes the header envelope's badge.
+  const { messagesChanged } = useSession();
+  useEffect(() => {
+    if (threads.data) messagesChanged();
+  }, [threads.data, messagesChanged]);
 
   useEffect(() => {
     if (openId === null && threads.data && threads.data.length > 0) setOpenId(threads.data[0].thread.id);

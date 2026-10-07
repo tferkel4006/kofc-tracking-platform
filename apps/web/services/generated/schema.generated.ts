@@ -1394,6 +1394,16 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": true,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "IsAllHands",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
       }
     ],
     "foreignKeys": [

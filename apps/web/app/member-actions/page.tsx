@@ -21,6 +21,8 @@ import {
   formatShiftWhen,
   HOUR_OPTIONS,
   hoursToPicker,
+  isAllHandsShift,
+  isShiftFull,
   isUrgent,
   MINUTE_OPTIONS,
   padMinutes,
@@ -32,6 +34,7 @@ import {
   toIsoDate,
   visibleFeed,
   type Council,
+  type Shift,
 } from '@kofc/shared';
 import { Button, cx, Empty, Field, Input, NewMemberBadge, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td } from '@/components/ui';
 import { formatFullDate, formatPersonName, formatPhone } from '@/lib/format';
@@ -97,7 +100,8 @@ function CouncilFilter({ councils, value, onChange }: { councils: Council[]; val
   );
 }
 
-const volunteers = (s: { NumberVolunteersSignedUp: number; MinNumberVolunteers: number }) => `${s.NumberVolunteersSignedUp} of ${s.MinNumberVolunteers}`;
+const volunteers = (s: Pick<Shift, 'NumberVolunteersSignedUp' | 'MinNumberVolunteers' | 'IsAllHands'>) =>
+  isAllHandsShift(s) ? `${s.NumberVolunteersSignedUp} · all hands` : `${s.NumberVolunteersSignedUp} of ${s.MinNumberVolunteers}`;
 
 // ---- my active shifts ------------------------------------------------------------
 
@@ -146,10 +150,8 @@ function RegistrationDesk() {
     [user.memberId, councilIds.join(',')],
   );
   const today = new Date();
-  // Only shifts with room: full shifts are locked and cannot take another registration.
-  const open = visibleFeed(feed.data ?? [], { councilId: councilId ?? 'all', showLocked: false }).filter(
-    (item) => item.shift.NumberVolunteersSignedUp < item.shift.MinNumberVolunteers,
-  );
+  // Only shifts with room: full shifts are locked and cannot take another registration. All-Hands shifts always have room.
+  const open = visibleFeed(feed.data ?? [], { councilId: councilId ?? 'all', showLocked: false }).filter((item) => !isShiftFull(item.shift));
   const councilName = new Map((councils.data ?? []).map((c) => [c.id, String(c.CouncilNumber)]));
 
   const register = (shiftId: number, label: string) =>
@@ -186,7 +188,15 @@ function RegistrationDesk() {
                   </Td>
                   <Td>{linked.map((id) => councilName.get(id) ?? id).join(', ')}</Td>
                   <Td>{volunteers(shift)}</Td>
-                  <Td>{status === 'priority' ? <Pill tone="gold">{remaining} needed · priority</Pill> : `${remaining} needed`}</Td>
+                  <Td>
+                    {isAllHandsShift(shift) ? (
+                      <Pill tone="outline">All hands · no cap</Pill>
+                    ) : status === 'priority' ? (
+                      <Pill tone="gold">{remaining} needed · priority</Pill>
+                    ) : (
+                      `${remaining} needed`
+                    )}
+                  </Td>
                   <Td>
                     {isSignedUp ? (
                       <Pill tone="navy">Registered</Pill>

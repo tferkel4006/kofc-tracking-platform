@@ -2,12 +2,14 @@
 // narrowed it from six months; signupWindow), in two tabs styled like the Meetings page:
 //   Shifts Opening (default) - shifts still short of MinNumberVolunteers, the ones close or empty in gold;
 //   Full Up                  - shifts that have reached their minimum, still open to honorary signups.
+// Phase 4.5: an All-Hands shift (Shift.IsAllHands) has no cap, so it always sits under Shifts Opening with an
+// ALL HANDS tag, no volunteer target and a plain Sign up, however many members have joined.
 // Shifts I already hold are left out; they live under "My shifts" on Home.
 import { useState } from 'react';
 import { FlatList, Pressable, RefreshControl, View } from 'react-native';
-import { councilLabel, isShiftFull, shiftStatus, signupWindow, sortCouncils, visibleFeed, type ShiftFeedItem } from '@kofc/shared';
+import { councilLabel, isAllHandsShift, isShiftFull, shiftStatus, signupWindow, sortCouncils, visibleFeed, type ShiftFeedItem } from '@kofc/shared';
 import { Dropdown, type DropdownOption } from '@/components/Dropdown';
-import { FullTag, PriorityTag, ShiftCard, type ShiftLook } from '@/components/ShiftCard';
+import { AllHandsTag, FullTag, PriorityTag, ShiftCard, type ShiftLook } from '@/components/ShiftCard';
 import { AppText, choiceStyle, Button, EmptyState, Loading, Notice } from '@/components/ui';
 import { FeatureGate } from '@/components/FeatureGate';
 import { useUser } from '@/lib/app-context';
@@ -82,6 +84,7 @@ function ShiftsScreenBody() {
         councils={labels}
         badges={
           <>
+            {isAllHandsShift(item.shift) ? <AllHandsTag /> : null}
             {status === 'priority' ? <PriorityTag remaining={remaining} /> : null}
             {status === 'locked' ? <FullTag /> : null}
           </>

@@ -2072,3 +2072,14 @@ ALTER TABLE [Council] ADD [SmtpUsername] VARCHAR(255) NULL;
 GO
 ALTER TABLE [Council] ADD [EmailPasswordEncrypted] TEXT NULL;
 GO
+
+-- =========================================================================
+-- Phase 4.5: ALL-HANDS VOLUNTEER SHIFTS (schema version 38)
+-- Shift.IsAllHands marks a shift with no volunteer cap: any number of members may sign up, and the apps neither show
+-- MinNumberVolunteers nor treat the shift as full or short of volunteers (isAllHandsShift). MinNumberVolunteers stays
+-- NOT NULL and is simply ignored while the flag is set, and lowering it below the signups is allowed. Written by
+-- events.createShift and updateShift (SHIFT_COLUMNS) and carried by an event copy. Every existing shift keeps its cap
+-- (DEFAULT 0).
+-- =========================================================================
+ALTER TABLE [Shift] ADD [IsAllHands] BIT NOT NULL DEFAULT 0;
+GO

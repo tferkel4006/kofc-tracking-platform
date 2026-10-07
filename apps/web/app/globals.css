@@ -27,6 +27,9 @@
   --color-green: #17692F;
   --color-black: #000000;
   --color-hc-gold: #FFC72C;
+  /* Phase 4.5 liturgical tokens (LITURGICAL_COLORS): Holy Day of Obligation crimson and the Birthday Flare. */
+  --color-crimson: #A50021;
+  --color-birthday: #AD1457;
 
   --font-sans: Arial, sans-serif;
   --font-serif: Georgia, "Times New Roman", serif;

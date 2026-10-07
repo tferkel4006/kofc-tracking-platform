@@ -8,6 +8,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import {
   ALL_FEATURES_ON,
   councilFeatureFlags,
+  countUnreadMessages,
   prefersLargeText,
   startNotificationScheduler,
   type FeatureFlags,
@@ -96,7 +97,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (memberId === undefined) return setUnread(0);
     try {
       const threads = await db.messages.listThreads(memberId);
-      setUnread(threads.reduce((sum, t) => sum + t.unreadCount, 0));
+      setUnread(countUnreadMessages(threads));
     } catch {
       // the badge is decoration; a failed refresh keeps the last count
     }

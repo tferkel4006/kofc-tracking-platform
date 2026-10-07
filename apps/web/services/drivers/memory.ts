@@ -2420,7 +2420,9 @@ export class MemoryDataService implements DataService {
       const s = await this.ready();
       return s.transaction(() => {
         const row = this.requireShift(s, id);
-        if (clean.MinNumberVolunteers !== undefined && clean.MinNumberVolunteers < (row.NumberVolunteersSignedUp as number)) {
+        // Phase 4.5: an All-Hands shift (as it stands or as changed) has no cap, so its target never blocks a change.
+        const allHands = (clean.IsAllHands ?? row.IsAllHands) === 1;
+        if (!allHands && clean.MinNumberVolunteers !== undefined && clean.MinNumberVolunteers < (row.NumberVolunteersSignedUp as number)) {
           throw new BusinessRuleError(
             'INVALID_INPUT',
             `Shift "${row.ShiftName}" already has ${row.NumberVolunteersSignedUp} volunteers signed up, so the volunteer target cannot be lowered to ${clean.MinNumberVolunteers}.`,
@@ -2514,6 +2516,7 @@ export class MemoryDataService implements DataService {
       EventID: eventId,
       MinNumberVolunteers: shift.MinNumberVolunteers,
       NumberVolunteersSignedUp: 0,
+      IsAllHands: shift.IsAllHands ?? 0,
     });
   }
 
