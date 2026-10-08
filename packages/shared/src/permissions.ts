@@ -285,7 +285,7 @@ export const canOpenExpenseAuthorizeDesk = (u: Actor, councilId: number): boolea
 export type ExpenseSignatureBlock = 'seat' | 'own-report' | 'collusion';
 
 /**
- * The '📜 Issue Written Order' control on one sheet, mirroring assertMayIssueExpenseOrder then assertNotSelfApproval
+ * The '📜 Approve Expense' control on one sheet, mirroring assertMayIssueExpenseOrder then assertNotSelfApproval
  * (activity status is checked there): the council's Financial Secretary or any Super Admin, never on their own sheet.
  */
 export function expenseOrderBlock(u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID'>): ExpenseSignatureBlock | null {
@@ -298,7 +298,7 @@ export const canIssueExpenseOrder = (u: Actor, report: Pick<ExpenseReport, 'Coun
   expenseOrderBlock(u, report) === null;
 
 /**
- * The '✍️ Counter-Sign Voucher' control on one sheet, mirroring assertMayAuthorizeExpenseOrder, assertNotSelfApproval and
+ * The '✍️ Countersign Expense' control on one sheet, mirroring assertMayAuthorizeExpenseOrder, assertNotSelfApproval and
  * assertDistinctExpenseSigners: the council's Grand Knight or any Super Admin, never on their own sheet, and never by
  * the officer who issued its written order ('collusion', the Collusion Guard).
  */
@@ -570,15 +570,12 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
 ];
 
 /**
- * The sign-off and meeting desks (Sprint 5Z-10): every member sees them listed, the ones they may not open with a lock
- * badge, so members know which desks exist and who holds them. Every other link shows only to those who may open it.
+ * One sidebar entry: a link the viewer may open. Since the Sprint 6G Extension no entry is drawn locked: the sign-off
+ * and meeting desks that Sprint 5Z-10 listed for every member with a lock badge now show, like every other link, only
+ * to those who may open them.
  */
-export const PORTAL_LOCKABLE_DESKS: readonly PortalNavItem[] = ['meetings/live', 'meetings/cadence', 'expenses/audit', 'expenses/authorize', 'charities/vetting'];
-
-/** One sidebar entry (Sprint 5Z-10): the link, and whether the viewer may open it. */
 export interface PortalNavEntry {
   item: PortalNavItem;
-  locked: boolean;
 }
 
 export interface PortalSidebarGroup extends Omit<PortalNavGroup, 'items'> {
@@ -586,20 +583,15 @@ export interface PortalSidebarGroup extends Omit<PortalNavGroup, 'items'> {
 }
 
 /**
- * The sidebar for `u` as the portal draws it: the links portalAreas allows, plus every lockable desk the viewer may not
- * open, with `locked` set. A pillar with no entries is dropped.
+ * The sidebar for `u` as the portal draws it: only the links portalAreas allows (which already leaves out modules the
+ * council's feature flags switch off, Sprint 6A, and fraternal areas of a white-label tenant). A link the viewer may
+ * not open is removed, never shown locked or greyed out (Sprint 6G Extension). A pillar with no entries is dropped.
  */
 export function portalSidebar(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, tenant: TenantType = DEFAULT_TENANT_TYPE): PortalSidebarGroup[] {
   const allowed = new Set<string>(portalAreas(u, flags, tenant));
-  // Sprint 6A: a switched-off module is gone, not locked - a lockable desk is hidden too. So is a fraternal area for a
-  // white-label tenant (Sprint 6Z-Dual-Gate-Model).
-  const featured = new Set<string>(withTenantGate(withFeatureFlags(PORTAL_NAV_GROUPS.flatMap((g) => g.items), flags), tenant));
-  const lockable = new Set<string>(PORTAL_LOCKABLE_DESKS);
   return PORTAL_NAV_GROUPS.map(({ items, ...g }) => ({
     ...g,
-    entries: items
-      .filter((item) => featured.has(item) && (lockable.has(item) || allowed.has(item)))
-      .map((item) => ({ item, locked: !allowed.has(item) })),
+    entries: items.filter((item) => allowed.has(item)).map((item) => ({ item })),
   })).filter((g) => g.entries.length > 0);
 }
 

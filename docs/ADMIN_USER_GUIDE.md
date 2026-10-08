@@ -88,8 +88,8 @@ The navy header shows your own council, your name, your member type and your off
 The sidebar has seven pillars. Every pillar is always open. A pillar shows only the links that your role may open.
 A pillar with no allowed links does not show.
 
-Five officer desks show to every member, even without access. A desk without access shows a gold **Locked** badge.
-The five desks are **Live Meeting Console**, **Annual Cadence Manager**, **FS Expense Audit**, **GK Expense Authorize** and **Charity Vetting Queue**.
+A link that your role cannot open does not show. The sidebar never shows a locked or greyed-out link.
+The rule includes the five officer desks: **Live Meeting Console**, **Annual Cadence Manager**, **FS Expense Audit**, **GK Expense Authorize** and **Charity Vetting Queue**.
 
 | Pillar | Links, in sidebar order | Main audience |
 | --- | --- | --- |
@@ -126,7 +126,7 @@ Each council row has five on/off columns. Each column is a module feature flag. 
 The flags follow four rules.
 
 1. A flag that is off hides the module from every member of the council. The rule includes Admins.
-2. A hidden desk does not show a **Locked** badge. The desk is gone from the sidebar.
+2. A hidden desk is gone from the sidebar.
 3. A hidden page refuses a typed web address. The phone sends a member on a hidden screen back to **Home**.
 4. A flag never deletes data. A flag that is switched back on restores the module with all records.
 
@@ -160,7 +160,7 @@ The financial engine and the activity hour log have no flag. Both stay on for ev
 
 ### 4.1 Run a live meeting
 
-> **Prerequisite (who can do this):** You must be a seated officer of the council, a council Admin, the meeting owner or a Super Admin. Other members see the desk as **Locked**.
+> **Prerequisite (who can do this):** You must be a seated officer of the council, a council Admin, the meeting owner or a Super Admin. Other members do not see this desk.
 > **Warning:** **Passed**, **Failed** and **Tabled** record the council's decision on the motion.
 
 **Goal:** Chair a council meeting from one screen.
@@ -236,7 +236,7 @@ The financial engine and the activity hour log have no flag. Both stay on for ev
 
 ### 4.4 Lay down the year's meetings with a cadence
 
-> **Prerequisite (who can do this):** You must be a council Admin, the Grand Knight or a Super Admin. Other members see the desk as **Locked**.
+> **Prerequisite (who can do this):** You must be a council Admin, the Grand Knight or a Super Admin. Other members do not see this desk.
 > **Warning:** **Populate the year** creates up to 12 meetings and their invitations.
 
 **Goal:** Create the fraternal year's regular meetings in one step.
@@ -515,15 +515,18 @@ The SOP Center holds the same procedure: **Answers → SOP Center → Edit the c
 | Step | Who acts | Where | Status tag |
 | --- | --- | --- | --- |
 | 1. File | The member | **My Expense Reports** | **Submitted** |
-| 2. Written order | The Financial Secretary | **FS Expense Audit** → **📜 Issue Written Order** | **Order Issued** |
-| 3. Counter-sign | The Grand Knight | **GK Expense Authorize** → **✍️ Counter-Sign Voucher** | **Approved** |
+| 2. Written order | The Financial Secretary | **FS Expense Audit** → **📜 Approve Expense** | **Order Issued** |
+| 3. Counter-sign | The Grand Knight | **GK Expense Authorize** → **✍️ Countersign Expense** | **Approved** |
 | 4. Pay | The FS or the Treasurer | **Bulk Check Disbursements** | **Reimbursed** |
 | Return | Council leadership | **Leadership Auditing Queue** → **Reject & Return** | **Returned** |
 
 - A Super Admin may sign either line, but never both lines of the same report.
-- The officer who issued the order sees the counter-sign button locked with a **🔒 Collusion Guard** tag.
+- Each signer chooses the budget line in **Assign Ledger Budget Line Item**. The report saves the line.
+- The budget counts the report only against the saved line.
+- The officer who issued the order sees a **🔒 Collusion Guard** tag. That officer sees no counter-sign button.
 - Council Admins open both desks to follow the work. Only the seat holders or a Super Admin sign.
-- A return clears both signatures.
+- A signer sees no button on a report the signer cannot sign. A tag tells who signs the report.
+- A return clears both signatures and the saved budget line.
 
 <!-- KEEP_IMAGE: my expense reports capture -->
 ![My Expense Reports (/expenses)](../generated/dashboard_visual_catalog/expenses.png)
@@ -541,7 +544,8 @@ The SOP Center holds the same procedure: **Answers → SOP Center → Edit the c
 **Steps:**
 1. Open the submitted report.
 2. Check each receipt against its line.
-3. Select **📜 Issue Written Order**.
+3. Check the line in **Assign Ledger Budget Line Item**. A meeting report starts on the fraternal activities meetings line, for example **Monthly Council Meetings**.
+4. Select **📜 Approve Expense**.
 
 <!-- KEEP_IMAGE: FS audit desk capture -->
 ![FS Audit Desk (/expenses/audit)](../generated/dashboard_visual_catalog/expenses_audit.png)
@@ -552,7 +556,8 @@ The SOP Center holds the same procedure: **Answers → SOP Center → Edit the c
 **Common problems:**
 | Problem | Cause | Fix |
 | --- | --- | --- |
-| The button is refused. | You submitted the report. | Another signer must act. |
+| No **📜 Approve Expense** button shows. | You submitted the report, or you do not hold the seat. | Another signer must act. |
+| **📜 Approve Expense** is not available. | No budget line is chosen. | Choose a line in **Assign Ledger Budget Line Item**. |
 
 ### 6.3 Counter-sign a voucher
 
@@ -566,7 +571,8 @@ The SOP Center holds the same procedure: **Answers → SOP Center → Edit the c
 **Steps:**
 1. Open the ordered report.
 2. Check the order and the receipts.
-3. Select **✍️ Counter-Sign Voucher**.
+3. Check the line in **Assign Ledger Budget Line Item**. The line starts on the Financial Secretary's choice.
+4. Select **✍️ Countersign Expense**.
 
 <!-- KEEP_IMAGE: GK authorization desk capture -->
 ![GK Authorization Desk (/expenses/authorize)](../generated/dashboard_visual_catalog/expenses_authorize.png)
@@ -1346,7 +1352,7 @@ The platform has no background scheduler. An Admin runs the sync by hand.
 | Symptom or message | Cause | Fix |
 | --- | --- | --- |
 | A page is missing from the sidebar | Your role has no access, or a feature flag is off. | Check section 1 and section 3. |
-| A desk shows **Locked** | Your role cannot open the desk. | Ask the seat holder. |
+| An officer desk is missing from the sidebar | Your role cannot open the desk. | Ask the seat holder. |
 | *"…cannot …"* refusal on save | You act outside your council or role. | Switch the **Council** selector, or ask a Super Admin. |
 | Delete refused (record in use) | Other records depend on the record. | Clear the dependants first, or keep the record. |
 | Shift date refused | The date is outside the event dates. | Adjust the shift date or the event dates. |

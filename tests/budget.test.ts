@@ -145,6 +145,18 @@ function raw(d: DriverUnderTest, db: DataService, table: string, row: Record<str
   return Number(res.lastInsertRowid);
 }
 
+/**
+ * Saves `lineId` as budget_line_id on every sheet linked to the event or meeting, straight in the backing store, as the
+ * signers' approval would (Sprint 6G Extension: the budget engine reads only that column).
+ */
+function bindSheets(d: DriverUnderTest, db: DataService, link: 'LinkedEventID' | 'LinkedMeetingID', linkId: number, lineId: number): void {
+  if (d.name === 'memory') {
+    for (const r of (db as MemoryDataService).debugStore.rows('ExpenseReport')) if (r[link] === linkId) r.budget_line_id = lineId;
+  } else {
+    openDatabases.at(-1)!.prepare(`UPDATE [ExpenseReport] SET [budget_line_id] = ? WHERE [${link}] = ?`).run(lineId, linkId);
+  }
+}
+
 /** Gives a member a Role straight in the backing store; the data service has no role-assignment method. */
 function grantRole(d: DriverUnderTest, db: DataService, memberId: number, role: string): void {
   if (d.name === 'memory') {
@@ -516,14 +528,14 @@ describe('budget helpers (pure)', () => {
       line(4, { LineItemName: 'Bank Fees', ApprovedBudgetAmount: 60, BudgetStatus: 'Approved' }),
     ];
     const spend: BudgetYearSpend = {
-      // This year's Fish Fry is a new Event row: matched by name, ignoring case and spacing. Event.Spend is never read
-      // (Sprint 6B): an event's spend is its Approved and Reimbursed expense lines.
+      // Each expense goes to the line saved on its sheet (Sprint 6G Extension); no event or meeting name is matched.
+      // Event.Spend is never read (Sprint 6B): an event's spend is its Approved and Reimbursed expense lines.
       expenses: [
-        { EventID: 41, EventName: 'fish  FRY', MeetingID: null, Amount: 300 },
-        { EventID: 42, EventName: 'Picnic', MeetingID: null, Amount: 55.5 },
-        { EventID: 41, EventName: 'fish  FRY', MeetingID: null, Amount: 120.25 },
-        { EventID: null, EventName: null, MeetingID: 8, Amount: 85 },
-        { EventID: null, EventName: null, MeetingID: null, Amount: 10 },
+        { BudgetLineID: 1, Amount: 300 },
+        { BudgetLineID: null, Amount: 55.5 }, // a one-off Picnic with no line saved
+        { BudgetLineID: 1, Amount: 120.25 },
+        { BudgetLineID: 3, Amount: 85 },
+        { BudgetLineID: 77, Amount: 10 }, // a line of another year: not among these lines
       ],
       charityChecks: [
         { CharityID: 3, Amount: 150 },
@@ -679,7 +691,7 @@ for (const d of drivers) {
       check(OWN, annual.id, 999, '2027-07-01', '3003'); // the following fraternal year
       check(OWN, oneOff.id, 999, '2027-01-10', '3004');
       check(OTHER, annual.id, 999, '2027-01-10', '9001');
-      return { db, fishFry, tootsie, annual, oneOff };
+      return { db, fishFry, tootsie, annual, oneOff, meeting };
     }
 
     /** A budget line inserted straight into the store (for years the service would no longer let anyone draft). */
@@ -705,13 +717,17 @@ for (const d of drivers) {
     /** Council 1's 2026-2027 budget over withHistory's spend, proposed and not yet approved. */
     async function historyBudget(at: Date) {
       const history = await withHistory(at);
-      const { db, annual } = history;
+      const { db, annual, fishFry, tootsie, meeting } = history;
       const fund = await categoryId(db, 'Blessed Michael McGivney Fraternal Activities Fund');
       const donations = await categoryId(db, 'Other Donations & Projects');
-      budgetLine(db, SOURCE, { CategoryType: 'Event', LineItemName: 'Fish Fry', ProposedBudgetAmount: 400, BudgetCategoryID: fund });
-      budgetLine(db, SOURCE, { CategoryType: 'Event', LineItemName: 'Tootsie Roll Drive', ProposedBudgetAmount: 90, BudgetCategoryID: fund });
+      const fishFryLine = budgetLine(db, SOURCE, { CategoryType: 'Event', LineItemName: 'Fish Fry', ProposedBudgetAmount: 400, BudgetCategoryID: fund });
+      const tootsieLine = budgetLine(db, SOURCE, { CategoryType: 'Event', LineItemName: 'Tootsie Roll Drive', ProposedBudgetAmount: 90, BudgetCategoryID: fund });
       budgetLine(db, SOURCE, { CategoryType: 'Donation', ReferenceSourceID: annual.id, LineItemName: 'Salem Pregnancy Center', ProposedBudgetAmount: 1000, BudgetCategoryID: donations });
-      budgetLine(db, SOURCE, { LineItemName: BUDGET_MEETINGS_LINE_NAME, ProposedBudgetAmount: 50 });
+      const meetingsLine = budgetLine(db, SOURCE, { LineItemName: BUDGET_MEETINGS_LINE_NAME, ProposedBudgetAmount: 50 });
+      // The lines the signers charged each sheet to (Sprint 6G Extension).
+      bindSheets(d, db, 'LinkedEventID', fishFry.id, fishFryLine);
+      bindSheets(d, db, 'LinkedEventID', tootsie.id, tootsieLine);
+      bindSheets(d, db, 'LinkedMeetingID', meeting.id, meetingsLine);
       budgetLine(db, SOURCE, { LineItemName: 'Bank Fees', ProposedBudgetAmount: 60 });
       return { ...history, fund, donations };
     }

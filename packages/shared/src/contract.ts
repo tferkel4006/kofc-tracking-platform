@@ -661,6 +661,8 @@ export interface ExpenseReportInput {
    * the council's CouncilAssetsInventory. Left out it is false.
    */
   is_long_term_asset?: boolean | number;
+  /** Sprint 6G Extension: a charitable request of the submitter's council the sheet spends for, or null. */
+  charity_request_id?: number | null;
 }
 
 /** One receipt for expenses.submitReport; its sheet comes from the call. */
@@ -688,6 +690,11 @@ export interface ExpenseReportDetail {
   financialSecretaryName: string;
   /** 'First Last' of the officer who counter-signed (GrandKnightMemberID); '' until then (Sprint 5Z-4). */
   grandKnightName: string;
+  /**
+   * Sprint 6G Extension: the TargetBudgetLineID of the charitable request the sheet is linked to (charity_request_id),
+   * which the signature desks pre-select; null without a link or a line.
+   */
+  charityBudgetLineId: number | null;
 }
 
 export interface ExpenseDisbursementResult {
@@ -2048,8 +2055,8 @@ export interface DataService {
      * A 'Submitted' sheet needs at least one line item. Rejects RECORD_NOT_FOUND for an id that is not one of the
      * actor's sheets, EXPENSE_STATUS_CONFLICT for a sheet no longer a draft, and INVALID_INPUT for a bad field (an
      * amount of 0 or with fractions of a cent, a future date, a blank vendor or description, a text over its column's
-     * length) or a linked event or meeting that is unknown or outside the sheet's council; INVALID_DATE for a
-     * malformed date.
+     * length) or a linked event, meeting or charitable request (charity_request_id, Sprint 6G Extension) that is unknown
+     * or outside the sheet's council; INVALID_DATE for a malformed date.
      */
     submitReport(actorId: number, report: ExpenseReportInput, lineItems: readonly ExpenseLineItemInput[]): Promise<ExpenseReportDetail>;
     /**
@@ -2067,8 +2074,11 @@ export interface DataService {
      * FINANCIAL_SECRETARY_REQUIRED or COUNCIL_ACCESS_DENIED for anyone else, SELF_APPROVAL_BLOCKED for the actor's own
      * sheet (every role), RECORD_NOT_FOUND for an unknown sheet, and EXPENSE_STATUS_CONFLICT for a sheet not
      * 'Submitted' or already carrying the order.
+     * Sprint 6G Extension: the order saves `budgetLineId` (the desk's 'Assign Ledger Budget Line Item' pick) as the sheet's
+     * budget_line_id; left out, it saves the line the sheet's link matches (expenseBudgetLineDefault), or NULL when none
+     * does. A pick must be an Approved line of the sheet's council at its latest budget_version (INVALID_INPUT).
      */
-    financialSecretaryAuditOrder(actorId: number, reportId: number): Promise<ExpenseReportDetail>;
+    financialSecretaryAuditOrder(actorId: number, reportId: number, budgetLineId?: number | null): Promise<ExpenseReportDetail>;
     /**
      * Dual approval, second signature (Sprint 5Z-3): the council's Active Grand Knight, or an Active Super Admin,
      * counter-signs a sheet that carries the Financial Secretary's order, stamping GrandKnightMemberID and
@@ -2076,8 +2086,10 @@ export interface DataService {
      * Rejects GRAND_KNIGHT_REQUIRED or COUNCIL_ACCESS_DENIED for anyone else, SELF_APPROVAL_BLOCKED for the actor's own
      * sheet, DUAL_SIGNATURE_CONFLICT when the actor issued the order themselves, RECORD_NOT_FOUND for an unknown sheet,
      * and EXPENSE_STATUS_CONFLICT for a sheet not 'Submitted' or still awaiting the order.
+     * Sprint 6G Extension: `budgetLineId` replaces the sheet's budget_line_id, checked as for the written order; left out,
+     * the order's line is kept, or the matching line saved when the sheet has none.
      */
-    grandKnightAuthorizeOrder(actorId: number, reportId: number): Promise<ExpenseReportDetail>;
+    grandKnightAuthorizeOrder(actorId: number, reportId: number, budgetLineId?: number | null): Promise<ExpenseReportDetail>;
     /**
      * Records one check paying the listed sheets of `councilId` (the council's Active Financial Secretary or Treasurer,
      * or an Active Super Admin; anyone else rejects FINANCE_OFFICER_REQUIRED or COUNCIL_ACCESS_DENIED): creates the

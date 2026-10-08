@@ -1,10 +1,11 @@
 'use client';
 // Financial Secretary Audit Desk (Sprint 5Z-4): the first line of expense dual approval. The council's Financial
 // Secretary, its Admins and any Super Admin open it (canOpenExpenseAuditDesk). It lists every 'Submitted' sheet still
-// waiting for its written order, oldest first, with a receipt drawer and the gold '📜 Issue Written Order' command
-// (expenses.financialSecretaryAuditOrder). Only the Financial Secretary or a Super Admin signs, never on their own
-// sheet (expenseOrderBlock; the drivers: FINANCIAL_SECRETARY_REQUIRED, SELF_APPROVAL_BLOCKED); an Admin without the
-// seat reads the desk and may return sheets. A signed row stays on the desk for the session with a confirmation badge,
+// waiting for its written order, oldest first, with a receipt drawer and the gold 'Approve Expense' command
+// (expenses.financialSecretaryAuditOrder), which saves the row's 'Assign Ledger Budget Line Item' pick on the sheet
+// (Sprint 6G Extension). Only the Financial Secretary or a Super Admin signs, never on their own sheet
+// (expenseOrderBlock; the drivers: FINANCIAL_SECRETARY_REQUIRED, SELF_APPROVAL_BLOCKED); a viewer who may not sign a
+// row sees neither the picker nor the button, only why. An Admin without the seat reads the desk and may return sheets. A signed row stays on the desk for the session with a confirmation badge,
 // then moves to the Grand Knight Authorization Desk.
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -23,6 +24,7 @@ import {
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import {
   BudgetLinePicker,
+  EXPENSE_APPROVE_LABEL,
   ReturnToMemberForm,
   SignatureDeskTable,
   submitterName,
@@ -66,7 +68,7 @@ function AuditDesk() {
     setBusyId(d.report.id);
     setMessage(null);
     try {
-      const signed = await db.expenses.financialSecretaryAuditOrder(user.memberId, d.report.id);
+      const signed = await db.expenses.financialSecretaryAuditOrder(user.memberId, d.report.id, budgetLines.lineIdOf(d));
       setOrdered((now) => new Map(now).set(signed.report.id, signed));
       setMessage({
         tone: 'info',
@@ -84,31 +86,28 @@ function AuditDesk() {
   const action = (d: ExpenseReportDetail) => {
     if (ordered.has(d.report.id)) return <Pill tone="navy">✓ Written order issued</Pill>;
     const block = expenseOrderBlock(user, d.report);
+    // Sprint 6G Extension: a row the viewer may not sign shows no signing controls at all, only who signs it.
+    if (block === 'own-report') {
+      return (
+        <span title="For accounting controls, another officer must approve your own report.">
+          <Pill tone="redOutline">Your own report</Pill>
+        </span>
+      );
+    }
+    if (block === 'seat') return <Pill tone="outline">Financial Secretary signs</Pill>;
     const unassigned = budgetLines.lineIdOf(d) === null;
     return (
       <span className="inline-flex flex-col items-start gap-2">
-        <BudgetLinePicker detail={d} assignments={budgetLines} disabled={block !== null || busyId !== null} />
-        <span className="inline-flex flex-wrap items-center gap-2">
-          <Button
-            variant="gold"
-            disabled={block !== null || busyId !== null || unassigned}
-            aria-label={`Issue the written order for report ${d.report.id}`}
-            title={
-              block === 'own-report'
-                ? 'For accounting controls, another officer must issue the order for your own report.'
-                : block === 'seat'
-                  ? 'Only the Financial Secretary or a Super Admin issues written orders.'
-                  : unassigned
-                    ? 'Assign a ledger budget line item first.'
-                    : undefined
-            }
-            onClick={() => void issue(d)}
-          >
-            {busyId === d.report.id ? 'Issuing…' : '📜 Issue Written Order'}
-          </Button>
-          {block === 'own-report' ? <Pill tone="redOutline">Your own report</Pill> : null}
-          {block === 'seat' ? <Pill tone="outline">Financial Secretary signs</Pill> : null}
-        </span>
+        <BudgetLinePicker detail={d} assignments={budgetLines} disabled={busyId !== null} />
+        <Button
+          variant="gold"
+          disabled={busyId !== null || unassigned}
+          aria-label={`Approve expense report ${d.report.id}`}
+          title={unassigned ? 'Assign a ledger budget line item first.' : undefined}
+          onClick={() => void issue(d)}
+        >
+          {busyId === d.report.id ? 'Approving…' : EXPENSE_APPROVE_LABEL}
+        </Button>
       </span>
     );
   };

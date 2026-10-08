@@ -75,10 +75,11 @@ describe('defaultExpenseBudgetLineId', () => {
     expect(defaultExpenseBudgetLineId([fishFry], { EventID: null, EventName: null, MeetingID: 6 })).toBeNull();
   });
 
-  it('matches the line attributeBudgetSpend charges the same voucher to', () => {
+  it('is the line attributeBudgetSpend charges once the signature saves it (Sprint 6G Extension)', () => {
     const link = { EventID: 77, EventName: 'Pancake Breakfast', MeetingID: null };
-    const { byLine } = attributeBudgetSpend(assignable, { expenses: [{ ...link, Amount: 12.5 }], charityChecks: [] });
-    expect(byLine.get(defaultExpenseBudgetLineId(assignable, link)!)).toBe(1250);
+    const saved = defaultExpenseBudgetLineId(assignable, link);
+    const { byLine } = attributeBudgetSpend(assignable, { expenses: [{ BudgetLineID: saved, Amount: 12.5 }], charityChecks: [] });
+    expect(byLine.get(saved!)).toBe(1250);
     expect(findEventBudgetLine(assignable, 77, 'Pancake Breakfast')?.id).toBe(2);
   });
 });

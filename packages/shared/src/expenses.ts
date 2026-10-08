@@ -50,6 +50,8 @@ export interface CleanExpenseReportInput {
   LinkedMeetingID: number | null;
   /** BIT (Sprint 6E): 1 when the submitter ticked "This item is a long-term Council Asset". */
   is_long_term_asset: number;
+  /** Sprint 6G Extension: the charitable request the sheet spends for; the driver checks it is the sheet's council's. */
+  charity_request_id: number | null;
 }
 
 /** expenses.submitReport: the sheet's own fields. Only 'Draft' and 'Submitted' may be written by a member. */
@@ -66,6 +68,7 @@ export function cleanExpenseReportInput(input: ExpenseReportInput): CleanExpense
     LinkedEventID: optionalId(input.LinkedEventID, 'Linked event'),
     LinkedMeetingID: optionalId(input.LinkedMeetingID, 'Linked meeting'),
     is_long_term_asset: longTermAssetFlag(input.is_long_term_asset),
+    charity_request_id: optionalId(input.charity_request_id, 'Linked charitable request'),
   };
 }
 
@@ -131,6 +134,23 @@ export function assertExpenseLinks(
     if (meeting.CouncilID !== councilId) {
       throw invalid(`Meeting ${meetingId} belongs to another council, so an expense report of council ${councilId} cannot name it.`, { meetingId, councilId });
     }
+  }
+}
+
+/** expenses.submitReport (Sprint 6G Extension): a linked charitable request must exist and be the sheet's council's. */
+export function assertExpenseCharityRequestLink(
+  report: Pick<CleanExpenseReportInput, 'charity_request_id'>,
+  councilId: number,
+  request: { CouncilID: number } | null,
+): void {
+  const requestId = report.charity_request_id;
+  if (requestId === null) return;
+  if (request === null) throw invalid(`No charitable request with id ${requestId}.`, { charityRequestId: requestId });
+  if (request.CouncilID !== councilId) {
+    throw invalid(`Charitable request ${requestId} belongs to another council, so an expense report of council ${councilId} cannot name it.`, {
+      charityRequestId: requestId,
+      councilId,
+    });
   }
 }
 
@@ -329,12 +349,16 @@ export function assertDualSigned(report: Pick<ExpenseReport, 'id'> & SignatureFi
   );
 }
 
-/** What expenses.rejectReport writes over the signature lines: a returned sheet starts its approvals again. */
+/**
+ * What expenses.rejectReport writes over the signature lines: a returned sheet starts its approvals again, and its
+ * budget line is chosen afresh (Sprint 6G Extension).
+ */
 export const CLEARED_EXPENSE_SIGNATURES = {
   FinancialSecretaryMemberID: null,
   FinancialSecretaryApprovedAt: null,
   GrandKnightMemberID: null,
   GrandKnightApprovedAt: null,
+  budget_line_id: null,
 } as const;
 
 /** Amounts summed to the cent, free of floating-point drift. */
@@ -350,6 +374,7 @@ export function buildExpenseReportDetails(
   lineItems: readonly ExpenseLineItem[],
   members: readonly Pick<Member, 'id' | 'MemberFirstName' | 'MemberLastName'>[],
   disbursements: readonly ExpenseDisbursement[],
+  charityRequests: readonly { id: number; TargetBudgetLineID?: number | null }[] = [],
 ): ExpenseReportDetail[] {
   return reports.map((report) => {
     const items = lineItems
@@ -371,6 +396,8 @@ export function buildExpenseReportDetails(
       disbursement: disbursement ? { ...disbursement } : null,
       financialSecretaryName: fullName(report.FinancialSecretaryMemberID),
       grandKnightName: fullName(report.GrandKnightMemberID),
+      charityBudgetLineId:
+        report.charity_request_id == null ? null : (charityRequests.find((r) => r.id === report.charity_request_id)?.TargetBudgetLineID ?? null),
     };
   });
 }

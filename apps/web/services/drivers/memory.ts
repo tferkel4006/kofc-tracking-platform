@@ -58,6 +58,7 @@ import {
   EXPENSE_SPEND_STATUSES,
   assertCheckNumberUnused,
   assertExpenseLinks,
+  assertExpenseCharityRequestLink,
   assertExpenseStatus,
   memberOnboardingState,
   nextExpenseStatus,
@@ -244,6 +245,9 @@ import {
   buildConcludedBudgetPerformance,
   currentFraternalYear,
   planCharitableBudgetFallback,
+  planExpenseBudgetLineSave,
+  assignableExpenseBudgetLines,
+  currentBudgetLineIdOf,
   planExpenseAssetConversion,
   budgetLineExists,
   budgetLineNotFound,
@@ -2049,6 +2053,11 @@ export class MemoryDataService implements DataService {
           eventId !== null && s.rows('Event').some((e) => e.id === eventId) ? this.councilIdsOf(s, eventId) : null,
           (s.rows('Meeting').find((m) => m.id === clean.LinkedMeetingID) as unknown as Meeting | undefined) ?? null,
         );
+        assertExpenseCharityRequestLink(
+          clean,
+          councilId,
+          (s.rows('CharitableRequest').find((r) => r.id === clean.charity_request_id) as unknown as { CouncilID: number } | undefined) ?? null,
+        );
         const linkedEvent = eventId === null ? undefined : (s.rows('Event').find((e) => e.id === eventId) as unknown as Event | undefined);
         const linkedMeeting = s.rows('Meeting').find((m) => m.id === clean.LinkedMeetingID) as unknown as Meeting | undefined;
         assertExpenseSubmissionWindow(
@@ -2058,7 +2067,13 @@ export class MemoryDataService implements DataService {
         );
         // The workflow engine decides the stored Status: a new sheet starts as Draft, and only a Draft is saved or submitted.
         const status = nextExpenseStatus(draft?.Status ?? null, clean.Status === 'Submitted' ? 'submit' : 'saveDraft', clean.id);
-        const fields = { Status: status, LinkedEventID: clean.LinkedEventID, LinkedMeetingID: clean.LinkedMeetingID, is_long_term_asset: clean.is_long_term_asset };
+        const fields = {
+          Status: status,
+          LinkedEventID: clean.LinkedEventID,
+          LinkedMeetingID: clean.LinkedMeetingID,
+          is_long_term_asset: clean.is_long_term_asset,
+          charity_request_id: clean.charity_request_id,
+        };
         let reportId: number;
         if (draft) {
           Object.assign(draft, fields);
@@ -2088,7 +2103,7 @@ export class MemoryDataService implements DataService {
       return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
     },
 
-    financialSecretaryAuditOrder: async (actorId, reportId) => {
+    financialSecretaryAuditOrder: async (actorId, reportId, budgetLineId) => {
       const s = await this.ready();
       s.transaction(() => {
         const actor = this.memberWriteActor(s, actorId);
@@ -2097,12 +2112,16 @@ export class MemoryDataService implements DataService {
         assertMayIssueExpenseOrder(actor, report.CouncilID, `issue the written order for expense report ${reportId}`);
         assertNotSelfApproval(actor, report);
         assertExpenseSignatureStage(report, 'financialSecretary');
-        Object.assign(row, { FinancialSecretaryMemberID: actorId, FinancialSecretaryApprovedAt: toTimestamp(this.now()) });
+        Object.assign(row, {
+          FinancialSecretaryMemberID: actorId,
+          FinancialSecretaryApprovedAt: toTimestamp(this.now()),
+          budget_line_id: this.expenseBudgetLineToSave(s, row, budgetLineId),
+        });
       });
       return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
     },
 
-    grandKnightAuthorizeOrder: async (actorId, reportId) => {
+    grandKnightAuthorizeOrder: async (actorId, reportId, budgetLineId) => {
       const s = await this.ready();
       s.transaction(() => {
         const actor = this.memberWriteActor(s, actorId);
@@ -2113,7 +2132,12 @@ export class MemoryDataService implements DataService {
         assertExpenseSignatureStage(report, 'grandKnight');
         assertDistinctExpenseSigners(actor, report);
         const from = row.Status;
-        Object.assign(row, { Status: nextExpenseStatus(row.Status, 'approve', reportId), GrandKnightMemberID: actorId, GrandKnightApprovedAt: toTimestamp(this.now()) });
+        Object.assign(row, {
+          Status: nextExpenseStatus(row.Status, 'approve', reportId),
+          GrandKnightMemberID: actorId,
+          GrandKnightApprovedAt: toTimestamp(this.now()),
+          budget_line_id: this.expenseBudgetLineToSave(s, row, budgetLineId),
+        });
         this.convertExpenseToAsset(s, row, from);
       });
       return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
@@ -2158,6 +2182,30 @@ export class MemoryDataService implements DataService {
   };
 
   /** The workflow engine's asset conversion hook, run inside the status change's transaction (Sprint 6E). */
+  /**
+   * The budget_line_id a signature saves on `row` (Sprint 6G Extension): the signer's pick, else the sheet's saved line,
+   * else the default for its link among the council's Approved lines of the fraternal year in progress.
+   */
+  private expenseBudgetLineToSave(s: MemoryStore, row: Row, picked: number | null | undefined): number | null {
+    const councilId = row.CouncilID as number;
+    const eventId = (row.LinkedEventID as number | null) ?? null;
+    const requestId = (row.charity_request_id as number | null) ?? null;
+    return planExpenseBudgetLineSave({
+      allLines: this.allBudgetLines(s, councilId),
+      assignable: assignableExpenseBudgetLines(this.budgetLines(s, councilId, currentFraternalYear(this.now()))),
+      councilId,
+      picked,
+      saved: (row.budget_line_id as number | null) ?? null,
+      link: {
+        EventID: eventId,
+        EventName: eventId === null ? null : ((s.rows('Event').find((e) => e.id === eventId)?.EventName as string | undefined) ?? null),
+        MeetingID: (row.LinkedMeetingID as number | null) ?? null,
+        CharityBudgetLineID:
+          requestId === null ? null : ((s.rows('CharitableRequest').find((r) => r.id === requestId)?.TargetBudgetLineID as number | null | undefined) ?? null),
+      },
+    });
+  }
+
   private convertExpenseToAsset(s: MemoryStore, row: Row, from: unknown): void {
     const asset = planExpenseAssetConversion({
       from,
@@ -2189,6 +2237,7 @@ export class MemoryDataService implements DataService {
       s.rows('ExpenseLineItem').filter((li) => ids.has(li.ExpenseReportID)) as unknown as ExpenseLineItem[],
       s.rows('Member') as unknown as Member[],
       s.rows('ExpenseDisbursement') as unknown as ExpenseDisbursement[],
+      s.rows('CharitableRequest') as unknown as { id: number; TargetBudgetLineID: number | null }[],
     );
   }
 
@@ -4542,7 +4591,7 @@ export class MemoryDataService implements DataService {
   private budgetYearSpend(s: MemoryStore, councilId: number, year: string, throughDate: string): BudgetYearSpend {
     const { fromDate } = fraternalYearBounds(year);
     const inPeriod = (date: unknown) => (date as string) >= fromDate && (date as string) <= throughDate;
-    const eventNames = new Map(s.rows('Event').map((e) => [e.id, e.EventName as string]));
+    const allLines = this.allBudgetLines(s, councilId);
     const spendingReports = new Map(
       s
         .rows('ExpenseReport')
@@ -4553,15 +4602,7 @@ export class MemoryDataService implements DataService {
         expenses: s.rows('ExpenseLineItem').flatMap((li) => {
           const report = spendingReports.get(li.ExpenseReportID);
           if (!report || !inPeriod(li.DateOfExpense)) return [];
-          const eventId = (report.LinkedEventID as number | null) ?? null;
-          return [
-            {
-              EventID: eventId,
-              EventName: eventId === null ? null : (eventNames.get(eventId) ?? null),
-              MeetingID: (report.LinkedMeetingID as number | null) ?? null,
-              Amount: li.Amount as number,
-            },
-          ];
+          return [{ BudgetLineID: currentBudgetLineIdOf(allLines, report.budget_line_id as number | null | undefined), Amount: li.Amount as number }];
         }),
         charityChecks: s
           .rows('CharitableDisbursementLedger')

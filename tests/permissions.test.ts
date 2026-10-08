@@ -39,7 +39,6 @@ import {
   canPublishDistributionList,
   portalSidebar,
   PORTAL_NAV_GROUPS,
-  PORTAL_LOCKABLE_DESKS,
 } from '@kofc/shared';
 
 const actor = (over: Partial<Parameters<typeof portalAreas>[0]> = {}) => ({
@@ -206,8 +205,10 @@ describe('portal permissions', () => {
   });
 
   describe('sidebar pillars (Sprint 5S, election desks Sprint 5U, lockable desks Sprint 5Z-10, seven pillars Sprint 6Z)', () => {
+    /** The sign-off and meeting desks Sprint 5Z-10 showed locked; since the Sprint 6G Extension they are hidden instead. */
+    const SIGN_OFF_DESKS = ['meetings/live', 'meetings/cadence', 'expenses/audit', 'expenses/authorize', 'charities/vetting'];
     const shape = (u: Parameters<typeof portalSidebar>[0]) =>
-      portalSidebar(u).map((g) => [g.label, g.entries.filter((e) => !e.locked).map((e) => e.item)]);
+      portalSidebar(u).map((g) => [g.label, g.entries.map((e) => e.item)]);
     const FIN_READ = ['finance/ledger', 'finance/balance-sheet', 'finance/dashboard'];
 
     it('files every area but the profile and the Messaging menu into exactly one of the seven pillars; messaging (5X, 5Z-10.8) lives in the header', () => {
@@ -218,7 +219,7 @@ describe('portal permissions', () => {
       const everyArea = portalAreas(superAdmin).filter((a) => a !== 'profile' && a !== 'messages' && a !== 'distribution-lists');
       expect([...everyArea].sort()).toEqual([...filed].sort());
       expect(PORTAL_NAV_GROUPS.map((g) => g.label)).toEqual(['Governance', 'Faith In Action', 'Finances', 'Performance', 'Resources', 'Answers', 'Setup']);
-      for (const desk of PORTAL_LOCKABLE_DESKS) expect(filed).toContain(desk);
+      for (const desk of SIGN_OFF_DESKS) expect(filed).toContain(desk);
     });
 
     it('opens the help center to every member from the Answers pillar (Sprint 6Z)', () => {
@@ -335,30 +336,22 @@ describe('portal permissions', () => {
       for (const g of portalSidebar(superAdmin)) expect(Object.keys(g).sort()).toEqual(['entries', 'id', 'label']);
     });
 
-    it('lists every sign-off and meeting desk in its pillar, locking the ones the viewer may not open (Sprint 5Z-10)', () => {
+    it('hides every sign-off and meeting desk the viewer may not open, never showing it locked (Sprint 6G Extension)', () => {
       const desks = (u: Parameters<typeof portalSidebar>[0]) =>
         portalSidebar(u)
           .flatMap((g) => g.entries)
-          .filter((e) => (PORTAL_LOCKABLE_DESKS as readonly string[]).includes(e.item))
-          .map((e) => [e.item, e.locked]);
-      expect(desks(member)).toEqual([
-        ['meetings/live', true],
-        ['meetings/cadence', true],
-        ['expenses/audit', true],
-        ['expenses/authorize', true],
-        ['charities/vetting', true],
-      ]);
-      expect(desks(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual([
-        ['meetings/live', false],
-        ['meetings/cadence', false],
-        ['expenses/audit', true],
-        ['expenses/authorize', false],
-        ['charities/vetting', false],
-      ]);
-      expect(desks(admin).every(([, locked]) => !locked)).toBe(true);
-      // Every other link shows only to those who may open it.
-      for (const e of portalSidebar(member).flatMap((g) => g.entries)) {
-        if (e.locked) expect(PORTAL_LOCKABLE_DESKS).toContain(e.item);
+          .map((e) => e.item)
+          .filter((item) => (SIGN_OFF_DESKS as readonly string[]).includes(item));
+      expect(desks(member)).toEqual([]);
+      expect(desks(actor({ isOfficer: true, roles: ['Grand Knight'] }))).toEqual(['meetings/live', 'meetings/cadence', 'expenses/authorize', 'charities/vetting']);
+      expect(desks(admin)).toEqual(SIGN_OFF_DESKS);
+      // No entry carries a lock: every link drawn is one portalAreas allows.
+      for (const u of [superAdmin, admin, officer, member]) {
+        const allowed = portalAreas(u);
+        for (const e of portalSidebar(u).flatMap((g) => g.entries)) {
+          expect(Object.keys(e)).toEqual(['item']);
+          expect(allowed).toContain(e.item);
+        }
       }
       expect(portalSidebar(member).map((g) => g.label)).toEqual(['Governance', 'Faith In Action', 'Finances', 'Performance', 'Resources', 'Answers']);
     });

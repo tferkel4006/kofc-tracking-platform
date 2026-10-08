@@ -2212,3 +2212,31 @@ GO
 -- =========================================================================
 ALTER TABLE [CouncilBudgetForecast] ADD [universal_category] VARCHAR(50) NULL;
 GO
+
+-- =========================================================================
+-- Sprint 6G Extension (Phase 5): EXPENSE BUDGET LINE BINDING (schema version 45)
+-- ExpenseReport.budget_line_id is the CouncilBudgetForecast line the signers charged the sheet to. The Financial
+-- Secretary's written order (expenses.financialSecretaryAuditOrder) saves the desk's 'Assign Ledger Budget Line Item'
+-- pick; the Grand Knight's counter-signature (grandKnightAuthorizeOrder) may change it and otherwise keeps it. A
+-- signature given without a pick saves the line the sheet's link matches (defaultExpenseBudgetLineId in budget.ts). It
+-- must be an Approved line of the sheet's council, at its latest budget_version. The budget engine (attributeBudgetSpend)
+-- charges an approved sheet's receipts only to this line, read through to the line's latest version after a mid-year
+-- amendment; a sheet without one goes to 'Miscellaneous Others' (or unbudgeted). Returning the sheet clears it.
+-- ExpenseReport.charity_request_id links a sheet to the CharitableRequest it spends for (same council); the desks then
+-- pre-select that request's TargetBudgetLineID.
+-- =========================================================================
+ALTER TABLE [ExpenseReport] ADD [budget_line_id] INT NULL;
+GO
+ALTER TABLE [ExpenseReport] ADD [charity_request_id] INT NULL;
+GO
+
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([budget_line_id])
+REFERENCES [CouncilBudgetForecast]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([charity_request_id])
+REFERENCES [CharitableRequest]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO

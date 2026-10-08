@@ -628,6 +628,14 @@ export interface ExpenseReport {
   GrandKnightApprovedAt?: string | null;
   /** BIT, Sprint 6E: "This item is a long-term Council Asset"; approval converts the sheet into a CouncilAssetsInventory row. */
   is_long_term_asset?: number;
+  /**
+   * Sprint 6G Extension (Schema 45): the CouncilBudgetForecast line the signers charged the sheet to, saved by the
+   * written order and kept or changed by the counter-signature. The budget engine charges the sheet only here. NULL until
+   * signed, and again once the sheet is returned.
+   */
+  budget_line_id?: number | null;
+  /** Sprint 6G Extension: the CharitableRequest of the same council the sheet spends for; its TargetBudgetLineID is the desks' default. */
+  charity_request_id?: number | null;
 }
 
 /** CouncilAssetsInventory.current_status (Sprint 6E; rules layer, no CHECK). */

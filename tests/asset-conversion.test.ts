@@ -178,10 +178,10 @@ describe('Miscellaneous Others catch-all (pure)', () => {
   const pantry = line({ id: 3, CategoryType: 'Donation', ReferenceSourceID: 1, LineItemName: 'St. Jude Pantry', ApprovedBudgetAmount: 1000 });
   const spend = {
     expenses: [
-      { EventID: 4, EventName: 'pancake  breakfast', MeetingID: null, Amount: 100 },
-      { EventID: 8, EventName: 'One-off car wash', MeetingID: null, Amount: 20.25 },
-      { EventID: null, EventName: null, MeetingID: null, Amount: 10 },
-      { EventID: null, EventName: null, MeetingID: 5, Amount: 4.5 }, // no 'Council Meetings' line this year
+      { BudgetLineID: 2, Amount: 100 }, // the signers charged it to the Pancake Breakfast line (Sprint 6G Extension)
+      { BudgetLineID: null, Amount: 20.25 }, // a one-off car wash, no line saved
+      { BudgetLineID: null, Amount: 10 },
+      { BudgetLineID: 44, Amount: 4.5 }, // a line outside this year's lines
     ],
     charityChecks: [
       { CharityID: 1, Amount: 300 },

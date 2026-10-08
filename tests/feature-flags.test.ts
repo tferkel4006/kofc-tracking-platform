@@ -43,8 +43,9 @@ describe('feature flag rules', () => {
   });
 
   it('drops a switched-off desk from the sidebar instead of showing it locked', () => {
-    const member = { memberId: 9, councilId: 1, memberType: 'Member' as const, isOfficer: false };
-    const desks = (flags: FeatureFlags) => portalSidebar(member, flags).flatMap((g) => g.entries.map((e) => e.item));
+    // A Grand Knight opens both desks, so only the flag can take them away (Sprint 6G Extension: no desk shows locked).
+    const grandKnight = { memberId: 9, councilId: 1, memberType: 'Member' as const, isOfficer: true, roles: ['Grand Knight'] };
+    const desks = (flags: FeatureFlags) => portalSidebar(grandKnight, flags).flatMap((g) => g.entries.map((e) => e.item));
     expect(desks(ALL_FEATURES_ON)).toContain('meetings/live');
     expect(desks({ ...ALL_FEATURES_ON, flag_meeting_management: false })).not.toContain('meetings/live');
     // The two donation flags are independent: proposals off leaves the donations desk, and the reverse.

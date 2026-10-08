@@ -1,9 +1,9 @@
 'use client';
 // The portal's left sidebar (Sprint 6Z redesign): a navy column of the seven pillars from portalSidebar - Governance,
 // Faith In Action, Finances, Performance, Resources, Answers and Setup - every pillar always open, with no accordions.
-// The sign-off and meeting desks (PORTAL_LOCKABLE_DESKS) are listed for every member: one the viewer may not open is
-// shown with a gold lock badge and says who holds it, instead of a link. The current page carries a gold marker.
-// Sprint 6A: a module the council's feature flags switch off is left out entirely, never shown locked.
+// Only the links the viewer may open are drawn: since the Sprint 6G Extension a desk the viewer's role cannot open is
+// removed from the sidebar, never shown locked or greyed out. The current page carries a gold marker.
+// Sprint 6A: a module the council's feature flags switch off is left out entirely too.
 // Sprint 6Z-Dual-Gate-Model: a white-label tenant loses the fraternal areas the same way, and every label, tooltip and
 // pillar name is drawn through whiteLabel in the tenant's vocabulary.
 import Link from 'next/link';
@@ -23,7 +23,7 @@ export interface NavEntry {
   href: string;
   label: string;
   hint: string;
-  /** Who may open it, shown on a locked desk (Sprint 5Z-10). */
+  /** Who may open it (Sprint 5Z-10): kept for reference; the sidebar no longer draws desks the viewer may not open. */
   restrictedTo?: string;
 }
 
@@ -155,16 +155,6 @@ function ExternalNavLink({ href, label, hint }: Omit<ExternalNavEntry, 'visible'
 
 const isCurrent = (pathname: string, item: PortalNavItem): boolean => pathname === NAV[item].href;
 
-/** A padlock drawn in currentColor. */
-function LockIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="4" y="11" width="16" height="10" rx="2" />
-      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-    </svg>
-  );
-}
-
 /** One dense sidebar link: the label only, with its description as the tooltip; gold marker when current. */
 function NavLink({ item, current, tenant }: { item: PortalNavItem; current: boolean; tenant: TenantType }) {
   const { href, label, hint } = NAV[item];
@@ -182,24 +172,6 @@ function NavLink({ item, current, tenant }: { item: PortalNavItem; current: bool
   );
 }
 
-/** A desk the viewer may not open: its name, a gold lock badge (navy on gold, 6.4:1) and who holds it. Not a link. */
-function LockedEntry({ item, tenant }: { item: PortalNavItem; tenant: TenantType }) {
-  const { label, restrictedTo } = NAV[item];
-  const who = whiteLabel(restrictedTo ? `Restricted to ${restrictedTo}` : 'Restricted to authorized roles', tenant);
-  return (
-    <li>
-      <span aria-disabled="true" title={who} className="flex items-center justify-between gap-2 border-l-8 border-transparent py-1.5 pl-6 pr-3 text-sm">
-        <span>{whiteLabel(label, tenant)}</span>
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gold px-1.5 py-0.5 text-xs font-bold uppercase tracking-wide text-navy">
-          <LockIcon />
-          Locked
-        </span>
-        <span className="sr-only">({who})</span>
-      </span>
-    </li>
-  );
-}
-
 export function Sidebar({ user, pathname, features, tenant }: { user: SessionUser; pathname: string; features: FeatureFlags; tenant: TenantType }) {
   const groups = portalSidebar(user, features, tenant);
   return (
@@ -212,13 +184,9 @@ export function Sidebar({ user, pathname, features, tenant }: { user: SessionUse
               {whiteLabel(group.label, tenant)}
             </h2>
             <ul aria-labelledby={headingId} className="flex flex-col">
-              {group.entries.map(({ item, locked }) =>
-                locked ? (
-                  <LockedEntry key={item} item={item} tenant={tenant} />
-                ) : (
-                  <NavLink key={item} item={item} current={isCurrent(pathname, item)} tenant={tenant} />
-                ),
-              )}
+              {group.entries.map(({ item }) => (
+                <NavLink key={item} item={item} current={isCurrent(pathname, item)} tenant={tenant} />
+              ))}
               {(EXTERNAL_NAV[group.id] ?? [])
                 .filter((link) => !link.visible || link.visible(user))
                 .map(({ href, label, hint }) => (

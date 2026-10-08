@@ -31,6 +31,11 @@ export const BUDGET_LINE_NAME_MAX_LENGTH = 255;
 export const BUDGET_NOTES_MAX_LENGTH = 2000;
 /** The Operational line prePopulateNextYear seeds from the expenses of the council's meetings. */
 export const BUDGET_MEETINGS_LINE_NAME = 'Council Meetings';
+/**
+ * Sprint 6G Extension: the universal category of the Operational line a meeting's expense sheet pre-selects on the
+ * signature desks (defaultExpenseBudgetLineId), e.g. St. Mary's 'Monthly Council Meetings'.
+ */
+export const MEETING_EXPENSE_UNIVERSAL_CATEGORY: UniversalBudgetCategory = 'FRATERNAL_ACTIVITIES';
 
 /**
  * Sprint 6F: the universal financial categories (CouncilBudgetForecast.universal_category), keyed by the stored value,
@@ -673,10 +678,11 @@ export function budgetAlertOf(cap: number, actual: number): BudgetAlert {
  */
 export interface BudgetYearSpend {
   /**
-   * Line items dated in the period on the council's 'Approved' and 'Reimbursed' expense sheets, with the event (id and
-   * name) or meeting the sheet is linked to.
+   * Line items dated in the period on the council's 'Approved' and 'Reimbursed' expense sheets, with the line the
+   * signers saved on the sheet (ExpenseReport.budget_line_id, Sprint 6G Extension), read through to that line's latest
+   * budget_version (currentBudgetLineIdOf); null when the sheet has none.
    */
-  expenses: readonly { EventID: number | null; EventName: string | null; MeetingID: number | null; Amount: number }[];
+  expenses: readonly { BudgetLineID: number | null; Amount: number }[];
   /**
    * The council's charity checks paid in the period. BudgetLineID is the TargetBudgetLineID of the charitable request
    * the check paid (CharitableRequest.PaymentOrderId), when there is one (Sprint 6E).
@@ -699,15 +705,13 @@ export function findEventBudgetLine(
 
 /**
  * Which budget line each piece of spend counts against, in cents by line id, plus what no line claims:
- * - expenses linked to an event go to the year's Event line of the same name ignoring case (or whose
- *   ReferenceSourceID is the event) - each year's event is a new Event row, so the name carries it;
+ * - expenses go only to the line saved on their sheet (ExpenseReport.budget_line_id, Sprint 6G Extension). No event,
+ *   meeting or name is matched here: the signers chose the line, and that choice is the record;
  * - charity checks go to the line their charitable request was assigned (TargetBudgetLineID), else the Donation line
  *   of that charity;
- * - expenses linked to a meeting go to the 'Council Meetings' line (BUDGET_MEETINGS_LINE_NAME);
- * - everything else - a one-off event, an unlinked expense, a charity with no line - falls to the year's
- *   'Miscellaneous Others' line (BUDGET_MISCELLANEOUS_LINE_NAME, Sprint 6E), counted in `miscellaneousCents`; only
- *   a year without that line leaves it unbudgeted.
- * Other custom Operational lines have no source to read, so their actual is 0.
+ * - everything else - a sheet with no saved line or one outside these lines, a charity with no line - falls to the
+ *   year's 'Miscellaneous Others' line (BUDGET_MISCELLANEOUS_LINE_NAME, Sprint 6E), counted in `miscellaneousCents`;
+ *   only a year without that line leaves it unbudgeted.
  */
 export function attributeBudgetSpend(
   lines: readonly CouncilBudgetForecast[],
@@ -724,12 +728,7 @@ export function attributeBudgetSpend(
       miscellaneousCents += cents(amount);
     } else unbudgetedCents += cents(amount);
   };
-  const meetingsLine = findOperationalBudgetLine(lines, BUDGET_MEETINGS_LINE_NAME);
-  for (const x of spend.expenses) {
-    if (x.EventID !== null) charge(findEventBudgetLine(lines, x.EventID, x.EventName), x.Amount);
-    else if (x.MeetingID !== null) charge(meetingsLine, x.Amount);
-    else charge(undefined, x.Amount);
-  }
+  for (const x of spend.expenses) charge(x.BudgetLineID == null ? undefined : lines.find((l) => l.id === x.BudgetLineID), x.Amount);
   for (const c of spend.charityChecks) {
     const assigned = c.BudgetLineID == null ? undefined : lines.find((l) => l.id === c.BudgetLineID);
     charge(assigned ?? lines.find((l) => l.CategoryType === 'Donation' && l.ReferenceSourceID === c.CharityID), c.Amount);
@@ -754,7 +753,9 @@ export function buildPriorYearBaselines(input: {
   const { councilId, fraternalYear, priorLines, priorSpend } = input;
   const lines = sortBudgetLines(input.lines);
   const priorStatus = priorLines.length > 0 ? budgetStatusOf(priorLines) : null;
-  const { byLine } = attributeBudgetSpend(lines, priorSpend);
+  // Last year's sheets carry last year's line ids (Sprint 6G Extension), so the spend is charged to last year's lines
+  // and each line reads the actual of the one it continues.
+  const { byLine } = attributeBudgetSpend(priorLines, priorSpend);
   return {
     councilId,
     fraternalYear,
@@ -766,7 +767,7 @@ export function buildPriorYearBaselines(input: {
         lineId: line.id,
         priorLineId: prior?.id ?? null,
         priorApproved: prior && priorStatus === 'Approved' ? prior.ApprovedBudgetAmount : null,
-        priorActual: (byLine.get(line.id) ?? 0) / 100,
+        priorActual: prior ? (byLine.get(prior.id) ?? 0) / 100 : 0,
       };
     }),
   };
@@ -889,16 +890,89 @@ export function assignableExpenseBudgetLines(lines: readonly CouncilBudgetForeca
   return sortBudgetLines(currentBudgetLines(lines).filter((l) => l.BudgetStatus === 'Approved'));
 }
 
+/** What a sheet is linked to, for defaultExpenseBudgetLineId. */
+export interface ExpenseBudgetLink {
+  EventID: number | null;
+  EventName: string | null;
+  MeetingID: number | null;
+  /** The TargetBudgetLineID of the charitable request the sheet is linked to (ExpenseReport.charity_request_id). */
+  CharityBudgetLineID?: number | null;
+}
+
 /**
- * The line a signature desk's 'Assign Ledger Budget Line Item' picker starts on, matched as attributeBudgetSpend
- * charges the sheet: an event-linked sheet its Event line, a meeting-linked sheet the 'Council Meetings' line. null for
- * a loose receipt, or a link no assignable line matches; the signer must then pick one before approving.
+ * The Operational line a meeting's expenses pre-select (Sprint 6G Extension): among the assignable Operational lines
+ * of universal_category MEETING_EXPENSE_UNIVERSAL_CATEGORY, the first (forecast order) whose name mentions a meeting,
+ * else the first. A council that has not mapped its lines falls back to the 'Council Meetings' line by name.
  */
-export function defaultExpenseBudgetLineId(
-  assignable: readonly CouncilBudgetForecast[],
-  link: { EventID: number | null; EventName: string | null; MeetingID: number | null },
-): number | null {
+export function findMeetingBudgetLine(assignable: readonly CouncilBudgetForecast[]): CouncilBudgetForecast | undefined {
+  const fraternal = sortBudgetLines(
+    assignable.filter((l) => l.CategoryType === 'Operational' && l.ReferenceSourceID == null && l.universal_category === MEETING_EXPENSE_UNIVERSAL_CATEGORY),
+  );
+  return fraternal.find((l) => /meeting/i.test(l.LineItemName)) ?? fraternal[0] ?? findOperationalBudgetLine(assignable, BUDGET_MEETINGS_LINE_NAME);
+}
+
+/**
+ * The line a signature desk's 'Assign Ledger Budget Line Item' picker starts on, and the line a signature given without
+ * a pick saves: a sheet linked to a charitable request takes the request's TargetBudgetLineID (when assignable); an
+ * event-linked sheet its Event line; a meeting-linked sheet the fraternal-activities meetings line
+ * (findMeetingBudgetLine). null for a loose receipt, or a link no assignable line matches; the signer must then pick one.
+ */
+export function defaultExpenseBudgetLineId(assignable: readonly CouncilBudgetForecast[], link: ExpenseBudgetLink): number | null {
+  const charityLine = link.CharityBudgetLineID == null ? undefined : assignable.find((l) => l.id === link.CharityBudgetLineID);
+  if (charityLine) return charityLine.id;
   if (link.EventID !== null) return findEventBudgetLine(assignable, link.EventID, link.EventName)?.id ?? null;
-  if (link.MeetingID !== null) return findOperationalBudgetLine(assignable, BUDGET_MEETINGS_LINE_NAME)?.id ?? null;
+  if (link.MeetingID !== null) return findMeetingBudgetLine(assignable)?.id ?? null;
   return null;
 }
+
+/**
+ * The id of the latest budget_version of the line `budgetLineId` names, among the council's lines of every version
+ * (Sprint 6G Extension): a sheet saved against a line that was later amended keeps charging the amended line. null when
+ * `budgetLineId` is null or names no line in `allLines`.
+ */
+export function currentBudgetLineIdOf(allLines: readonly CouncilBudgetForecast[], budgetLineId: number | null | undefined): number | null {
+  const saved = budgetLineId == null ? undefined : allLines.find((l) => l.id === budgetLineId);
+  if (!saved) return null;
+  const versions = budgetLineVersions(allLines, saved);
+  return versions[versions.length - 1].id;
+}
+
+/**
+ * The signature desks' budget line check (Sprint 6G Extension): `budgetLineId` must be a record id naming an Approved
+ * line of `councilId` at its latest budget_version, among the council's lines of every version. Returns the id;
+ * INVALID_INPUT otherwise.
+ */
+export function assertExpenseBudgetLine(allLines: readonly CouncilBudgetForecast[], councilId: number, budgetLineId: unknown): number {
+  if (typeof budgetLineId !== 'number' || !Number.isInteger(budgetLineId) || budgetLineId <= 0) {
+    throw invalid(`The budget line must be a record id; received ${JSON.stringify(budgetLineId)}.`, { field: 'budget_line_id' });
+  }
+  const line = allLines.find((l) => l.id === budgetLineId && l.CouncilID === councilId);
+  if (!line) throw invalid(`Budget line ${budgetLineId} is not a line of council ${councilId}.`, { field: 'budget_line_id', budgetLineId, councilId });
+  if (line.BudgetStatus !== 'Approved' || currentBudgetLineIdOf(allLines, line.id) !== line.id) {
+    throw invalid(`Budget line ${budgetLineId} ("${line.LineItemName}") is not an approved line at its latest version, so no expense can be charged to it.`, {
+      field: 'budget_line_id',
+      budgetLineId,
+    });
+  }
+  return line.id;
+}
+
+/**
+ * The budget_line_id a signature saves (Sprint 6G Extension): the signer's pick when given (checked by
+ * assertExpenseBudgetLine); otherwise the line already on the sheet, read through to its latest version; otherwise the
+ * default for the sheet's link among `assignable` (the council's Approved lines of the fraternal year in progress).
+ */
+export function planExpenseBudgetLineSave(input: {
+  allLines: readonly CouncilBudgetForecast[];
+  assignable: readonly CouncilBudgetForecast[];
+  councilId: number;
+  picked: number | null | undefined;
+  saved: number | null | undefined;
+  link: ExpenseBudgetLink;
+}): number | null {
+  if (input.picked != null) return assertExpenseBudgetLine(input.allLines, input.councilId, input.picked);
+  const kept = currentBudgetLineIdOf(input.allLines, input.saved);
+  if (kept !== null) return kept;
+  return defaultExpenseBudgetLineId(input.assignable, input.link);
+}
+

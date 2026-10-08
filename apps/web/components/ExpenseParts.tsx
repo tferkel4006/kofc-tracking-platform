@@ -262,6 +262,9 @@ export function SignatureDeskTable({
 // ---- 'Assign Ledger Budget Line Item' (Sprint 6G) ---------------------------------------------------
 
 export const ASSIGN_BUDGET_LINE_LABEL = 'Assign Ledger Budget Line Item';
+/** The signing commands of the two dual-approval desks (Sprint 6G Extension). */
+export const EXPENSE_APPROVE_LABEL = '📜 Approve Expense';
+export const EXPENSE_COUNTERSIGN_LABEL = '✍️ Countersign Expense';
 
 export interface ExpenseBudgetLineAssignments {
   fraternalYear: string;
@@ -269,15 +272,19 @@ export interface ExpenseBudgetLineAssignments {
   lines: readonly CouncilBudgetForecast[];
   loading: boolean;
   error: string | null;
-  /** The sheet's line: the signer's pick, else the line its event or meeting link matches; null keeps the approval locked. */
+  /**
+   * The sheet's line: the signer's pick, else the line already saved on the sheet (budget_line_id), else the line its
+   * charitable request, event or meeting link matches; null keeps the approval locked.
+   */
   lineIdOf(detail: ExpenseReportDetail): number | null;
   choose(reportId: number, lineId: number | null): void;
 }
 
 /**
- * The picker state a signature desk keeps for its rows. An event- or meeting-linked sheet starts on its matching line
- * (defaultExpenseBudgetLineId); a loose receipt starts blank. The choice lives in the desk for the session only: no
- * ExpenseReport column stores it (schema 44).
+ * The picker state a signature desk keeps for its rows. A sheet starts on the line saved on it by the written order
+ * (ExpenseReport.budget_line_id, Sprint 6G Extension), else on its matching line (defaultExpenseBudgetLineId: its
+ * charitable request's line, its Event line, or the fraternal-activities meetings line); a loose receipt starts blank.
+ * The signature sends the choice to the data service, which saves it on the sheet.
  */
 export function useExpenseBudgetLineAssignments(councilId: number, refs: ExpenseReferenceOptions): ExpenseBudgetLineAssignments {
   const user = useUser();
@@ -287,11 +294,14 @@ export function useExpenseBudgetLineAssignments(councilId: number, refs: Expense
   const [picked, setPicked] = useState<ReadonlyMap<number, number | null>>(new Map());
   const lineIdOf = (d: ExpenseReportDetail) => {
     if (picked.has(d.report.id)) return picked.get(d.report.id) ?? null;
+    const saved = d.report.budget_line_id ?? null;
+    if (saved !== null && lines.some((l) => l.id === saved)) return saved;
     const eventId = d.report.LinkedEventID ?? null;
     return defaultExpenseBudgetLineId(lines, {
       EventID: eventId,
       EventName: eventId === null ? null : (refs.events.find((e) => e.id === eventId)?.EventName ?? null),
       MeetingID: d.report.LinkedMeetingID ?? null,
+      CharityBudgetLineID: d.charityBudgetLineId,
     });
   };
   return {

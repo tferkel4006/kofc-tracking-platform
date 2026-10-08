@@ -98,7 +98,7 @@ The web portal sidebar has seven groups, called pillars. Every member sees these
 ![Member Actions Hub (placeholder)](../generated/mobile_app_catalog/member_actions_hub.png)
 <!-- /KEEP_IMAGE -->
 
-Some officer desks show a gold **Locked** badge. The badge tells you that the desk exists. Point at the badge to see who holds the desk.
+The sidebar shows only the pages that your role can open. Officer desks that your role cannot open do not show.
 
 The header at the top right of the portal has four controls.
 

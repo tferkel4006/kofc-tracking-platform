@@ -52,14 +52,15 @@ function priorLine(d: DriverUnderTest, db: DataService, over: Partial<CouncilBud
 
 /**
  * An annual event of last year with an Approved expense sheet of `spend`, so the rollup gives it an Event line. Its
- * manual Event.Spend is set to a decoy the budget engine never reads (Sprint 6B).
+ * manual Event.Spend is set to a decoy the budget engine never reads (Sprint 6B). The sheet is charged to
+ * `budgetLineId`, as its signers saved it (Sprint 6G Extension).
  */
-async function annualEvent(d: DriverUnderTest, db: DataService, name: string, spend: number) {
+async function annualEvent(d: DriverUnderTest, db: DataService, name: string, spend: number, budgetLineId: number | null = null) {
   const event = await db.events.create(
     { EventName: name, EventDescription: 'Yearly', OwnerID: MEMBER.admin, StartDate: '2026-10-10', EndDate: '2026-10-10', Location: 'Hall', CategoryID: 1, IsAnnual: 1 },
     [OWN],
   );
-  const report = raw(d, db, 'ExpenseReport', { CouncilID: OWN, SubmitterMemberID: MEMBER.member, Status: 'Approved', LinkedEventID: event.id, LinkedMeetingID: null });
+  const report = raw(d, db, 'ExpenseReport', { CouncilID: OWN, SubmitterMemberID: MEMBER.member, Status: 'Approved', LinkedEventID: event.id, LinkedMeetingID: null, budget_line_id: budgetLineId });
   raw(d, db, 'ExpenseLineItem', { ExpenseReportID: report, DateOfExpense: '2026-10-10', Amount: spend, VendorName: 'Costco', ExpenseDescription: 'Supplies' });
   return db.events.update(event.id, { Spend: 9999 });
 }
@@ -95,7 +96,8 @@ describe('buildPriorYearBaselines (pure)', () => {
       prior(2, { CategoryType: 'Donation', ReferenceSourceID: 3, LineItemName: 'Old name', ApprovedBudgetAmount: 250 }),
       prior(3, { LineItemName: 'bank fees', ApprovedBudgetAmount: 120 }),
     ];
-    const spend = { expenses: [{ EventID: 40, EventName: 'Fish Fry', MeetingID: null, Amount: 410.25 }], charityChecks: [{ CharityID: 3, Amount: 300 }] };
+    // Last year's sheet was charged to last year's Fish Fry line (Sprint 6G Extension: the saved budget_line_id).
+    const spend = { expenses: [{ BudgetLineID: 1, Amount: 410.25 }], charityChecks: [{ CharityID: 3, Amount: 300 }] };
     const result = buildPriorYearBaselines({ councilId: OWN, fraternalYear: TARGET, lines, priorLines, priorSpend: spend });
     expect(result).toMatchObject({ priorFraternalYear: SOURCE, priorStatus: 'Approved' });
     const byId = new Map(result.lines.map((l) => [l.lineId, l]));
@@ -142,8 +144,8 @@ describe.each(drivers)('$name driver: dual-baseline budgeting', (d) => {
 
   it('puts last year’s approved cap beside last year’s actual spend for every line', async () => {
     const db = await make(d);
-    await annualEvent(d, db, 'Baseline Gala', 400);
-    priorLine(d, db, { CategoryType: 'Event', ReferenceSourceID: null, LineItemName: 'Baseline Gala', ApprovedBudgetAmount: 500 });
+    const gala = priorLine(d, db, { CategoryType: 'Event', ReferenceSourceID: null, LineItemName: 'Baseline Gala', ApprovedBudgetAmount: 500 });
+    await annualEvent(d, db, 'Baseline Gala', 400, gala);
     priorLine(d, db, { LineItemName: 'Bank Fees', ApprovedBudgetAmount: 150 });
     await db.budget.prePopulateNextYear(MEMBER.admin, OWN, TARGET);
     const fresh = await db.budget.addCustomBudgetLine(MEMBER.admin, OWN, { FraternalYear: TARGET, LineItemName: 'Website Hosting' });

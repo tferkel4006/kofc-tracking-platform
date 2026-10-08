@@ -2665,6 +2665,20 @@ export const TABLES: Record<string, TableMeta> = {
           "kind": "literal",
           "value": 0
         }
+      },
+      {
+        "name": "budget_line_id",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "charity_request_id",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -2701,6 +2715,16 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "GrandKnightMemberID",
         "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "budget_line_id",
+        "refTable": "CouncilBudgetForecast",
+        "refColumn": "id"
+      },
+      {
+        "column": "charity_request_id",
+        "refTable": "CharitableRequest",
         "refColumn": "id"
       }
     ],

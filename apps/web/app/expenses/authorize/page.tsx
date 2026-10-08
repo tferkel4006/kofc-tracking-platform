@@ -1,11 +1,12 @@
 'use client';
 // Grand Knight Authorization Desk (Sprint 5Z-4): the second line of expense dual approval. The council's Grand Knight,
 // its Admins and any Super Admin open it (canOpenExpenseAuthorizeDesk; the drivers: listAuthorizationQueue). It lists
-// only 'Submitted' sheets that carry the Financial Secretary's written order, oldest first, with the counter-sign
-// command (expenses.grandKnightAuthorizeOrder), which sets the sheet 'Approved' and releases it to the Treasurer's
-// disbursement vault. Only the Grand Knight or a Super Admin counter-signs, never on their own sheet, and never the
-// officer who issued the order: that row is locked with the Collusion Guard padlock (expenseCounterSignBlock; the
-// drivers: GRAND_KNIGHT_REQUIRED, SELF_APPROVAL_BLOCKED, DUAL_SIGNATURE_CONFLICT).
+// only 'Submitted' sheets that carry the Financial Secretary's written order, oldest first, with the '✍️ Countersign
+// Expense' command (expenses.grandKnightAuthorizeOrder), which saves the row's budget line pick (Sprint 6G Extension),
+// sets the sheet 'Approved' and releases it to the Treasurer's disbursement vault. Only the Grand Knight or a Super
+// Admin counter-signs, never on their own sheet, and never the officer who issued the order (expenseCounterSignBlock;
+// the drivers: GRAND_KNIGHT_REQUIRED, SELF_APPROVAL_BLOCKED, DUAL_SIGNATURE_CONFLICT). A row the viewer may not sign
+// shows no picker and no button, only the reason (the Collusion Guard badge for the order's own issuer).
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import {
@@ -22,6 +23,7 @@ import {
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import {
   BudgetLinePicker,
+  EXPENSE_COUNTERSIGN_LABEL,
   ReturnToMemberForm,
   SignatureDeskTable,
   submitterName,
@@ -68,7 +70,7 @@ function AuthorizationDesk() {
     setBusyId(d.report.id);
     setMessage(null);
     try {
-      const signed = await db.expenses.grandKnightAuthorizeOrder(user.memberId, d.report.id);
+      const signed = await db.expenses.grandKnightAuthorizeOrder(user.memberId, d.report.id, budgetLines.lineIdOf(d));
       setReleased((now) => new Map(now).set(signed.report.id, signed));
       setMessage({
         tone: 'info',
@@ -86,34 +88,35 @@ function AuthorizationDesk() {
   const action = (d: ExpenseReportDetail) => {
     if (released.has(d.report.id)) return <Pill tone="navy">✓ Released to the Treasurer</Pill>;
     const block = expenseCounterSignBlock(user, d.report);
+    // Sprint 6G Extension: a row the viewer may not sign shows no signing controls at all, only why.
+    if (block === 'collusion') {
+      return (
+        <span title="Collusion Guard: you issued the written order on this report, so another officer must counter-sign it.">
+          <Pill tone="redOutline">🔒 Collusion Guard</Pill>
+        </span>
+      );
+    }
+    if (block === 'own-report') {
+      return (
+        <span title="For accounting controls, another officer must counter-sign your own report.">
+          <Pill tone="redOutline">Your own report</Pill>
+        </span>
+      );
+    }
+    if (block === 'seat') return <Pill tone="outline">Grand Knight signs</Pill>;
     const unassigned = budgetLines.lineIdOf(d) === null;
     return (
       <span className="inline-flex flex-col items-start gap-2">
-        <BudgetLinePicker detail={d} assignments={budgetLines} disabled={block !== null || busyId !== null} />
-        <span className="inline-flex flex-wrap items-center gap-2">
-          <Button
-            disabled={block !== null || busyId !== null || unassigned}
-            className="px-5 py-2"
-            aria-label={`Counter-sign the voucher for report ${d.report.id}`}
-            title={
-              block === 'collusion'
-                ? 'Collusion Guard: you issued the written order on this report, so another officer must counter-sign it.'
-                : block === 'own-report'
-                  ? 'For accounting controls, another officer must counter-sign your own report.'
-                  : block === 'seat'
-                    ? 'Only the Grand Knight or a Super Admin counter-signs expense orders.'
-                    : unassigned
-                      ? 'Assign a ledger budget line item first.'
-                      : undefined
-            }
-            onClick={() => void counterSign(d)}
-          >
-            {busyId === d.report.id ? 'Counter-signing…' : '✍️ Counter-Sign Voucher'}
-          </Button>
-          {block === 'collusion' ? <Pill tone="redOutline">🔒 Collusion Guard</Pill> : null}
-          {block === 'own-report' ? <Pill tone="redOutline">Your own report</Pill> : null}
-          {block === 'seat' ? <Pill tone="outline">Grand Knight signs</Pill> : null}
-        </span>
+        <BudgetLinePicker detail={d} assignments={budgetLines} disabled={busyId !== null} />
+        <Button
+          disabled={busyId !== null || unassigned}
+          className="px-5 py-2"
+          aria-label={`Countersign expense report ${d.report.id}`}
+          title={unassigned ? 'Assign a ledger budget line item first.' : undefined}
+          onClick={() => void counterSign(d)}
+        >
+          {busyId === d.report.id ? 'Countersigning…' : EXPENSE_COUNTERSIGN_LABEL}
+        </Button>
       </span>
     );
   };
