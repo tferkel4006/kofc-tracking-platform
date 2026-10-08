@@ -1,6 +1,7 @@
 // Sprint 6A (Phase 5): Membership Dues & Budget Performance Tracker - Council.base_dues_rate (schema 41), the dues
 // revenue forecast (buildDuesForecast) and budgeted vs. actual spend for concluded events and meetings
 // (buildConcludedBudgetPerformance, budget.getConcludedPerformance) with isolated Historical Benchmark lines.
+// Sprint 6C: event budgets come only from the approved 'Event' rows of CouncilBudgetForecast, never Event.Budget.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -93,15 +94,19 @@ describe('buildDuesForecast', () => {
   });
 });
 
+function approvedEventLine(id: number, FraternalYear: string, LineItemName: string, amount: number, ReferenceSourceID: number | null = null): CouncilBudgetForecast {
+  return line({ id, FraternalYear, CategoryType: 'Event', ReferenceSourceID, LineItemName, ApprovedBudgetAmount: amount, ProposedBudgetAmount: amount, BudgetStatus: 'Approved' });
+}
+
 describe('buildConcludedBudgetPerformance', () => {
   const rows: ConcludedPerformanceRows = {
     events: [
-      { id: 1, EventName: 'Fish Fry', StartDate: '2025-03-06', EndDate: '2025-03-06', IsAnnual: 1, Budget: 400 },
-      { id: 2, EventName: 'fish  fry', StartDate: '2026-09-12', EndDate: '2026-09-12', IsAnnual: 1, Budget: 500 },
-      { id: 3, EventName: 'Rosary Rally', StartDate: '2026-08-15', EndDate: '2026-08-15', IsAnnual: 0, Budget: 100 },
-      { id: 4, EventName: 'Coat Drive', StartDate: '2026-09-01', EndDate: '2026-09-25', IsAnnual: 0, Budget: 50 }, // still running
-      { id: 5, EventName: 'Summer Social', StartDate: '2026-06-20', EndDate: '2026-06-20', IsAnnual: 0, Budget: 80 }, // last year
-      { id: 6, EventName: 'Tootsie Roll Drive', StartDate: '2026-09-05', EndDate: '2026-09-06', IsAnnual: true, Budget: null },
+      { id: 1, EventName: 'Fish Fry', StartDate: '2025-03-06', EndDate: '2025-03-06', IsAnnual: 1 },
+      { id: 2, EventName: 'fish  fry', StartDate: '2026-09-12', EndDate: '2026-09-12', IsAnnual: 1 },
+      { id: 3, EventName: 'Rosary Rally', StartDate: '2026-08-15', EndDate: '2026-08-15', IsAnnual: 0 },
+      { id: 4, EventName: 'Coat Drive', StartDate: '2026-09-01', EndDate: '2026-09-25', IsAnnual: 0 }, // still running
+      { id: 5, EventName: 'Summer Social', StartDate: '2026-06-20', EndDate: '2026-06-20', IsAnnual: 0 }, // last year
+      { id: 6, EventName: 'Tootsie Roll Drive', StartDate: '2026-09-05', EndDate: '2026-09-06', IsAnnual: true },
     ],
     expenses: [
       { EventID: 2, MeetingID: null, Amount: 150.25 },
@@ -120,17 +125,77 @@ describe('buildConcludedBudgetPerformance', () => {
       { id: 11, Date: '2026-10-05', EndDate: null },
       { id: 12, Date: '2026-09-19', EndDate: '2026-09-20' }, // ends today: not concluded
     ],
-    lines: [line({ BudgetStatus: 'Approved', ApprovedBudgetAmount: 200, ProposedBudgetAmount: 200 })],
+    lines: [
+      line({ BudgetStatus: 'Approved', ApprovedBudgetAmount: 200, ProposedBudgetAmount: 200 }),
+      approvedEventLine(20, '2026-2027', 'Fish Fry', 500), // matched by name, ignoring case and spacing
+      approvedEventLine(21, '2026-2027', 'Rosary Rally (budget line)', 100, 3), // matched by ReferenceSourceID
+      approvedEventLine(22, '2026-2027', 'Coat Drive', 50),
+      approvedEventLine(23, '2025-2026', 'Summer Social', 80),
+      approvedEventLine(24, '2024-2025', 'Fish Fry', 400), // the benchmark's own year
+      approvedEventLine(25, '2025-2026', 'Tootsie Roll Drive', 60), // another year's line never applies
+    ],
   };
   const result = buildConcludedBudgetPerformance({ councilId: OWN, fraternalYear: '2026-2027', today: '2026-09-20', rows });
 
   it('lists the events of the year that ended before today, newest first, budget against their rolled-up expenses', () => {
     expect(result).toMatchObject({ councilId: OWN, fraternalYear: '2026-2027', fromDate: '2026-07-01', throughDate: '2026-09-19' });
-    expect(result.events.map((e) => [e.eventId, e.budget, e.actual, e.variance, e.percentUsed, e.alert])).toEqual([
-      [2, 500, 450.25, 49.75, 90.1, 'Warning'],
-      [6, null, 25, null, null, 'Unbudgeted'],
-      [3, 100, 120, -20, 120, 'Over Budget'],
+    expect(result.events.map((e) => [e.eventId, e.budget, e.budgetLineId, e.actual, e.variance, e.percentUsed, e.alert])).toEqual([
+      [2, 500, 20, 450.25, 49.75, 90.1, 'Warning'],
+      [6, null, null, 25, null, null, 'Unbudgeted'],
+      [3, 100, 21, 120, -20, 120, 'Over Budget'],
     ]);
+  });
+
+  it('pulls each event budget from its year’s approved Event forecast line, never a manual Event.Budget field (Sprint 6C)', () => {
+    const manual = buildConcludedBudgetPerformance({
+      councilId: OWN,
+      fraternalYear: '2026-2027',
+      today: '2026-09-20',
+      rows: { ...rows, events: rows.events.map((e) => ({ ...e, Budget: 9999 })) },
+    });
+    expect(manual.events.map((e) => e.budget)).toEqual([500, null, 100]);
+    expect(manual.totals).toEqual(result.totals);
+
+    // A line the council has not yet approved (Draft or Proposed) budgets nothing.
+    const proposed = buildConcludedBudgetPerformance({
+      councilId: OWN,
+      fraternalYear: '2026-2027',
+      today: '2026-09-20',
+      rows: { ...rows, lines: rows.lines.map((l) => (l.id === 20 ? { ...l, BudgetStatus: 'Proposed' as const, ApprovedBudgetAmount: 0 } : l)) },
+    });
+    expect(proposed.events.find((e) => e.eventId === 2)).toMatchObject({ budget: null, budgetLineId: null, alert: 'Unbudgeted' });
+
+    // ReferenceSourceID wins over a same-named line; Donation and Operational lines never budget an event.
+    const linked = buildConcludedBudgetPerformance({
+      councilId: OWN,
+      fraternalYear: '2026-2027',
+      today: '2026-09-20',
+      rows: {
+        ...rows,
+        lines: [
+          ...rows.lines,
+          approvedEventLine(30, '2026-2027', 'Fish Fry (second line)', 650, 2),
+          line({ id: 31, CategoryType: 'Operational', LineItemName: 'Tootsie Roll Drive', ApprovedBudgetAmount: 70, BudgetStatus: 'Approved' }),
+          line({ id: 32, CategoryType: 'Donation', ReferenceSourceID: 6, LineItemName: 'Tootsie Roll Drive', ApprovedBudgetAmount: 70, BudgetStatus: 'Approved' }),
+        ],
+      },
+    });
+    expect(linked.events.map((e) => [e.eventId, e.budgetLineId, e.budget])).toEqual([
+      [2, 30, 650],
+      [6, null, null],
+      [3, 21, 100],
+    ]);
+  });
+
+  it('adds a forecast line shared by two events of the same name to the budget total once', () => {
+    const twice = buildConcludedBudgetPerformance({
+      councilId: OWN,
+      fraternalYear: '2026-2027',
+      today: '2026-09-20',
+      rows: { ...rows, events: [...rows.events, { id: 7, EventName: 'Fish Fry', StartDate: '2026-08-01', EndDate: '2026-08-01', IsAnnual: 1 }] },
+    });
+    expect(twice.events.filter((e) => e.budgetLineId === 20).map((e) => e.eventId)).toEqual([2, 7]);
+    expect(twice.totals.budget).toBe(result.totals.budget);
   });
 
   it("gives annual events their previous occurrence as a Historical Benchmark that no total counts", () => {
@@ -206,11 +271,27 @@ describe.each(drivers)('budget.getConcludedPerformance ($name)', (d) => {
         { EventName: name, EventDescription: 'Fixture', OwnerID: MEMBER.superAdmin, StartDate: date, EndDate: date, Location: 'Hall', CategoryID: category, ...over },
         councils,
       );
-    // Spend is a manual figure the rollup never reads (Sprint 6B); only Approved and Reimbursed sheets count.
-    const prior = await event('Dues Fish Fry', '2025-03-06', { IsAnnual: 1, Budget: 400, Spend: 5000 });
-    const fishFry = await event('Dues Fish Fry', '2026-09-12', { IsAnnual: 1, Budget: 500, Spend: 7777 });
+    // Spend and Budget are manual figures the grid never reads (Sprints 6B, 6C): only Approved and Reimbursed sheets
+    // count as actuals, and only the approved CouncilBudgetForecast Event lines as budgets.
+    const prior = await event('Dues Fish Fry', '2025-03-06', { IsAnnual: 1, Budget: 4444, Spend: 5000 });
+    const fishFry = await event('Dues Fish Fry', '2026-09-12', { IsAnnual: 1, Budget: 5555, Spend: 7777 });
     await event('Dues Future Gala', '2026-10-01', { Budget: 900, Spend: 0 });
     await event('Dues Neighbour Fry', '2026-09-12', { IsAnnual: 1, Budget: 999, Spend: 999 }, [OTHER]);
+    const forecastLine = (councilId: number, year: string, name: string, amount: number, status = 'Approved') =>
+      raw(d, db, 'CouncilBudgetForecast', {
+        CouncilID: councilId,
+        FraternalYear: year,
+        CategoryType: 'Event',
+        ReferenceSourceID: null,
+        LineItemName: name,
+        PrePopulatedAmount: 0,
+        ProposedBudgetAmount: amount,
+        ApprovedBudgetAmount: status === 'Approved' ? amount : 0,
+        BudgetStatus: status,
+      });
+    forecastLine(OWN, '2024-2025', 'Dues Fish Fry', 400);
+    const fishFryLine = forecastLine(OWN, '2026-2027', 'dues fish fry', 500);
+    forecastLine(OTHER, '2026-2027', 'Dues Fish Fry', 8888); // another council's line never applies
     const report = (eventId: number | null, meetingId: number | null, amount: number, status = 'Approved') => {
       const id = raw(d, db, 'ExpenseReport', { CouncilID: OWN, SubmitterMemberID: MEMBER.member, Status: status, LinkedEventID: eventId, LinkedMeetingID: meetingId });
       raw(d, db, 'ExpenseLineItem', { ExpenseReportID: id, DateOfExpense: '2026-09-10', Amount: amount, VendorName: 'Costco', ExpenseDescription: 'Supplies' });
@@ -234,7 +315,7 @@ describe.each(drivers)('budget.getConcludedPerformance ($name)', (d) => {
 
     const after = await db.budget.getConcludedPerformance(MEMBER.admin, OWN);
     const row = after.events.find((e) => e.eventId === fishFry.id)!;
-    expect(row).toMatchObject({ budget: 500, actual: 450.25, percentUsed: 90.1, alert: 'Warning', isAnnual: true });
+    expect(row).toMatchObject({ budget: 500, budgetLineId: fishFryLine, actual: 450.25, percentUsed: 90.1, alert: 'Warning', isAnnual: true });
     expect(row.benchmark).toMatchObject({ eventId: prior.id, budget: 400, actual: 380, percentUsed: 95 });
     expect(after.events.map((e) => e.eventName)).not.toContain('Dues Future Gala');
     expect(after.events.map((e) => e.eventName)).not.toContain('Dues Neighbour Fry');

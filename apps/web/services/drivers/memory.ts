@@ -4404,7 +4404,6 @@ export class MemoryDataService implements DataService {
               StartDate: e.StartDate as string,
               EndDate: e.EndDate as string,
               IsAnnual: e.IsAnnual as boolean | number | null,
-              Budget: e.Budget as number | null,
             })),
           expenses: s.rows('ExpenseLineItem').flatMap((li) => {
             const report = spendingReports.get(li.ExpenseReportID);
@@ -4415,7 +4414,11 @@ export class MemoryDataService implements DataService {
             .rows('Meeting')
             .filter((m) => m.CouncilID === councilId)
             .map((m) => ({ id: m.id as number, Date: m.Date as string, EndDate: (m.EndDate as string | null) ?? null })),
-          lines: this.budgetLines(s, councilId, year).map((l) => ({ ...l })),
+          // Every year's forecast lines: event budgets (and the benchmarks') come from the approved Event lines (Sprint 6C).
+          lines: s
+            .rows('CouncilBudgetForecast')
+            .filter((l) => l.CouncilID === councilId)
+            .map((l) => ({ ...l })) as unknown as CouncilBudgetForecast[],
         },
       });
     },

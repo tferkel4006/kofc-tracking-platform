@@ -5162,9 +5162,8 @@ export class SqliteDataService implements DataService {
         StartDate: string;
         EndDate: string;
         IsAnnual: number;
-        Budget: number | null;
       }>(
-        `SELECT [id], [EventName], [StartDate], [EndDate], [IsAnnual], [Budget] FROM [Event]
+        `SELECT [id], [EventName], [StartDate], [EndDate], [IsAnnual] FROM [Event]
           WHERE [id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)`,
         [councilId],
       );
@@ -5182,7 +5181,13 @@ export class SqliteDataService implements DataService {
         councilId,
         fraternalYear: year,
         today: toIsoDate(today),
-        rows: { events, expenses, meetings, lines: await this.budgetLines(db, councilId, year) },
+        // Every year's forecast lines: event budgets (and the benchmarks') come from the approved Event lines (Sprint 6C).
+        rows: {
+          events,
+          expenses,
+          meetings,
+          lines: await db.getAllAsync<CouncilBudgetForecast>('SELECT * FROM [CouncilBudgetForecast] WHERE [CouncilID] = ?', [councilId]),
+        },
       });
     },
   };

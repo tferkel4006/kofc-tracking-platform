@@ -7,11 +7,13 @@
 //     meetings of the current fraternal year that have concluded, with each annual event's previous occurrence as a
 //     read-only Historical Benchmark. Benchmarks never enter the totals, and nothing here touches the general ledger or
 //     cash on hand.
+//     Sprint 6C: an event's budget is the ApprovedBudgetAmount of its year's 'Event' forecast line (CouncilBudgetForecast),
+//     never the manual Event.Budget field.
 // Drivers load rows already scoped to one council, call these, and return the result.
 // Sprint 6B: councils.setDuesRate writes base_dues_rate, and only the council's Grand Knight or Financial Secretary may
 // (assertMayEditDuesRate / canEditDuesRate) - no Admin or Super Admin bypass.
 // =========================================================================
-import { budgetAlertOf, budgetPercentUsed, fraternalYearBounds, BUDGET_MEETINGS_LINE_NAME, type BudgetAlert } from './budget';
+import { budgetAlertOf, budgetPercentUsed, currentFraternalYear, fraternalYearBounds, BUDGET_MEETINGS_LINE_NAME, type BudgetAlert } from './budget';
 import { BusinessRuleError, describeActor, SecurityPrivilegeError, type MemberWriteActor } from './rules';
 import type { CouncilBudgetForecast, MemberStatus } from './types';
 
@@ -125,13 +127,16 @@ export interface ConcludedPerformanceRows {
     StartDate: string;
     EndDate: string;
     IsAnnual?: boolean | number | null;
-    Budget?: number | null;
   }[];
   /** Line items of the council's 'Approved' and 'Reimbursed' expense sheets linked to an event or a meeting. */
   expenses: readonly { EventID: number | null; MeetingID: number | null; Amount: number }[];
   /** The council's meetings, any date. */
   meetings: readonly { id: number; Date: string; EndDate?: string | null }[];
-  /** The year's forecast lines; the 'Council Meetings' line supplies the meetings budget once the year is approved. */
+  /**
+   * The council's forecast lines, every fraternal year (Sprint 6C). Each event's budget is its year's approved 'Event'
+   * line; earlier years supply the benchmarks' budgets. The active year's 'Council Meetings' line supplies the meetings
+   * budget. A line counts only once its year is approved.
+   */
   lines: readonly CouncilBudgetForecast[];
 }
 
@@ -140,6 +145,7 @@ export interface HistoricalBenchmark {
   eventId: number;
   eventName: string;
   startDate: string;
+  /** The approved cap of the benchmark's own year's forecast line; null when there is none. */
   budget: number | null;
   actual: number;
   percentUsed: number | null;
@@ -151,8 +157,14 @@ export interface ConcludedEventPerformance {
   startDate: string;
   endDate: string;
   isAnnual: boolean;
-  /** Event.Budget; null when the event was never given one. */
+  /**
+   * The ApprovedBudgetAmount of the year's 'Event' forecast line for the event (Sprint 6C): the line whose
+   * ReferenceSourceID is the event, else the one whose LineItemName is the event's name ignoring case and spacing. Null
+   * without such a line or until the year is approved. The manual Event.Budget field is never read.
+   */
   budget: number | null;
+  /** The CouncilBudgetForecast line the budget comes from; null when there is none. */
+  budgetLineId: number | null;
   /**
    * The sum of the event's line items on 'Approved' and 'Reimbursed' expense sheets (Sprint 6B: the manual Event.Spend
    * field is never read).
@@ -186,7 +198,10 @@ export interface ConcludedBudgetPerformance {
   /** Newest first. */
   events: ConcludedEventPerformance[];
   meetings: ConcludedMeetingsPerformance;
-  /** Events and meetings together; benchmarks are excluded. */
+  /**
+   * Events and meetings together; benchmarks are excluded. A forecast line shared by several events (by name) adds its
+   * cap to the budget total once.
+   */
   totals: { budget: number; actual: number; variance: number; percentUsed: number | null; alert: BudgetAlert };
 }
 
@@ -221,7 +236,21 @@ export function buildConcludedBudgetPerformance(input: {
     else if (x.MeetingID != null) meetingExpenseCents.set(x.MeetingID, (meetingExpenseCents.get(x.MeetingID) ?? 0) + cents(x.Amount));
   }
   const actualOf = (e: ConcludedPerformanceRows['events'][number]) => (eventExpenseCents.get(e.id) ?? 0) / 100;
-  const budgetOf = (e: ConcludedPerformanceRows['events'][number]) => (e.Budget == null ? null : cents(e.Budget) / 100);
+  const yearOf = (iso: string) => currentFraternalYear(new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))));
+  const approvedLines = rows.lines.filter((l) => l.BudgetStatus === 'Approved');
+  const eventLineOf = (e: ConcludedPerformanceRows['events'][number]): CouncilBudgetForecast | null => {
+    const year = yearOf(e.EndDate);
+    const candidates = approvedLines.filter((l) => l.CategoryType === 'Event' && l.FraternalYear === year);
+    return (
+      candidates.find((l) => l.ReferenceSourceID === e.id) ??
+      candidates.find((l) => nameKey(l.LineItemName) === nameKey(e.EventName)) ??
+      null
+    );
+  };
+  const budgetOf = (e: ConcludedPerformanceRows['events'][number]) => {
+    const l = eventLineOf(e);
+    return l ? cents(l.ApprovedBudgetAmount) / 100 : null;
+  };
   const concluded = rows.events.filter((e) => e.EndDate < today);
 
   const benchmarkOf = (e: ConcludedPerformanceRows['events'][number]): HistoricalBenchmark | null => {
@@ -238,7 +267,8 @@ export function buildConcludedBudgetPerformance(input: {
     .filter((e) => inYear(e.EndDate))
     .sort((a, b) => b.EndDate.localeCompare(a.EndDate) || b.id - a.id)
     .map((e) => {
-      const budget = budgetOf(e);
+      const budgetLine = eventLineOf(e);
+      const budget = budgetLine ? cents(budgetLine.ApprovedBudgetAmount) / 100 : null;
       const actual = actualOf(e);
       const isAnnual = !!e.IsAnnual;
       return {
@@ -248,6 +278,7 @@ export function buildConcludedBudgetPerformance(input: {
         endDate: e.EndDate,
         isAnnual,
         budget,
+        budgetLineId: budgetLine?.id ?? null,
         actual,
         variance: budget == null ? null : sumCents([budget, -actual]),
         percentUsed: budgetPercentUsed(budget ?? 0, actual),
@@ -259,7 +290,9 @@ export function buildConcludedBudgetPerformance(input: {
   const heldMeetings = rows.meetings.filter((m) => inYear(m.EndDate ?? m.Date));
   const meetingsActual = heldMeetings.reduce((t, m) => t + (meetingExpenseCents.get(m.id) ?? 0), 0) / 100;
   const meetingsLine = rows.lines.find(
-    (l) => l.CategoryType === 'Operational' && l.ReferenceSourceID == null && nameKey(l.LineItemName) === nameKey(BUDGET_MEETINGS_LINE_NAME),
+    (l) =>
+      l.FraternalYear === fraternalYear &&
+      l.CategoryType === 'Operational' && l.ReferenceSourceID == null && nameKey(l.LineItemName) === nameKey(BUDGET_MEETINGS_LINE_NAME),
   );
   const meetingsBudget = meetingsLine && meetingsLine.BudgetStatus === 'Approved' ? cents(meetingsLine.ApprovedBudgetAmount) / 100 : null;
   const meetings: ConcludedMeetingsPerformance = {
@@ -272,7 +305,13 @@ export function buildConcludedBudgetPerformance(input: {
     alert: budgetAlertOf(meetingsBudget ?? 0, meetingsActual),
   };
 
-  const budget = sumCents([...events.map((e) => e.budget), meetings.budget]);
+  const countedLines = new Set<number>();
+  const eventBudgets = events.map((e) => {
+    if (e.budgetLineId == null || countedLines.has(e.budgetLineId)) return null;
+    countedLines.add(e.budgetLineId);
+    return e.budget;
+  });
+  const budget = sumCents([...eventBudgets, meetings.budget]);
   const actual = sumCents([...events.map((e) => e.actual), meetings.actual]);
   return {
     councilId,
