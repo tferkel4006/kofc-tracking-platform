@@ -20,7 +20,13 @@ import {
   type ExpenseReportDetail,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { ReturnToMemberForm, SignatureDeskTable, submitterName } from '@/components/ExpenseParts';
+import {
+  BudgetLinePicker,
+  ReturnToMemberForm,
+  SignatureDeskTable,
+  submitterName,
+  useExpenseBudgetLineAssignments,
+} from '@/components/ExpenseParts';
 import { Button, Notice, PageTitle, Panel, Pill } from '@/components/ui';
 import { formatMoney } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -43,6 +49,7 @@ function AuthorizationDesk() {
   );
   const refsLoad = useLoad(() => listExpenseReferences(db, councilId), [councilId]);
   const refs = refsLoad.data ?? NO_REFS;
+  const budgetLines = useExpenseBudgetLineAssignments(councilId, refs);
   // Sheets counter-signed from this desk in this session: they stay in view, advanced, with a confirmation badge.
   const [released, setReleased] = useState<ReadonlyMap<number, ExpenseReportDetail>>(new Map());
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -79,28 +86,34 @@ function AuthorizationDesk() {
   const action = (d: ExpenseReportDetail) => {
     if (released.has(d.report.id)) return <Pill tone="navy">✓ Released to the Treasurer</Pill>;
     const block = expenseCounterSignBlock(user, d.report);
+    const unassigned = budgetLines.lineIdOf(d) === null;
     return (
-      <span className="inline-flex flex-wrap items-center gap-2">
-        <Button
-          disabled={block !== null || busyId !== null}
-          className="px-5 py-2"
-          aria-label={`Counter-sign the voucher for report ${d.report.id}`}
-          title={
-            block === 'collusion'
-              ? 'Collusion Guard: you issued the written order on this report, so another officer must counter-sign it.'
-              : block === 'own-report'
-                ? 'For accounting controls, another officer must counter-sign your own report.'
-                : block === 'seat'
-                  ? 'Only the Grand Knight or a Super Admin counter-signs expense orders.'
-                  : undefined
-          }
-          onClick={() => void counterSign(d)}
-        >
-          {busyId === d.report.id ? 'Counter-signing…' : '✍️ Counter-Sign Voucher'}
-        </Button>
-        {block === 'collusion' ? <Pill tone="redOutline">🔒 Collusion Guard</Pill> : null}
-        {block === 'own-report' ? <Pill tone="redOutline">Your own report</Pill> : null}
-        {block === 'seat' ? <Pill tone="outline">Grand Knight signs</Pill> : null}
+      <span className="inline-flex flex-col items-start gap-2">
+        <BudgetLinePicker detail={d} assignments={budgetLines} disabled={block !== null || busyId !== null} />
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <Button
+            disabled={block !== null || busyId !== null || unassigned}
+            className="px-5 py-2"
+            aria-label={`Counter-sign the voucher for report ${d.report.id}`}
+            title={
+              block === 'collusion'
+                ? 'Collusion Guard: you issued the written order on this report, so another officer must counter-sign it.'
+                : block === 'own-report'
+                  ? 'For accounting controls, another officer must counter-sign your own report.'
+                  : block === 'seat'
+                    ? 'Only the Grand Knight or a Super Admin counter-signs expense orders.'
+                    : unassigned
+                      ? 'Assign a ledger budget line item first.'
+                      : undefined
+            }
+            onClick={() => void counterSign(d)}
+          >
+            {busyId === d.report.id ? 'Counter-signing…' : '✍️ Counter-Sign Voucher'}
+          </Button>
+          {block === 'collusion' ? <Pill tone="redOutline">🔒 Collusion Guard</Pill> : null}
+          {block === 'own-report' ? <Pill tone="redOutline">Your own report</Pill> : null}
+          {block === 'seat' ? <Pill tone="outline">Grand Knight signs</Pill> : null}
+        </span>
       </span>
     );
   };
@@ -112,7 +125,9 @@ function AuthorizationDesk() {
         <Notice tone="error">Only this council&apos;s Grand Knight and Admins, or a Super Admin, open its authorization desk.</Notice>
       ) : (
         <div className="flex flex-col gap-4">
-          {queue.error ?? refsLoad.error ? <Notice tone="error">{queue.error ?? refsLoad.error}</Notice> : null}
+          {(queue.error ?? refsLoad.error ?? budgetLines.error) ? (
+            <Notice tone="error">{queue.error ?? refsLoad.error ?? budgetLines.error}</Notice>
+          ) : null}
           {message ? (
             <Notice tone={message.tone} onDismiss={() => setMessage(null)}>
               {message.text}

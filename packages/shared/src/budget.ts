@@ -684,6 +684,19 @@ export interface BudgetYearSpend {
   charityChecks: readonly { CharityID: number; Amount: number; BudgetLineID?: number | null }[];
 }
 
+/** The year's Event line whose ReferenceSourceID is the event, or whose LineItemName is its name ignoring case and spacing. */
+export function findEventBudgetLine(
+  lines: readonly CouncilBudgetForecast[],
+  eventId: number | null,
+  eventName: string | null,
+): CouncilBudgetForecast | undefined {
+  return lines.find(
+    (l) =>
+      l.CategoryType === 'Event' &&
+      ((eventId !== null && l.ReferenceSourceID === eventId) || (eventName !== null && lineKey(l.LineItemName) === lineKey(eventName))),
+  );
+}
+
 /**
  * Which budget line each piece of spend counts against, in cents by line id, plus what no line claims:
  * - expenses linked to an event go to the year's Event line of the same name ignoring case (or whose
@@ -711,13 +724,9 @@ export function attributeBudgetSpend(
       miscellaneousCents += cents(amount);
     } else unbudgetedCents += cents(amount);
   };
-  const eventLine = (id: number | null, name: string | null) =>
-    lines.find(
-      (l) => l.CategoryType === 'Event' && ((id !== null && l.ReferenceSourceID === id) || (name !== null && lineKey(l.LineItemName) === lineKey(name))),
-    );
   const meetingsLine = findOperationalBudgetLine(lines, BUDGET_MEETINGS_LINE_NAME);
   for (const x of spend.expenses) {
-    if (x.EventID !== null) charge(eventLine(x.EventID, x.EventName), x.Amount);
+    if (x.EventID !== null) charge(findEventBudgetLine(lines, x.EventID, x.EventName), x.Amount);
     else if (x.MeetingID !== null) charge(meetingsLine, x.Amount);
     else charge(undefined, x.Amount);
   }
@@ -871,4 +880,25 @@ export function summarizeBudgetHistory(councilId: number, years: readonly Budget
       yearsOverBudget: approved.filter((y) => y.alert === 'Over Budget').length,
     },
   };
+}
+
+// ---- the signature desks' budget line picker (Sprint 6G) -------------------------------------------
+
+/** The lines an expense voucher may be assigned to on the signature desks: the year's Approved lines, in forecast order. */
+export function assignableExpenseBudgetLines(lines: readonly CouncilBudgetForecast[]): CouncilBudgetForecast[] {
+  return sortBudgetLines(currentBudgetLines(lines).filter((l) => l.BudgetStatus === 'Approved'));
+}
+
+/**
+ * The line a signature desk's 'Assign Ledger Budget Line Item' picker starts on, matched as attributeBudgetSpend
+ * charges the sheet: an event-linked sheet its Event line, a meeting-linked sheet the 'Council Meetings' line. null for
+ * a loose receipt, or a link no assignable line matches; the signer must then pick one before approving.
+ */
+export function defaultExpenseBudgetLineId(
+  assignable: readonly CouncilBudgetForecast[],
+  link: { EventID: number | null; EventName: string | null; MeetingID: number | null },
+): number | null {
+  if (link.EventID !== null) return findEventBudgetLine(assignable, link.EventID, link.EventName)?.id ?? null;
+  if (link.MeetingID !== null) return findOperationalBudgetLine(assignable, BUDGET_MEETINGS_LINE_NAME)?.id ?? null;
+  return null;
 }

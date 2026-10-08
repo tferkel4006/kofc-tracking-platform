@@ -1,13 +1,17 @@
 'use client';
 // Pieces shared by the expense screens (My Expense Reports, the audit queue, the two dual-approval desks and check
 // disbursements): the status chip, the receipt link, the read-only receipt grid, the signature trail, the return form
-// and the signature desk grid (Sprint 5Z-4).
+// and the signature desk grid (Sprint 5Z-4), and the desks' 'Assign Ledger Budget Line Item' picker (Sprint 6G).
 import { Fragment, useState, type ReactNode } from 'react';
 import {
+  assignableExpenseBudgetLines,
+  currentFraternalYear,
+  defaultExpenseBudgetLineId,
   describeError,
   expenseReferenceLabel,
   expenseStatusBadge,
   REJECTION_REASON_MAX_LENGTH,
+  type CouncilBudgetForecast,
   type ExpenseLineItem,
   type ExpenseReferenceOptions,
   type ExpenseReport,
@@ -15,10 +19,11 @@ import {
   driveFileViewUrl,
   isDriveFileId,
 } from '@kofc/shared';
-import { Button, Empty, Field, Notice, Pill, Table, Td, Textarea } from '@/components/ui';
+import { Button, Empty, Field, Notice, Pill, Select, Table, Td, Textarea } from '@/components/ui';
 import { formatFullDate, formatMoney, formatPersonName, minutesFileName } from '@/lib/format';
 import { photoName, photoSrc } from '@/lib/media';
 import { useUser } from '@/lib/session';
+import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
 export const submitterName = (d: ExpenseReportDetail) =>
@@ -251,5 +256,93 @@ export function SignatureDeskTable({
         );
       })}
     </Table>
+  );
+}
+
+// ---- 'Assign Ledger Budget Line Item' (Sprint 6G) ---------------------------------------------------
+
+export const ASSIGN_BUDGET_LINE_LABEL = 'Assign Ledger Budget Line Item';
+
+export interface ExpenseBudgetLineAssignments {
+  fraternalYear: string;
+  /** The council's Approved forecast lines for the fraternal year in progress, in forecast order. */
+  lines: readonly CouncilBudgetForecast[];
+  loading: boolean;
+  error: string | null;
+  /** The sheet's line: the signer's pick, else the line its event or meeting link matches; null keeps the approval locked. */
+  lineIdOf(detail: ExpenseReportDetail): number | null;
+  choose(reportId: number, lineId: number | null): void;
+}
+
+/**
+ * The picker state a signature desk keeps for its rows. An event- or meeting-linked sheet starts on its matching line
+ * (defaultExpenseBudgetLineId); a loose receipt starts blank. The choice lives in the desk for the session only: no
+ * ExpenseReport column stores it (schema 44).
+ */
+export function useExpenseBudgetLineAssignments(councilId: number, refs: ExpenseReferenceOptions): ExpenseBudgetLineAssignments {
+  const user = useUser();
+  const fraternalYear = currentFraternalYear(new Date());
+  const forecast = useLoad(() => db.budget.listAnnualForecast(user.memberId, councilId, fraternalYear), [user.memberId, councilId, fraternalYear]);
+  const lines = assignableExpenseBudgetLines(forecast.data?.lines ?? []);
+  const [picked, setPicked] = useState<ReadonlyMap<number, number | null>>(new Map());
+  const lineIdOf = (d: ExpenseReportDetail) => {
+    if (picked.has(d.report.id)) return picked.get(d.report.id) ?? null;
+    const eventId = d.report.LinkedEventID ?? null;
+    return defaultExpenseBudgetLineId(lines, {
+      EventID: eventId,
+      EventName: eventId === null ? null : (refs.events.find((e) => e.id === eventId)?.EventName ?? null),
+      MeetingID: d.report.LinkedMeetingID ?? null,
+    });
+  };
+  return {
+    fraternalYear,
+    lines,
+    loading: forecast.loading && !forecast.data,
+    error: forecast.error,
+    lineIdOf,
+    choose: (reportId, lineId) => setPicked((now) => new Map(now).set(reportId, lineId)),
+  };
+}
+
+/** A desk row's 'Assign Ledger Budget Line Item' dropdown. Blank means unassigned, and the approval stays locked. */
+export function BudgetLinePicker({
+  detail,
+  assignments,
+  disabled,
+}: {
+  detail: ExpenseReportDetail;
+  assignments: ExpenseBudgetLineAssignments;
+  disabled?: boolean;
+}) {
+  const { lines, fraternalYear } = assignments;
+  const value = assignments.lineIdOf(detail);
+  const hint =
+    lines.length === 0
+      ? assignments.loading
+        ? 'Loading the budget…'
+        : `The ${fraternalYear} budget has no approved lines yet.`
+      : value === null
+        ? 'Choose a line to unlock the approval.'
+        : undefined;
+  return (
+    <Field label={ASSIGN_BUDGET_LINE_LABEL} hint={hint} className="min-w-56">
+      {(id) => (
+        <Select
+          id={id}
+          value={value === null ? '' : String(value)}
+          disabled={disabled || lines.length === 0}
+          required
+          aria-invalid={value === null}
+          onChange={(e) => assignments.choose(detail.report.id, e.target.value === '' ? null : Number(e.target.value))}
+        >
+          <option value="">— Select a {fraternalYear} budget line —</option>
+          {lines.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.LineItemName} ({l.CategoryType}, {formatMoney(l.ApprovedBudgetAmount)})
+            </option>
+          ))}
+        </Select>
+      )}
+    </Field>
   );
 }

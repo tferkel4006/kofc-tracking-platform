@@ -21,7 +21,13 @@ import {
   type ExpenseReportDetail,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { ReturnToMemberForm, SignatureDeskTable, submitterName } from '@/components/ExpenseParts';
+import {
+  BudgetLinePicker,
+  ReturnToMemberForm,
+  SignatureDeskTable,
+  submitterName,
+  useExpenseBudgetLineAssignments,
+} from '@/components/ExpenseParts';
 import { Button, Notice, PageTitle, Panel, Pill } from '@/components/ui';
 import { formatMoney } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -41,6 +47,7 @@ function AuditDesk() {
   const queue = useLoad(() => (canOpen ? db.expenses.listCouncilQueue(user.memberId, councilId) : Promise.resolve([])), [user.memberId, councilId, canOpen]);
   const refsLoad = useLoad(() => listExpenseReferences(db, councilId), [councilId]);
   const refs = refsLoad.data ?? NO_REFS;
+  const budgetLines = useExpenseBudgetLineAssignments(councilId, refs);
   // Sheets ordered from this desk in this session: they stay in view, advanced, with a confirmation badge.
   const [ordered, setOrdered] = useState<ReadonlyMap<number, ExpenseReportDetail>>(new Map());
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -77,25 +84,31 @@ function AuditDesk() {
   const action = (d: ExpenseReportDetail) => {
     if (ordered.has(d.report.id)) return <Pill tone="navy">✓ Written order issued</Pill>;
     const block = expenseOrderBlock(user, d.report);
+    const unassigned = budgetLines.lineIdOf(d) === null;
     return (
-      <span className="inline-flex flex-wrap items-center gap-2">
-        <Button
-          variant="gold"
-          disabled={block !== null || busyId !== null}
-          aria-label={`Issue the written order for report ${d.report.id}`}
-          title={
-            block === 'own-report'
-              ? 'For accounting controls, another officer must issue the order for your own report.'
-              : block === 'seat'
-                ? 'Only the Financial Secretary or a Super Admin issues written orders.'
-                : undefined
-          }
-          onClick={() => void issue(d)}
-        >
-          {busyId === d.report.id ? 'Issuing…' : '📜 Issue Written Order'}
-        </Button>
-        {block === 'own-report' ? <Pill tone="redOutline">Your own report</Pill> : null}
-        {block === 'seat' ? <Pill tone="outline">Financial Secretary signs</Pill> : null}
+      <span className="inline-flex flex-col items-start gap-2">
+        <BudgetLinePicker detail={d} assignments={budgetLines} disabled={block !== null || busyId !== null} />
+        <span className="inline-flex flex-wrap items-center gap-2">
+          <Button
+            variant="gold"
+            disabled={block !== null || busyId !== null || unassigned}
+            aria-label={`Issue the written order for report ${d.report.id}`}
+            title={
+              block === 'own-report'
+                ? 'For accounting controls, another officer must issue the order for your own report.'
+                : block === 'seat'
+                  ? 'Only the Financial Secretary or a Super Admin issues written orders.'
+                  : unassigned
+                    ? 'Assign a ledger budget line item first.'
+                    : undefined
+            }
+            onClick={() => void issue(d)}
+          >
+            {busyId === d.report.id ? 'Issuing…' : '📜 Issue Written Order'}
+          </Button>
+          {block === 'own-report' ? <Pill tone="redOutline">Your own report</Pill> : null}
+          {block === 'seat' ? <Pill tone="outline">Financial Secretary signs</Pill> : null}
+        </span>
       </span>
     );
   };
@@ -107,7 +120,9 @@ function AuditDesk() {
         <Notice tone="error">Only this council&apos;s Financial Secretary and Admins, or a Super Admin, open its audit desk.</Notice>
       ) : (
         <div className="flex flex-col gap-4">
-          {queue.error ?? refsLoad.error ? <Notice tone="error">{queue.error ?? refsLoad.error}</Notice> : null}
+          {(queue.error ?? refsLoad.error ?? budgetLines.error) ? (
+            <Notice tone="error">{queue.error ?? refsLoad.error ?? budgetLines.error}</Notice>
+          ) : null}
           {message ? (
             <Notice tone={message.tone} onDismiss={() => setMessage(null)}>
               {message.text}
