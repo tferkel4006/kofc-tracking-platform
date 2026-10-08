@@ -520,14 +520,14 @@ export interface MonthlySummary {
   uniqueMembers: number;
   /**
    * The month's ledger. Cash and electronic read the month's events' FundsRaised columns, which are the synced
-   * donation rollups wherever donations exist; blank columns count as 0. `eventSpend` sums those events' Spend;
-   * `expenses` sums the line items dated in the month on the council's 'Approved' and 'Reimbursed' expense sheets
+   * donation rollups wherever donations exist; blank columns count as 0. `expenses` sums the line items dated in the month on the council's 'Approved' and 'Reimbursed' expense sheets
    * (Sprint 5R-1.5); `charitableGiving` sums the council's CharitableDisbursementLedger checks with a PayoutDate in the
-   * month (Sprint 5V). spend = eventSpend + expenses + charitableGiving, and net = raised - spend.
+   * month (Sprint 5V). spend = expenses + charitableGiving, and net = raised - spend. Sprint 6I: the old `eventSpend`
+   * (the events' manual Spend column) is gone with the column (schema 47), so the summaries now agree with the budget
+   * engine's year totals.
    */
   finances: {
     spend: number;
-    eventSpend: number;
     expenses: number;
     charitableGiving: number;
     cash: number;
@@ -780,7 +780,10 @@ export interface SupremeComplianceSnapshot {
   eventsHeld: number;
   /** The council's donations dated in the period. */
   donations: DonationTotals;
-  /** Spend of the events starting in the period. */
+  /**
+   * Sprint 6I: line items on the council's 'Approved' and 'Reimbursed' expense sheets linked to the events starting in
+   * the period (Event.Spend was dropped in schema 47).
+   */
   eventSpend: number;
   /** Expense checks the council paid in the period (by PayoutDate). */
   expenseChecks: { count: number; total: number };
@@ -1098,6 +1101,12 @@ export interface CharitableRequestThreads {
   threads: CharitableRequestThreadDetail[];
   /** The thread types the caller may start on the request that do not exist yet. */
   canOpen: CharitableThreadType[];
+}
+
+/** councils.setGlobalParameters (Sprint 6I): the Super Admin's tenant and dues settings for one council. */
+export interface GlobalCouncilParameters {
+  tenant_type?: string;
+  base_dues_rate?: number;
 }
 
 /** What meetings.populateAnnualCadence laid down (Sprint 5Z-5). */
@@ -1874,6 +1883,14 @@ export interface DataService {
      * RECORD_NOT_FOUND for an unknown council, INVALID_INPUT for a rate that is negative, too large, or not whole cents.
      */
     setDuesRate(actorId: number, councilId: number, rate: number): Promise<Council>;
+    /**
+     * Sprint 6I: the Global Council Parameters Dashboard on /lookups. Saves the council's tenant_type (KOFC or GENERIC,
+     * cleanTenantType) and/or base_dues_rate (cleanDuesRate) and resolves to the updated council; a field left out keeps
+     * its stored value. Only an Active Super Admin may (SUPER_ADMIN_REQUIRED, nothing written). RECORD_NOT_FOUND for an
+     * unknown council, INVALID_INPUT for a bad value, an unknown field or no field (cleanGlobalCouncilParameters). The
+     * council's Grand Knight and Financial Secretary keep setDuesRate for their own council.
+     */
+    setGlobalParameters(actorId: number, councilId: number, parameters: GlobalCouncilParameters): Promise<Council>;
   };
 
   /**

@@ -5,6 +5,8 @@
 // results sit in the active queue; once anything is recorded (hasLedgerResults) they move to the archive.
 // While an event has cash or electronic donations its funds raised are synced from them (donations.record/update/
 // remove), so those two fields are shown read-only here and are corrected on the Donations page instead.
+// Sprint 6I: there is no Spend field any more (Event.Spend was dropped in schema 47). What an event cost is the receipts
+// on the expense reports linked to it, which the council's budget pages total.
 // The volunteer turnout grid also marks and clears no-shows (events.setNoShow): Admins for their councils'
 // events, Super Admins for any; the controls follow mayMarkNoShow and the driver enforces the same rule.
 import { useEffect, useState } from 'react';
@@ -70,13 +72,12 @@ function ResultsForm({ event, onSaved }: { event: Event; onSaved: () => void }) 
     return councilId === undefined ? null : ((await db.donations.listHistory(councilId, event.id)).events[0] ?? null);
   }, [event.id]);
   const managed = donations.data?.fundsManaged === true;
-  const [spend, setSpend] = useState(toField(event.Spend));
   const [cash, setCash] = useState(toField(event['FundsRaised-Cash']));
   const [electronic, setElectronic] = useState(toField(event['FundsRaised-Electronic']));
   const [attendees, setAttendees] = useState(toField(event.ActualNumberAttendees));
   const [highlights, setHighlights] = useState(event.Highlights ?? '');
 
-  // Live totals from what is typed, so the person sees the net before saving. Unparseable text shows as blank.
+  // Live total from what is typed, so the person sees it before saving. Unparseable text shows as blank.
   const typed = (text: string, label: string): number | undefined => {
     try {
       return parseNumberField(text, label) ?? undefined;
@@ -85,13 +86,10 @@ function ResultsForm({ event, onSaved }: { event: Event; onSaved: () => void }) 
     }
   };
   const raised = sum(typed(cash, 'Cash'), typed(electronic, 'Electronic'));
-  const spent = typed(spend, 'Spend');
-  const net = raised === null && spent === undefined ? null : (raised ?? 0) - (spent ?? 0);
 
   const save = () =>
     run(async () => {
       const changes: EventChanges = {
-        Spend: parseNumberField(spend, 'Spend'),
         ...(managed
           ? {}
           : {
@@ -118,9 +116,8 @@ function ResultsForm({ event, onSaved }: { event: Event; onSaved: () => void }) 
           <Banner message={message} onDismiss={() => setMessage(null)} />
         </div>
         <p className="col-span-2 text-sm text-muted">
-          Planned: budget {formatMoney(event.Budget)}, {event.PlannedNumberAttendees ?? '–'} attendees.
+          Planned: {event.PlannedNumberAttendees ?? '–'} attendees. Costs are the receipts on expense reports filed for this event.
         </p>
-        <Field label="Spend ($)">{(id) => <Input id={id} inputMode="decimal" value={spend} onChange={(e) => setSpend(e.target.value)} placeholder="0.00" />}</Field>
         <Field label="Actual attendees">
           {(id) => <Input id={id} inputMode="numeric" value={attendees} onChange={(e) => setAttendees(e.target.value)} />}
         </Field>
@@ -150,7 +147,7 @@ function ResultsForm({ event, onSaved }: { event: Event; onSaved: () => void }) 
           </p>
         ) : null}
         <p className="col-span-2 text-sm font-bold" aria-live="polite">
-          Raised {formatMoney(raised)} · Spent {formatMoney(spent)} · Net {formatMoney(net)}
+          Raised {formatMoney(raised)}
         </p>
         <Field label="Highlights" className="col-span-2">
           {(id) => <Textarea id={id} value={highlights} onChange={(e) => setHighlights(e.target.value)} />}

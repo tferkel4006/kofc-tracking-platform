@@ -51,8 +51,8 @@ function priorLine(d: DriverUnderTest, db: DataService, over: Partial<CouncilBud
 }
 
 /**
- * An annual event of last year with an Approved expense sheet of `spend`, so the rollup gives it an Event line. Its
- * manual Event.Spend is set to a decoy the budget engine never reads (Sprint 6B). The sheet is charged to
+ * An annual event of last year with an Approved expense sheet of `spend`, so the rollup gives it an Event line (the
+ * manual Event.Spend column is gone, schema 47). The sheet is charged to
  * `budgetLineId`, as its signers saved it (Sprint 6G Extension).
  */
 async function annualEvent(d: DriverUnderTest, db: DataService, name: string, spend: number, budgetLineId: number | null = null) {
@@ -62,7 +62,7 @@ async function annualEvent(d: DriverUnderTest, db: DataService, name: string, sp
   );
   const report = raw(d, db, 'ExpenseReport', { CouncilID: OWN, SubmitterMemberID: MEMBER.member, Status: 'Approved', LinkedEventID: event.id, LinkedMeetingID: null, budget_line_id: budgetLineId });
   raw(d, db, 'ExpenseLineItem', { ExpenseReportID: report, DateOfExpense: '2026-10-10', Amount: spend, VendorName: 'Costco', ExpenseDescription: 'Supplies' });
-  return db.events.update(event.id, { Spend: 9999 });
+  return event;
 }
 
 describe('buildPriorYearBaselines (pure)', () => {

@@ -158,8 +158,8 @@ export interface Event {
   EndDate: string;   
   Location: string;
   CategoryID: number;
-  Budget?: number;
-  Spend?: number;
+  // Sprint 6I (schema 47): the manual Budget and Spend columns are gone. An event's budget is its approved
+  // CouncilBudgetForecast line and its spend the line items of expense sheets linked to it.
   "FundsRaised-Cash"?: number;       // Added to match database columns
   "FundsRaised-Electronic"?: number; // Added to match database columns
   Highlights?: string;

@@ -139,7 +139,9 @@ describe('push and Alchemer helpers', () => {
         { MemberID: 2, Hours: 1.5, category: 'Service' },
       ],
       activityTime: [{ MemberID: 1, Hours: 3, category: 'Faith Building' }],
-      events: [{ Spend: 10.1 }, { Spend: null }],
+      events: [{ id: 1 }, { id: 2 }],
+      // Sprint 6I: event spend is the expense lines linked to the period's events (Event.Spend was dropped).
+      eventExpenseItems: [{ Amount: 10.05 }, { Amount: 0.05 }],
       donations: [
         { DonationAmount: 20.1, kind: 'cash' },
         { DonationAmount: 30.2, kind: 'card' },

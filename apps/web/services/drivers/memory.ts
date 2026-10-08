@@ -112,6 +112,7 @@ import {
   assertMayEditBylaws,
   assertMayEditDuesRate,
   cleanDuesRate,
+  cleanGlobalCouncilParameters,
   cleanBylawsText,
   cleanEmailGatewaySettings,
   CLEARED_EMAIL_GATEWAY,
@@ -1197,6 +1198,15 @@ export class MemoryDataService implements DataService {
       const row = this.requireRecord(s, 'Council', councilId);
       assertMayEditDuesRate(actor, councilId);
       row.base_dues_rate = cleanDuesRate(rate);
+      return { ...row } as unknown as Council;
+    },
+
+    setGlobalParameters: async (actorId, councilId, parameters) => {
+      const clean = cleanGlobalCouncilParameters(parameters);
+      const s = await this.ready();
+      assertMayMaintainCouncils(this.memberWriteActor(s, actorId), `change the global parameters of council ${councilId}`);
+      const row = this.requireRecord(s, 'Council', councilId);
+      Object.assign(row, clean);
       return { ...row } as unknown as Council;
     },
   };
@@ -3789,6 +3799,15 @@ export class MemoryDataService implements DataService {
     const activityCategory = new Map(s.rows('Activities').filter((a) => a.CouncilID === councilId).map((a) => [a.id, categoryName(a.CategoryID)]));
     const methodKind = new Map(s.rows('DonationMethod').map((m) => [m.id, donationMethodKind(m.DonationMethod as string)]));
     const council = s.rows('Council').find((c) => c.id === councilId)!;
+    const periodEvents = councilEvents.filter((e) => inPeriod(e.StartDate));
+    const periodEventIds = new Set(periodEvents.map((e) => e.id));
+    // Sprint 6I: an event's spend is the line items of the council's Approved and Reimbursed sheets linked to it.
+    const spendSheets = new Set(
+      s
+        .rows('ExpenseReport')
+        .filter((r) => r.CouncilID === councilId && periodEventIds.has(r.LinkedEventID) && EXPENSE_SPEND_STATUSES.includes(r.Status as ExpenseReportStatus))
+        .map((r) => r.id),
+    );
     return {
       council: { id: councilId, CouncilNumber: council.CouncilNumber as number, CouncilName: council.CouncilName as string },
       eventTime: s
@@ -3799,7 +3818,11 @@ export class MemoryDataService implements DataService {
         .rows('ActivityTime')
         .filter((t) => activityCategory.has(t.ActivityID) && inPeriod(t.ActivityDate))
         .map((t) => ({ MemberID: t.MemberID as number, Hours: t.Hours as number, category: activityCategory.get(t.ActivityID)! })),
-      events: councilEvents.filter((e) => inPeriod(e.StartDate)).map((e) => ({ Spend: e.Spend as number | null })),
+      events: periodEvents.map((e) => ({ id: e.id })),
+      eventExpenseItems: s
+        .rows('ExpenseLineItem')
+        .filter((li) => spendSheets.has(li.ExpenseReportID))
+        .map((li) => ({ Amount: li.Amount as number })),
       donations: s
         .rows('Donation')
         .filter((d) => d.CouncilID === councilId && inPeriod(d.DonationDate))

@@ -273,16 +273,15 @@ export function memberDropdownOptions(
 // ---- post-event ledger -------------------------------------------------------
 
 /**
- * True once anything has been recorded for the event after it ran: Spend, cash or electronic funds
+ * True once anything has been recorded for the event after it ran: cash or electronic funds
  * raised, actual attendees, non-blank Highlights, or at least one lesson learned. Until then the
  * ledger shows the event as "Results needed"; afterwards it moves to the history archive.
  */
 export function hasLedgerResults(
-  event: Pick<Event, 'Spend' | 'FundsRaised-Cash' | 'FundsRaised-Electronic' | 'ActualNumberAttendees' | 'Highlights'>,
+  event: Pick<Event, 'FundsRaised-Cash' | 'FundsRaised-Electronic' | 'ActualNumberAttendees' | 'Highlights'>,
   lessonCount = 0,
 ): boolean {
   return (
-    event.Spend != null ||
     event['FundsRaised-Cash'] != null ||
     event['FundsRaised-Electronic'] != null ||
     event.ActualNumberAttendees != null ||

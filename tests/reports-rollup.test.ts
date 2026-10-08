@@ -147,7 +147,7 @@ describe('donation totals and the event funds rollup', () => {
   it('refuses a hand edit of a rolled-up column but accepts the same value or any other field', () => {
     const event = { id: 7, EventName: 'Fish Fry' };
     const rollup = { 'FundsRaised-Cash': 40, 'FundsRaised-Electronic': 12.5 };
-    expect(() => assertFundsEditable(event, { 'FundsRaised-Cash': 40, 'FundsRaised-Electronic': 12.5, Spend: 3 }, rollup)).not.toThrow();
+    expect(() => assertFundsEditable(event, { 'FundsRaised-Cash': 40, 'FundsRaised-Electronic': 12.5, ActualNumberAttendees: 3 }, rollup)).not.toThrow();
     for (const changes of [{ 'FundsRaised-Cash': 41 }, { 'FundsRaised-Electronic': null }]) {
       const err = (() => {
         try {
@@ -260,9 +260,9 @@ describe('activity and monthly summaries', () => {
     });
     const summary = summarizeMonth(1, 2026, 9, {
       events: [
-        event(2, '2026-09-20', { Spend: 100.1, 'FundsRaised-Cash': 20.2, Highlights: '  Record crowd  ', ActualNumberAttendees: 40 }),
+        event(2, '2026-09-20', { 'FundsRaised-Cash': 20.2, Highlights: '  Record crowd  ', ActualNumberAttendees: 40 }),
         event(1, '2026-09-03', { 'FundsRaised-Electronic': 30, Highlights: 'Sold out' }),
-        event(3, '2026-09-25', { Highlights: '   ', Spend: null as unknown as number }),
+        event(3, '2026-09-25', { Highlights: '   ' }),
       ],
       eventTime: [
         { MemberID: 3, Hours: 2.25 },
@@ -272,7 +272,7 @@ describe('activity and monthly summaries', () => {
         { MemberID: 3, Hours: 0.5 },
         { MemberID: 1, Hours: 0.25 },
       ],
-      expenseItems: [],
+      expenseItems: [{ Amount: 100.1 }],
       charitableGifts: [],
     });
     expect(summary).toMatchObject({
@@ -280,7 +280,7 @@ describe('activity and monthly summaries', () => {
       toDate: '2026-09-30',
       laborHours: { events: 3.25, activities: 0.75, total: 4 },
       uniqueMembers: 3,
-      finances: { spend: 100.1, eventSpend: 100.1, expenses: 0, charitableGiving: 0, cash: 20.2, electronic: 30, raised: 50.2, net: -49.9 },
+      finances: { spend: 100.1, expenses: 100.1, charitableGiving: 0, cash: 20.2, electronic: 30, raised: 50.2, net: -49.9 },
       outreach: { attendees: 40, events: 3 },
     });
     expect(summary.highlights).toEqual([
@@ -339,12 +339,12 @@ describe.each(drivers)('$name driver: donation audit stamp and funds rollup', (d
     const cleanup = await eventByName(db, 'Fall Grounds Cleanup');
     await give(db, ids.cash, 25, cleanup.id);
 
-    await expectRule(db.events.update(cleanup.id, { 'FundsRaised-Cash': 30, Spend: 12 }), 'FUNDS_MANAGED_BY_DONATIONS');
+    await expectRule(db.events.update(cleanup.id, { 'FundsRaised-Cash': 30, ActualNumberAttendees: 12 }), 'FUNDS_MANAGED_BY_DONATIONS');
     await expectRule(db.events.update(cleanup.id, { 'FundsRaised-Electronic': null }), 'FUNDS_MANAGED_BY_DONATIONS');
-    expect((await db.events.get(cleanup.id))?.Spend ?? null).toBeNull();
+    expect((await db.events.get(cleanup.id))?.ActualNumberAttendees ?? null).toBeNull();
 
-    const saved = await db.events.update(cleanup.id, { 'FundsRaised-Cash': 25, 'FundsRaised-Electronic': 0, Spend: 12, ActualNumberAttendees: 9 });
-    expect(saved).toMatchObject({ 'FundsRaised-Cash': 25, 'FundsRaised-Electronic': 0, Spend: 12, ActualNumberAttendees: 9 });
+    const saved = await db.events.update(cleanup.id, { 'FundsRaised-Cash': 25, 'FundsRaised-Electronic': 0, Highlights: 'Bagged', ActualNumberAttendees: 9 });
+    expect(saved).toMatchObject({ 'FundsRaised-Cash': 25, 'FundsRaised-Electronic': 0, Highlights: 'Bagged', ActualNumberAttendees: 9 });
   });
 
   it('re-totals both events when a donation moves, and clears the funds once the last donation is gone', async () => {
@@ -546,10 +546,10 @@ describe.each(drivers)('$name driver: monthly executive summary', (d: DriverUnde
     await db.activityTime.logHours(MEMBER.superAdmin, activity.id, 2, '2026-09-05');
     await db.activityTime.logHours(MEMBER.admin, activity.id, 4, '2026-08-15'); // August: not counted
 
-    await db.events.update(cleanup.id, { Spend: 50, ActualNumberAttendees: 12, Highlights: 'Filled 80 bags' });
+    await db.events.update(cleanup.id, { ActualNumberAttendees: 12, Highlights: 'Filled 80 bags' });
     await give(db, ids.cash, 30, cleanup.id); // synced into FundsRaised-Cash
     await db.events.update(food.id, { 'FundsRaised-Electronic': 10, ActualNumberAttendees: 3, Highlights: 'Pantry stocked' });
-    await db.events.update(coat.id, { Spend: 999, Highlights: 'August event' });
+    await db.events.update(coat.id, { Highlights: 'August event' });
 
     const september = await db.reports.monthlySummary(OWN, 2026, 9);
     expect(september).toEqual({
@@ -560,7 +560,7 @@ describe.each(drivers)('$name driver: monthly executive summary', (d: DriverUnde
       toDate: '2026-09-30',
       laborHours: { events: 2.25, activities: 3.5, total: 5.75 },
       uniqueMembers: 2,
-      finances: { spend: 50, eventSpend: 50, expenses: 0, charitableGiving: 0, cash: 30, electronic: 10, raised: 40, net: -10 },
+      finances: { spend: 0, expenses: 0, charitableGiving: 0, cash: 30, electronic: 10, raised: 40, net: 40 },
       outreach: { attendees: 15, events: 2 },
       highlights: [
         { eventId: cleanup.id, eventName: 'Fall Grounds Cleanup', startDate: '2026-09-10', text: 'Filled 80 bags' },
@@ -569,7 +569,7 @@ describe.each(drivers)('$name driver: monthly executive summary', (d: DriverUnde
     });
 
     const august = await db.reports.monthlySummary(OWN, 2026, 8);
-    expect(august).toMatchObject({ laborHours: { events: 0, activities: 4, total: 4 }, uniqueMembers: 1, finances: { spend: 999, net: -999 } });
+    expect(august).toMatchObject({ laborHours: { events: 0, activities: 4, total: 4 }, uniqueMembers: 1, finances: { spend: 0, net: 0 } }); // no expense sheets or charity checks in August
     expect(august.highlights.map((h) => h.text)).toEqual(['August event']);
 
     // The affiliated council's only September event is its own Neighborhood Blood Drive; council 1's time is not its.

@@ -24,8 +24,6 @@ export const EVENT_COLUMNS = [
   'EndDate',
   'Location',
   'CategoryID',
-  'Budget',
-  'Spend',
   'FundsRaised-Cash',
   'FundsRaised-Electronic',
   'Highlights',
@@ -72,11 +70,9 @@ const REQUIRED_EVENT_FIELDS = [
   'CategoryID',
 ] as const;
 
-const NULLABLE_MONEY = ['Budget', 'Spend', 'FundsRaised-Cash', 'FundsRaised-Electronic'] as const;
+const NULLABLE_MONEY = ['FundsRaised-Cash', 'FundsRaised-Electronic'] as const;
 const NULLABLE_COUNTS = ['PlannedNumberAttendees', 'ActualNumberAttendees'] as const;
 const FIELD_LABELS: Record<(typeof NULLABLE_MONEY)[number] | (typeof NULLABLE_COUNTS)[number], string> = {
-  Budget: 'Budget',
-  Spend: 'Spend',
   'FundsRaised-Cash': 'Cash funds raised',
   'FundsRaised-Electronic': 'Electronic funds raised',
   PlannedNumberAttendees: 'Planned attendees',
@@ -193,7 +189,6 @@ export function planEventCopy(
     Location: event.Location,
     CategoryID: event.CategoryID,
   };
-  if (event.Budget != null) copy.Budget = event.Budget;
   if (event.PlannedNumberAttendees != null) copy.PlannedNumberAttendees = event.PlannedNumberAttendees;
   // A twin of an annual event is next year's edition, so it recurs too.
   if (event.IsAnnual === 1) copy.IsAnnual = 1;

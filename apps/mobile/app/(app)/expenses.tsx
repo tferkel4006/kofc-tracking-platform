@@ -8,6 +8,9 @@
 // Sprint 5Z-Mobile-Clean: "Spent for" is two steps. A toggle picks Event, Meeting or General council expense, then a
 // dropdown lists only that category's items whose submission window is open today. A draft already naming an item
 // outside its window keeps it in the list, so the padlock can explain why.
+// Sprint 6I: the "Long-term Council Asset" switch matches the web form's checkbox (ExpenseReport.is_long_term_asset). A
+// draft opens with its saved value and every save sends it, as it does the web-set charity link, so re-saving on the
+// phone never clears either.
 import { useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
@@ -24,6 +27,7 @@ import {
   expenseWindowState,
   expenseWindowLockMessage,
   formatDate,
+  isLongTermAssetExpense,
   listExpenseReferences,
   parseExpenseReferenceKey,
   SPACING,
@@ -38,7 +42,7 @@ import {
 import { Dropdown } from '@/components/Dropdown';
 import { NavStrip } from '@/components/NavStrip';
 import { ReceiptScanTile, SCAN_RECEIPT_TITLE } from '@/components/ReceiptScanTile';
-import { AppInput, AppText, choiceStyle, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section } from '@/components/ui';
+import { AppInput, AppText, choiceStyle, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section, ToggleSwitch } from '@/components/ui';
 import { useUser } from '@/lib/app-context';
 import { useTheme } from '@/lib/layout-mode';
 import { describeError, useLoad } from '@/lib/use-async';
@@ -83,6 +87,7 @@ function ExpenseDraftForm({
   const keyed = (line: ExpenseLineDraft): Row => ({ ...line, key: nextKey.current++ });
   const [reference, setReference] = useState(() => (detail ? expenseReferenceKey(detail.report) : ''));
   const [spentFor, setSpentFor] = useState<SpentFor>(() => spentForOf(reference));
+  const [longTermAsset, setLongTermAsset] = useState(() => isLongTermAssetExpense(detail?.report ?? {}));
   const [rows, setRows] = useState<Row[]>(() =>
     detail && detail.lineItems.length > 0 ? detail.lineItems.map((li) => keyed(expenseLineDraftFrom(li))) : [keyed(blankExpenseLine(today))],
   );
@@ -114,7 +119,17 @@ function ExpenseDraftForm({
     setError(null);
     try {
       const items = expenseLinesFromDrafts(rows);
-      const saved = await db.expenses.submitReport(user.memberId, { id: detail?.report.id ?? null, Status: status, ...parseExpenseReferenceKey(reference), charity_request_id: detail?.report.charity_request_id ?? null }, items); // keeps a link set on the web (Sprint 6H)
+      const saved = await db.expenses.submitReport(
+        user.memberId,
+        {
+          id: detail?.report.id ?? null,
+          Status: status,
+          ...parseExpenseReferenceKey(reference),
+          is_long_term_asset: longTermAsset,
+          charity_request_id: detail?.report.charity_request_id ?? null, // keeps a link set on the web (Sprint 6H)
+        },
+        items,
+      );
       await onSaved(saved);
     } catch (err) {
       setError(describeError(err));
@@ -170,6 +185,16 @@ function ExpenseDraftForm({
             />
           </Field>
         )}
+        <ToggleSwitch
+          label="Long-term Council Asset"
+          hint="When the Grand Knight approves this report, the item is added to the council's assets inventory at the report total."
+          value={longTermAsset}
+          onChange={setLongTermAsset}
+        />
+        <AppText variant="small" tone="muted">
+          Turn this on for equipment the council keeps, such as a grill or a banner. When the Grand Knight approves the report, the item is added to the
+          council’s assets inventory at the report total.
+        </AppText>
       </Card>
 
       {rows.map((row, i) => (

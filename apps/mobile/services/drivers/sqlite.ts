@@ -109,6 +109,7 @@ import {
   assertMayEditBylaws,
   assertMayEditDuesRate,
   cleanDuesRate,
+  cleanGlobalCouncilParameters,
   cleanBylawsText,
   cleanEmailGatewaySettings,
   CLEARED_EMAIL_GATEWAY,
@@ -593,8 +594,10 @@ const DB_NAME = 'kofc.db';
  *     budget engine reads instead of matching names, and the charitable request a sheet spends for (Sprint 6G Extension).
  * 46: CharitableRequestThread and CharitableRequestThreadMessage - the vetting desk's Request for More Information and
  *     Request for Officer Input threads bound to a charitable request (Sprint 6H).
+ * 47: Event.Budget and Event.Spend dropped - event budgets and spend come only from budget lines and expense sheets
+ *     (Sprint 6I).
  */
-const SCHEMA_VERSION = 46;
+const SCHEMA_VERSION = 47;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -1309,6 +1312,19 @@ export class SqliteDataService implements DataService {
         await this.requireRecord(db, 'Council', councilId);
         assertMayEditDuesRate(actor, councilId);
         await db.runAsync('UPDATE [Council] SET [base_dues_rate] = ? WHERE [id] = ?', [cleanDuesRate(rate), councilId]);
+      });
+      return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [councilId]))!;
+    },
+
+    setGlobalParameters: async (actorId, councilId, parameters) => {
+      const clean = cleanGlobalCouncilParameters(parameters);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayMaintainCouncils(await this.memberWriteActor(db, actorId), `change the global parameters of council ${councilId}`);
+        await this.requireRecord(db, 'Council', councilId);
+        // Only the two known columns, so the names are safe to interpolate.
+        const columns = (['tenant_type', 'base_dues_rate'] as const).filter((c) => clean[c] !== undefined);
+        await db.runAsync(`UPDATE [Council] SET ${columns.map((c) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [...columns.map((c) => clean[c]!), councilId]);
       });
       return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [councilId]))!;
     },
@@ -4384,7 +4400,7 @@ export class SqliteDataService implements DataService {
       'SELECT [CouncilNumber], [CouncilName] FROM [Council] WHERE [id] = ?',
       [councilId],
     ))!;
-    const [eventTime, activityTime, events, donations, disbursements] = await Promise.all([
+    const [eventTime, activityTime, events, eventExpenseItems, donations, disbursements] = await Promise.all([
       db.getAllAsync<{ MemberID: number; Hours: number; category: string }>(
         `SELECT t.[MemberID], t.[Hours], COALESCE(c.[Category], 'Uncategorized') AS category
            FROM [EventTime] t
@@ -4403,10 +4419,20 @@ export class SqliteDataService implements DataService {
           WHERE a.[CouncilID] = ? AND t.[ActivityDate] BETWEEN ? AND ?`,
         range,
       ),
-      db.getAllAsync<{ Spend: number | null }>(
-        `SELECT [Spend] FROM [Event]
+      db.getAllAsync<{ id: number }>(
+        `SELECT [id] FROM [Event]
           WHERE [id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?) AND [StartDate] BETWEEN ? AND ?`,
         range,
+      ),
+      // Sprint 6I: an event's spend is the line items of the council's Approved and Reimbursed sheets linked to it.
+      db.getAllAsync<{ Amount: number }>(
+        `SELECT li.[Amount]
+           FROM [ExpenseLineItem] li
+           JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID]
+           JOIN [Event] e ON e.[id] = r.[LinkedEventID]
+          WHERE r.[CouncilID] = ? AND r.[Status] IN (${marks(EXPENSE_SPEND_STATUSES.length)})
+            AND e.[id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?) AND e.[StartDate] BETWEEN ? AND ?`,
+        [councilId, ...EXPENSE_SPEND_STATUSES, ...range],
       ),
       db.getAllAsync<{ DonationAmount: number; method: string }>(
         `SELECT d.[DonationAmount], dm.[DonationMethod] AS method
@@ -4424,6 +4450,7 @@ export class SqliteDataService implements DataService {
       eventTime,
       activityTime,
       events,
+      eventExpenseItems,
       donations: donations.map((d) => ({ DonationAmount: d.DonationAmount, kind: donationMethodKind(d.method) })),
       disbursements,
     };

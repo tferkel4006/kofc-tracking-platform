@@ -121,7 +121,12 @@ export interface SupremeSnapshotRows {
   /** ActivityTime on the council's activities, dated in the period; `category` is the activity's Category. */
   activityTime: readonly { MemberID: number; Hours: number; category: string }[];
   /** The council's events starting in the period. */
-  events: readonly { Spend?: number | null }[];
+  events: readonly unknown[];
+  /**
+   * Sprint 6I: line items on the council's 'Approved' and 'Reimbursed' expense sheets linked to those events, the
+   * events' spend now that Event.Spend is gone (schema 47).
+   */
+  eventExpenseItems: readonly { Amount: number }[];
   /** The council's donations dated in the period. */
   donations: readonly { DonationAmount: number; kind: DonationMethodKind }[];
   /** The council's expense checks paid in the period. */
@@ -154,7 +159,7 @@ export function compileSupremeSnapshot(
     volunteers: new Set([...rows.eventTime, ...rows.activityTime].map((r) => r.MemberID)).size,
     eventsHeld: rows.events.length,
     donations: summarizeDonations(rows.donations),
-    eventSpend: rows.events.reduce((n, e) => n + cents(e.Spend ?? 0), 0) / 100,
+    eventSpend: rows.eventExpenseItems.reduce((n, li) => n + cents(li.Amount), 0) / 100,
     expenseChecks: {
       count: rows.disbursements.length,
       total: rows.disbursements.reduce((n, d) => n + cents(d.TotalAmount), 0) / 100,

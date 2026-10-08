@@ -528,8 +528,6 @@ SELECT
 [Shift].[EndTime],
 [Shift].[MinNumberVolunteers],
 [Shift].[NumberVolunteersSignedUp],
-[Event].[Budget],
-[Event].[Spend],
 COALESCE([Event].[FundsRaised-Cash], 0) + COALESCE([Event].[FundsRaised-Electronic], 0) AS [FundsRaised], -- Fixed: no such column; combine Cash + Electronic
 [Event].[Highlights],
 [Event].[PlannedNumberAttendees],
@@ -2295,4 +2293,17 @@ GO
 CREATE UNIQUE INDEX [CharitableRequestThread_Request_Type_Idx] ON [CharitableRequestThread] ([request_id], [thread_type]);
 GO
 CREATE INDEX [CharitableRequestThreadMessage_Thread_Idx] ON [CharitableRequestThreadMessage] ([thread_id], [posted_at]);
+GO
+
+-- =========================================================================
+-- Sprint 6I (Phase 6): LEGACY EVENT MONEY COLUMNS PURGED (schema version 47)
+-- Event.Budget and Event.Spend were hand-typed figures. Since Sprint 6B/6C the budget engine and the concluded
+-- performance grid read an event's budget from its approved CouncilBudgetForecast line and its spend from the line items
+-- of 'Approved' and 'Reimbursed' expense sheets linked to it (ExpenseReport.LinkedEventID), so both columns are dropped.
+-- reports.monthlySummary now totals spend from expense lines and charity checks only, and the Supreme snapshot's event
+-- spend sums the expense lines linked to the period's events. view_Event no longer lists the two columns.
+-- =========================================================================
+ALTER TABLE [Event] DROP COLUMN [Budget];
+GO
+ALTER TABLE [Event] DROP COLUMN [Spend];
 GO

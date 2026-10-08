@@ -2,6 +2,8 @@
 // Event planner: a split screen. The council's events are on the left, newest first; the selected event
 // opens on the right with its details, the councils it is shared with, its shifts and a "copy as a twin"
 // action. Admins plan for their own council, Super Admins pick any council.
+// Sprint 6I: the manual Budget field is gone with Event.Budget (schema 47); an event's budget is its line in the
+// council's annual budget (/budget).
 import { useState } from 'react';
 import {
   describeError,
@@ -21,7 +23,7 @@ import {
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Td, Textarea } from '@/components/ui';
-import { formatMoney, parseNumberField, toField } from '@/lib/format';
+import { parseNumberField, toField } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
@@ -80,7 +82,6 @@ function EventForm({
   const [endDate, setEndDate] = useState(event?.EndDate ?? '');
   const [categoryId, setCategoryId] = useState(event?.CategoryID ?? categories[0]?.id ?? 0);
   const [ownerId, setOwnerId] = useState(event?.OwnerID ?? (owners.some((o) => o.id === user.memberId) ? user.memberId : (owners[0]?.id ?? 0)));
-  const [budget, setBudget] = useState(toField(event?.Budget));
   const [planned, setPlanned] = useState(toField(event?.PlannedNumberAttendees));
   const [linked, setLinked] = useState<number[]>(event ? linkedCouncilIds : [councilId]);
   const [annual, setAnnual] = useState(event?.IsAnnual === 1);
@@ -93,7 +94,6 @@ function EventForm({
 
   const save = () =>
     run(async () => {
-      const budgetValue = parseNumberField(budget, 'Budget');
       const plannedValue = parseNumberField(planned, 'Planned attendees');
       if (event) {
         const changes: EventChanges = {
@@ -104,7 +104,6 @@ function EventForm({
           EndDate: lastDay,
           CategoryID: categoryId,
           OwnerID: ownerId,
-          Budget: budgetValue,
           PlannedNumberAttendees: plannedValue,
           IsAnnual: annual ? 1 : 0,
           IsMultiDay: multiDay ? 1 : 0,
@@ -124,7 +123,6 @@ function EventForm({
           IsAnnual: annual ? 1 : 0,
           IsMultiDay: multiDay ? 1 : 0,
         };
-        if (budgetValue !== null) created.Budget = budgetValue;
         if (plannedValue !== null) created.PlannedNumberAttendees = plannedValue;
         onSaved((await db.events.create(created, linked)).id);
       }
@@ -195,9 +193,6 @@ function EventForm({
               ))}
             </Select>
           )}
-        </Field>
-        <Field label="Budget ($)">
-          {(id) => <Input id={id} inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="0.00" />}
         </Field>
         <Field label="Planned attendees">
           {(id) => <Input id={id} inputMode="numeric" value={planned} onChange={(e) => setPlanned(e.target.value)} />}
@@ -536,7 +531,6 @@ function Planner() {
                   <span className="block text-xs text-muted">
                     {e.StartDate === e.EndDate ? formatDate(e.StartDate) : `${formatDate(e.StartDate)} – ${formatDate(e.EndDate)}`} · {e.Location}
                   </span>
-                  {e.Budget != null ? <span className="block text-xs text-muted">Budget {formatMoney(e.Budget)}</span> : null}
                 </button>
               </li>
             ))}

@@ -246,21 +246,20 @@ describe('charity helpers (pure)', () => {
 
   it('adds charitable giving to the month’s spend and nets it against funds raised', () => {
     const summary = summarizeMonth(OWN, 2026, 9, {
-      events: [{ id: 1, StartDate: '2026-09-03', Spend: 100, 'FundsRaised-Cash': 50 } as never],
+      events: [{ id: 1, StartDate: '2026-09-03', 'FundsRaised-Cash': 50 } as never],
       eventTime: [],
       activityTime: [],
       expenseItems: [{ Amount: 20 }],
       charitableGifts: [{ Amount: 249.99 }, { Amount: 0.01 }],
     });
     expect(summary.finances).toEqual({
-      spend: 370,
-      eventSpend: 100,
+      spend: 270,
       expenses: 20,
       charitableGiving: 250,
       cash: 50,
       electronic: 0,
       raised: 50,
-      net: -320,
+      net: -220,
     });
   });
 });

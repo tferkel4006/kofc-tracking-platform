@@ -490,16 +490,16 @@ GO
 -- donations. Funds raised on each event match its cash and electronic donations; the pantry's physical items are
 -- not money and count toward neither.
 -- ==============================================================================
-INSERT INTO [Event] ([EventName], [EventDescription], [OwnerID], [StartDate], [EndDate], [Location], [CategoryID], [Budget], [Spend], [FundsRaised-Cash], [FundsRaised-Electronic], [Highlights], [PlannedNumberAttendees], [ActualNumberAttendees], [IsAnnual], [IsMultiDay], [MissionAreaID])
+INSERT INTO [Event] ([EventName], [EventDescription], [OwnerID], [StartDate], [EndDate], [Location], [CategoryID], [FundsRaised-Cash], [FundsRaised-Electronic], [Highlights], [PlannedNumberAttendees], [ActualNumberAttendees], [IsAnnual], [IsMultiDay], [MissionAreaID])
 VALUES
-('Rosary Rally at the Parish Grotto', 'Public rosary for peace with the Knights leading the decades', 4, '2026-07-12', '2026-07-12', 'St. Jude Parish Grotto', 3, 60.00, 45.00, 180.00, 0.00, 'Over ninety parishioners prayed all five decades despite the heat.', 80, 94, 0, 0, 1),
-('Holy Hour for Vocations', 'Eucharistic adoration praying for priestly and religious vocations', 5, '2026-09-10', '2026-09-10', 'St. Jude Church', 3, 25.00, 20.00, 95.00, 0.00, 'Two seminarians joined us and spoke after Benediction.', 40, 37, 0, 0, 1),
-('Parish Family Picnic', 'Summer picnic with games, a bounce house and a Knights grill line', 16, '2026-07-26', '2026-07-26', 'Laurelhurst Park, Picnic Area B', 1, 450.00, 410.00, 640.00, 215.00, 'Record turnout; the grill line served 310 plates.', 250, 312, 1, 0, 2),
-('Back-to-School Pancake Breakfast', 'Pancake breakfast raising school-supply money for parish families', 15, '2026-08-16', '2026-08-16', 'St. Jude Parish Hall', 5, 300.00, 265.00, 525.00, 310.00, 'Funded forty backpacks for the school drive.', 180, 205, 1, 0, 2),
-('Tootsie Roll Drive for Special Olympics', 'Annual candy drive at grocery stores for people with intellectual disabilities', 18, '2026-08-22', '2026-08-22', 'Fred Meyer and Safeway entrances, NE Portland', 5, 75.00, 60.00, 1120.50, 260.00, 'Our best drive in five years.', 0, 0, 1, 0, 3),
-('Food Pantry Restock Day', 'Sorting and shelving donated groceries at the parish pantry', 17, '2026-09-12', '2026-09-12', 'St. Jude Parish Food Pantry', 2, 0.00, 0.00, 150.00, 0.00, 'Restocked every shelf before the fall rush.', 0, 0, 0, 0, 3),
-('Baby Bottle Campaign Kickoff', 'Baby bottles handed out after every Mass to collect change for the pregnancy center', 14, '2026-07-19', '2026-07-19', 'St. Jude Church narthex', 5, 150.00, 120.00, 865.25, 400.00, 'Six hundred bottles went home with families.', 500, 600, 1, 0, 4),
-('Pregnancy Center Nursery Painting', 'Painting and furnishing the nursery at Holy Family Pregnancy Resource Center', 13, '2026-09-19', '2026-09-19', 'Holy Family Pregnancy Resource Center', 2, 200.00, 185.00, 0.00, 0.00, 'The nursery reopened the following Monday.', 0, 0, 0, 0, 4);
+('Rosary Rally at the Parish Grotto', 'Public rosary for peace with the Knights leading the decades', 4, '2026-07-12', '2026-07-12', 'St. Jude Parish Grotto', 3, 180.00, 0.00, 'Over ninety parishioners prayed all five decades despite the heat.', 80, 94, 0, 0, 1),
+('Holy Hour for Vocations', 'Eucharistic adoration praying for priestly and religious vocations', 5, '2026-09-10', '2026-09-10', 'St. Jude Church', 3, 95.00, 0.00, 'Two seminarians joined us and spoke after Benediction.', 40, 37, 0, 0, 1),
+('Parish Family Picnic', 'Summer picnic with games, a bounce house and a Knights grill line', 16, '2026-07-26', '2026-07-26', 'Laurelhurst Park, Picnic Area B', 1, 640.00, 215.00, 'Record turnout; the grill line served 310 plates.', 250, 312, 1, 0, 2),
+('Back-to-School Pancake Breakfast', 'Pancake breakfast raising school-supply money for parish families', 15, '2026-08-16', '2026-08-16', 'St. Jude Parish Hall', 5, 525.00, 310.00, 'Funded forty backpacks for the school drive.', 180, 205, 1, 0, 2),
+('Tootsie Roll Drive for Special Olympics', 'Annual candy drive at grocery stores for people with intellectual disabilities', 18, '2026-08-22', '2026-08-22', 'Fred Meyer and Safeway entrances, NE Portland', 5, 1120.50, 260.00, 'Our best drive in five years.', 0, 0, 1, 0, 3),
+('Food Pantry Restock Day', 'Sorting and shelving donated groceries at the parish pantry', 17, '2026-09-12', '2026-09-12', 'St. Jude Parish Food Pantry', 2, 150.00, 0.00, 'Restocked every shelf before the fall rush.', 0, 0, 0, 0, 3),
+('Baby Bottle Campaign Kickoff', 'Baby bottles handed out after every Mass to collect change for the pregnancy center', 14, '2026-07-19', '2026-07-19', 'St. Jude Church narthex', 5, 865.25, 400.00, 'Six hundred bottles went home with families.', 500, 600, 1, 0, 4),
+('Pregnancy Center Nursery Painting', 'Painting and furnishing the nursery at Holy Family Pregnancy Resource Center', 13, '2026-09-19', '2026-09-19', 'Holy Family Pregnancy Resource Center', 2, 0.00, 0.00, 'The nursery reopened the following Monday.', 0, 0, 0, 0, 4);
 GO
 INSERT INTO [EventCouncils] ([EventID], [CouncilID])
 VALUES

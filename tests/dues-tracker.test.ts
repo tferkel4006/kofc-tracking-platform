@@ -271,12 +271,12 @@ describe.each(drivers)('budget.getConcludedPerformance ($name)', (d) => {
         { EventName: name, EventDescription: 'Fixture', OwnerID: MEMBER.superAdmin, StartDate: date, EndDate: date, Location: 'Hall', CategoryID: category, ...over },
         councils,
       );
-    // Spend and Budget are manual figures the grid never reads (Sprints 6B, 6C): only Approved and Reimbursed sheets
-    // count as actuals, and only the approved CouncilBudgetForecast Event lines as budgets.
-    const prior = await event('Dues Fish Fry', '2025-03-06', { IsAnnual: 1, Budget: 4444, Spend: 5000 });
-    const fishFry = await event('Dues Fish Fry', '2026-09-12', { IsAnnual: 1, Budget: 5555, Spend: 7777 });
-    await event('Dues Future Gala', '2026-10-01', { Budget: 900, Spend: 0 });
-    await event('Dues Neighbour Fry', '2026-09-12', { IsAnnual: 1, Budget: 999, Spend: 999 }, [OTHER]);
+    // Only Approved and Reimbursed sheets count as actuals, and only the approved CouncilBudgetForecast Event lines as
+    // budgets (Sprints 6B, 6C; the manual Event.Budget and Event.Spend columns were dropped in schema 47).
+    const prior = await event('Dues Fish Fry', '2025-03-06', { IsAnnual: 1 });
+    const fishFry = await event('Dues Fish Fry', '2026-09-12', { IsAnnual: 1 });
+    await event('Dues Future Gala', '2026-10-01', {});
+    await event('Dues Neighbour Fry', '2026-09-12', { IsAnnual: 1 }, [OTHER]);
     const forecastLine = (councilId: number, year: string, name: string, amount: number, status = 'Approved') =>
       raw(d, db, 'CouncilBudgetForecast', {
         CouncilID: councilId,

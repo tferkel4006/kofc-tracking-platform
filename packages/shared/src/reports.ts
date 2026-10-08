@@ -156,10 +156,10 @@ export function summarizeMonth(councilId: number, year: number, month: number, r
   const activityHours = sumHundredths(rows.activityTime.map((t) => t.Hours));
   const members = new Set([...rows.eventTime, ...rows.activityTime].map((t) => t.MemberID));
 
-  const eventSpend = sumHundredths(rows.events.map((e) => e.Spend));
+  // Sprint 6I: spend rolls up only from expense report lines and charity checks (Event.Spend was dropped in schema 47).
   const expenses = sumHundredths(rows.expenseItems.map((li) => li.Amount));
   const charitableGiving = sumHundredths(rows.charitableGifts.map((g) => g.Amount));
-  const spend = sumHundredths([eventSpend, expenses, charitableGiving]);
+  const spend = sumHundredths([expenses, charitableGiving]);
   const cash = sumHundredths(rows.events.map((e) => e['FundsRaised-Cash']));
   const electronic = sumHundredths(rows.events.map((e) => e['FundsRaised-Electronic']));
   const raised = sumHundredths([cash, electronic]);
@@ -177,7 +177,7 @@ export function summarizeMonth(councilId: number, year: number, month: number, r
     toDate,
     laborHours: { events: eventHours, activities: activityHours, total: sumHundredths([eventHours, activityHours]) },
     uniqueMembers: members.size,
-    finances: { spend, eventSpend, expenses, charitableGiving, cash, electronic, raised, net: Math.round((raised - spend) * 100) / 100 },
+    finances: { spend, expenses, charitableGiving, cash, electronic, raised, net: Math.round((raised - spend) * 100) / 100 },
     outreach: { attendees: rows.events.reduce((n, e) => n + (e.ActualNumberAttendees ?? 0), 0), events: rows.events.length },
     highlights,
   };

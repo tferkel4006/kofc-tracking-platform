@@ -805,7 +805,7 @@ The budget covers one fraternal year, July 1 to June 30.
 
 | Source | Baseline |
 | --- | --- |
-| Each event tagged **Is Annual** | Last year's recorded spend plus linked approved expenses |
+| Each event tagged **Is Annual** | Last year's approved expenses linked to the event |
 | Each charity tagged **Is Annual** | Last year's charity checks |
 | Last year's custom lines | Last year's approved amount |
 
@@ -871,7 +871,7 @@ A new rollup refreshes the baselines only. The rollup never changes proposed amo
 | --- | --- |
 | **Total labor hours** | Shift hours plus activity hours in the month |
 | **Unique Knights participating** | Members who logged any time in the month |
-| **Net balance** | Funds raised minus spend for the month's events |
+| **Net balance** | Funds raised minus the month's approved expenses and charity checks |
 | **Community outreach** | Actual attendees at the month's events |
 
 A budget gauge turns gold at 85% of the cap. The gauge turns red past 100%.
@@ -905,13 +905,13 @@ A budget gauge turns gold at 85% of the cap. The gauge turns red past 100%.
 
 > **Prerequisite (who can do this):** You must be an Admin of a council linked to the event, the event owner or a Super Admin.
 
-**Goal:** Close out an event with spend, funds and lessons.
+**Goal:** Close out an event with attendance, funds and lessons.
 
 **Start point:** Sidebar → Performance → **Post-event Ledger** → **Active queue**.
 
 **Steps:**
 1. Choose the event with **Results needed**.
-2. Enter **Spend ($)** and **Actual attendees**.
+2. Enter **Actual attendees**. The event's costs come from the expense reports linked to it, not from this page.
 3. Enter **Cash raised ($)** and **Electronic raised ($)** if the fields are open.
 4. Write **Highlights** for the monthly summary.
 5. Select **Save results**.

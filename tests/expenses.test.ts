@@ -438,13 +438,14 @@ describe('financial controls (pure, Sprint 5R-1.5)', () => {
 
   it('adds approved expenses to the month’s spend and nets them against funds raised', () => {
     const summary = summarizeMonth(OWN, 2026, 9, {
-      events: [{ id: 1, StartDate: '2026-09-03', Spend: 100.1, 'FundsRaised-Cash': 50 } as never],
+      events: [{ id: 1, StartDate: '2026-09-03', 'FundsRaised-Cash': 50 } as never],
       eventTime: [],
       activityTime: [],
       expenseItems: [{ Amount: 19.99 }, { Amount: 0.01 }],
       charitableGifts: [],
     });
-    expect(summary.finances).toEqual({ spend: 120.1, eventSpend: 100.1, expenses: 20, charitableGiving: 0, cash: 50, electronic: 0, raised: 50, net: -70.1 });
+    // Sprint 6I: spend is expense lines and charity checks only (Event.Spend was dropped in schema 47).
+    expect(summary.finances).toEqual({ spend: 20, expenses: 20, charitableGiving: 0, cash: 50, electronic: 0, raised: 50, net: 30 });
   });
 });
 
@@ -545,8 +546,8 @@ describe.each(drivers)('financial controls ($name driver, Sprint 5R-1.5)', (d) =
     expect(september.finances).toEqual({
       ...before.finances,
       expenses: 25.55,
-      spend: Math.round((before.finances.eventSpend + 25.55) * 100) / 100,
-      net: Math.round((before.finances.raised - before.finances.eventSpend - 25.55) * 100) / 100,
+      spend: Math.round((before.finances.spend - before.finances.expenses + 25.55) * 100) / 100,
+      net: Math.round((before.finances.net + before.finances.expenses - 25.55) * 100) / 100,
     });
     expect((await db.reports.monthlySummary(OWN, 2026, 8)).finances.expenses).toBe(august.finances.expenses + 7);
     expect((await db.reports.monthlySummary(OTHER, 2026, 9)).finances.expenses).toBe(50);

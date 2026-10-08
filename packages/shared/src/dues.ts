@@ -28,6 +28,8 @@ import {
 } from './budget';
 import { BusinessRuleError, describeActor, SecurityPrivilegeError, type MemberWriteActor } from './rules';
 import type { CouncilBudgetForecast, MemberStatus } from './types';
+import type { GlobalCouncilParameters } from './contract';
+import { cleanTenantType, type TenantType } from './tenant';
 
 const cents = (value: number | null | undefined) => Math.round((value ?? 0) * 100);
 const sumCents = (values: readonly (number | null | undefined)[]) => values.reduce<number>((t, v) => t + cents(v), 0) / 100;
@@ -386,4 +388,28 @@ export function buildConcludedBudgetPerformance(input: {
     meetings,
     totals: { budget, actual, variance: sumCents([budget, -actual]), percentUsed: budgetPercentUsed(budget, actual), alert: budgetAlertOf(budget, actual) },
   };
+}
+
+// ---- Global Council Parameters (Sprint 6I) ----
+
+/** What councils.setGlobalParameters writes, after cleanGlobalCouncilParameters. */
+export interface CleanGlobalCouncilParameters {
+  tenant_type?: TenantType;
+  base_dues_rate?: number;
+}
+
+/**
+ * The Super Admin's Global Council Parameters Dashboard (Sprint 6I): a tenant type (cleanTenantType) and a base dues
+ * rate (cleanDuesRate), each optional; a field left out keeps its stored value. Rejects INVALID_INPUT for a bad value, an
+ * unknown field, or no field at all.
+ */
+export function cleanGlobalCouncilParameters(input: GlobalCouncilParameters): CleanGlobalCouncilParameters {
+  if (typeof input !== 'object' || input === null) throw new BusinessRuleError('INVALID_INPUT', 'Council parameters are required.');
+  const unknown = Object.keys(input).filter((k) => k !== 'tenant_type' && k !== 'base_dues_rate');
+  if (unknown.length > 0) throw new BusinessRuleError('INVALID_INPUT', `Unknown council parameter ${unknown.join(', ')}.`, { fields: unknown });
+  const clean: CleanGlobalCouncilParameters = {};
+  if (input.tenant_type !== undefined) clean.tenant_type = cleanTenantType(input.tenant_type);
+  if (input.base_dues_rate !== undefined) clean.base_dues_rate = cleanDuesRate(input.base_dues_rate);
+  if (Object.keys(clean).length === 0) throw new BusinessRuleError('INVALID_INPUT', 'Give a tenant type, a base dues rate, or both.');
+  return clean;
 }

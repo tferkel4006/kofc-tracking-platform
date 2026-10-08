@@ -134,6 +134,7 @@ function parseSchema(sql) {
   const indexes = [];
   const alters = [];
   const views = [];
+  const dropped = [];
 
   for (const stmt of splitBatches(sql)) {
     let m;
@@ -160,6 +161,16 @@ function parseSchema(sql) {
       if (column.identity) fail(`ALTER TABLE ADD may not add an IDENTITY column to [${name}]`, stmt);
       if (t.columns.some((c) => c.name === column.name)) fail(`Column [${name}].[${column.name}] already exists`, stmt);
       t.columns.push(column);
+    } else if ((m = stmt.match(/^ALTER TABLE \[([^\]]+)\]\s+DROP COLUMN\s+\[([^\]]+)\]$/i))) {
+      // A column a later sprint retires (Sprint 6I): both targets simply create the table without it. Keys, indexes and
+      // views are checked against the final columns below, so one still naming the column aborts the run.
+      const [, name, column] = m;
+      const t = tables.get(name) ?? fail(`ALTER TABLE DROP COLUMN on unknown table [${name}]`, stmt);
+      const at = t.columns.findIndex((c) => c.name === column);
+      if (at < 0) fail(`ALTER TABLE DROP COLUMN of unknown column [${name}].[${column}]`, stmt);
+      if (t.pk.includes(column)) fail(`ALTER TABLE DROP COLUMN may not drop primary key column [${name}].[${column}]`, stmt);
+      t.columns.splice(at, 1);
+      dropped.push({ table: name, column, stmt });
     } else if ((m = stmt.match(/^CREATE (UNIQUE )?INDEX \[([^\]]+)\]\s+ON\s+\[([^\]]+)\]\s*\(([^)]*)\)(?:\s*INCLUDE\s*\([^)]*\))?(?:\s+WHERE\s+\[([^\]]+)\]\s+IS\s+NOT\s+NULL)?$/i))) {
       // A filtered index may only skip NULLs: SQLite's partial index keeps the same rule, and the web mock already
       // lets a unique key holding a NULL repeat (SQLite semantics), so the filter needs nothing more there.
@@ -194,6 +205,13 @@ function parseSchema(sql) {
     const cols = splitTopLevel(ix.columns).map((c) => c.match(/^\[([^\]]+)\]$/)?.[1] ?? fail(`Unique index [${ix.name}] may list only [column] names`, ix.stmt));
     for (const c of cols) if (!t.columns.some((x) => x.name === c)) fail(`Unique index column [${ix.table}].[${c}] does not exist`, ix.stmt);
     t.uniqueKeys.push(cols);
+  }
+
+  // A dropped column must not live on in an index or a view (views name columns as [Table].[Column]).
+  for (const d of dropped) {
+    const ref = `[${d.column}]`;
+    for (const ix of indexes) if (ix.table === d.table && ix.columns.includes(ref)) fail(`Index [${ix.name}] still uses dropped column [${d.table}].[${d.column}]`, d.stmt);
+    for (const v of views) if (v.body.includes(`[${d.table}].${ref}`)) fail(`View [${v.name}] still uses dropped column [${d.table}].[${d.column}]`, d.stmt);
   }
 
   return { tables, indexes, views };

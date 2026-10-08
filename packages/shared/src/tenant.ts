@@ -10,6 +10,7 @@
 // =========================================================================
 import type { PortalArea } from './permissions';
 import type { Council } from './types';
+import { BusinessRuleError } from './rules';
 
 export const TENANT_TYPES = ['KOFC', 'GENERIC'] as const;
 export type TenantType = (typeof TENANT_TYPES)[number];
@@ -25,6 +26,19 @@ export function councilTenantType(council: Partial<Pick<Council, 'tenant_type'>>
   const raw = council?.tenant_type;
   if (raw === undefined || raw === null || String(raw).trim() === '') return DEFAULT_TENANT_TYPE;
   return String(raw).trim().toUpperCase() === 'KOFC' ? 'KOFC' : 'GENERIC';
+}
+
+/**
+ * A tenant_type a Super Admin may save (Sprint 6I, councils.setGlobalParameters): exactly one of TENANT_TYPES, ignoring
+ * case and surrounding spaces. Rejects INVALID_INPUT otherwise; unlike councilTenantType it never guesses.
+ */
+export function cleanTenantType(value: unknown): TenantType {
+  const text = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  if ((TENANT_TYPES as readonly string[]).includes(text)) return text as TenantType;
+  throw new BusinessRuleError('INVALID_INPUT', `The tenant type must be one of ${TENANT_TYPES.join(', ')}; got ${JSON.stringify(value)}.`, {
+    field: 'tenant_type',
+    value,
+  });
 }
 
 /** True for the Knights of Columbus tenant, the only one with the fraternal extensions. */

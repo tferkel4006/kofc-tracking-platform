@@ -43,6 +43,7 @@ export function createRemoteDataService(): DataService {
       setFeatureFlags: notImplemented('councils.setFeatureFlags'),
       setBylaws: notImplemented('councils.setBylaws'),
       setDuesRate: notImplemented('councils.setDuesRate'),
+      setGlobalParameters: notImplemented('councils.setGlobalParameters'),
       setEmailGateway: notImplemented('councils.setEmailGateway'),
     },
     parishes: {

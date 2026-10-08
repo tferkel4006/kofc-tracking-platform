@@ -625,12 +625,12 @@ for (const d of drivers) {
           { EventName: name, EventDescription: 'Fixture', OwnerID: MEMBER.superAdmin, StartDate: date, EndDate: date, Location: 'Hall', CategoryID: category, ...over },
           councils,
         );
-      // Event.Spend is a manual figure the budget engine never reads (Sprint 6B); the 999s below prove it.
-      const fishFry = await event('Fish Fry', '2027-03-06', { IsAnnual: 1, Spend: 999 });
+      // An event's spend is only its expense lines (the manual Event.Spend column was dropped in schema 47).
+      const fishFry = await event('Fish Fry', '2027-03-06', { IsAnnual: 1 });
       const tootsie = await event('Tootsie Roll Drive', '2026-10-04', { IsAnnual: 1 });
-      await event('Council Picnic', '2026-08-02', { Spend: 999 }); // not annual
-      await event('Next Fish Fry', '2027-09-01', { IsAnnual: 1, Spend: 999 }); // the following fraternal year
-      await event('Neighbour Fish Fry', '2027-03-06', { IsAnnual: 1, Spend: 999 }, [OTHER]);
+      await event('Council Picnic', '2026-08-02'); // not annual
+      await event('Next Fish Fry', '2027-09-01', { IsAnnual: 1 }); // the following fraternal year
+      await event('Neighbour Fish Fry', '2027-03-06', { IsAnnual: 1 }, [OTHER]);
       expect(fishFry.IsAnnual).toBe(1);
 
       const report = (eventId: number | null, meetingId: number | null, amount: number, status = 'Approved', councilId = OWN) => {
@@ -754,7 +754,7 @@ for (const d of drivers) {
       const fishLine = first.lines.find((l) => l.ReferenceSourceID === fishFry.id)!;
       const fund = await categoryId(db, 'Blessed Michael McGivney Fraternal Activities Fund');
       await db.budget.updateLineItemBudget(MEMBER.admin, fishLine.id, 500, 'Add a second fryer', { budgetCategoryId: fund });
-      await db.events.update(fishFry.id, { EventName: 'Lenten Fish Fry', Spend: 400 }); // a manual Spend changes nothing (Sprint 6B)
+      await db.events.update(fishFry.id, { EventName: 'Lenten Fish Fry' });
 
       const again = await db.budget.prePopulateNextYear(MEMBER.admin, OWN, TARGET);
       expect(again).toMatchObject({ created: 0, refreshed: 4 });
@@ -982,7 +982,7 @@ for (const d of drivers) {
         complete: false,
         approvedTotal: 1600,
         budgetedActual: 835.75,
-        unbudgetedActual: 999, // the one-off charity check; the Picnic's manual Spend is not read (Sprint 6B)
+        unbudgetedActual: 999, // the one-off charity check
         actualTotal: 1834.75,
         alert: 'Over Budget',
       });
@@ -999,14 +999,14 @@ for (const d of drivers) {
       expect(byCategory.get(null)).toMatchObject({ label: 'Uncategorized', approved: 110, actual: 35.5 });
       expect(progress.categories).toHaveLength(SEEDED_CATEGORIES.length + 1);
 
-      // Sprint 6B: the budget rolls up expense sheets only, so the monthly executive summaries (which still add each
-      // event's manual Spend) exceed the year's budget actual by exactly the Fish Fry's and the Picnic's 999 each.
+      // Sprint 6I: with Event.Spend dropped, the monthly executive summaries roll up the same expense lines and charity
+      // checks as the budget, so the twelve months add up to the year's full spend (see the review below).
       let monthly = 0;
       for (let m = 0; m < 12; m += 1) {
         const month = new Date(2026, 6 + m, 1);
         monthly += Math.round((await db.reports.monthlySummary(OWN, month.getFullYear(), month.getMonth() + 1)).finances.spend * 100);
       }
-      expect(monthly / 100).toBe(4083.25); // the full year, including the June 30 check: 2085.25 (see the review below) + 1998
+      expect(monthly / 100).toBe(2085.25); // the full year, including the June 30 check
 
       // Before July 1 of a year nothing has been spent; and only leadership reads the gauges.
       expect((await db.budget.getBudgetProgress(MEMBER.admin, OWN, TARGET)).actualTotal).toBe(0);
@@ -1014,7 +1014,7 @@ for (const d of drivers) {
       await db.members.update(MEMBER.admin, MEMBER.member, { IsBudgetDirector: 1 });
       await expectPrivilege(db.budget.getBudgetProgress(MEMBER.member, OWN, SOURCE), 'ADMIN_REQUIRED');
       await expectPrivilege(db.budget.getBudgetProgress(MEMBER.admin, OTHER, SOURCE), 'COUNCIL_ACCESS_DENIED');
-      expect((await db.budget.getBudgetProgress(MEMBER.superAdmin, OTHER, SOURCE)).actualTotal).toBe(999); // its check; not its event's Spend
+      expect((await db.budget.getBudgetProgress(MEMBER.superAdmin, OTHER, SOURCE)).actualTotal).toBe(999); // its charity check
     });
 
     it('reviews every completed year against its full-year spend, with a trailing fiscal efficiency scorecard (Sprint 5Y-4)', async () => {

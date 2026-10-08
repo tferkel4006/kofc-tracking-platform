@@ -257,12 +257,13 @@ describe('lookup metadata', () => {
 });
 
 describe('copy plan', () => {
-  const event = { id: 1, EventName: 'Fish Fry', EventDescription: 'd', OwnerID: 2, StartDate: '2026-10-02', EndDate: '2026-10-03', Location: 'Hall', CategoryID: 5, Budget: 300, Spend: 250, Highlights: 'x' } as Event;
+  const event = { id: 1, EventName: 'Fish Fry', EventDescription: 'd', OwnerID: 2, StartDate: '2026-10-02', EndDate: '2026-10-03', Location: 'Hall', CategoryID: 5, PlannedNumberAttendees: 300, 'FundsRaised-Cash': 250, Highlights: 'x' } as Event;
 
   it('moves every date by the same offset and drops the ledger', () => {
     const plan = planEventCopy(event, [shift({ ShiftDate: '2026-10-02' }), shift({ ShiftDate: '2026-10-03' })], { startDate: '2026-12-31' });
-    expect(plan.event).toMatchObject({ StartDate: '2026-12-31', EndDate: '2027-01-01', Budget: 300 });
-    expect(plan.event).not.toHaveProperty('Spend');
+    expect(plan.event).toMatchObject({ StartDate: '2026-12-31', EndDate: '2027-01-01', PlannedNumberAttendees: 300 });
+    expect(plan.event).not.toHaveProperty('FundsRaised-Cash');
+    expect(plan.event).not.toHaveProperty('Budget'); // dropped in schema 47 (Sprint 6I)
     expect(plan.event).not.toHaveProperty('Highlights');
     expect(plan.shifts.map((s) => s.ShiftDate)).toEqual(['2026-12-31', '2027-01-01']);
   });
@@ -312,7 +313,6 @@ describe('hasLedgerResults', () => {
   });
 
   it.each([
-    ['Spend', { Spend: 0 }],
     ['cash raised', { 'FundsRaised-Cash': 120 }],
     ['electronic raised', { 'FundsRaised-Electronic': 45.5 }],
     ['actual attendees', { ActualNumberAttendees: 30 }],

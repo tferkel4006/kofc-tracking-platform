@@ -204,8 +204,9 @@ describe.each(drivers)('$name driver: event planner', (d) => {
 
   it('creates an event linked to its councils', async () => {
     const db = await d.make();
-    const event = await db.events.create({ ...draft, Budget: 150 }, [OWN, AFFILIATED]);
-    expect(event).toMatchObject({ EventName: 'Bake Sale', Budget: 150 });
+    const event = await db.events.create({ ...draft, PlannedNumberAttendees: 150 }, [OWN, AFFILIATED]);
+    expect(event).toMatchObject({ EventName: 'Bake Sale', PlannedNumberAttendees: 150 });
+    expect(event).not.toHaveProperty('Budget'); // dropped in schema 47 (Sprint 6I)
     expect(await db.events.listCouncilIds(event.id)).toEqual([OWN, AFFILIATED]);
     expect((await db.events.listByCouncil(AFFILIATED)).map((e) => e.EventName)).toContain('Bake Sale');
   });
@@ -222,7 +223,9 @@ describe.each(drivers)('$name driver: event planner', (d) => {
     await expectRule(db.events.create(draft, [999]), 'INVALID_INPUT');
     await expectRule(db.events.create({ ...draft, OwnerID: 999 }, [OWN]), 'MEMBER_NOT_FOUND');
     await expectRule(db.events.create({ ...draft, CategoryID: 999 }, [OWN]), 'INVALID_INPUT');
-    await expectRule(db.events.create({ ...draft, Budget: -5 }, [OWN]), 'INVALID_INPUT');
+    await expectRule(db.events.create({ ...draft, PlannedNumberAttendees: -5 }, [OWN]), 'INVALID_INPUT');
+    // Sprint 6I: the dropped legacy money columns are unknown fields now.
+    await expectRule(db.events.create({ ...draft, Budget: 150 } as never, [OWN]), 'INVALID_INPUT');
     expect(d.count(db, 'Event')).toBe(events);
     expect(d.count(db, 'EventCouncils')).toBe(links);
   });
@@ -231,14 +234,12 @@ describe.each(drivers)('$name driver: event planner', (d) => {
     const db = await d.make();
     const food = (await db.events.listByCouncil(OWN)).find((e) => e.EventName === 'Parish Food Drive')!;
     const updated = await db.events.update(food.id, {
-      Spend: 123.45,
       'FundsRaised-Cash': 200,
       'FundsRaised-Electronic': 50.5,
       ActualNumberAttendees: 42,
       Highlights: 'Record turnout',
     });
     expect(updated).toMatchObject({
-      Spend: 123.45,
       'FundsRaised-Cash': 200,
       'FundsRaised-Electronic': 50.5,
       ActualNumberAttendees: 42,
@@ -246,18 +247,19 @@ describe.each(drivers)('$name driver: event planner', (d) => {
       EventName: 'Parish Food Drive',
     });
     expect((await db.events.update(food.id, { Highlights: null })).Highlights ?? null).toBeNull();
-    expect((await db.events.get(food.id))?.Spend).toBe(123.45);
+    expect((await db.events.get(food.id))?.['FundsRaised-Electronic']).toBe(50.5);
   });
 
   it('rejects malformed ledger values without changing the event', async () => {
     const db = await d.make();
     const food = (await db.events.listByCouncil(OWN)).find((e) => e.EventName === 'Parish Food Drive')!;
-    await expectRule(db.events.update(food.id, { Spend: -1 }), 'INVALID_INPUT');
-    await expectRule(db.events.update(food.id, { Spend: 1.005 }), 'INVALID_INPUT');
+    await expectRule(db.events.update(food.id, { 'FundsRaised-Cash': -1 }), 'INVALID_INPUT');
+    await expectRule(db.events.update(food.id, { 'FundsRaised-Cash': 1.005 }), 'INVALID_INPUT');
+    await expectRule(db.events.update(food.id, { Spend: 1 } as never), 'INVALID_INPUT'); // dropped in schema 47
     await expectRule(db.events.update(food.id, { ActualNumberAttendees: 2.5 }), 'INVALID_INPUT');
     await expectRule(db.events.update(food.id, { EventName: null }), 'INVALID_INPUT');
-    await expectRule(db.events.update(9999, { Spend: 1 }), 'EVENT_NOT_FOUND');
-    expect(await db.events.get(food.id)).toMatchObject({ Spend: null });
+    await expectRule(db.events.update(9999, { 'FundsRaised-Cash': 1 }), 'EVENT_NOT_FOUND');
+    expect((await db.events.get(food.id))?.['FundsRaised-Cash'] ?? null).toBeNull();
   });
 
   it('will not move an event’s dates so that a shift falls outside them', async () => {
@@ -271,12 +273,12 @@ describe.each(drivers)('$name driver: event planner', (d) => {
   it('copies an event as a twin: shifts move together, signups and the ledger stay behind', async () => {
     const db = await d.make();
     const food = (await db.events.listByCouncil(OWN)).find((e) => e.EventName === 'Parish Food Drive')!;
-    await db.events.update(food.id, { Spend: 99, ActualNumberAttendees: 10, Highlights: 'x' });
+    await db.events.update(food.id, { 'FundsRaised-Cash': 99, ActualNumberAttendees: 10, Highlights: 'x' });
     const signupsBefore = d.count(db, 'EventSignup');
 
     const twin = await db.events.copy(food.id, { startDate: '2026-10-07', eventName: 'Parish Food Drive (Fall)' });
     expect(twin).toMatchObject({ EventName: 'Parish Food Drive (Fall)', StartDate: '2026-10-07', EndDate: '2026-10-11', OwnerID: food.OwnerID });
-    expect(twin.Spend ?? null).toBeNull();
+    expect(twin['FundsRaised-Cash'] ?? null).toBeNull();
     expect(twin.ActualNumberAttendees ?? null).toBeNull();
     expect(twin.Highlights ?? null).toBeNull();
 
@@ -289,7 +291,7 @@ describe.each(drivers)('$name driver: event planner', (d) => {
     expect(shifts.map((s) => s.MinNumberVolunteers)).toEqual([3, 2, 1]);
     expect(await db.events.listCouncilIds(twin.id)).toEqual(await db.events.listCouncilIds(food.id));
     expect(d.count(db, 'EventSignup')).toBe(signupsBefore);
-    expect((await db.events.get(food.id))?.Spend).toBe(99); // original untouched
+    expect((await db.events.get(food.id))?.['FundsRaised-Cash']).toBe(99); // original untouched
   });
 
   it('refuses to copy an unknown event or to a bad date', async () => {
