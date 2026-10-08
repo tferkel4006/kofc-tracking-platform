@@ -20,12 +20,16 @@
 //
 // Outbound Email Gateway (Sprint 6Z-Admin-Email-Perms, moved here from the Super Admin Councils page): the council's
 // Admins and Super Admins point its portal email at the council's own SMTP server (components/EmailGatewayPanel).
+//
+// Base Dues Rate (Sprint 6B): everyone who opens this page for the council sees Council.base_dues_rate; only its Grand
+// Knight or Financial Secretary saves a new one (components/DuesRatePanel, councils.setDuesRate).
 import { useEffect, useState } from 'react';
 import {
   AGENDA_TEMPLATE_MAX_LENGTH,
   canAdministerCouncil,
   canConfigureBallot,
   canManageAgendaTemplates,
+  canOpenCouncilLookups,
   councilLookupTablesFor,
   describeError,
   formatTimestamp,
@@ -33,6 +37,7 @@ import {
   type CouncilLookupTableName,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
+import { DuesRatePanel } from '@/components/DuesRatePanel';
 import { EmailGatewayPanel } from '@/components/EmailGatewayPanel';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Pill, Select, Table, Tabs, Td, Textarea } from '@/components/ui';
 import { useUser } from '@/lib/session';
@@ -414,7 +419,7 @@ function AgendaTemplates({ councilId }: { councilId: number }) {
   );
 }
 
-type LookupTab = CouncilLookupTableName | 'elections' | 'agenda' | 'email';
+type LookupTab = CouncilLookupTableName | 'elections' | 'agenda' | 'email' | 'dues';
 
 function CouncilLookups() {
   const user = useUser();
@@ -425,6 +430,9 @@ function CouncilLookups() {
     ...(canConfigureBallot(user, scope.councilId) ? [{ id: 'elections' as const, label: 'Officer Election Parameters' }] : []),
     ...(canManageAgendaTemplates(user, scope.councilId) ? [{ id: 'agenda' as const, label: 'Meeting Agenda Templates' }] : []),
     ...(canAdministerCouncil(user, scope.councilId) ? [{ id: 'email' as const, label: 'Outbound Email Gateway' }] : []),
+    ...(canAdministerCouncil(user, scope.councilId) || (canOpenCouncilLookups(user) && user.councilId === scope.councilId)
+      ? [{ id: 'dues' as const, label: 'Base Dues Rate' }]
+      : []),
   ];
   const [chosen, setChosen] = useState<LookupTab | null>(null);
   const table = chosen && tabs.some((t) => t.id === chosen) ? chosen : tabs[0]?.id;
@@ -445,6 +453,8 @@ function CouncilLookups() {
               <AgendaTemplates key={scope.councilId} councilId={scope.councilId} />
             ) : table === 'email' ? (
               <EmailGatewayPanel key={scope.councilId} councilId={scope.councilId} />
+            ) : table === 'dues' ? (
+              <DuesRatePanel key={scope.councilId} councilId={scope.councilId} />
             ) : (
               <LookupEditor key={`${scope.councilId}-${table}`} councilId={scope.councilId} table={table} />
             )}

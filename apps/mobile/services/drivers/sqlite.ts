@@ -106,6 +106,8 @@ import {
   cleanCouncil,
   cleanFeatureFlagChanges,
   assertMayEditBylaws,
+  assertMayEditDuesRate,
+  cleanDuesRate,
   cleanBylawsText,
   cleanEmailGatewaySettings,
   CLEARED_EMAIL_GATEWAY,
@@ -1261,6 +1263,17 @@ export class SqliteDataService implements DataService {
           new Date().toISOString(),
           councilId,
         ]);
+      });
+      return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [councilId]))!;
+    },
+
+    setDuesRate: async (actorId, councilId, rate) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        await this.requireRecord(db, 'Council', councilId);
+        assertMayEditDuesRate(actor, councilId);
+        await db.runAsync('UPDATE [Council] SET [base_dues_rate] = ? WHERE [id] = ?', [cleanDuesRate(rate), councilId]);
       });
       return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [councilId]))!;
     },
@@ -5008,8 +5021,8 @@ export class SqliteDataService implements DataService {
         await this.assertCouncilsExist(db, [councilId]);
         assertBudgetYearNotApproved(target, await this.budgetLines(db, councilId, target));
         assertBudgetYearWritable(target, this.now(), actor, options);
-        const annualEvents = await db.getAllAsync<{ id: number; EventName: string; Spend: number | null }>(
-          `SELECT [id], [EventName], [Spend] FROM [Event]
+        const annualEvents = await db.getAllAsync<{ id: number; EventName: string }>(
+          `SELECT [id], [EventName] FROM [Event]
             WHERE [IsAnnual] = 1 AND [StartDate] BETWEEN ? AND ?
               AND [id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)`,
           [fromDate, toDate, councilId],
@@ -5150,9 +5163,8 @@ export class SqliteDataService implements DataService {
         EndDate: string;
         IsAnnual: number;
         Budget: number | null;
-        Spend: number | null;
       }>(
-        `SELECT [id], [EventName], [StartDate], [EndDate], [IsAnnual], [Budget], [Spend] FROM [Event]
+        `SELECT [id], [EventName], [StartDate], [EndDate], [IsAnnual], [Budget] FROM [Event]
           WHERE [id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)`,
         [councilId],
       );
@@ -5207,11 +5219,6 @@ export class SqliteDataService implements DataService {
   /** The council's spend from the year's July 1 through `throughDate`, as budgetYearPerformance counts it. */
   private async budgetYearSpend(db: SQLite.SQLiteDatabase, councilId: number, year: string, throughDate: string): Promise<BudgetYearSpend> {
     const { fromDate } = fraternalYearBounds(year);
-    const events = await db.getAllAsync<{ id: number; EventName: string; Spend: number | null }>(
-      `SELECT [id], [EventName], [Spend] FROM [Event]
-        WHERE [StartDate] BETWEEN ? AND ? AND [id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)`,
-      [fromDate, throughDate, councilId],
-    );
     const expenses = await db.getAllAsync<{ EventID: number | null; EventName: string | null; MeetingID: number | null; Amount: number }>(
       `SELECT r.[LinkedEventID] AS EventID, e.[EventName], r.[LinkedMeetingID] AS MeetingID, li.[Amount] FROM [ExpenseLineItem] li
          JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID]
@@ -5223,7 +5230,7 @@ export class SqliteDataService implements DataService {
       'SELECT [CharityID], [Amount] FROM [CharitableDisbursementLedger] WHERE [CouncilID] = ? AND [PayoutDate] BETWEEN ? AND ?',
       [councilId, fromDate, throughDate],
     );
-    return { events, expenses, charityChecks };
+    return { expenses, charityChecks };
   }
 
   /** The council's budget categories in id order. */

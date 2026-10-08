@@ -219,10 +219,11 @@ describe('budget helpers (pure)', () => {
     const seeds = planBudgetPrePopulation(
       noActuals({
         annualEvents: [
-          { id: 7, EventName: 'Tootsie Roll Drive', Spend: 100.1 },
-          { id: 4, EventName: 'Fish Fry', Spend: null },
+          { id: 7, EventName: 'Tootsie Roll Drive' },
+          { id: 4, EventName: 'Fish Fry' },
         ],
         eventExpenses: [
+          { EventID: 7, Amount: 100.1 },
           { EventID: 7, Amount: 0.2 },
           { EventID: 4, Amount: 45.5 },
           { EventID: 4, Amount: 4.5 },
@@ -249,7 +250,8 @@ describe('budget helpers (pure)', () => {
   it("carries last year's custom lines forward once each at last year's approved cap (Sprint 5Y-6.5), and every line's category to the line that continues it", () => {
     const seeds = planBudgetPrePopulation(
       noActuals({
-        annualEvents: [{ id: 40, EventName: 'Fish Fry', Spend: 300 }],
+        annualEvents: [{ id: 40, EventName: 'Fish Fry' }],
+        eventExpenses: [{ EventID: 40, Amount: 300 }],
         annualCharityChecks: [{ CharityID: 3, Name: 'Pregnancy Center', Amount: 250 }],
         priorLines: [
           { CategoryType: 'Event', ReferenceSourceID: 12, LineItemName: 'fish  FRY', BudgetCategoryID: 6 },
@@ -514,12 +516,11 @@ describe('budget helpers (pure)', () => {
       line(4, { LineItemName: 'Bank Fees', ApprovedBudgetAmount: 60, BudgetStatus: 'Approved' }),
     ];
     const spend: BudgetYearSpend = {
-      // This year's Fish Fry is a new Event row: matched by name, ignoring case and spacing.
-      events: [
-        { id: 41, EventName: 'fish  FRY', Spend: 300 },
-        { id: 42, EventName: 'Picnic', Spend: 55.5 },
-      ],
+      // This year's Fish Fry is a new Event row: matched by name, ignoring case and spacing. Event.Spend is never read
+      // (Sprint 6B): an event's spend is its Approved and Reimbursed expense lines.
       expenses: [
+        { EventID: 41, EventName: 'fish  FRY', MeetingID: null, Amount: 300 },
+        { EventID: 42, EventName: 'Picnic', MeetingID: null, Amount: 55.5 },
         { EventID: 41, EventName: 'fish  FRY', MeetingID: null, Amount: 120.25 },
         { EventID: null, EventName: null, MeetingID: 8, Amount: 85 },
         { EventID: null, EventName: null, MeetingID: null, Amount: 10 },
@@ -612,7 +613,8 @@ for (const d of drivers) {
           { EventName: name, EventDescription: 'Fixture', OwnerID: MEMBER.superAdmin, StartDate: date, EndDate: date, Location: 'Hall', CategoryID: category, ...over },
           councils,
         );
-      const fishFry = await event('Fish Fry', '2027-03-06', { IsAnnual: 1, Spend: 300 });
+      // Event.Spend is a manual figure the budget engine never reads (Sprint 6B); the 999s below prove it.
+      const fishFry = await event('Fish Fry', '2027-03-06', { IsAnnual: 1, Spend: 999 });
       const tootsie = await event('Tootsie Roll Drive', '2026-10-04', { IsAnnual: 1 });
       await event('Council Picnic', '2026-08-02', { Spend: 999 }); // not annual
       await event('Next Fish Fry', '2027-09-01', { IsAnnual: 1, Spend: 999 }); // the following fraternal year
@@ -629,6 +631,7 @@ for (const d of drivers) {
         });
         raw(d, db, 'ExpenseLineItem', { ExpenseReportID: id, DateOfExpense: '2027-03-01', Amount: amount, VendorName: 'Costco', ExpenseDescription: 'Supplies' });
       };
+      report(fishFry.id, null, 300);
       report(fishFry.id, null, 120.25);
       report(fishFry.id, null, 50, 'Reimbursed');
       report(fishFry.id, null, 70, 'Draft'); // not spend yet
@@ -735,14 +738,14 @@ for (const d of drivers) {
       const fishLine = first.lines.find((l) => l.ReferenceSourceID === fishFry.id)!;
       const fund = await categoryId(db, 'Blessed Michael McGivney Fraternal Activities Fund');
       await db.budget.updateLineItemBudget(MEMBER.admin, fishLine.id, 500, 'Add a second fryer', { budgetCategoryId: fund });
-      await db.events.update(fishFry.id, { EventName: 'Lenten Fish Fry', Spend: 400 });
+      await db.events.update(fishFry.id, { EventName: 'Lenten Fish Fry', Spend: 400 }); // a manual Spend changes nothing (Sprint 6B)
 
       const again = await db.budget.prePopulateNextYear(MEMBER.admin, OWN, TARGET);
       expect(again).toMatchObject({ created: 0, refreshed: 4 });
       expect(again.lines).toHaveLength(4);
       expect(again.lines.find((l) => l.id === fishLine.id)).toMatchObject({
         LineItemName: 'Lenten Fish Fry',
-        PrePopulatedAmount: 570.25,
+        PrePopulatedAmount: 470.25,
         ProposedBudgetAmount: 500,
         ApprovedBudgetAmount: 0,
         BudgetStatus: 'Proposed',
@@ -963,8 +966,8 @@ for (const d of drivers) {
         complete: false,
         approvedTotal: 1600,
         budgetedActual: 835.75,
-        unbudgetedActual: 1998,
-        actualTotal: 2833.75,
+        unbudgetedActual: 999, // the one-off charity check; the Picnic's manual Spend is not read (Sprint 6B)
+        actualTotal: 1834.75,
         alert: 'Over Budget',
       });
       expect(progress.lines.map((l) => [l.line.LineItemName, l.actual, l.alert])).toEqual([
@@ -980,13 +983,14 @@ for (const d of drivers) {
       expect(byCategory.get(null)).toMatchObject({ label: 'Uncategorized', approved: 110, actual: 35.5 });
       expect(progress.categories).toHaveLength(SEEDED_CATEGORIES.length + 1);
 
-      // The year's actual spend is the sum of its monthly executive summaries.
+      // Sprint 6B: the budget rolls up expense sheets only, so the monthly executive summaries (which still add each
+      // event's manual Spend) exceed the year's budget actual by exactly the Fish Fry's and the Picnic's 999 each.
       let monthly = 0;
       for (let m = 0; m < 12; m += 1) {
         const month = new Date(2026, 6 + m, 1);
         monthly += Math.round((await db.reports.monthlySummary(OWN, month.getFullYear(), month.getMonth() + 1)).finances.spend * 100);
       }
-      expect(monthly / 100).toBe(3084.25); // the full year, including the June 30 check
+      expect(monthly / 100).toBe(4083.25); // the full year, including the June 30 check: 2085.25 (see the review below) + 1998
 
       // Before July 1 of a year nothing has been spent; and only leadership reads the gauges.
       expect((await db.budget.getBudgetProgress(MEMBER.admin, OWN, TARGET)).actualTotal).toBe(0);
@@ -994,7 +998,7 @@ for (const d of drivers) {
       await db.members.update(MEMBER.admin, MEMBER.member, { IsBudgetDirector: 1 });
       await expectPrivilege(db.budget.getBudgetProgress(MEMBER.member, OWN, SOURCE), 'ADMIN_REQUIRED');
       await expectPrivilege(db.budget.getBudgetProgress(MEMBER.admin, OTHER, SOURCE), 'COUNCIL_ACCESS_DENIED');
-      expect((await db.budget.getBudgetProgress(MEMBER.superAdmin, OTHER, SOURCE)).actualTotal).toBe(999 + 999);
+      expect((await db.budget.getBudgetProgress(MEMBER.superAdmin, OTHER, SOURCE)).actualTotal).toBe(999); // its check; not its event's Spend
     });
 
     it('reviews every completed year against its full-year spend, with a trailing fiscal efficiency scorecard (Sprint 5Y-4)', async () => {
@@ -1015,15 +1019,15 @@ for (const d of drivers) {
         throughDate: '2027-06-30',
         approvedTotal: 1600,
         budgetedActual: 1086.25,
-        unbudgetedActual: 1998,
-        actualTotal: 3084.25,
-        variance: -1484.25,
-        utilizationPercent: 192.8,
+        unbudgetedActual: 999,
+        actualTotal: 2085.25,
+        variance: -485.25,
+        utilizationPercent: 130.3,
         linesWithinBudget: 4,
         linesOverBudget: 1,
       });
       expect(source.lines.find((l) => l.line.LineItemName === 'Salem Pregnancy Center')).toMatchObject({ actual: 500.5, alert: 'On Track' });
-      expect(kpis.trailing).toMatchObject({ years: 2, approvedYears: 1, approvedTotal: 1600, actualTotal: 3084.25, utilizationPercent: 192.8, alert: 'Over Budget', yearsOverBudget: 1 });
+      expect(kpis.trailing).toMatchObject({ years: 2, approvedYears: 1, approvedTotal: 1600, actualTotal: 2085.25, utilizationPercent: 130.3, alert: 'Over Budget', yearsOverBudget: 1 });
 
       const treasurer = await addMember(db, OWN, 'Member', 'treasurer.history@example.com');
       grantRole(d, db, treasurer, 'Treasurer');

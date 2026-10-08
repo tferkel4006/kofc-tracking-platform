@@ -150,7 +150,7 @@ export function sortBudgetLines<T extends Pick<CouncilBudgetForecast, 'CategoryT
  */
 export interface BudgetActuals {
   /** The council's IsAnnual events that started in the year. */
-  annualEvents: readonly { id: number; EventName: string; Spend?: number | null }[];
+  annualEvents: readonly { id: number; EventName: string }[];
   /** Expense lines on sheets linked to those events. */
   eventExpenses: readonly { EventID: number; Amount: number }[];
   /** The council's checks paid in the year to IsAnnual charities. */
@@ -187,7 +187,8 @@ function priorLineOf<T extends BudgetActuals['priorLines'][number]>(
 }
 
 /**
- * The lines last year's actuals call for: one per annual event (its Spend plus its expenses), one per annual charity
+ * The lines last year's actuals call for: one per annual event (the sum of its 'Approved' and 'Reimbursed' expense
+ * lines - Event.Spend is never read, Sprint 6B), one per annual charity
  * (the sum of its checks), the meetings line when the council met, and each of last year's custom Operational lines
  * again under the same name. Custom lines have no spend to read, so their baseline is last year's approved cap, its
  * ApprovedBudgetAmount (Sprint 5Y-6.5; 0 when last year was never approved). Each keeps the category of the previous
@@ -198,7 +199,7 @@ export function planBudgetPrePopulation(actuals: BudgetActuals): BudgetSeed[] {
     CategoryType: 'Event',
     ReferenceSourceID: e.id,
     LineItemName: e.EventName,
-    PrePopulatedAmount: sumCents([e.Spend, ...actuals.eventExpenses.filter((x) => x.EventID === e.id).map((x) => x.Amount)]),
+    PrePopulatedAmount: sumCents(actuals.eventExpenses.filter((x) => x.EventID === e.id).map((x) => x.Amount)),
   }));
   const charities = new Map<number, { name: string; amounts: number[] }>();
   for (const check of actuals.annualCharityChecks) {
@@ -469,12 +470,11 @@ export function budgetAlertOf(cap: number, actual: number): BudgetAlert {
 }
 
 /**
- * One council's spend over a period, as the drivers load it; it counts exactly what reports.monthlySummary counts, so
- * a year's actual total is the sum of its monthly summaries.
+ * One council's spend over a period, as the drivers load it. Since Sprint 6B an event's actual spend is rolled up only
+ * from the expense sheets the workflow has moved to 'Approved' or 'Reimbursed'; the manual Event.Spend field is never
+ * read (reports.monthlySummary still adds it, so the two can differ).
  */
 export interface BudgetYearSpend {
-  /** The council's events that start in the period, with their own Spend. */
-  events: readonly { id: number; EventName: string; Spend?: number | null }[];
   /**
    * Line items dated in the period on the council's 'Approved' and 'Reimbursed' expense sheets, with the event (id and
    * name) or meeting the sheet is linked to.
@@ -486,7 +486,7 @@ export interface BudgetYearSpend {
 
 /**
  * Which budget line each piece of spend counts against, in cents by line id, plus what no line claims:
- * - an event's Spend, and expenses linked to it, go to the year's Event line of the same name ignoring case (or whose
+ * - expenses linked to an event go to the year's Event line of the same name ignoring case (or whose
  *   ReferenceSourceID is the event) - each year's event is a new Event row, so the name carries it;
  * - charity checks go to the Donation line of that charity;
  * - expenses linked to a meeting go to the 'Council Meetings' line (BUDGET_MEETINGS_LINE_NAME);
@@ -508,7 +508,6 @@ export function attributeBudgetSpend(
       (l) => l.CategoryType === 'Event' && ((id !== null && l.ReferenceSourceID === id) || (name !== null && lineKey(l.LineItemName) === lineKey(name))),
     );
   const meetingsLine = findOperationalBudgetLine(lines, BUDGET_MEETINGS_LINE_NAME);
-  for (const e of spend.events) charge(eventLine(e.id, e.EventName), e.Spend);
   for (const x of spend.expenses) {
     if (x.EventID !== null) charge(eventLine(x.EventID, x.EventName), x.Amount);
     else if (x.MeetingID !== null) charge(meetingsLine, x.Amount);

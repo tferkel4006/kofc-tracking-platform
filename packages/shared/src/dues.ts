@@ -8,8 +8,11 @@
 //     read-only Historical Benchmark. Benchmarks never enter the totals, and nothing here touches the general ledger or
 //     cash on hand.
 // Drivers load rows already scoped to one council, call these, and return the result.
+// Sprint 6B: councils.setDuesRate writes base_dues_rate, and only the council's Grand Knight or Financial Secretary may
+// (assertMayEditDuesRate / canEditDuesRate) - no Admin or Super Admin bypass.
 // =========================================================================
 import { budgetAlertOf, budgetPercentUsed, fraternalYearBounds, BUDGET_MEETINGS_LINE_NAME, type BudgetAlert } from './budget';
+import { BusinessRuleError, describeActor, SecurityPrivilegeError, type MemberWriteActor } from './rules';
 import type { CouncilBudgetForecast, MemberStatus } from './types';
 
 const cents = (value: number | null | undefined) => Math.round((value ?? 0) * 100);
@@ -64,6 +67,53 @@ export function buildDuesForecast(input: {
   };
 }
 
+// ---- the base dues rate editor (Sprint 6B) -------------------------------------
+
+/** The seats that set Council.base_dues_rate, matched by Role name like FINANCE_ROLE_NAMES. Nobody else may. */
+export const DUES_RATE_EDITOR_ROLE_NAMES = ['Grand Knight', 'Financial Secretary'] as const;
+
+/** The largest rate Council.base_dues_rate's DECIMAL(10,2) holds. */
+export const DUES_RATE_MAX = 99_999_999.99;
+
+const holdsDuesRateSeat = (roles: readonly string[] | undefined) =>
+  (roles ?? []).some((r) => (DUES_RATE_EDITOR_ROLE_NAMES as readonly string[]).includes(r));
+
+/**
+ * councils.setDuesRate: an Active Grand Knight or Financial Secretary of the council. Admins and Super Admins without
+ * one of those seats are refused (DUES_RATE_EDITOR_REQUIRED); a seat-holder of another council gets COUNCIL_ACCESS_DENIED.
+ */
+export function assertMayEditDuesRate(actor: MemberWriteActor, councilId: number): void {
+  if (!actor.active || !holdsDuesRateSeat(actor.roles)) {
+    throw new SecurityPrivilegeError(
+      'DUES_RATE_EDITOR_REQUIRED',
+      `Only the council's Grand Knight or Financial Secretary can set its base dues rate; member ${actor.memberId} is ${describeActor(actor)}.`,
+      { actorId: actor.memberId, councilId },
+    );
+  }
+  if (actor.councilId !== councilId) {
+    throw new SecurityPrivilegeError(
+      'COUNCIL_ACCESS_DENIED',
+      `Member ${actor.memberId} of council ${actor.councilId} cannot set the base dues rate of council ${councilId}.`,
+      { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
+    );
+  }
+}
+
+/** The Base Dues Rate panel's Save button, mirroring assertMayEditDuesRate (activity status is checked there). */
+export const canEditDuesRate = (u: { councilId: number; roles?: readonly string[] }, councilId: number): boolean =>
+  holdsDuesRateSeat(u.roles) && u.councilId === councilId;
+
+/** A dues rate in dollars: a finite number from 0 to DUES_RATE_MAX in whole cents. Rejects INVALID_INPUT otherwise. */
+export function cleanDuesRate(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > DUES_RATE_MAX || Math.abs(value * 100 - Math.round(value * 100)) > 1e-6) {
+    throw new BusinessRuleError('INVALID_INPUT', `The base dues rate must be a dollar amount from 0 to ${DUES_RATE_MAX} in whole cents; got ${String(value)}.`, {
+      field: 'base_dues_rate',
+      value,
+    });
+  }
+  return cents(value) / 100;
+}
+
 // ---- budgeted vs. actual for concluded events and meetings ----------------------
 
 /** The rows a driver loads for budget.getConcludedPerformance, all scoped to one council. */
@@ -76,7 +126,6 @@ export interface ConcludedPerformanceRows {
     EndDate: string;
     IsAnnual?: boolean | number | null;
     Budget?: number | null;
-    Spend?: number | null;
   }[];
   /** Line items of the council's 'Approved' and 'Reimbursed' expense sheets linked to an event or a meeting. */
   expenses: readonly { EventID: number | null; MeetingID: number | null; Amount: number }[];
@@ -104,7 +153,10 @@ export interface ConcludedEventPerformance {
   isAnnual: boolean;
   /** Event.Budget; null when the event was never given one. */
   budget: number | null;
-  /** Event.Spend plus the expenses linked to the event. */
+  /**
+   * The sum of the event's line items on 'Approved' and 'Reimbursed' expense sheets (Sprint 6B: the manual Event.Spend
+   * field is never read).
+   */
   actual: number;
   /** budget minus actual (negative when over); null without a budget. */
   variance: number | null;
@@ -168,7 +220,7 @@ export function buildConcludedBudgetPerformance(input: {
     if (x.EventID != null) eventExpenseCents.set(x.EventID, (eventExpenseCents.get(x.EventID) ?? 0) + cents(x.Amount));
     else if (x.MeetingID != null) meetingExpenseCents.set(x.MeetingID, (meetingExpenseCents.get(x.MeetingID) ?? 0) + cents(x.Amount));
   }
-  const actualOf = (e: ConcludedPerformanceRows['events'][number]) => (cents(e.Spend) + (eventExpenseCents.get(e.id) ?? 0)) / 100;
+  const actualOf = (e: ConcludedPerformanceRows['events'][number]) => (eventExpenseCents.get(e.id) ?? 0) / 100;
   const budgetOf = (e: ConcludedPerformanceRows['events'][number]) => (e.Budget == null ? null : cents(e.Budget) / 100);
   const concluded = rows.events.filter((e) => e.EndDate < today);
 

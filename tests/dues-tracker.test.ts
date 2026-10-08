@@ -7,7 +7,11 @@ import { describe, expect, it } from 'vitest';
 import {
   buildConcludedBudgetPerformance,
   buildDuesForecast,
+  canEditDuesRate,
+  cleanDuesRate,
   DEFAULT_BASE_DUES_RATE,
+  DUES_RATE_EDITOR_ROLE_NAMES,
+  DUES_RATE_MAX,
   duesRateOf,
   SecurityPrivilegeError,
   type ConcludedPerformanceRows,
@@ -92,16 +96,21 @@ describe('buildDuesForecast', () => {
 describe('buildConcludedBudgetPerformance', () => {
   const rows: ConcludedPerformanceRows = {
     events: [
-      { id: 1, EventName: 'Fish Fry', StartDate: '2025-03-06', EndDate: '2025-03-06', IsAnnual: 1, Budget: 400, Spend: 380 },
-      { id: 2, EventName: 'fish  fry', StartDate: '2026-09-12', EndDate: '2026-09-12', IsAnnual: 1, Budget: 500, Spend: 300 },
-      { id: 3, EventName: 'Rosary Rally', StartDate: '2026-08-15', EndDate: '2026-08-15', IsAnnual: 0, Budget: 100, Spend: 120 },
-      { id: 4, EventName: 'Coat Drive', StartDate: '2026-09-01', EndDate: '2026-09-25', IsAnnual: 0, Budget: 50, Spend: 0 }, // still running
-      { id: 5, EventName: 'Summer Social', StartDate: '2026-06-20', EndDate: '2026-06-20', IsAnnual: 0, Budget: 80, Spend: 80 }, // last year
-      { id: 6, EventName: 'Tootsie Roll Drive', StartDate: '2026-09-05', EndDate: '2026-09-06', IsAnnual: true, Budget: null, Spend: 25 },
+      { id: 1, EventName: 'Fish Fry', StartDate: '2025-03-06', EndDate: '2025-03-06', IsAnnual: 1, Budget: 400 },
+      { id: 2, EventName: 'fish  fry', StartDate: '2026-09-12', EndDate: '2026-09-12', IsAnnual: 1, Budget: 500 },
+      { id: 3, EventName: 'Rosary Rally', StartDate: '2026-08-15', EndDate: '2026-08-15', IsAnnual: 0, Budget: 100 },
+      { id: 4, EventName: 'Coat Drive', StartDate: '2026-09-01', EndDate: '2026-09-25', IsAnnual: 0, Budget: 50 }, // still running
+      { id: 5, EventName: 'Summer Social', StartDate: '2026-06-20', EndDate: '2026-06-20', IsAnnual: 0, Budget: 80 }, // last year
+      { id: 6, EventName: 'Tootsie Roll Drive', StartDate: '2026-09-05', EndDate: '2026-09-06', IsAnnual: true, Budget: null },
     ],
     expenses: [
       { EventID: 2, MeetingID: null, Amount: 150.25 },
+      { EventID: 2, MeetingID: null, Amount: 300 },
+      { EventID: 1, MeetingID: null, Amount: 380 },
       { EventID: 1, MeetingID: null, Amount: 20 },
+      { EventID: 3, MeetingID: null, Amount: 120 },
+      { EventID: 5, MeetingID: null, Amount: 80 },
+      { EventID: 6, MeetingID: null, Amount: 25 },
       { EventID: null, MeetingID: 10, Amount: 40 },
       { EventID: null, MeetingID: 11, Amount: 99 }, // a future meeting
       { EventID: null, MeetingID: null, Amount: 500 }, // unlinked
@@ -115,7 +124,7 @@ describe('buildConcludedBudgetPerformance', () => {
   };
   const result = buildConcludedBudgetPerformance({ councilId: OWN, fraternalYear: '2026-2027', today: '2026-09-20', rows });
 
-  it('lists the events of the year that ended before today, newest first, budget against spend plus linked expenses', () => {
+  it('lists the events of the year that ended before today, newest first, budget against their rolled-up expenses', () => {
     expect(result).toMatchObject({ councilId: OWN, fraternalYear: '2026-2027', fromDate: '2026-07-01', throughDate: '2026-09-19' });
     expect(result.events.map((e) => [e.eventId, e.budget, e.actual, e.variance, e.percentUsed, e.alert])).toEqual([
       [2, 500, 450.25, 49.75, 90.1, 'Warning'],
@@ -130,6 +139,19 @@ describe('buildConcludedBudgetPerformance', () => {
     expect(result.events.find((e) => e.eventId === 6)!.benchmark).toBeNull();
     expect(result.events.find((e) => e.eventId === 3)!.benchmark).toBeNull(); // not annual
     expect(result.totals).toEqual({ budget: 800, actual: 635.25, variance: 164.75, percentUsed: 79.4, alert: 'On Track' });
+  });
+
+  it('never reads a manual Event.Spend figure (Sprint 6B): the actual is the expense rollup alone', () => {
+    const overridden = buildConcludedBudgetPerformance({
+      councilId: OWN,
+      fraternalYear: '2026-2027',
+      today: '2026-09-20',
+      rows: { ...rows, events: rows.events.map((e) => ({ ...e, Spend: 9999 })) },
+    });
+    expect(overridden.events.map((e) => [e.eventId, e.actual])).toEqual(result.events.map((e) => [e.eventId, e.actual]));
+    expect(overridden.totals).toEqual(result.totals);
+    const noSheets = buildConcludedBudgetPerformance({ councilId: OWN, fraternalYear: '2026-2027', today: '2026-09-20', rows: { ...rows, expenses: [] } });
+    expect(noSheets.events.map((e) => e.actual)).toEqual([0, 0, 0]);
   });
 
   it('measures held meetings against the approved Council Meetings line only', () => {
@@ -184,16 +206,20 @@ describe.each(drivers)('budget.getConcludedPerformance ($name)', (d) => {
         { EventName: name, EventDescription: 'Fixture', OwnerID: MEMBER.superAdmin, StartDate: date, EndDate: date, Location: 'Hall', CategoryID: category, ...over },
         councils,
       );
-    const prior = await event('Dues Fish Fry', '2025-03-06', { IsAnnual: 1, Budget: 400, Spend: 380 });
-    const fishFry = await event('Dues Fish Fry', '2026-09-12', { IsAnnual: 1, Budget: 500, Spend: 300 });
+    // Spend is a manual figure the rollup never reads (Sprint 6B); only Approved and Reimbursed sheets count.
+    const prior = await event('Dues Fish Fry', '2025-03-06', { IsAnnual: 1, Budget: 400, Spend: 5000 });
+    const fishFry = await event('Dues Fish Fry', '2026-09-12', { IsAnnual: 1, Budget: 500, Spend: 7777 });
     await event('Dues Future Gala', '2026-10-01', { Budget: 900, Spend: 0 });
     await event('Dues Neighbour Fry', '2026-09-12', { IsAnnual: 1, Budget: 999, Spend: 999 }, [OTHER]);
     const report = (eventId: number | null, meetingId: number | null, amount: number, status = 'Approved') => {
       const id = raw(d, db, 'ExpenseReport', { CouncilID: OWN, SubmitterMemberID: MEMBER.member, Status: status, LinkedEventID: eventId, LinkedMeetingID: meetingId });
       raw(d, db, 'ExpenseLineItem', { ExpenseReportID: id, DateOfExpense: '2026-09-10', Amount: amount, VendorName: 'Costco', ExpenseDescription: 'Supplies' });
     };
+    report(prior.id, null, 380, 'Reimbursed');
     report(fishFry.id, null, 150.25);
+    report(fishFry.id, null, 300, 'Reimbursed');
     report(fishFry.id, null, 70, 'Draft'); // not spend yet
+    report(fishFry.id, null, 45, 'Submitted'); // awaiting signatures: not spend yet
     const meeting = await db.meetings.create({
       OwnerID: null,
       CouncilID: OWN,
@@ -235,5 +261,98 @@ describe('Financial Management Center wiring', () => {
     expect(parts).toContain('Budgeted vs. Current Actual Spend');
     expect(parts).toContain('Historical Benchmark');
     expect(parts).toContain('border-hc-gold bg-black');
+  });
+});
+
+describe('canEditDuesRate and cleanDuesRate (Sprint 6B)', () => {
+  it('admits only the Grand Knight and Financial Secretary seats of the council', () => {
+    expect(DUES_RATE_EDITOR_ROLE_NAMES).toEqual(['Grand Knight', 'Financial Secretary']);
+    expect(canEditDuesRate({ councilId: OWN, roles: ['Grand Knight'] }, OWN)).toBe(true);
+    expect(canEditDuesRate({ councilId: OWN, roles: ['Financial Secretary'] }, OWN)).toBe(true);
+    expect(canEditDuesRate({ councilId: OWN, roles: ['Financial Secretary'] }, OTHER)).toBe(false);
+    for (const role of ['Treasurer', 'Deputy Grand Knight', 'Trustee 1', 'Member']) expect(canEditDuesRate({ councilId: OWN, roles: [role] }, OWN)).toBe(false);
+    expect(canEditDuesRate({ councilId: OWN }, OWN)).toBe(false);
+  });
+
+  it('accepts dollar amounts in whole cents only', () => {
+    expect(cleanDuesRate(42.5)).toBe(42.5);
+    expect(cleanDuesRate(0)).toBe(0);
+    expect(cleanDuesRate(0.1 + 0.2)).toBe(0.3);
+    for (const bad of [-1, 12.345, Number.NaN, Infinity, DUES_RATE_MAX + 1, '40', null]) expect(() => cleanDuesRate(bad)).toThrow(/base dues rate/);
+  });
+});
+
+function grantRole(d: DriverUnderTest, db: DataService, memberId: number, role: string): void {
+  if (d.name === 'memory') {
+    const store = (db as MemoryDataService).debugStore;
+    store.insert('MemberRoles', { RoleID: store.rows('Role').find((r) => r.Role === role)!.id, MemberID: memberId });
+  } else {
+    openDatabases.at(-1)!.prepare('INSERT INTO [MemberRoles] ([RoleID], [MemberID]) SELECT [id], ? FROM [Role] WHERE [Role] = ?').run(memberId, role);
+  }
+}
+
+/** An Active member of `councilId` of the given type, added by the seeded Super Admin. */
+async function addMember(db: DataService, councilId: number, type: 'Admin' | 'Member', email: string): Promise<number> {
+  const types = await db.lookups.list('MemberType');
+  const statuses = await db.lookups.list('MemberStatus');
+  const member = await db.members.create(MEMBER.superAdmin, {
+    CouncilID: councilId,
+    MemberNumber: 7800000 + email.length,
+    MemberFirstName: 'Dues',
+    MemberLastName: 'Tester',
+    Phone: '503-555-0160',
+    StreetAddress1: '1 Dues Way',
+    City: 'Salem',
+    State: 'OR',
+    ZipCode: '97301',
+    Email: email,
+    DateOfBirth: '1970-05-05',
+    StatusID: statuses.find((s) => s.Status === 'Active')!.id,
+    DegreeID: 3,
+    MemberTypeID: types.find((t) => t.Type === type)!.id,
+  });
+  return member.id;
+}
+
+describe.each(drivers)('councils.setDuesRate ($name)', (d) => {
+  it('lets the council’s Grand Knight or Financial Secretary save base_dues_rate, and nobody else', async () => {
+    const db = await d.make();
+    // Seed: the Super Admin (member 1) holds council 1's Grand Knight seat and the Admin (member 2) its Financial Secretary seat.
+    expect(await db.councils.setDuesRate(MEMBER.superAdmin, OWN, 42.5)).toMatchObject({ id: OWN, base_dues_rate: 42.5 });
+    expect(await db.councils.setDuesRate(MEMBER.admin, OWN, 45)).toMatchObject({ id: OWN, base_dues_rate: 45 });
+    expect((await db.councils.get(OWN))?.base_dues_rate).toBe(45);
+    expect((await db.councils.get(OTHER))?.base_dues_rate).toBe(DEFAULT_BASE_DUES_RATE);
+
+    const treasurer = await addMember(db, OWN, 'Member', 'dues.treasurer@example.com');
+    grantRole(d, db, treasurer, 'Treasurer');
+    const deputy = await addMember(db, OWN, 'Member', 'dues.deputy.gk@example.com');
+    grantRole(d, db, deputy, 'Deputy Grand Knight');
+    const seatlessAdmin = await addMember(db, OWN, 'Admin', 'dues.plain.admin@example.com');
+    for (const actor of [MEMBER.member, treasurer, deputy, seatlessAdmin]) await expectPrivilege(db.councils.setDuesRate(actor, OWN, 50), 'DUES_RATE_EDITOR_REQUIRED');
+    // A Grand Knight of one council cannot set another's rate, Super Admin or not.
+    await expectPrivilege(db.councils.setDuesRate(MEMBER.superAdmin, OTHER, 50), 'COUNCIL_ACCESS_DENIED');
+    expect((await db.councils.get(OWN))?.base_dues_rate).toBe(45);
+    expect((await db.councils.get(OTHER))?.base_dues_rate).toBe(DEFAULT_BASE_DUES_RATE);
+
+    for (const bad of [-5, 40.005, Number.NaN]) {
+      const err = await db.councils.setDuesRate(MEMBER.admin, OWN, bad).then(
+        () => null,
+        (e: unknown) => e as { code?: string },
+      );
+      expect(err?.code).toBe('INVALID_INPUT');
+    }
+    expect((await db.councils.get(OWN))?.base_dues_rate).toBe(45);
+  });
+});
+
+describe('Base Dues Rate panel wiring', () => {
+  it('adds the editor to Council Lookups, saving through councils.setDuesRate behind canEditDuesRate', () => {
+    const page = read('apps/web/app/council-lookups/page.tsx');
+    expect(page).toContain("label: 'Base Dues Rate'");
+    expect(page).toContain('<DuesRatePanel');
+    const panel = read('apps/web/components/DuesRatePanel.tsx');
+    expect(panel).toContain('label="Base Dues Rate ($)"');
+    expect(panel).toContain('db.councils.setDuesRate');
+    expect(panel).toContain('canEditDuesRate(user, councilId)');
   });
 });

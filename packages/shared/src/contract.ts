@@ -1185,8 +1185,8 @@ export interface BudgetCategoryPerformance {
 
 /**
  * A council's fraternal year, budget against actual spend from July 1 through `throughDate` (buildBudgetYearPerformance).
- * Actual spend counts what reports.monthlySummary counts - events' Spend, line items of 'Approved' and 'Reimbursed'
- * expense sheets, and charity checks - so it is the sum of the period's monthly summaries.
+ * Actual spend is rolled up from line items of 'Approved' and 'Reimbursed' expense sheets plus charity checks. Since
+ * Sprint 6B the manual Event.Spend field is never read, so it can differ from the sum of the monthly summaries.
  */
 /** One line's dual prior-year baseline (Sprint 5Y-6.5). */
 export interface BudgetLineBaseline {
@@ -1785,6 +1785,13 @@ export interface DataService {
      * unknown council, INVALID_INPUT for settings cleanEmailGatewaySettings refuses.
      */
     setEmailGateway(actorId: number, councilId: number, settings: EmailGatewaySettings | null): Promise<Council>;
+    /**
+     * Sprint 6B: saves Council.base_dues_rate (dues.ts cleanDuesRate) and resolves to the updated council. Only an
+     * Active Grand Knight or Financial Secretary of the council may (assertMayEditDuesRate; DUES_RATE_EDITOR_REQUIRED or
+     * COUNCIL_ACCESS_DENIED, nothing written) - Admins and Super Admins without one of those seats are refused.
+     * RECORD_NOT_FOUND for an unknown council, INVALID_INPUT for a rate that is negative, too large, or not whole cents.
+     */
+    setDuesRate(actorId: number, councilId: number, rate: number): Promise<Council>;
   };
 
   /**
@@ -2796,10 +2803,10 @@ export interface DataService {
     addCustomBudgetLine(actorId: number, councilId: number, data: NewCustomBudgetLine, options?: BudgetWriteOptions): Promise<CouncilBudgetForecast>;
     /**
      * Seeds the council's forecast for `targetFraternalYear` from the previous fraternal year's actual spend, in one
-     * transaction (planBudgetPrePopulation). Spend counts as in reports.monthlySummary: an event's Spend plus the line
-     * items of the council's 'Approved' and 'Reimbursed' expense sheets, and the council's charity checks.
-     * - Event: one line per IsAnnual event linked to the council that started in the previous year - its Spend plus
-     *   the council's expenses linked to it. ReferenceSourceID is the event.
+     * transaction (planBudgetPrePopulation). Spend is the line items of the council's 'Approved' and 'Reimbursed'
+     * expense sheets and the council's charity checks; the manual Event.Spend field is never read (Sprint 6B).
+     * - Event: one line per IsAnnual event linked to the council that started in the previous year - the council's
+     *   expenses linked to it. ReferenceSourceID is the event.
      * - Donation: one line per IsAnnual charity the council paid in the previous year (by PayoutDate) - the sum of those
      *   checks. ReferenceSourceID is the charity.
      * - Operational: one 'Council Meetings' line (BUDGET_MEETINGS_LINE_NAME) when the council met in the previous
@@ -2848,8 +2855,8 @@ export interface DataService {
     getHistoricalKPIs(actorId: number, councilId: number): Promise<BudgetHistoricalKPIs>;
     /**
      * Sprint 6A (Phase 5): budgeted against actual spend for the current fraternal year's events and meetings that have
-     * concluded (buildConcludedBudgetPerformance) - each event's Budget against its Spend plus the expenses linked to it
-     * on 'Approved' and 'Reimbursed' sheets, and the year's held meetings against the approved 'Council Meetings' line.
+     * concluded (buildConcludedBudgetPerformance) - each event's Budget against the sum of the expenses linked to it
+     * on 'Approved' and 'Reimbursed' sheets (Sprint 6B: Event.Spend is never read), and the year's held meetings against the approved 'Council Meetings' line.
      * Each annual event carries its previous occurrence as a Historical Benchmark, which no total includes. Reads only;
      * the general ledger and cash on hand are untouched. Council leadership, as getBudgetProgress
      * (assertMayReviewBudgetPerformance).

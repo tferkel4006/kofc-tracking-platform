@@ -109,6 +109,8 @@ import {
   cleanCouncil,
   cleanFeatureFlagChanges,
   assertMayEditBylaws,
+  assertMayEditDuesRate,
+  cleanDuesRate,
   cleanBylawsText,
   cleanEmailGatewaySettings,
   CLEARED_EMAIL_GATEWAY,
@@ -1161,6 +1163,15 @@ export class MemoryDataService implements DataService {
       assertMayMaintainCouncilRecords(this.memberWriteActor(s, actorId), councilId, 'configure the email gateway');
       const row = this.requireRecord(s, 'Council', councilId);
       Object.assign(row, settings === null ? CLEARED_EMAIL_GATEWAY : cleanEmailGatewaySettings(settings));
+      return { ...row } as unknown as Council;
+    },
+
+    setDuesRate: async (actorId, councilId, rate) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const row = this.requireRecord(s, 'Council', councilId);
+      assertMayEditDuesRate(actor, councilId);
+      row.base_dues_rate = cleanDuesRate(rate);
       return { ...row } as unknown as Council;
     },
   };
@@ -4283,7 +4294,7 @@ export class MemoryDataService implements DataService {
         });
         const annualCharities = new Map(s.rows('GlobalCharityRegistry').filter((c) => c.IsAnnual === 1).map((c) => [c.id, c.Name as string]));
         const seeds = planBudgetPrePopulation({
-          annualEvents: annualEvents.map((e) => ({ id: e.id as number, EventName: e.EventName as string, Spend: e.Spend as number | null })),
+          annualEvents: annualEvents.map((e) => ({ id: e.id as number, EventName: e.EventName as string })),
           eventExpenses: expenseLines
             .filter((x) => annualEventIds.has(x.report.LinkedEventID))
             .map((x) => ({ EventID: x.report.LinkedEventID as number, Amount: x.Amount })),
@@ -4394,7 +4405,6 @@ export class MemoryDataService implements DataService {
               EndDate: e.EndDate as string,
               IsAnnual: e.IsAnnual as boolean | number | null,
               Budget: e.Budget as number | null,
-              Spend: e.Spend as number | null,
             })),
           expenses: s.rows('ExpenseLineItem').flatMap((li) => {
             const report = spendingReports.get(li.ExpenseReportID);
@@ -4444,7 +4454,6 @@ export class MemoryDataService implements DataService {
   private budgetYearSpend(s: MemoryStore, councilId: number, year: string, throughDate: string): BudgetYearSpend {
     const { fromDate } = fraternalYearBounds(year);
     const inPeriod = (date: unknown) => (date as string) >= fromDate && (date as string) <= throughDate;
-    const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
     const eventNames = new Map(s.rows('Event').map((e) => [e.id, e.EventName as string]));
     const spendingReports = new Map(
       s
@@ -4453,10 +4462,6 @@ export class MemoryDataService implements DataService {
         .map((r) => [r.id, r]),
     );
     return {
-        events: s
-          .rows('Event')
-          .filter((e) => linked.has(e.id) && inPeriod(e.StartDate))
-          .map((e) => ({ id: e.id as number, EventName: e.EventName as string, Spend: e.Spend as number | null })),
         expenses: s.rows('ExpenseLineItem').flatMap((li) => {
           const report = spendingReports.get(li.ExpenseReportID);
           if (!report || !inPeriod(li.DateOfExpense)) return [];

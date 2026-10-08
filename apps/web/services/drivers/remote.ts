@@ -42,6 +42,7 @@ export function createRemoteDataService(): DataService {
       remove: notImplemented('councils.remove'),
       setFeatureFlags: notImplemented('councils.setFeatureFlags'),
       setBylaws: notImplemented('councils.setBylaws'),
+      setDuesRate: notImplemented('councils.setDuesRate'),
       setEmailGateway: notImplemented('councils.setEmailGateway'),
     },
     parishes: {

@@ -109,6 +109,7 @@ export type BusinessRuleCode =
   | 'MOTION_STATUS_CONFLICT'
   | 'VOTE_TALLY_CONFLICT'
   | 'AGENDA_EDITOR_REQUIRED'
+  | 'DUES_RATE_EDITOR_REQUIRED'
   | 'AGENDA_CONFLICT'
   | 'ENROLLMENT_CODE_INVALID'
   | 'RESET_CODE_INVALID'
@@ -142,7 +143,8 @@ export class SecurityPrivilegeError extends BusinessRuleError {
       | 'GRAND_KNIGHT_REQUIRED'
       | 'VETTING_AUTHORITY_REQUIRED'
       | 'FINANCIAL_SECRETARY_REQUIRED'
-      | 'AGENDA_EDITOR_REQUIRED',
+      | 'AGENDA_EDITOR_REQUIRED'
+      | 'DUES_RATE_EDITOR_REQUIRED',
     message: string,
     details: Record<string, unknown> = {},
   ) {
