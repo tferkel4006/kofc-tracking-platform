@@ -1,0 +1,2 @@
+# Python packages for the server-side report scripts (Sprint 6N: scripts/form_1295_report.py).
+reportlab>=4.0

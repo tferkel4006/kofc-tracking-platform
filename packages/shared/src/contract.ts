@@ -90,6 +90,10 @@ import type {
   WorkingStatus,
   CouncilHistoryAnnals,
   CouncilSpiritualDiary,
+  AuditExecutionStatus,
+  AuditPeriod,
+  AuditTrusteeSignature,
+  CouncilAudit,
 } from './types';
 import type { BudgetAlert, BudgetWindowState } from './budget';
 import type { ConcludedBudgetPerformance } from './dues';
@@ -1426,13 +1430,18 @@ export interface BudgetAnalysis {
   categories: BudgetAnalysisCategory[];
   /** This year's lines in listAnnualForecast order, then last year's discontinued lines. */
   lines: BudgetAnalysisLine[];
-  /** Null unless a target spending ceiling was given. */
+  /** Sprint 6M: the year's saved Target Spending Ceiling (budget.setTargetSpendingCeiling), or null. */
+  storedTargetSpendingCeiling: number | null;
+  /** The ceiling track: against options.targetSpendingCeiling when given, else the saved ceiling; null with neither. */
   ceiling: BudgetCeilingTrack | null;
 }
 
 /** budget.getBudgetAnalysis options. */
 export interface BudgetAnalysisOptions {
-  /** A target spending ceiling for the year, in dollars (0 or more, at most two decimal places). Not stored. */
+  /**
+   * A what-if target spending ceiling for the year, in dollars (0 or more, at most two decimal places). Never stored.
+   * Omitted, the year's saved ceiling (Sprint 6M) is used; null tracks no ceiling at all.
+   */
   targetSpendingCeiling?: number | null;
 }
 
@@ -1939,6 +1948,76 @@ export interface CouncilLegacyMatrix {
 }
 
 // 21. THE SERVICE
+// 20. SEMIANNUAL TRUSTEE AUDITS AND THE BALANCE SHEET CARD (Sprints 6M / 6N)
+/** One cash line on the Semiannual Trustee Audit Desk. */
+export interface TrusteeAuditLine {
+  entry: JournalEntry;
+  accountName: string;
+  /** Every line of its posting stays inside the council's cash accounts (a transfer or goal set-aside): no money in or out. */
+  transfer: boolean;
+  verified: boolean;
+  verifiedByMemberId: number | null;
+  verifiedByName: string | null;
+  verifiedAt: string | null;
+}
+
+/** finance.getTrusteeAudit (Sprint 6N): one half-year audit of the council's books (buildTrusteeAuditWorkspace). */
+export interface TrusteeAuditWorkspace {
+  councilId: number;
+  /** The fraternal year, e.g. '2026-2027'. */
+  fiscalYear: string;
+  period: AuditPeriod;
+  /** 'July-December 2026'. */
+  periodLabel: string;
+  fromDate: string;
+  throughDate: string;
+  /** The window ended before today: only then may the audit be signed. */
+  periodEnded: boolean;
+  /** 'NOT_STARTED' until a Trustee ticks a line or signs. */
+  status: 'NOT_STARTED' | AuditExecutionStatus;
+  audit: CouncilAudit | null;
+  signatures: AuditTrusteeSignature[];
+  /** The accounts counted as cash: Asset accounts but physical property, virtual goals included. */
+  cashAccounts: { accountId: number; accountName: string; isVirtualGoal: boolean }[];
+  /** Cash the evening before the window opens (frozen once LOCKED). */
+  cashBalanceBeginning: number;
+  /** Debits to cash in the window, transfers left out. */
+  receipts: number;
+  /** Credits to cash in the window, transfers left out. */
+  disbursements: number;
+  /** Cash on the window's last day (frozen once LOCKED). */
+  cashBalanceEnding: number;
+  /** beginning + receipts - disbursements - ending: 0 when the window ties out. */
+  difference: number;
+  /** Oldest first (DateLogged, then id). */
+  lines: TrusteeAuditLine[];
+  verifiedCount: number;
+  lineCount: number;
+  /** Not yet locked, the period ended and every line verified. */
+  readyToSign: boolean;
+}
+
+/**
+ * finance.getCouncilNetWorth (Sprint 6M): the Council Balance Sheet & Equity Ledger card - liquid cash plus equipment at
+ * cost less approved expense sheets not yet paid (buildCouncilNetWorth).
+ */
+export interface CouncilNetWorth {
+  councilId: number;
+  /** 'YYYY-MM-DD HH:MM:SS' UTC. */
+  asOf: string;
+  /** Each bank account with the virtual goals inside it rolled up, in id order. */
+  cashAccounts: { accountId: number; accountName: string; balance: number }[];
+  liquidCash: number;
+  /** ACTIVE CouncilAssetsInventory rows, newest purchase first. */
+  equipment: { assetId: number; assetName: string; purchaseDate: string; costBasis: number }[];
+  equipmentValue: number;
+  /** 'Approved' expense sheets not yet 'Reimbursed', with the sum of their receipts. */
+  unpaidReports: { reportId: number; amount: number; approvedAt: string | null }[];
+  unpaidApprovedExpenses: number;
+  /** liquidCash + equipmentValue - unpaidApprovedExpenses. */
+  netWorth: number;
+}
+
 export interface DataService {
   /**
    * Idempotent. Opens the store and, on first launch, creates the schema and seeds
@@ -3182,11 +3261,20 @@ export interface DataService {
      * Sprint 6G Extension 2 (buildBudgetAnalysis): the year's approved lines grouped by universal_category with each
      * category's percentage of the approved total, the dollar and percentage change from the previous year's approved
      * lines (by category and by line, matched as getPriorYearBaselines matches), and - when options.targetSpendingCeiling
-     * is given - the approved total against that ceiling with the unallocated contingency buffer. The ceiling is a
-     * what-if figure and is never stored. Read by whoever may read the budget (assertMayViewBudgetForecast). Rejects
+     * is given - the approved total against that ceiling with the unallocated contingency buffer. That ceiling is a
+     * what-if figure and is never stored; without it the year's saved ceiling (Sprint 6M, setTargetSpendingCeiling) is
+     * tracked. Read by whoever may read the budget (assertMayViewBudgetForecast). Rejects
      * MEMBER_NOT_FOUND, COUNCIL_ACCESS_DENIED, and INVALID_INPUT for a malformed year or ceiling or an unknown council.
      */
     getBudgetAnalysis(actorId: number, councilId: number, fraternalYear: string, options?: BudgetAnalysisOptions): Promise<BudgetAnalysis>;
+    /**
+     * Sprint 6M: saves the council's Target Spending Ceiling for the year on every CouncilBudgetForecast row of the year
+     * (target_spending_ceiling, every budget_version), or clears it with null, and resolves to the year's analysis
+     * tracked against it. It changes no budget figure, so it is allowed in any window and on an Approved year. The
+     * budget's editors (assertMayManageBudgetForecast: ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT
+     * for a malformed year or amount, an unknown council, or a year with no lines.
+     */
+    setTargetSpendingCeiling(actorId: number, councilId: number, fraternalYear: string, ceiling: number | null): Promise<BudgetAnalysis>;
     /**
      * Records the council's vote (Sprint 5Y-4), usually at its July meeting: in one transaction every line of the
      * council's year gets ApprovedBudgetAmount = ProposedBudgetAmount and BudgetStatus 'Approved', and resolves to the
@@ -3325,6 +3413,45 @@ export interface DataService {
       csvFileData: string,
       options?: BankReconciliationOptions,
     ): Promise<BankReconciliationResult>;
+    /**
+     * Sprint 6M: the Council Balance Sheet & Equity Ledger card (CouncilNetWorth) - cash accounts, plus ACTIVE equipment
+     * in CouncilAssetsInventory at cost, less 'Approved' expense sheets not yet paid. Read by whoever reads the books
+     * (assertMayReadGeneralLedger).
+     */
+    getCouncilNetWorth(actorId: number, councilId: number): Promise<CouncilNetWorth>;
+    /**
+     * Sprint 6N: every Trustee audit the council has started, newest period first. Read by whoever reads the books
+     * (assertMayReadGeneralLedger).
+     */
+    listTrusteeAudits(actorId: number, councilId: number): Promise<CouncilAudit[]>;
+    /**
+     * Sprint 6N: the Semiannual Trustee Audit Desk for one half of a fraternal year (TrusteeAuditWorkspace). Reads only;
+     * a period nobody has touched is 'NOT_STARTED'. Read by whoever reads the books (assertMayReadGeneralLedger). Rejects
+     * INVALID_INPUT for a malformed year or period or an unknown council.
+     */
+    getTrusteeAudit(actorId: number, councilId: number, fiscalYear: string, auditPeriod: AuditPeriod): Promise<TrusteeAuditWorkspace>;
+    /**
+     * Sprint 6N: ticks (or unticks) one cash line of the period as verified against the bank statement, starting the
+     * period's DRAFT CouncilAudits row on the first tick, and resolves to the desk. The council's Active Trustees and any
+     * Active Super Admin (assertMayVerifyCouncilAudit: TRUSTEE_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects
+     * AUDIT_PERIOD_LOCKED once signed, and INVALID_INPUT for a line that is not one of the desk's.
+     */
+    setAuditLineVerified(
+      actorId: number,
+      councilId: number,
+      fiscalYear: string,
+      auditPeriod: AuditPeriod,
+      journalEntryId: number,
+      verified: boolean,
+    ): Promise<TrusteeAuditWorkspace>;
+    /**
+     * Sprint 6N: a Trustee's signature (planAuditSignature). The first locks the period - execution_status 'LOCKED', the
+     * cash balances frozen, and from then on logDoubleEntryTransaction and transferAssetFunds reject AUDIT_PERIOD_LOCKED
+     * for a line dated inside it; it needs the period ended (AUDIT_PERIOD_OPEN) and every line verified
+     * (AUDIT_INCOMPLETE). Later Trustees add their signatures to the locked audit. Who may sign: as setAuditLineVerified.
+     * Rejects INVALID_INPUT for a second signature by the same member.
+     */
+    signTrusteeAudit(actorId: number, councilId: number, fiscalYear: string, auditPeriod: AuditPeriod): Promise<TrusteeAuditWorkspace>;
   };
 
   feedback: {

@@ -248,6 +248,7 @@ export function createRemoteDataService(): DataService {
       listLineVersions: notImplemented('budget.listLineVersions'),
       getPriorYearBaselines: notImplemented('budget.getPriorYearBaselines'),
       getBudgetAnalysis: notImplemented('budget.getBudgetAnalysis'),
+      setTargetSpendingCeiling: notImplemented('budget.setTargetSpendingCeiling'),
     },
     finance: {
       listChartOfAccounts: notImplemented('finance.listChartOfAccounts'),
@@ -257,6 +258,11 @@ export function createRemoteDataService(): DataService {
       getAccountLedger: notImplemented('finance.getAccountLedger'),
       listLedgerTransactions: notImplemented('finance.listLedgerTransactions'),
       uploadBankStatementReconciliation: notImplemented('finance.uploadBankStatementReconciliation'),
+      getCouncilNetWorth: notImplemented('finance.getCouncilNetWorth'),
+      listTrusteeAudits: notImplemented('finance.listTrusteeAudits'),
+      getTrusteeAudit: notImplemented('finance.getTrusteeAudit'),
+      setAuditLineVerified: notImplemented('finance.setAuditLineVerified'),
+      signTrusteeAudit: notImplemented('finance.signTrusteeAudit'),
     },
     supreme: {
       previewReport: notImplemented('supreme.previewReport'),

@@ -245,6 +245,19 @@ import {
   assertBudgetYearWritable,
   assertCouncilBudgetCategory,
   assertFraternalYear,
+  assertAuditLineToggle,
+  assertAuditPeriod,
+  assertLedgerPeriodsOpen,
+  assertMayVerifyCouncilAudit,
+  buildCouncilNetWorth,
+  buildTrusteeAuditWorkspace,
+  cleanTargetSpendingCeiling,
+  compareAuditsNewestFirst,
+  planAuditSignature,
+  trusteeSeatOf,
+  type AuditPeriod,
+  type CouncilAudit,
+  type TrusteeAuditWorkspace,
   assertDiaryDayFree,
   assertMayKeepCouncilAnnals,
   assertMayReadCouncilHistory,
@@ -515,6 +528,7 @@ import type {
   AnnualBudgetForecast,
   BudgetYearPerformance,
   BudgetYearSpend,
+  AuditVerifiedLine,
   CouncilAssetsInventory,
   CouncilBudgetForecast,
   CharitableDisbursementLedger,
@@ -615,7 +629,7 @@ const DB_NAME = 'kofc.db';
  *     carries Oral History Testimonials (Sprint 6K).
  * 49: the Council Historian role seeded - the appointed seat that keeps the history annals (Sprint 6L).
  */
-const SCHEMA_VERSION = 49;
+const SCHEMA_VERSION = 51;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -5433,13 +5447,24 @@ export class SqliteDataService implements DataService {
       const db = await this.ready();
       assertMayViewBudgetForecast(await this.memberWriteActor(db, actorId), councilId, `read the budget analysis of council ${councilId}`);
       await this.assertCouncilsExist(db, [councilId]);
-      return buildBudgetAnalysis({
-        councilId,
-        fraternalYear: year,
-        lines: await this.budgetLines(db, councilId, year),
-        priorLines: await this.budgetLines(db, councilId, previousFraternalYear(year)),
-        targetSpendingCeiling: options.targetSpendingCeiling,
+      return this.budgetAnalysis(db, councilId, year, options);
+    },
+
+    setTargetSpendingCeiling: async (actorId, councilId, fraternalYear, ceiling) => {
+      const year = assertFraternalYear(fraternalYear);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayManageBudgetForecast(await this.memberWriteActor(db, actorId), councilId, `set the target spending ceiling of council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        const { n } = (await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS [n] FROM [CouncilBudgetForecast] WHERE [CouncilID] = ? AND [FraternalYear] = ?', [
+          councilId,
+          year,
+        ]))!;
+        const value = cleanTargetSpendingCeiling(ceiling, n, year);
+        // Every version of every line of the year carries the ceiling.
+        await db.runAsync('UPDATE [CouncilBudgetForecast] SET [target_spending_ceiling] = ? WHERE [CouncilID] = ? AND [FraternalYear] = ?', [value, councilId, year]);
       });
+      return this.budgetAnalysis(db, councilId, year);
     },
 
     getHistoricalKPIs: async (actorId, councilId) => {
@@ -5608,6 +5633,19 @@ export class SqliteDataService implements DataService {
    * The council's forecast lines for one fraternal year, unsorted: the latest budget_version of each line (Sprint 6D), so
    * superseded snapshots never enter a figure.
    */
+  /** budget.getBudgetAnalysis over every row of both years (every version), so the saved ceiling is read from any of them. */
+  private async budgetAnalysis(db: SQLite.SQLiteDatabase, councilId: number, year: string, options: { targetSpendingCeiling?: number | null } = {}) {
+    const rowsOf = (y: string) =>
+      db.getAllAsync<CouncilBudgetForecast>('SELECT * FROM [CouncilBudgetForecast] WHERE [CouncilID] = ? AND [FraternalYear] = ?', [councilId, y]);
+    return buildBudgetAnalysis({
+      councilId,
+      fraternalYear: year,
+      lines: await rowsOf(year),
+      priorLines: await rowsOf(previousFraternalYear(year)),
+      ...('targetSpendingCeiling' in options ? { targetSpendingCeiling: options.targetSpendingCeiling } : {}),
+    });
+  }
+
   private async budgetLines(db: SQLite.SQLiteDatabase, councilId: number, fraternalYear: string): Promise<CouncilBudgetForecast[]> {
     return currentBudgetLines(
       await db.getAllAsync<CouncilBudgetForecast>('SELECT * FROM [CouncilBudgetForecast] WHERE [CouncilID] = ? AND [FraternalYear] = ?', [
@@ -5759,6 +5797,7 @@ export class SqliteDataService implements DataService {
         const named = await selectIn<GLAccount>(db, (m) => `SELECT * FROM [GLAccount] WHERE [id] IN (${m})`, [...new Set(lines.map((l) => l.GLAccountID))]);
         const councilId = journalCouncilOf(lines, named);
         assertMayPostGeneralLedger(actor, councilId, `post to the general ledger of council ${councilId}`);
+        assertLedgerPeriodsOpen(lines, await this.councilAudits(db, councilId));
         for (const line of lines) {
           const eventId = line.LinkedEventID;
           const event = eventId === null ? null : await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Event] WHERE [id] = ?', [eventId]);
@@ -5791,6 +5830,7 @@ export class SqliteDataService implements DataService {
             )
           : 0;
         const plan = planAssetTransfer(source, target, amount, sourceBalance, this.now(), options);
+        assertLedgerPeriodsOpen(plan.lines, await this.councilAudits(db, plan.councilId));
         ids = await this.insertJournalLines(db, plan.councilId, plan.lines);
       });
       return this.journalEntriesById(db, ids);
@@ -5842,7 +5882,134 @@ export class SqliteDataService implements DataService {
       });
       return result!;
     },
+
+    getCouncilNetWorth: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayReadGeneralLedger(await this.memberWriteActor(db, actorId), councilId, `read the balance sheet of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const unpaid = await db.getAllAsync<{ id: number; GrandKnightApprovedAt: string | null; cents: number | null }>(
+        `SELECT r.[id], r.[GrandKnightApprovedAt], (SELECT SUM(ROUND(li.[Amount] * 100)) FROM [ExpenseLineItem] li WHERE li.[ExpenseReportID] = r.[id]) AS [cents]
+         FROM [ExpenseReport] r WHERE r.[CouncilID] = ? AND r.[Status] = 'Approved'`,
+        [councilId],
+      );
+      return buildCouncilNetWorth({
+        councilId,
+        accounts: await this.glAccounts(db, councilId),
+        entries: await this.journalEntries(db, councilId),
+        assets: await db.getAllAsync<CouncilAssetsInventory>('SELECT * FROM [CouncilAssetsInventory] WHERE [council_id] = ?', [councilId]),
+        unpaidReports: unpaid.map((r) => ({ reportId: r.id, amount: (r.cents ?? 0) / 100, approvedAt: r.GrandKnightApprovedAt ?? null })),
+        now: this.now(),
+      });
+    },
+
+    listTrusteeAudits: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayReadGeneralLedger(await this.memberWriteActor(db, actorId), councilId, `read the Trustee audits of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return (await this.councilAudits(db, councilId)).sort(compareAuditsNewestFirst);
+    },
+
+    getTrusteeAudit: async (actorId, councilId, fiscalYear, auditPeriod) => {
+      const year = assertFraternalYear(fiscalYear);
+      const period = assertAuditPeriod(auditPeriod);
+      const db = await this.ready();
+      assertMayReadGeneralLedger(await this.memberWriteActor(db, actorId), councilId, `read the Trustee audit of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return this.trusteeAudit(db, councilId, year, period);
+    },
+
+    setAuditLineVerified: async (actorId, councilId, fiscalYear, auditPeriod, journalEntryId, verified) => {
+      const year = assertFraternalYear(fiscalYear);
+      const period = assertAuditPeriod(auditPeriod);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayVerifyCouncilAudit(await this.memberWriteActor(db, actorId), councilId, `verify the ledger lines of council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        assertAuditLineToggle(await this.trusteeAudit(db, councilId, year, period), journalEntryId, verified);
+        const auditId = (await this.councilAuditRow(db, councilId, year, period))?.id ?? (await this.insertCouncilAudit(db, councilId, year, period));
+        if (!verified) {
+          await db.runAsync('DELETE FROM [AuditVerifiedLines] WHERE [audit_id] = ? AND [journal_entry_id] = ?', [auditId, journalEntryId]);
+        } else {
+          await db.runAsync(
+            'INSERT OR IGNORE INTO [AuditVerifiedLines] ([audit_id], [journal_entry_id], [verified_by_member_id], [verified_at]) VALUES (?, ?, ?, ?)',
+            [auditId, journalEntryId, actorId, toTimestamp(this.now())],
+          );
+        }
+      });
+      return this.trusteeAudit(db, councilId, year, period);
+    },
+
+    signTrusteeAudit: async (actorId, councilId, fiscalYear, auditPeriod) => {
+      const year = assertFraternalYear(fiscalYear);
+      const period = assertAuditPeriod(auditPeriod);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        assertMayVerifyCouncilAudit(actor, councilId, `sign the Trustee audit of council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        const workspace = await this.trusteeAudit(db, councilId, year, period);
+        const member = (await db.getFirstAsync<{ MemberFirstName: string; MemberLastName: string }>(
+          'SELECT [MemberFirstName], [MemberLastName] FROM [Member] WHERE [id] = ?',
+          [actorId],
+        ))!;
+        const plan = planAuditSignature(
+          workspace,
+          { memberId: actorId, name: `${member.MemberFirstName} ${member.MemberLastName}`, role: trusteeSeatOf(actor.roles) ?? 'Super Admin' },
+          this.now(),
+        );
+        const auditId = (await this.councilAuditRow(db, councilId, year, period))?.id ?? (await this.insertCouncilAudit(db, councilId, year, period));
+        await db.runAsync('UPDATE [CouncilAudits] SET [verified_by_trustees] = ? WHERE [id] = ?', [JSON.stringify(plan.signatures), auditId]);
+        if (plan.lock) {
+          await db.runAsync(
+            `UPDATE [CouncilAudits] SET [execution_status] = 'LOCKED', [cash_balance_beginning] = ?, [cash_balance_ending] = ?, [locked_at] = ? WHERE [id] = ?`,
+            [workspace.cashBalanceBeginning, workspace.cashBalanceEnding, toTimestamp(this.now()), auditId],
+          );
+        }
+      });
+      return this.trusteeAudit(db, councilId, year, period);
+    },
   };
+
+  private councilAudits(db: SQLite.SQLiteDatabase, councilId: number): Promise<CouncilAudit[]> {
+    return db.getAllAsync<CouncilAudit>('SELECT * FROM [CouncilAudits] WHERE [council_id] = ? ORDER BY [id]', [councilId]);
+  }
+
+  private councilAuditRow(db: SQLite.SQLiteDatabase, councilId: number, year: string, period: AuditPeriod): Promise<CouncilAudit | null> {
+    return db.getFirstAsync<CouncilAudit>('SELECT * FROM [CouncilAudits] WHERE [council_id] = ? AND [fiscal_year] = ? AND [audit_period] = ?', [
+      councilId,
+      year,
+      period,
+    ]);
+  }
+
+  private async insertCouncilAudit(db: SQLite.SQLiteDatabase, councilId: number, year: string, period: AuditPeriod): Promise<number> {
+    const res = await db.runAsync(
+      `INSERT INTO [CouncilAudits] ([council_id], [fiscal_year], [audit_period], [execution_status], [created_at]) VALUES (?, ?, ?, 'DRAFT', ?)`,
+      [councilId, year, period, toTimestamp(this.now())],
+    );
+    return res.lastInsertRowId;
+  }
+
+  private async trusteeAudit(db: SQLite.SQLiteDatabase, councilId: number, year: string, period: AuditPeriod): Promise<TrusteeAuditWorkspace> {
+    const audit = await this.councilAuditRow(db, councilId, year, period);
+    const verified = audit ? await db.getAllAsync<AuditVerifiedLine>('SELECT * FROM [AuditVerifiedLines] WHERE [audit_id] = ? ORDER BY [id]', [audit.id]) : [];
+    const members = await selectIn<{ id: number; MemberFirstName: string; MemberLastName: string }>(
+      db,
+      (m) => `SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member] WHERE [id] IN (${m})`,
+      [...new Set(verified.map((v) => v.verified_by_member_id))],
+    );
+    return buildTrusteeAuditWorkspace({
+      councilId,
+      fiscalYear: year,
+      period,
+      accounts: await this.glAccounts(db, councilId),
+      entries: await this.journalEntries(db, councilId),
+      audit,
+      verified,
+      memberNames: new Map(members.map((m) => [m.id, `${m.MemberFirstName} ${m.MemberLastName}`])),
+      now: this.now(),
+    });
+  }
 
   private glAccounts(db: SQLite.SQLiteDatabase, councilId: number): Promise<GLAccount[]> {
     return db.getAllAsync<GLAccount>('SELECT * FROM [GLAccount] WHERE [CouncilID] = ? ORDER BY [id]', [councilId]);

@@ -60,6 +60,7 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
   'finance/dashboard': { href: '/finance/dashboard', label: 'Financial Dashboard', hint: 'Liquidity tanks, balance scale, transfers, bank audits' },
   'finance/ledger': { href: '/finance/ledger', label: 'General Ledger Spreadsheet', hint: 'Chart of accounts with every posting' },
   'finance/balance-sheet': { href: '/finance/balance-sheet', label: 'Balance Sheet', hint: 'Assets against liabilities and equity' },
+  'finance/audit': { href: '/finance/audit', label: 'Trustee Audit Desk', hint: 'Semiannual Form 1295 audit: verify ledger lines, sign and lock' },
   donations: { href: '/donations', label: 'Recorded Donations History', hint: 'Record and review council donations' },
   expenses: { href: '/expenses', label: 'My Expense Reports', hint: 'Receipts and reimbursement status' },
   'expenses/queue': { href: '/expenses/queue', label: 'Leadership Auditing Queue', hint: 'Track signatures and return reports' },

@@ -825,6 +825,11 @@ export interface CouncilBudgetForecast {
    * UNIVERSAL_BUDGET_CATEGORIES in budget.ts), whatever the council's own fund header is. NULL while unmapped.
    */
   universal_category?: UniversalBudgetCategory | null;
+  /**
+   * Sprint 6M (Schema 50): DECIMAL(18,2) NULL, the council's Target Spending Ceiling for the line's fraternal year. It
+   * belongs to the year: budget.setTargetSpendingCeiling writes it to every row of the year (storedTargetSpendingCeiling).
+   */
+  target_spending_ceiling?: number | null;
 }
 
 /**
@@ -1004,4 +1009,43 @@ export interface CouncilSpiritualDiary {
   diary_text: string; // TEXT, at most DIARY_TEXT_MAX_LENGTH characters
   audio_asset_url?: string | null; // VARCHAR(2000): the Oral History Testimonial (Drive file id or blob link)
   created_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+// 15. SEMIANNUAL TRUSTEE AUDITS (Sprint 6N)
+/** CouncilAudits.audit_period: the half of the fraternal year audited (rules layer, no CHECK). */
+export type AuditPeriod = 'JUL-DEC' | 'JAN-JUN';
+
+/** CouncilAudits.execution_status: 'DRAFT' while lines are ticked, 'LOCKED' once a Trustee signs. */
+export type AuditExecutionStatus = 'DRAFT' | 'LOCKED';
+
+/** One signature on a Trustee audit, as stored in the CouncilAudits.verified_by_trustees JSON array. */
+export interface AuditTrusteeSignature {
+  memberId: number;
+  name: string;
+  /** The Trustee seat ('Trustee 1'-'Trustee 3'), or 'Super Admin' for a Super Admin who signs without one. */
+  role: string;
+  signedAt: string; // 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+/** The Trustees' semiannual audit of one council's books for one half of a fraternal year (Sprint 6N, Form 1295). */
+export interface CouncilAudit {
+  id: number;
+  council_id: number;
+  audit_period: AuditPeriod;
+  fiscal_year: string; // the fraternal year, e.g. '2026-2027'
+  execution_status: AuditExecutionStatus;
+  verified_by_trustees?: string | null; // TEXT: a JSON array of AuditTrusteeSignature
+  cash_balance_beginning?: number | null; // DECIMAL(18,2), frozen at the first signature
+  cash_balance_ending?: number | null; // DECIMAL(18,2), frozen at the first signature
+  locked_at?: string | null; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+  created_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+/** A ledger line a Trustee ticked against the bank statement during an audit (Sprint 6N). */
+export interface AuditVerifiedLine {
+  id: number;
+  audit_id: number;
+  journal_entry_id: number;
+  verified_by_member_id: number;
+  verified_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
 }

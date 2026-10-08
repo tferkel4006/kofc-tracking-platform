@@ -3700,6 +3700,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "target_spending_ceiling",
+        "kind": "real",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -5504,6 +5511,169 @@ export const TABLES: Record<string, TableMeta> = {
       [
         "user_id",
         "entry_date"
+      ]
+    ]
+  },
+  "CouncilAudits": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "council_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "audit_period",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "fiscal_year",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "execution_status",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": "DRAFT"
+        }
+      },
+      {
+        "name": "verified_by_trustees",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "cash_balance_beginning",
+        "kind": "real",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "cash_balance_ending",
+        "kind": "real",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "locked_at",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "created_at",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "council_id",
+        "refTable": "Council",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "council_id",
+        "fiscal_year",
+        "audit_period"
+      ]
+    ]
+  },
+  "AuditVerifiedLines": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "audit_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "journal_entry_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "verified_by_member_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "verified_at",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "audit_id",
+        "refTable": "CouncilAudits",
+        "refColumn": "id"
+      },
+      {
+        "column": "journal_entry_id",
+        "refTable": "JournalEntry",
+        "refColumn": "id"
+      },
+      {
+        "column": "verified_by_member_id",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "audit_id",
+        "journal_entry_id"
       ]
     ]
   }

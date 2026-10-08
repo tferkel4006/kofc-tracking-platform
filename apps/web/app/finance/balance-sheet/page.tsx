@@ -5,11 +5,14 @@
 // year to date, totalled in whole cents with the balanced-ledger badge. Figures are navy on white (brand-red when below
 // zero), totals bold over a navy rule, so every number keeps at least 7:1 contrast. Same readers as the Financial
 // Management Center (canReadGeneralLedger).
+// Sprint 6M: the Council Balance Sheet & Equity Ledger card (NetWorthParts, finance.getCouncilNetWorth) closes the page
+// with the council's true net worth: liquid cash plus equipment at cost, less approved expense reports not yet paid.
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { BalanceSheet, BalanceSheetLine } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { LedgerBalanceBadge, Money } from '@/components/FinanceParts';
+import { NetWorthCard } from '@/components/NetWorthParts';
 import { Notice, PageTitle, Pill } from '@/components/ui';
 import { formatFullDate } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -105,6 +108,7 @@ function BalanceSheetView() {
   const user = useUser();
   const scope = useCouncilScope();
   const sheet = useLoad(() => db.finance.getLatestBalanceSheet(user.memberId, scope.councilId), [user.memberId, scope.councilId]);
+  const worth = useLoad(() => db.finance.getCouncilNetWorth(user.memberId, scope.councilId), [user.memberId, scope.councilId]);
   const s = sheet.data;
   return (
     <div className="flex flex-col gap-6">
@@ -144,6 +148,8 @@ function BalanceSheetView() {
               </div>
             ))}
           </section>
+          {worth.error ? <Notice tone="error">{worth.error}</Notice> : null}
+          {worth.data ? <NetWorthCard worth={worth.data} /> : null}
         </>
       ) : sheet.loading ? (
         <p className="text-sm">Loading…</p>

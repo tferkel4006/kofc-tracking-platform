@@ -130,6 +130,7 @@ describe('portal permissions', () => {
       'finance/dashboard',
       'finance/ledger',
       'finance/balance-sheet',
+      'finance/audit',
       'supreme-sync',
       'financials/budget',
       'messages',
@@ -172,6 +173,7 @@ describe('portal permissions', () => {
       'finance/dashboard',
       'finance/ledger',
       'finance/balance-sheet',
+      'finance/audit',
       'supreme-sync',
       'financials/budget',
       'messages',
@@ -187,7 +189,7 @@ describe('portal permissions', () => {
       'history',
       'resources/marketing',
     ]);
-    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help', 'answers/help', 'governance/bylaws', 'governance/advisor', 'answers/sop', 'resources/bulletins', 'performance/charts', 'history', 'resources/marketing']);
+    expect(portalAreas(officer)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'finance/audit', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help', 'answers/help', 'governance/bylaws', 'governance/advisor', 'answers/sop', 'resources/bulletins', 'performance/charts', 'history', 'resources/marketing']);
     expect(portalAreas(member)).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'elections', 'ledger', 'expenses', 'charities/propose', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help', 'answers/help', 'governance/bylaws', 'governance/advisor', 'answers/sop', 'resources/bulletins', 'history']);
   });
 
@@ -211,7 +213,7 @@ describe('portal permissions', () => {
     const SIGN_OFF_DESKS = ['meetings/live', 'meetings/cadence', 'expenses/audit', 'expenses/authorize', 'charities/vetting'];
     const shape = (u: Parameters<typeof portalSidebar>[0]) =>
       portalSidebar(u).map((g) => [g.label, g.entries.map((e) => e.item)]);
-    const FIN_READ = ['finance/ledger', 'finance/balance-sheet', 'finance/dashboard'];
+    const FIN_READ = ['finance/ledger', 'finance/balance-sheet', 'finance/dashboard', 'finance/audit'];
 
     it('files every area but the profile and the Messaging menu into exactly one of the seven pillars; messaging (5X, 5Z-10.8) lives in the header', () => {
       const filed = PORTAL_NAV_GROUPS.flatMap((g) => g.items);
@@ -491,6 +493,7 @@ describe('portal permissions', () => {
         'finance/dashboard',
         'finance/ledger',
         'finance/balance-sheet',
+        'finance/audit',
         'supreme-sync',
         'financials/budget',
         'messages',
@@ -507,7 +510,7 @@ describe('portal permissions', () => {
         'resources/marketing',
       ]);
     }
-    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help', 'answers/help', 'governance/bylaws', 'governance/advisor', 'answers/sop', 'resources/bulletins', 'performance/charts', 'history', 'resources/marketing']);
+    expect(portalAreas(actor({ isOfficer: true, roles: ['Recorder'] }))).toEqual(['member-actions', 'calendar', 'gallery', 'meetings', 'meetings/live', 'elections', 'ledger', 'expenses', 'charities/propose', 'charities/vetting', 'dashboard', 'finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'finance/audit', 'financials/budget', 'messages', 'distribution-lists', 'profile', 'help', 'answers/help', 'governance/bylaws', 'governance/advisor', 'answers/sop', 'resources/bulletins', 'performance/charts', 'history', 'resources/marketing']);
   });
 
   it('gives council leadership the Supreme sync and the alert dispatch, each for their own council (Sprint 5T)', () => {

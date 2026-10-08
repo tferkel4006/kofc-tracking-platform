@@ -14,7 +14,7 @@ import { budgetWindowOf } from './budget';
 import { ALL_FEATURES_ON, withFeatureFlags, type FeatureFlags } from './features';
 import { DEFAULT_TENANT_TYPE, withTenantGate, type TenantType } from './tenant';
 import { AGENDA_EDITOR_ROLE_NAMES } from './agenda';
-import { GRAND_KNIGHT_ROLE } from './elections';
+import { GRAND_KNIGHT_ROLE, TRUSTEE_ROLE_NAMES } from './elections';
 import { FINANCE_LOOKUP_TABLES, FINANCIAL_SECRETARY_ROLE_NAME, holdsExecutiveRole, holdsFinanceRole } from './rules';
 import type { BudgetLineStatus, CharitableRequest, CharitableThreadType, Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
 
@@ -58,6 +58,7 @@ export type PortalArea =
   | 'finance/dashboard'
   | 'finance/ledger'
   | 'finance/balance-sheet'
+  | 'finance/audit'
   | 'supreme-sync'
   | 'financials/budget'
   | 'messages'
@@ -472,6 +473,13 @@ export const canReadGeneralLedger = (u: Actor, councilId: number): boolean => ca
  */
 export const canPostGeneralLedger = (u: Actor, councilId: number): boolean => isSuperAdmin(u) || (isFinanceOfficer(u) && u.councilId === councilId);
 
+/**
+ * The Semiannual Trustee Audit Desk's checkmarks and signature (Sprint 6N), mirroring assertMayVerifyCouncilAudit: an
+ * Active Trustee of the council (Trustee 1, 2 or 3) or any Super Admin. Every reader of the books sees the desk.
+ */
+export const canVerifyCouncilAudit = (u: Actor, councilId: number): boolean =>
+  isSuperAdmin(u) || (u.councilId === councilId && (u.roles ?? []).some((r) => (TRUSTEE_ROLE_NAMES as readonly string[]).includes(r)));
+
 /** Reading the annual budget, mirroring assertMayViewBudgetForecast (Sprint 5Y-3): every member of the council, any Super Admin. */
 export const canViewBudgetForecast = (u: Actor, councilId: number): boolean => isSuperAdmin(u) || u.councilId === councilId;
 
@@ -518,7 +526,7 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, ten
   // Sprint 5Z-2.5: every officer of the council reads the executive summaries, as on the Pooled Vetting Desk.
   if (isAdmin(u) || canViewExecutiveDashboard(u, u.councilId)) areas.push('dashboard');
   // Sprint 5Z-8: the general ledger screens have the dashboard's audience (canReadGeneralLedger); posting is gated inside.
-  if (isAdmin(u) || canReadGeneralLedger(u, u.councilId)) areas.push('finance/dashboard', 'finance/ledger', 'finance/balance-sheet');
+  if (isAdmin(u) || canReadGeneralLedger(u, u.councilId)) areas.push('finance/dashboard', 'finance/ledger', 'finance/balance-sheet', 'finance/audit');
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('supreme-sync');
   // Every member may read the council's annual budget (Sprint 5Y-3 transparency); canManageBudgetForecast decides editing.
   areas.push('financials/budget');
@@ -567,6 +575,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
       'finance/ledger',
       'finance/balance-sheet',
       'finance/dashboard',
+      'finance/audit',
       'expenses',
       'expenses/queue',
       'expenses/disbursements',

@@ -1,0 +1,2 @@
+# Binary report output (Sprint 6N Form 1295 PDF): never convert line endings inside it.
+*.pdf binary

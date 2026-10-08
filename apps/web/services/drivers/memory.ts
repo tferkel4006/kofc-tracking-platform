@@ -241,6 +241,19 @@ import {
   assertBudgetYearWritable,
   assertCouncilBudgetCategory,
   assertFraternalYear,
+  assertAuditLineToggle,
+  assertAuditPeriod,
+  assertLedgerPeriodsOpen,
+  assertMayVerifyCouncilAudit,
+  buildCouncilNetWorth,
+  buildTrusteeAuditWorkspace,
+  cleanTargetSpendingCeiling,
+  compareAuditsNewestFirst,
+  planAuditSignature,
+  trusteeSeatOf,
+  type AuditPeriod,
+  type CouncilAudit,
+  type TrusteeAuditWorkspace,
   assertDiaryDayFree,
   assertMayKeepCouncilAnnals,
   assertMayReadCouncilHistory,
@@ -427,6 +440,7 @@ import type {
   BudgetYearSpend,
   CharitableDisbursementLedger,
   CouncilBudgetCategory,
+  AuditVerifiedLine,
   CouncilAssetsInventory,
   CouncilBudgetForecast,
   CharityProposalDetail,
@@ -4656,12 +4670,20 @@ export class MemoryDataService implements DataService {
       const s = await this.ready();
       assertMayViewBudgetForecast(this.memberWriteActor(s, actorId), councilId, `read the budget analysis of council ${councilId}`);
       this.assertCouncilsExist(s, [councilId]);
-      return buildBudgetAnalysis({
-        councilId,
-        fraternalYear: year,
-        lines: this.budgetLines(s, councilId, year).map((l) => ({ ...l })),
-        priorLines: this.budgetLines(s, councilId, previousFraternalYear(year)).map((l) => ({ ...l })),
-        targetSpendingCeiling: options.targetSpendingCeiling,
+      return this.budgetAnalysis(s, councilId, year, options);
+    },
+
+    setTargetSpendingCeiling: async (actorId, councilId, fraternalYear, ceiling) => {
+      const year = assertFraternalYear(fraternalYear);
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayManageBudgetForecast(this.memberWriteActor(s, actorId), councilId, `set the target spending ceiling of council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        // Every version of every line of the year carries the ceiling. Inside a transaction the store works on copies.
+        const rows = s.rows('CouncilBudgetForecast').filter((l) => l.CouncilID === councilId && l.FraternalYear === year);
+        const value = cleanTargetSpendingCeiling(ceiling, rows.length, year);
+        for (const row of rows) Object.assign(row, { target_spending_ceiling: value });
+        return this.budgetAnalysis(s, councilId, year);
       });
     },
 
@@ -4804,6 +4826,18 @@ export class MemoryDataService implements DataService {
   }
 
   /** Every forecast row of the council, every year and every budget_version, as stored. */
+  /** budget.getBudgetAnalysis over every row of both years (every version), so the saved ceiling is read from any of them. */
+  private budgetAnalysis(s: MemoryStore, councilId: number, year: string, options: { targetSpendingCeiling?: number | null } = {}) {
+    const rowsOf = (y: string) => this.allBudgetLines(s, councilId).filter((l) => l.FraternalYear === y).map((l) => ({ ...l }));
+    return buildBudgetAnalysis({
+      councilId,
+      fraternalYear: year,
+      lines: rowsOf(year),
+      priorLines: rowsOf(previousFraternalYear(year)),
+      ...('targetSpendingCeiling' in options ? { targetSpendingCeiling: options.targetSpendingCeiling } : {}),
+    });
+  }
+
   private allBudgetLines(s: MemoryStore, councilId: number): CouncilBudgetForecast[] {
     return s.rows('CouncilBudgetForecast').filter((l) => l.CouncilID === councilId) as unknown as CouncilBudgetForecast[];
   }
@@ -4893,6 +4927,7 @@ export class MemoryDataService implements DataService {
         const named = new Set(lines.map((l) => l.GLAccountID));
         const councilId = journalCouncilOf(lines, s.rows('GLAccount').filter((a) => named.has(a.id as number)) as unknown as GLAccount[]);
         assertMayPostGeneralLedger(actor, councilId, `post to the general ledger of council ${councilId}`);
+        assertLedgerPeriodsOpen(lines, this.councilAudits(s, councilId));
         for (const line of lines) {
           const eventId = line.LinkedEventID;
           assertJournalLinks(
@@ -4915,6 +4950,7 @@ export class MemoryDataService implements DataService {
         if (source) assertMayPostGeneralLedger(actor, source.CouncilID, `transfer funds in council ${source.CouncilID}`);
         const sourceBalance = source ? accountBalance(source, this.journalEntries(s, source.CouncilID)) : 0;
         const plan = planAssetTransfer(source, target, amount, sourceBalance, this.now(), options);
+        assertLedgerPeriodsOpen(plan.lines, this.councilAudits(s, plan.councilId));
         return this.insertJournalLines(s, plan.councilId, plan.lines);
       });
     },
@@ -4962,7 +4998,128 @@ export class MemoryDataService implements DataService {
         return { councilId, glAccountId: options.glAccountId ?? null, statementRows: rows.length, matched, unmatched, reconciledEntryIds };
       });
     },
+
+    getCouncilNetWorth: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReadGeneralLedger(this.memberWriteActor(s, actorId), councilId, `read the balance sheet of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      const reportCents = new Map<number, number>();
+      for (const li of s.rows('ExpenseLineItem')) {
+        const id = li.ExpenseReportID as number;
+        reportCents.set(id, (reportCents.get(id) ?? 0) + Math.round((li.Amount as number) * 100));
+      }
+      const unpaidReports = s
+        .rows('ExpenseReport')
+        .filter((r) => r.CouncilID === councilId && r.Status === 'Approved')
+        .map((r) => ({ reportId: r.id as number, amount: (reportCents.get(r.id as number) ?? 0) / 100, approvedAt: (r.GrandKnightApprovedAt as string | null) ?? null }));
+      return buildCouncilNetWorth({
+        councilId,
+        accounts: this.glAccounts(s, councilId),
+        entries: this.journalEntries(s, councilId),
+        assets: s.rows('CouncilAssetsInventory').filter((a) => a.council_id === councilId).map((a) => ({ ...a })) as unknown as CouncilAssetsInventory[],
+        unpaidReports,
+        now: this.now(),
+      });
+    },
+
+    listTrusteeAudits: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReadGeneralLedger(this.memberWriteActor(s, actorId), councilId, `read the Trustee audits of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return this.councilAudits(s, councilId).sort(compareAuditsNewestFirst);
+    },
+
+    getTrusteeAudit: async (actorId, councilId, fiscalYear, auditPeriod) => {
+      const year = assertFraternalYear(fiscalYear);
+      const period = assertAuditPeriod(auditPeriod);
+      const s = await this.ready();
+      assertMayReadGeneralLedger(this.memberWriteActor(s, actorId), councilId, `read the Trustee audit of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return this.trusteeAudit(s, councilId, year, period);
+    },
+
+    setAuditLineVerified: async (actorId, councilId, fiscalYear, auditPeriod, journalEntryId, verified) => {
+      const year = assertFraternalYear(fiscalYear);
+      const period = assertAuditPeriod(auditPeriod);
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayVerifyCouncilAudit(this.memberWriteActor(s, actorId), councilId, `verify the ledger lines of council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        assertAuditLineToggle(this.trusteeAudit(s, councilId, year, period), journalEntryId, verified);
+        const audit = this.councilAuditRow(s, councilId, year, period) ?? this.insertCouncilAudit(s, councilId, year, period);
+        const ticked = (v: { audit_id?: unknown; journal_entry_id?: unknown }) => v.audit_id === audit.id && v.journal_entry_id === journalEntryId;
+        if (!verified) s.remove('AuditVerifiedLines', ticked);
+        else if (!s.rows('AuditVerifiedLines').some(ticked)) {
+          s.insert('AuditVerifiedLines', { audit_id: audit.id as number, journal_entry_id: journalEntryId, verified_by_member_id: actorId, verified_at: toTimestamp(this.now()) });
+        }
+        return this.trusteeAudit(s, councilId, year, period);
+      });
+    },
+
+    signTrusteeAudit: async (actorId, councilId, fiscalYear, auditPeriod) => {
+      const year = assertFraternalYear(fiscalYear);
+      const period = assertAuditPeriod(auditPeriod);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        assertMayVerifyCouncilAudit(actor, councilId, `sign the Trustee audit of council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const workspace = this.trusteeAudit(s, councilId, year, period);
+        const member = this.requireMember(s, actorId);
+        const plan = planAuditSignature(
+          workspace,
+          { memberId: actorId, name: `${member.MemberFirstName as string} ${member.MemberLastName as string}`, role: trusteeSeatOf(actor.roles) ?? 'Super Admin' },
+          this.now(),
+        );
+        const audit = this.councilAuditRow(s, councilId, year, period) ?? this.insertCouncilAudit(s, councilId, year, period);
+        Object.assign(audit, {
+          verified_by_trustees: JSON.stringify(plan.signatures),
+          ...(plan.lock
+            ? {
+                execution_status: 'LOCKED',
+                cash_balance_beginning: workspace.cashBalanceBeginning,
+                cash_balance_ending: workspace.cashBalanceEnding,
+                locked_at: toTimestamp(this.now()),
+              }
+            : {}),
+        });
+        return this.trusteeAudit(s, councilId, year, period);
+      });
+    },
   };
+
+  private councilAudits(s: MemoryStore, councilId: number): CouncilAudit[] {
+    return s.rows('CouncilAudits').filter((a) => a.council_id === councilId).map((a) => ({ ...a }) as unknown as CouncilAudit);
+  }
+
+  /** The stored (mutable) row of one period's audit, or undefined. */
+  private councilAuditRow(s: MemoryStore, councilId: number, year: string, period: AuditPeriod) {
+    return s.rows('CouncilAudits').find((a) => a.council_id === councilId && a.fiscal_year === year && a.audit_period === period);
+  }
+
+  private insertCouncilAudit(s: MemoryStore, councilId: number, year: string, period: AuditPeriod) {
+    return s.insert('CouncilAudits', { council_id: councilId, fiscal_year: year, audit_period: period, execution_status: 'DRAFT', created_at: toTimestamp(this.now()) });
+  }
+
+  private trusteeAudit(s: MemoryStore, councilId: number, year: string, period: AuditPeriod): TrusteeAuditWorkspace {
+    const row = this.councilAuditRow(s, councilId, year, period);
+    const verified = row ? (s.rows('AuditVerifiedLines').filter((v) => v.audit_id === row.id).map((v) => ({ ...v })) as unknown as AuditVerifiedLine[]) : [];
+    const ids = new Set(verified.map((v) => v.verified_by_member_id));
+    const memberNames = new Map(
+      s.rows('Member').filter((m) => ids.has(m.id as number)).map((m) => [m.id as number, `${m.MemberFirstName as string} ${m.MemberLastName as string}`]),
+    );
+    return buildTrusteeAuditWorkspace({
+      councilId,
+      fiscalYear: year,
+      period,
+      accounts: this.glAccounts(s, councilId),
+      entries: this.journalEntries(s, councilId),
+      audit: row ? ({ ...row } as unknown as CouncilAudit) : null,
+      verified,
+      memberNames,
+      now: this.now(),
+    });
+  }
 
   private glAccounts(s: MemoryStore, councilId: number): GLAccount[] {
     return s.rows('GLAccount').filter((a) => a.CouncilID === councilId).map((a) => ({ ...a }) as unknown as GLAccount);

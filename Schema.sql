@@ -2377,3 +2377,79 @@ CREATE UNIQUE INDEX [CouncilSpiritualDiary_Day_Idx] ON [CouncilSpiritualDiary] (
 GO
 CREATE INDEX [CouncilSpiritualDiary_Year_Idx] ON [CouncilSpiritualDiary] ([council_id], [fraternal_year]);
 GO
+
+-- =========================================================================
+-- Sprint 6M (Phase 5): SAVED BUDGET TARGET CEILINGS (schema version 50)
+-- CouncilBudgetForecast.target_spending_ceiling is the council's Target Spending Ceiling for a fraternal year, in dollars.
+-- Before Sprint 6M it was a what-if typed into the Budget Analyzer and kept only in one browser. The ceiling belongs to the
+-- year, not to one line: budget.setTargetSpendingCeiling writes the same value to every row of the council's year (every
+-- budget_version, so an amendment's new row keeps it once saved again) and NULL clears it. Readers take the first non-NULL
+-- value among the year's rows (storedTargetSpendingCeiling in budget.ts). A year with no lines cannot carry a ceiling.
+-- Setting it changes no budget figure, so an Approved year may still be given one. 0 or more in whole cents (rules layer).
+-- =========================================================================
+ALTER TABLE [CouncilBudgetForecast] ADD [target_spending_ceiling] DECIMAL(18,2) NULL;
+GO
+
+-- =========================================================================
+-- Sprint 6N (Phase 5): SEMIANNUAL TRUSTEE AUDITS (schema version 51)
+-- CouncilAudits holds one row per council and audit period: the Trustees' semiannual audit of the books (the council's
+-- Form 1295 report). audit_period is 'JUL-DEC' (July 1 - December 31) or 'JAN-JUN' (January 1 - June 30) of the
+-- fraternal year in fiscal_year ('2026-2027'). execution_status is 'DRAFT' while Trustees tick ledger lines against the
+-- bank statements and 'LOCKED' once a Trustee signs: the signature needs every cash line of the window verified and the
+-- period ended, and from then on the general ledger refuses any posting dated inside the window (AUDIT_PERIOD_LOCKED).
+-- verified_by_trustees is a JSON array of the signatures ({memberId, name, role, signedAt}); later Trustees may add theirs
+-- to a locked audit. cash_balance_beginning and cash_balance_ending are the council's cash accounts (non-virtual Asset
+-- accounts, physical property excluded) the day before the window opens and on its last day, frozen at the first
+-- signature. AuditVerifiedLines records each JournalEntry line a Trustee ticked (one row per audit and line); unticking a
+-- line of a DRAFT audit deletes its row. Rules: audits.ts.
+-- =========================================================================
+CREATE TABLE [CouncilAudits] (
+	[id] INT NOT NULL IDENTITY,
+	[council_id] INT NOT NULL,
+	[audit_period] VARCHAR(7) NOT NULL,
+	[fiscal_year] VARCHAR(9) NOT NULL,
+	[execution_status] VARCHAR(10) NOT NULL DEFAULT 'DRAFT',
+	[verified_by_trustees] TEXT NULL,
+	[cash_balance_beginning] DECIMAL(18,2) NULL,
+	[cash_balance_ending] DECIMAL(18,2) NULL,
+	[locked_at] DATETIME NULL,
+	[created_at] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [AuditVerifiedLines] (
+	[id] INT NOT NULL IDENTITY,
+	[audit_id] INT NOT NULL,
+	[journal_entry_id] INT NOT NULL,
+	[verified_by_member_id] INT NOT NULL,
+	[verified_at] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CouncilAudits]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [AuditVerifiedLines]
+ADD FOREIGN KEY([audit_id])
+REFERENCES [CouncilAudits]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [AuditVerifiedLines]
+ADD FOREIGN KEY([journal_entry_id])
+REFERENCES [JournalEntry]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [AuditVerifiedLines]
+ADD FOREIGN KEY([verified_by_member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [CouncilAudits_Period_Idx] ON [CouncilAudits] ([council_id], [fiscal_year], [audit_period]);
+GO
+CREATE UNIQUE INDEX [AuditVerifiedLines_Line_Idx] ON [AuditVerifiedLines] ([audit_id], [journal_entry_id]);
+GO

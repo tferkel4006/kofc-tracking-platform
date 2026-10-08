@@ -107,6 +107,7 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
     { table: 'CouncilAssetsInventory', column: 'council_id', noun: ['inventory asset', 'inventory assets'] },
     { table: 'CouncilHistoryAnnals', column: 'council_id', noun: ['history annals year', 'history annals years'] },
     { table: 'CouncilSpiritualDiary', column: 'council_id', noun: ['diary entry', 'diary entries'] },
+    { table: 'CouncilAudits', column: 'council_id', noun: ['Trustee audit', 'Trustee audits'] },
   ],
   Parish: [{ table: 'Pastor', column: 'ParishID', noun: ['pastor', 'pastors'] }],
   Pastor: [],

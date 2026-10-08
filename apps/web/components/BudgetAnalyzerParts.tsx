@@ -2,17 +2,18 @@
 // Budget Allocation & YOY Variance Analyzer (Sprint 6G Extension 2) on the Financial Management Center. One black
 // high-contrast card (HighContrastCard: bold white on black inside thick hc-gold borders) over budget.getBudgetAnalysis:
 //   - Target ceiling: the year's approved total against a 'Target Spending Ceiling ($)' with the unallocated contingency
-//     buffer (buildBudgetCeilingTrack, computed live in the browser). Only the budget's editors type a ceiling
-//     (canManageBudgetForecast: Admins, Financial Secretary, Treasurer, Budget Director, Super Admins). The ceiling is a
-//     what-if figure: it is never stored on the server, only remembered in this browser per council and year.
+//     buffer (buildBudgetCeilingTrack). Only the budget's editors type a ceiling (canManageBudgetForecast: Admins,
+//     Financial Secretary, Treasurer, Budget Director, Super Admins). Sprint 6M: the ceiling is saved with the year's
+//     budget (budget.setTargetSpendingCeiling, CouncilBudgetForecast.target_spending_ceiling), no longer in one
+//     browser's storage; what the editor types is previewed live until saved.
 //   - Category footprints: each universal_category's share of the approved total, with its change from last year.
 //   - Line comparison: every line's approved cap against the previous year's line it continues.
 // Direction is carried by words and symbols (▲ ▼ ●), never colour alone.
 import { useEffect, useId, useState } from 'react';
-import { buildBudgetCeilingTrack, type BudgetAnalysis, type BudgetCeilingTrack, type BudgetYearOverYearChange } from '@kofc/shared';
+import { buildBudgetCeilingTrack, describeError, type BudgetAnalysis, type BudgetCeilingTrack, type BudgetYearOverYearChange } from '@kofc/shared';
 import { formatPercent } from '@/components/BudgetParts';
 import { HighContrastCard } from '@/components/DuesParts';
-import { cx, Input } from '@/components/ui';
+import { Button, cx, Input } from '@/components/ui';
 import { formatMoney } from '@/lib/format';
 
 const CHANGE_LABEL: Record<BudgetYearOverYearChange, string> = {
@@ -33,25 +34,6 @@ const CEILING_LABEL: Record<BudgetCeilingTrack['status'], string> = {
 const formatDelta = (delta: number): string => (delta > 0 ? `+${formatMoney(delta)}` : delta < 0 ? `−${formatMoney(-delta)}` : formatMoney(0));
 const formatSignedPercent = (percent: number | null): string => (percent === null ? '—' : percent > 0 ? `+${formatPercent(percent)}` : formatPercent(percent));
 
-const storageKey = (councilId: number, year: string) => `kofc.budgetCeiling.${councilId}.${year}`;
-
-function readStoredCeiling(councilId: number, year: string): string {
-  try {
-    return window.localStorage.getItem(storageKey(councilId, year)) ?? '';
-  } catch {
-    return '';
-  }
-}
-
-function storeCeiling(councilId: number, year: string, value: string): void {
-  try {
-    if (value.trim() === '') window.localStorage.removeItem(storageKey(councilId, year));
-    else window.localStorage.setItem(storageKey(councilId, year), value);
-  } catch {
-    // Storage is a convenience only; the analyzer works without it.
-  }
-}
-
 /** A white bar filled in hc-gold to `percent` (capped at 100), labelled for screen readers. */
 function Track({ percent, label }: { percent: number | null; label: string }) {
   const width = Math.max(0, Math.min(100, percent ?? 0));
@@ -71,28 +53,62 @@ function ChangeTag({ change }: { change: BudgetYearOverYearChange }) {
   );
 }
 
-function CeilingSection({ analysis, canSetCeiling }: { analysis: BudgetAnalysis; canSetCeiling: boolean }) {
+function CeilingSection({
+  analysis,
+  canSetCeiling,
+  onSaveCeiling,
+}: {
+  analysis: BudgetAnalysis;
+  canSetCeiling: boolean;
+  onSaveCeiling?: (ceiling: number | null) => Promise<void>;
+}) {
   const inputId = useId();
   const hintId = useId();
-  const { councilId, fraternalYear } = analysis;
-  const [raw, setRaw] = useState('');
-  useEffect(() => setRaw(canSetCeiling ? readStoredCeiling(councilId, fraternalYear) : ''), [councilId, fraternalYear, canSetCeiling]);
+  const { councilId, fraternalYear, storedTargetSpendingCeiling: saved } = analysis;
+  const savedText = saved === null ? '' : saved.toFixed(2);
+  const [raw, setRaw] = useState(savedText);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+  useEffect(() => setRaw(savedText), [councilId, fraternalYear, savedText]);
 
+  // The saved ceiling's track, or a live preview of what the editor is typing.
   let track: BudgetCeilingTrack | null = null;
   let error: string | null = null;
+  let typed: number | null = null;
   if (raw.trim() !== '') {
     try {
-      track = buildBudgetCeilingTrack(analysis.approvedTotal, Number(raw.replace(/[$,\s]/g, '')));
+      typed = Number(raw.replace(/[$,\s]/g, ''));
+      track = buildBudgetCeilingTrack(analysis.approvedTotal, typed);
     } catch {
+      typed = null;
       error = 'Type an amount of 0 or more with at most two decimal places, as 45000 or 45000.00.';
+    }
+  }
+  const dirty = raw.trim() === '' ? saved !== null : typed !== null && typed !== saved;
+  const hasLines = analysis.lines.some((l) => l.lineId !== null);
+
+  async function save(value: number | null) {
+    if (!onSaveCeiling) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await onSaveCeiling(value);
+      setMessage({ tone: 'info', text: value === null ? `The ${fraternalYear} target ceiling is cleared.` : `Saved ${formatMoney(value)} as the ${fraternalYear} target ceiling.` });
+    } catch (err) {
+      setMessage({ tone: 'error', text: describeError(err) });
+    } finally {
+      setSaving(false);
     }
   }
 
   return (
     <div className="rounded border-2 border-white p-3">
       <h3 className="font-serif text-xl">Target ceiling</h3>
-      {canSetCeiling ? (
-        <div className="mt-2 flex flex-col gap-1 sm:max-w-sm">
+      <p className="mt-1 text-base">
+        Saved target for {fraternalYear}: <span className="tabular-nums">{saved === null ? 'none yet' : formatMoney(saved)}</span>
+      </p>
+      {canSetCeiling && onSaveCeiling ? (
+        <div className="mt-2 flex flex-col gap-1 sm:max-w-md">
           <label htmlFor={inputId} className="text-sm uppercase tracking-wide text-hc-gold">
             Target Spending Ceiling ($)
           </label>
@@ -104,17 +120,31 @@ function CeilingSection({ analysis, canSetCeiling }: { analysis: BudgetAnalysis;
             aria-describedby={hintId}
             aria-invalid={error ? true : undefined}
             className="!border-2 !border-hc-gold !text-lg !font-bold"
-            onChange={(e) => {
-              setRaw(e.target.value);
-              storeCeiling(councilId, fraternalYear, e.target.value);
-            }}
+            onChange={(e) => setRaw(e.target.value)}
           />
           <span id={hintId} className="text-sm font-normal">
-            A what-if target. It is kept in this browser only and changes no budget figure.
+            {hasLines
+              ? "Saved with the council's budget for this year, so every officer sees the same target. It changes no budget figure."
+              : "Add or pre-populate this year's budget lines first; the target is saved with them."}
           </span>
           {error ? (
             <span role="alert" className="text-base text-hc-gold">
               {error}
+            </span>
+          ) : null}
+          <div className="mt-1 flex flex-wrap gap-2">
+            <Button variant="gold" disabled={saving || !dirty || !!error || !hasLines} onClick={() => void save(raw.trim() === '' ? null : typed)}>
+              {saving ? 'Saving…' : raw.trim() === '' ? 'Clear saved target' : 'Save target ceiling'}
+            </Button>
+            {saved !== null && raw.trim() !== '' ? (
+              <Button variant="secondary" disabled={saving} onClick={() => void save(null)}>
+                Clear
+              </Button>
+            ) : null}
+          </div>
+          {message ? (
+            <span role={message.tone === 'error' ? 'alert' : 'status'} className={cx('text-base', message.tone === 'error' && 'text-hc-gold')}>
+              {message.text}
             </span>
           ) : null}
         </div>
@@ -123,6 +153,7 @@ function CeilingSection({ analysis, canSetCeiling }: { analysis: BudgetAnalysis;
       )}
       {track ? (
         <div className="mt-3 flex flex-col gap-2" aria-live="polite">
+          {dirty ? <p className="text-sm uppercase tracking-wide text-hc-gold">Preview: not saved yet</p> : null}
           <dl className="grid grid-cols-1 gap-2 text-lg sm:grid-cols-3">
             <div>
               <dt className="text-sm uppercase tracking-wide text-hc-gold">Allocated</dt>
@@ -147,7 +178,16 @@ function CeilingSection({ analysis, canSetCeiling }: { analysis: BudgetAnalysis;
   );
 }
 
-export function BudgetAnalyzerCard({ analysis, canSetCeiling }: { analysis: BudgetAnalysis; canSetCeiling: boolean }) {
+export function BudgetAnalyzerCard({
+  analysis,
+  canSetCeiling,
+  onSaveCeiling,
+}: {
+  analysis: BudgetAnalysis;
+  canSetCeiling: boolean;
+  /** Saves (or with null clears) the year's Target Spending Ceiling (budget.setTargetSpendingCeiling) and reloads. */
+  onSaveCeiling?: (ceiling: number | null) => Promise<void>;
+}) {
   const priorNote =
     analysis.priorStatus === null
       ? `${analysis.priorFraternalYear} has no budget lines, so every line is compared with $0.00.`
@@ -185,7 +225,7 @@ export function BudgetAnalyzerCard({ analysis, canSetCeiling }: { analysis: Budg
         </dl>
         {priorNote ? <p className="text-base font-normal">{priorNote}</p> : null}
 
-        <CeilingSection analysis={analysis} canSetCeiling={canSetCeiling} />
+        <CeilingSection analysis={analysis} canSetCeiling={canSetCeiling} onSaveCeiling={onSaveCeiling} />
 
         <div>
           <h3 className="font-serif text-xl">Category footprints</h3>

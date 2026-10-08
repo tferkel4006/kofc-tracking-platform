@@ -43,8 +43,13 @@ export const ORIGINAL_CHAPLAIN_MAX_LENGTH = 200;
 export const DIARY_TEXT_MAX_LENGTH = 4000;
 /** Longest charter_photo_url or audio_asset_url (VARCHAR(2000)). */
 export const HISTORY_ASSET_URL_MAX_LENGTH = 2000;
-/** The recorder stops itself after this many seconds (10 minutes keeps a testimonial well under the vault's 25 MB). */
-export const ORAL_HISTORY_MAX_SECONDS = 600;
+/**
+ * The recorder stops itself after this many seconds. Sprint 6M: a global 15-minute ceiling on every recording session
+ * (was 10 minutes). At ORAL_HISTORY_BITS_PER_SECOND that is about 3.6 MB, well under the vault's 25 MB.
+ */
+export const ORAL_HISTORY_MAX_SECONDS = 15 * 60;
+/** Sprint 6M: the countdown meter turns to its warning state in the last minute before the automatic timeout. */
+export const ORAL_HISTORY_WARNING_SECONDS = 60;
 /** The recorder's target bit rate: Opus speech at 32 kbps is about 240 KB a minute. */
 export const ORAL_HISTORY_BITS_PER_SECOND = 32_000;
 /**
@@ -471,4 +476,36 @@ export function buildCouncilLegacyMatrix(input: {
   const todayIso = toIsoDate(today);
   const mine = diary.find((d) => d.user_id === input.actorId && d.entry_date === todayIso);
   return { councilId, founding, years: rows, canKeepAnnals: input.canKeepAnnals, myEntryToday: mine ? { ...mine } : null, currentFraternalYear: current };
+}
+
+/** The recorder's countdown meter (Sprint 6M): what is left of the ORAL_HISTORY_MAX_SECONDS session. */
+export interface OralHistoryCountdown {
+  remainingSeconds: number;
+  /** 'MM:SS', e.g. '14:05'. */
+  remainingLabel: string;
+  /** Spoken form for screen readers, e.g. '14 minutes 5 seconds'. */
+  remainingSpoken: string;
+  /** Share of the session left, 0-100, to one decimal place. */
+  percentRemaining: number;
+  /** In the last ORAL_HISTORY_WARNING_SECONDS. */
+  warning: boolean;
+  /** The ceiling is reached: the recorder stops and saves. */
+  expired: boolean;
+}
+
+/** The countdown after `elapsedSeconds` of recording (clamped to the session). */
+export function oralHistoryCountdown(elapsedSeconds: number, maxSeconds = ORAL_HISTORY_MAX_SECONDS): OralHistoryCountdown {
+  const elapsed = Math.max(0, Math.floor(Number.isFinite(elapsedSeconds) ? elapsedSeconds : 0));
+  const remaining = Math.max(0, maxSeconds - elapsed);
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  const unit = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  return {
+    remainingSeconds: remaining,
+    remainingLabel: `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`,
+    remainingSpoken: minutes > 0 ? (seconds > 0 ? `${unit(minutes, 'minute')} ${unit(seconds, 'second')}` : unit(minutes, 'minute')) : unit(seconds, 'second'),
+    percentRemaining: maxSeconds > 0 ? Math.round((remaining / maxSeconds) * 1000) / 10 : 0,
+    warning: remaining <= ORAL_HISTORY_WARNING_SECONDS,
+    expired: remaining === 0,
+  };
 }

@@ -13,12 +13,17 @@
 //     both high-contrast cards (DuesParts). Read-only: neither posts to the books nor changes cash on hand.
 //   - Sprint 6G Extension 2: the Budget Allocation & YOY Variance Analyzer (budget.getBudgetAnalysis, BudgetAnalyzerParts)
 //     for the current fraternal year, with a what-if Target Spending Ceiling for the budget's editors. Read-only too.
+//   - Sprint 6M: the Target Spending Ceiling is saved with the year's budget (budget.setTargetSpendingCeiling), and the
+//     Council Balance Sheet & Equity Ledger card (finance.getCouncilNetWorth, NetWorthParts) states the council's true net
+//     worth: liquid cash plus equipment at cost, less approved expense reports not yet paid. The Semiannual Trustee Audit
+//     Desk (/finance/audit) is linked from the title bar.
 import Link from 'next/link';
 import { useState } from 'react';
 import { buildDuesForecast, buildLiquidityGauges, canManageBudgetForecast, canPostGeneralLedger, currentFraternalYear } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { BalanceScale, BankStatementUploader, LiquidityGaugeCard, TransferDrawer } from '@/components/FinanceParts';
 import { BudgetAnalyzerCard } from '@/components/BudgetAnalyzerParts';
+import { NetWorthCard } from '@/components/NetWorthParts';
 import { ConcludedPerformanceGrid, DuesForecastCard } from '@/components/DuesParts';
 import { Button, Empty, Notice, PageTitle, Panel } from '@/components/ui';
 import { formatFullDate } from '@/lib/format';
@@ -32,6 +37,7 @@ function FinanceDashboard() {
   const councilId = scope.councilId;
   const chart = useLoad(() => db.finance.listChartOfAccounts(user.memberId, councilId), [user.memberId, councilId]);
   const sheet = useLoad(() => db.finance.getLatestBalanceSheet(user.memberId, councilId), [user.memberId, councilId]);
+  const worth = useLoad(() => db.finance.getCouncilNetWorth(user.memberId, councilId), [user.memberId, councilId]);
   const dues = useLoad(async () => {
     const [council, members, statuses] = await Promise.all([db.councils.get(councilId), db.members.listByCouncil(councilId), db.lookups.list('MemberStatus')]);
     return buildDuesForecast({ council, members, statuses });
@@ -42,7 +48,7 @@ function FinanceDashboard() {
   const [transferring, setTransferring] = useState(false);
   const canPost = canPostGeneralLedger(user, councilId);
   const reload = async () => {
-    await Promise.all([chart.reload(), sheet.reload()]);
+    await Promise.all([chart.reload(), sheet.reload(), worth.reload()]);
   };
   const gauges = chart.data ? buildLiquidityGauges(chart.data) : [];
 
@@ -57,6 +63,9 @@ function FinanceDashboard() {
             </Link>
             <Link href="/finance/balance-sheet" className="text-sm font-bold underline">
               Full balance sheet
+            </Link>
+            <Link href="/finance/audit" className="text-sm font-bold underline">
+              Trustee audit desk
             </Link>
           </div>
         }
@@ -86,13 +95,23 @@ function FinanceDashboard() {
         </Panel>
       </div>
 
+      {worth.error ? <Notice tone="error">{worth.error}</Notice> : null}
+      {worth.data ? <NetWorthCard worth={worth.data} /> : worth.loading ? <p className="text-sm">Loading…</p> : null}
+
       {dues.error ? <Notice tone="error">{dues.error}</Notice> : null}
       {concluded.error ? <Notice tone="error">{concluded.error}</Notice> : null}
       {dues.data ? <DuesForecastCard forecast={dues.data} /> : dues.loading ? <p className="text-sm">Loading…</p> : null}
       {concluded.data ? <ConcludedPerformanceGrid performance={concluded.data} /> : concluded.loading ? <p className="text-sm">Loading…</p> : null}
       {analysis.error ? <Notice tone="error">{analysis.error}</Notice> : null}
       {analysis.data ? (
-        <BudgetAnalyzerCard analysis={analysis.data} canSetCeiling={canManageBudgetForecast(user, councilId)} />
+        <BudgetAnalyzerCard
+          analysis={analysis.data}
+          canSetCeiling={canManageBudgetForecast(user, councilId)}
+          onSaveCeiling={async (ceiling) => {
+            await db.budget.setTargetSpendingCeiling(user.memberId, councilId, analysisYear, ceiling);
+            await analysis.reload();
+          }}
+        />
       ) : analysis.loading ? (
         <p className="text-sm">Loading…</p>
       ) : null}

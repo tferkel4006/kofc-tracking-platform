@@ -120,7 +120,11 @@ export type BusinessRuleCode =
   | 'FRATERNAL_EXTENSION_REQUIRED'
   | 'HISTORY_KEEPER_REQUIRED'
   | 'DIARY_ENTRY_EXISTS'
-  | 'DIARY_CONTENT_BLOCKED';
+  | 'DIARY_CONTENT_BLOCKED'
+  | 'TRUSTEE_REQUIRED'
+  | 'AUDIT_PERIOD_LOCKED'
+  | 'AUDIT_PERIOD_OPEN'
+  | 'AUDIT_INCOMPLETE';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -150,7 +154,8 @@ export class SecurityPrivilegeError extends BusinessRuleError {
       | 'FINANCIAL_SECRETARY_REQUIRED'
       | 'AGENDA_EDITOR_REQUIRED'
       | 'DUES_RATE_EDITOR_REQUIRED'
-      | 'HISTORY_KEEPER_REQUIRED',
+      | 'HISTORY_KEEPER_REQUIRED'
+      | 'TRUSTEE_REQUIRED',
     message: string,
     details: Record<string, unknown> = {},
   ) {

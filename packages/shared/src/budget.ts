@@ -898,6 +898,9 @@ export function buildBudgetAnalysis(input: {
     ];
   });
   const total = budgetYearOverYear(approvedTotal, priorApprovedTotal);
+  // Sprint 6M: a ceiling passed in is a what-if that overrides the saved one; omitted, the saved ceiling applies.
+  const stored = storedTargetSpendingCeiling(input.lines);
+  const ceiling = input.targetSpendingCeiling === undefined ? stored : input.targetSpendingCeiling;
   return {
     councilId,
     fraternalYear,
@@ -910,8 +913,31 @@ export function buildBudgetAnalysis(input: {
     totalVariancePercent: total.variancePercent,
     categories,
     lines: analysisLines,
-    ceiling: input.targetSpendingCeiling == null ? null : buildBudgetCeilingTrack(approvedTotal, input.targetSpendingCeiling),
+    storedTargetSpendingCeiling: stored,
+    ceiling: ceiling == null ? null : buildBudgetCeilingTrack(approvedTotal, ceiling),
   };
+}
+
+/**
+ * Sprint 6M: the year's saved Target Spending Ceiling - the first non-NULL target_spending_ceiling among its rows (every
+ * row of the year carries the same value; budget.setTargetSpendingCeiling writes them together) - or null.
+ */
+export function storedTargetSpendingCeiling(lines: readonly Pick<CouncilBudgetForecast, 'target_spending_ceiling'>[]): number | null {
+  const row = lines.find((l) => l.target_spending_ceiling != null);
+  return row ? sumCents([row.target_spending_ceiling!]) : null;
+}
+
+/**
+ * Sprint 6M: budget.setTargetSpendingCeiling's checked value - null clears the ceiling, otherwise dollars 0 or more in whole
+ * cents. Rejects INVALID_INPUT for a year without lines (the ceiling is stored on them) or a malformed amount.
+ */
+export function cleanTargetSpendingCeiling(ceiling: unknown, yearLineCount: number, fraternalYear: string): number | null {
+  if (yearLineCount === 0) {
+    throw new BusinessRuleError('INVALID_INPUT', `Fraternal year ${fraternalYear} has no budget lines yet; add or pre-populate lines before saving a target ceiling.`, {
+      fraternalYear,
+    });
+  }
+  return ceiling === null ? null : assertMoney(ceiling, 'Target spending ceiling');
 }
 
 /**

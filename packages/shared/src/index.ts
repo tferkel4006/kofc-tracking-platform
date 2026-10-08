@@ -39,3 +39,4 @@ export * from './email-gateway';
 export * from './credentials-vault';
 export * from './liturgical';
 export * from './history';
+export * from './audits';
