@@ -108,6 +108,7 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
     hint: 'Turn an event into a printable flyer with past photos, and file it in Google Drive',
   },
   'performance/charts': { href: '/performance/charts', label: 'Growth & Hours Charts', hint: 'Membership growth velocity and council hours by month' },
+  history: { href: '/history', label: 'Council History', hint: "Each year's officer core, collective accomplishments and oral histories" },
   profile: { href: '/profile', label: 'My Profile', hint: 'Photo, biography, contact details, skills' },
 };
 

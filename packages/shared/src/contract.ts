@@ -88,6 +88,8 @@ import type {
   SupremeReportingSync,
   SystemFeedback,
   WorkingStatus,
+  CouncilHistoryAnnals,
+  CouncilSpiritualDiary,
 } from './types';
 import type { BudgetAlert, BudgetWindowState } from './budget';
 import type { ConcludedBudgetPerformance } from './dues';
@@ -1823,6 +1825,73 @@ export interface LedgerTransactionSummary {
   linkedMeetingId: number | null;
 }
 
+// 20b. COUNCIL HISTORY AND THE TEAM LEGACY DASHBOARD (Sprint 6K)
+/**
+ * history.saveYearAnnals: the year's prose. An omitted field keeps its stored value; null or a blank string clears it.
+ * The founding fields (establishment_date, original_chaplain, charter_photo_url) describe the council's charter.
+ */
+export interface CouncilAnnalsInput {
+  establishment_date?: string | null;
+  original_chaplain?: string | null;
+  charter_photo_url?: string | null;
+  collective_accomplishments?: string | null;
+  team_metrics_summary?: string | null;
+}
+
+/** history.addDiaryEntry: today's entry for the caller. fraternal_year defaults to today's fraternal year. */
+export interface NewDiaryEntryInput {
+  fraternal_year?: string;
+  diary_text: string;
+  /** The Oral History Testimonial: a Drive file id from the vault, or a browser blob link while the vault is off. */
+  audio_asset_url?: string | null;
+}
+
+/** One seat of a year's officer core (CouncilLeadershipHistory), named but never scored. */
+export interface LegacyOfficerSeat {
+  roleName: string;
+  memberId: number;
+  firstName: string;
+  lastName: string;
+  /** The member stepped down mid-term (ExitReason 'Abdicated'). */
+  steppedDown: boolean;
+}
+
+/** A diary entry with its author's name. */
+export interface DiaryEntryDetail {
+  entry: CouncilSpiritualDiary;
+  authorFirstName: string;
+  authorLastName: string;
+}
+
+/** One fraternal year on the Team Legacy dashboard: the seated officer core, the year's prose and its diary. */
+export interface LegacyYear {
+  fraternalYear: string;
+  annals: CouncilHistoryAnnals | null;
+  officers: LegacyOfficerSeat[];
+  /** The year's diary entries, oldest first. */
+  diary: DiaryEntryDetail[];
+}
+
+/** The council's founding facts, from the earliest year that records each one. */
+export interface CouncilFounding {
+  establishmentDate: string | null;
+  originalChaplain: string | null;
+  charterPhotoUrl: string | null;
+}
+
+/** history.getLegacyMatrix (Sprint 6K). */
+export interface CouncilLegacyMatrix {
+  councilId: number;
+  founding: CouncilFounding;
+  /** Newest year first: every year with annals, seated officers or diary entries, and the current year. */
+  years: LegacyYear[];
+  /** The caller may write the annals (assertMayKeepCouncilAnnals). */
+  canKeepAnnals: boolean;
+  /** The caller's diary entry for today, if any: one entry per member per day. */
+  myEntryToday: CouncilSpiritualDiary | null;
+  currentFraternalYear: string;
+}
+
 // 21. THE SERVICE
 export interface DataService {
   /**
@@ -3245,5 +3314,31 @@ export interface DataService {
     deleteDraft(messageId: number, memberId: number): Promise<void>;
     /** Marks a message read (`ReadAt` set) or unread (`ReadAt: null`) for the member. */
     setRead(messageId: number, memberId: number, read: boolean): Promise<ReadReceipt>;
+  };
+
+  history: {
+    /**
+     * The council's Team Legacy matrix (Sprint 6K): for each fraternal year, newest first, the seated officer core
+     * (CouncilLeadershipHistory rows of that year, by Role id), the year's CouncilHistoryAnnals prose and its diary
+     * entries. No member's individual hours or scores are read. Any Active member of the council, or an Active Super
+     * Admin (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for an unknown council.
+     */
+    getLegacyMatrix(actorId: number, councilId: number): Promise<CouncilLegacyMatrix>;
+    /**
+     * Creates or updates the council's annals row for `fraternalYear` (one per council and year). The council's Active
+     * officers and Admins, any Active Super Admin (HISTORY_KEEPER_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT
+     * for a malformed year, a prose field over HISTORY_TEXT_MAX_LENGTH characters, a chaplain name over
+     * ORIGINAL_CHAPLAIN_MAX_LENGTH, a charter photo that is not a Drive file id or https link, or an unknown council;
+     * INVALID_DATE for a malformed establishment date.
+     */
+    saveYearAnnals(actorId: number, councilId: number, fraternalYear: string, input: CouncilAnnalsInput): Promise<CouncilHistoryAnnals>;
+    /**
+     * Writes the caller's diary entry for today, optionally carrying an Oral History Testimonial's asset link. One entry
+     * per member per day: a second one the same day rejects DIARY_ENTRY_EXISTS. Any Active member of the council, or an
+     * Active Super Admin (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for blank text or text over
+     * DIARY_TEXT_MAX_LENGTH, a malformed year, an asset link that is not a Drive file id, https or blob link, or an
+     * unknown council.
+     */
+    addDiaryEntry(actorId: number, councilId: number, input: NewDiaryEntryInput): Promise<CouncilSpiritualDiary>;
   };
 }

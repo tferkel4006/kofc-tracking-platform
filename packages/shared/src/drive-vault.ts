@@ -6,10 +6,12 @@
 // and only the Drive file id is written to the record's existing link column (Meeting.MinutesURL,
 // ExpenseLineItem.ReceiptPhotoURL, Event.PhotoGalleryURL). These pure helpers are shared by the portal's server route
 // (apps/web/app/api/drive-vault), its Drive client and the screens that show a stored reference.
+// Sprint 6K: Oral History Testimonials go under Oral Histories, and the audio's file id is written to
+// CouncilSpiritualDiary.audio_asset_url.
 // =========================================================================
 import { BusinessRuleError } from './rules';
 
-export type DriveVaultKind = 'minutes' | 'voucher' | 'media' | 'flyer';
+export type DriveVaultKind = 'minutes' | 'voucher' | 'media' | 'flyer' | 'oral_history';
 
 export const DRIVE_VAULT_ROOT = 'Fraternal Enterprise Suite';
 export const DRIVE_VAULT_FOLDERS: Readonly<Record<DriveVaultKind, string>> = {
@@ -17,6 +19,8 @@ export const DRIVE_VAULT_FOLDERS: Readonly<Record<DriveVaultKind, string>> = {
   voucher: 'Vouchers',
   media: 'Media',
   flyer: 'Flyers',
+  // Sprint 6K: the Oral History Testimonials recorded on the Team Legacy dashboard (/history).
+  oral_history: 'Oral Histories',
 };
 /** Largest file the vault accepts (25 MB). */
 export const DRIVE_VAULT_MAX_BYTES = 25 * 1024 * 1024;
@@ -28,6 +32,7 @@ const ACCEPTED: Readonly<Record<DriveVaultKind, (mime: string) => boolean>> = {
   voucher: (m) => m === PDF || m.startsWith('image/'),
   media: (m) => m.startsWith('image/') || m.startsWith('video/') || m === PDF,
   flyer: (m) => m === 'text/html' || m === PDF,
+  oral_history: (m) => m.startsWith('audio/'),
 };
 
 /** Longest event folder name under Media (Event.EventName is VARCHAR(100)). */

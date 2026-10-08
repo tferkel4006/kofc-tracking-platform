@@ -69,6 +69,7 @@ export type PortalArea =
   | 'resources/bulletins'
   | 'resources/marketing'
   | 'performance/charts'
+  | 'history'
   | 'profile';
 
 /** Areas served from a route other than `/${area}`: the budget center lives at /budget (Sprint 5Y-2). */
@@ -532,6 +533,9 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, ten
   // Advisor only reads the bylaws, so it has the bylaws' audience.
   areas.push('governance/bylaws', 'governance/advisor', 'answers/sop', 'resources/bulletins');
   if (isAdmin(u) || canViewExecutiveDashboard(u, u.councilId)) areas.push('performance/charts');
+  // Sprint 6K: every member reads the council's Team Legacy history and records oral history; the annals' keepers are
+  // decided inside (assertMayKeepCouncilAnnals).
+  areas.push('history');
   if (canOpenMarketingFactory(u)) areas.push('resources/marketing');
   return withTenantGate(withFeatureFlags(areas, flags), tenant);
 }
@@ -575,7 +579,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
       'financials/budget',
     ],
   },
-  { id: 'performance', label: 'Performance', items: ['dashboard', 'performance/charts', 'ledger', 'lessons-registry'] },
+  { id: 'performance', label: 'Performance', items: ['dashboard', 'performance/charts', 'history', 'ledger', 'lessons-registry'] },
   { id: 'resources', label: 'Resources', items: ['gallery', 'resources/bulletins', 'resources/marketing'] },
   { id: 'answers', label: 'Answers', items: ['help', 'answers/help', 'answers/sop'] },
   {

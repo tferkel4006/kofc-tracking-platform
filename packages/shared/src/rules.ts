@@ -117,7 +117,9 @@ export type BusinessRuleCode =
   | 'RESET_CODE_INVALID'
   | 'ILLEGAL_STATE_TRANSITION'
   | 'FEATURE_DISABLED'
-  | 'FRATERNAL_EXTENSION_REQUIRED';
+  | 'FRATERNAL_EXTENSION_REQUIRED'
+  | 'HISTORY_KEEPER_REQUIRED'
+  | 'DIARY_ENTRY_EXISTS';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -146,7 +148,8 @@ export class SecurityPrivilegeError extends BusinessRuleError {
       | 'VETTING_AUTHORITY_REQUIRED'
       | 'FINANCIAL_SECRETARY_REQUIRED'
       | 'AGENDA_EDITOR_REQUIRED'
-      | 'DUES_RATE_EDITOR_REQUIRED',
+      | 'DUES_RATE_EDITOR_REQUIRED'
+      | 'HISTORY_KEEPER_REQUIRED',
     message: string,
     details: Record<string, unknown> = {},
   ) {

@@ -2307,3 +2307,73 @@ ALTER TABLE [Event] DROP COLUMN [Budget];
 GO
 ALTER TABLE [Event] DROP COLUMN [Spend];
 GO
+
+-- =========================================================================
+-- Sprint 6K (Phase 6): COUNCIL HISTORY ANNALS AND THE SPIRITUAL DIARY (schema version 48)
+-- CouncilHistoryAnnals holds one row per council and fraternal year (a unique index): the officer core's collective
+-- accomplishments and team metrics for that tenure, written as prose by the council's history keepers (its Active
+-- officers and Admins, any Super Admin; assertMayKeepCouncilAnnals in history.ts). There are no per-member columns: the
+-- Team Legacy dashboard (/history) shows the year's seated officers (CouncilLeadershipHistory) beside this text and never
+-- an individual scorecard. establishment_date, original_chaplain and charter_photo_url describe the council's founding;
+-- the dashboard reads them from the earliest year that carries them.
+-- CouncilSpiritualDiary holds a member's diary entries: at most one per member per day (a unique index on user_id,
+-- entry_date). fraternal_year is the year of council history the entry is filed under (the dashboard groups it there);
+-- audio_asset_url is an Oral History Testimonial recorded in the browser (MediaRecorder) and filed in the council's
+-- Google Drive vault under Oral Histories - a bare Drive file id, or a browser blob link while the vault is off.
+-- user_id and the snake_case names follow the requested layout; user_id references Member(id).
+-- =========================================================================
+CREATE TABLE [CouncilHistoryAnnals] (
+	[id] INT NOT NULL IDENTITY,
+	[council_id] INT NOT NULL,
+	[fraternal_year] VARCHAR(9) NOT NULL,
+	[establishment_date] DATE NULL,
+	[original_chaplain] VARCHAR(200) NULL,
+	[charter_photo_url] VARCHAR(2000) NULL,
+	[collective_accomplishments] TEXT NULL,
+	[team_metrics_summary] TEXT NULL,
+	[updated_by_member_id] INT NULL,
+	[updated_at] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [CouncilSpiritualDiary] (
+	[id] INT NOT NULL IDENTITY,
+	[council_id] INT NOT NULL,
+	[user_id] INT NOT NULL,
+	[entry_date] DATE NOT NULL,
+	[fraternal_year] VARCHAR(9) NOT NULL,
+	[diary_text] TEXT NOT NULL,
+	[audio_asset_url] VARCHAR(2000) NULL,
+	[created_at] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CouncilHistoryAnnals]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilHistoryAnnals]
+ADD FOREIGN KEY([updated_by_member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilSpiritualDiary]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilSpiritualDiary]
+ADD FOREIGN KEY([user_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [CouncilHistoryAnnals_Year_Idx] ON [CouncilHistoryAnnals] ([council_id], [fraternal_year]);
+GO
+CREATE UNIQUE INDEX [CouncilSpiritualDiary_Day_Idx] ON [CouncilSpiritualDiary] ([user_id], [entry_date]);
+GO
+CREATE INDEX [CouncilSpiritualDiary_Year_Idx] ON [CouncilSpiritualDiary] ([council_id], [fraternal_year]);
+GO

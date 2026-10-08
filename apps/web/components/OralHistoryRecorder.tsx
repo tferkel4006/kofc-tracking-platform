@@ -1,0 +1,187 @@
+'use client';
+// Oral History Testimonial recorder (Sprint 6K): records the member's microphone in the browser with MediaRecorder,
+// compressed as Opus (WebM or Ogg) or AAC (MP4, Safari) at ORAL_HISTORY_BITS_PER_SECOND, in one-second chunks. On stop
+// the recording goes to the council's Google Drive vault under Oral Histories (/api/drive-vault/oral-history) and its file
+// id is written to the member's diary entry for today, filed under the chosen fraternal year (history.addDiaryEntry).
+// While the vault is switched off the entry keeps a browser blob link, which plays only in this browser session.
+// One diary entry per member per day: once today's entry exists the button is disabled.
+import { useEffect, useRef, useState } from 'react';
+import {
+  describeError,
+  DIARY_TEXT_MAX_LENGTH,
+  ORAL_HISTORY_BITS_PER_SECOND,
+  ORAL_HISTORY_MAX_SECONDS,
+  oralHistoryFileName,
+  pickOralHistoryMimeType,
+  type CouncilSpiritualDiary,
+} from '@kofc/shared';
+import { Button, Field, Notice, Select, Textarea } from '@/components/ui';
+import { useUser } from '@/lib/session';
+import { db } from '@/services/db';
+import { archiveOralHistory, localFileLink } from '@/services/drive-vault-transport';
+
+type Phase = 'idle' | 'starting' | 'recording' | 'saving';
+
+const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+
+/** Why this browser cannot record, or null when it can. */
+function recorderUnavailable(): string | null {
+  if (typeof window === 'undefined') return 'Recording starts once the page has loaded.';
+  if (!window.isSecureContext) return 'The microphone works only over a secure (https) connection.';
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') return 'This browser cannot record audio. Try a current Chrome, Edge, Firefox or Safari.';
+  return null;
+}
+
+export function OralHistoryRecorder({
+  years,
+  defaultYear,
+  todaysEntry,
+  onSaved,
+}: {
+  years: readonly string[];
+  defaultYear: string;
+  todaysEntry: CouncilSpiritualDiary | null;
+  onSaved: () => Promise<void>;
+}) {
+  const user = useUser();
+  const [year, setYear] = useState(defaultYear);
+  const [note, setNote] = useState('');
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [elapsed, setElapsed] = useState(0);
+  const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const stream = useRef<MediaStream | null>(null);
+  const chunks = useRef<Blob[]>([]);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
+
+  useEffect(() => setUnavailable(recorderUnavailable()), []);
+  // Leaving the page mid-recording discards it and lets go of the microphone.
+  useEffect(
+    () => () => {
+      if (recorder.current) recorder.current.onstop = null;
+      if (recorder.current?.state === 'recording') recorder.current.stop();
+      release();
+    },
+    [],
+  );
+  // The recorder stops itself at ORAL_HISTORY_MAX_SECONDS and saves what it has.
+  useEffect(() => {
+    if (phase === 'recording' && elapsed >= ORAL_HISTORY_MAX_SECONDS) stop();
+  }, [phase, elapsed]);
+
+  function release() {
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+    stream.current?.getTracks().forEach((t) => t.stop());
+    stream.current = null;
+  }
+
+  async function save(blob: Blob, mimeType: string) {
+    setPhase('saving');
+    try {
+      const file = new File([blob], oralHistoryFileName(user.memberId, year, mimeType, new Date()), { type: mimeType });
+      const assetUrl = (await archiveOralHistory(file)) ?? localFileLink(file);
+      await db.history.addDiaryEntry(user.memberId, user.councilId, {
+        fraternal_year: year,
+        diary_text: note.trim() || `Oral history testimonial for fraternal year ${year}.`,
+        audio_asset_url: assetUrl,
+      });
+      setNote('');
+      setMessage({ tone: 'info', text: `Your testimonial is saved in the ${year} diary.` });
+      await onSaved();
+    } catch (err) {
+      setMessage({ tone: 'error', text: describeError(err) });
+    } finally {
+      setPhase('idle');
+    }
+  }
+
+  async function start() {
+    setMessage(null);
+    setPhase('starting');
+    try {
+      const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      stream.current = mic;
+      const mimeType = pickOralHistoryMimeType((t) => MediaRecorder.isTypeSupported(t));
+      const rec = new MediaRecorder(mic, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: ORAL_HISTORY_BITS_PER_SECOND });
+      chunks.current = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.current.push(e.data);
+      };
+      rec.onstop = () => {
+        const type = rec.mimeType || mimeType || 'audio/webm';
+        release();
+        void save(new Blob(chunks.current, { type }), type);
+      };
+      recorder.current = rec;
+      rec.start(1000);
+      setElapsed(0);
+      setPhase('recording');
+      timer.current = setInterval(() => setElapsed((s) => s + 1), 1000);
+    } catch (err) {
+      release();
+      setPhase('idle');
+      setMessage({
+        tone: 'error',
+        text: err instanceof DOMException && err.name === 'NotAllowedError' ? 'The browser was not allowed to use the microphone. Allow it and try again.' : describeError(err),
+      });
+    }
+  }
+
+  function stop() {
+    if (recorder.current?.state === 'recording') recorder.current.stop();
+    recorder.current = null;
+  }
+
+  const blocked = todaysEntry
+    ? `You already wrote today's diary entry (filed under ${todaysEntry.fraternal_year}). One entry per day is allowed; record again tomorrow.`
+    : unavailable;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {message ? (
+        <Notice tone={message.tone} onDismiss={() => setMessage(null)}>
+          {message.text}
+        </Notice>
+      ) : null}
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-[12rem_1fr]">
+        <Field label="File under fraternal year">
+          {(id) => (
+            <Select id={id} value={year} onChange={(e) => setYear(e.target.value)} disabled={phase !== 'idle'}>
+              {years.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field label="What is the testimonial about? (optional)" hint={`Saved as the diary text. At most ${DIARY_TEXT_MAX_LENGTH.toLocaleString('en-US')} characters.`}>
+          {(id) => <Textarea id={id} value={note} maxLength={DIARY_TEXT_MAX_LENGTH} onChange={(e) => setNote(e.target.value)} disabled={phase !== 'idle'} />}
+        </Field>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        {phase === 'recording' ? (
+          <Button variant="danger" onClick={stop} aria-label={`Stop recording and save (recording for ${clock(elapsed)})`}>
+            ⏹ Stop and save
+          </Button>
+        ) : (
+          <Button variant="gold" onClick={() => void start()} disabled={phase !== 'idle' || !!blocked} className="text-base">
+            🎙️ Record Oral History Testimonial
+          </Button>
+        )}
+        <span role="status" aria-live="polite" className="text-sm font-bold">
+          {phase === 'starting'
+            ? 'Asking for the microphone…'
+            : phase === 'recording'
+              ? `● Recording ${clock(elapsed)} of ${clock(ORAL_HISTORY_MAX_SECONDS)}`
+              : phase === 'saving'
+                ? 'Saving the recording…'
+                : ''}
+        </span>
+      </div>
+      {blocked && phase === 'idle' ? <p className="text-sm">{blocked}</p> : null}
+    </div>
+  );
+}

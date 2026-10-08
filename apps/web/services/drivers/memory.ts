@@ -241,6 +241,14 @@ import {
   assertBudgetYearWritable,
   assertCouncilBudgetCategory,
   assertFraternalYear,
+  assertDiaryDayFree,
+  assertMayKeepCouncilAnnals,
+  assertMayReadCouncilHistory,
+  buildCouncilLegacyMatrix,
+  cleanCouncilAnnals,
+  cleanDiaryEntry,
+  mayKeepCouncilAnnals,
+  mergeCouncilAnnals,
   assertMayApproveBudget,
   assertMayManageBudgetForecast,
   assertMayReviewBudgetPerformance,
@@ -425,6 +433,8 @@ import type {
   GlobalCharityRegistry,
   CouncilElectionBallot,
   CouncilLeadershipHistory,
+  CouncilHistoryAnnals,
+  CouncilSpiritualDiary,
   OfficerNominations,
   Activities,
   AlchemerRequest,
@@ -4927,6 +4937,59 @@ export class MemoryDataService implements DataService {
     const TransactionID = formatTransactionId(globalThis.crypto.getRandomValues(new Uint8Array(16)));
     return lines.map((line) => ({ ...s.insert('JournalEntry', { CouncilID: councilId, ...line, IsBankReconciled: 0, TransactionID }) }) as unknown as JournalEntry);
   }
+
+  history: DataService['history'] = {
+    getLegacyMatrix: async (actorId, councilId) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      assertMayReadCouncilHistory(actor, councilId, `read the history of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return buildCouncilLegacyMatrix({
+        councilId,
+        annals: this.copyRows<CouncilHistoryAnnals>(s, 'CouncilHistoryAnnals', (r) => r.council_id === councilId),
+        leadership: this.copyRows<CouncilLeadershipHistory>(s, 'CouncilLeadershipHistory', (r) => r.CouncilID === councilId),
+        diary: this.copyRows<CouncilSpiritualDiary>(s, 'CouncilSpiritualDiary', (r) => r.council_id === councilId),
+        roles: s.rows('Role') as unknown as Role[],
+        members: s.rows('Member') as unknown as Member[],
+        actorId,
+        canKeepAnnals: mayKeepCouncilAnnals(actor, councilId),
+        today: this.now(),
+      });
+    },
+
+    saveYearAnnals: async (actorId, councilId, fraternalYear, input) => {
+      const year = assertFraternalYear(fraternalYear);
+      const clean = cleanCouncilAnnals(input);
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayKeepCouncilAnnals(this.memberWriteActor(s, actorId), councilId, `keep the annals of council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const existing = s.rows('CouncilHistoryAnnals').find((r) => r.council_id === councilId && r.fraternal_year === year);
+        const values = {
+          ...mergeCouncilAnnals(existing ? ({ ...existing } as unknown as CouncilHistoryAnnals) : null, clean),
+          updated_by_member_id: actorId,
+          updated_at: toTimestamp(this.now()),
+        };
+        if (existing) {
+          Object.assign(existing, values);
+          return { ...existing } as unknown as CouncilHistoryAnnals;
+        }
+        return { ...s.insert('CouncilHistoryAnnals', { council_id: councilId, fraternal_year: year, ...values }) } as unknown as CouncilHistoryAnnals;
+      });
+    },
+
+    addDiaryEntry: async (actorId, councilId, input) => {
+      const s = await this.ready();
+      const clean = cleanDiaryEntry(input, this.now());
+      return s.transaction(() => {
+        assertMayReadCouncilHistory(this.memberWriteActor(s, actorId), councilId, `write in the diary of council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        assertDiaryDayFree(s.rows('CouncilSpiritualDiary') as unknown as CouncilSpiritualDiary[], actorId, clean.entry_date);
+        const row = s.insert('CouncilSpiritualDiary', { council_id: councilId, user_id: actorId, ...clean, created_at: toTimestamp(this.now()) });
+        return { ...row } as unknown as CouncilSpiritualDiary;
+      });
+    },
+  };
 
   feedback: DataService['feedback'] = {
     submit: async (memberId, text) => {

@@ -726,3 +726,28 @@ One long-lived item the council owns.
 •	current_status (VARCHAR(50), NOT NULL, DEFAULT 'ACTIVE') — ACTIVE, DISPOSED or LOST (COUNCIL_ASSET_STATUSES; rules layer, no CHECK). A converted asset starts ACTIVE.
 •	notes (TEXT, NULL) — 'Converted from expense report <id> when it became <Status>.' and the receipts' vendors.
 ________________________________________
+# 21. Council History Annals and the Spiritual Diary (Sprint 6K)
+Schema version 48. The Team Legacy dashboard (/history, the Performance pillar's 'Council History' link, open to every member) shows one high-contrast card per fraternal year, newest first: the year's seated officer core (CouncilLeadershipHistory rows of that year whose Role has Officer = 1, by Role id) as one roster grid beside the year's collective accomplishments and team metrics, then the year's diary entries and Oral History Testimonials. No member's hours, signups or scores are read (buildCouncilLegacyMatrix in history.ts). Both tables are council-scoped and block deleting their council (RECORD_IN_USE).
+[CouncilHistoryAnnals]
+One fraternal year of a council's history, written as prose; one row per council and year (a unique index on council_id, fraternal_year). Read with history.getLegacyMatrix by any Active member of the council or an Active Super Admin; written with history.saveYearAnnals (create or update) by the council's history keepers - its Active officers (any Role with Officer = 1) and Admins - and any Active Super Admin (assertMayKeepCouncilAnnals; others HISTORY_KEEPER_REQUIRED or COUNCIL_ACCESS_DENIED). An omitted field keeps its value; null or blank clears it.
+•	id (INT, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	council_id (INT, NOT NULL) — Foreign Key references Council(id).
+•	fraternal_year (VARCHAR(9), NOT NULL) — 'YYYY-YYYY', consecutive years (assertFraternalYear).
+•	establishment_date (DATE, NULL) — When the council was chartered. The dashboard's founding card reads it from the earliest year that has one.
+•	original_chaplain (VARCHAR(200), NULL) — The council's first chaplain; read like establishment_date.
+•	charter_photo_url (VARCHAR(2000), NULL) — A Google Drive file id or an https link to the charter photo (cleanHistoryAssetUrl, else INVALID_INPUT); read like establishment_date.
+•	collective_accomplishments (TEXT, NULL) — What the year's officer core achieved together; at most 8,000 characters (HISTORY_TEXT_MAX_LENGTH).
+•	team_metrics_summary (TEXT, NULL) — Council-wide totals for the tenure (members recruited, service hours, funds raised); at most 8,000 characters. Never individual scores.
+•	updated_by_member_id (INT, NULL) — Foreign Key references Member(id). Who last saved the row.
+•	updated_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was last saved (UTC).
+[CouncilSpiritualDiary]
+A member's diary entry: at most one per member per day (a unique index on user_id, entry_date; history.addDiaryEntry rejects a second one DIARY_ENTRY_EXISTS). Any Active member of the council, or an Active Super Admin, writes their own entry for today; every reader of the dashboard sees the council's entries under their fraternal year.
+•	id (INT, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	council_id (INT, NOT NULL) — Foreign Key references Council(id). An index on council_id, fraternal_year.
+•	user_id (INT, NOT NULL) — Foreign Key references Member(id). The author.
+•	entry_date (DATE, NOT NULL) — The day it was written (the driver's local today; never chosen by the caller).
+•	fraternal_year (VARCHAR(9), NOT NULL) — The year of council history the entry is filed under; defaults to today's fraternal year. A testimonial about an earlier tenure is filed under that year.
+•	diary_text (TEXT, NOT NULL) — The entry, trimmed; 1 to 4,000 characters (DIARY_TEXT_MAX_LENGTH). A recording without a note gets 'Oral history testimonial for fraternal year <year>.'
+•	audio_asset_url (VARCHAR(2000), NULL) — The Oral History Testimonial. The dashboard's '🎙️ Record Oral History Testimonial' button records the microphone with the browser's MediaRecorder as compressed Opus (WebM or Ogg) or AAC (MP4, Safari) at 32 kbps, for at most 10 minutes, and posts it to /api/drive-vault/oral-history, which files it under Fraternal Enterprise Suite / Oral Histories in the council's Google Drive and returns the file id stored here. The route admits any Active member's portal session. While the vault is switched off (no DRIVE_VAULT_LIVE=1 or credentials) the page stores a browser blob link instead, which plays only in that browser session. A Drive file id, https or blob link (else INVALID_INPUT).
+•	created_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was saved (UTC).
+________________________________________

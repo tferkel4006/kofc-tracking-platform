@@ -245,6 +245,14 @@ import {
   assertBudgetYearWritable,
   assertCouncilBudgetCategory,
   assertFraternalYear,
+  assertDiaryDayFree,
+  assertMayKeepCouncilAnnals,
+  assertMayReadCouncilHistory,
+  buildCouncilLegacyMatrix,
+  cleanCouncilAnnals,
+  cleanDiaryEntry,
+  mayKeepCouncilAnnals,
+  mergeCouncilAnnals,
   assertMayApproveBudget,
   assertMayManageBudgetForecast,
   assertMayReviewBudgetPerformance,
@@ -513,6 +521,8 @@ import type {
   CouncilCharityLink,
   GlobalCharityRegistry,
   CouncilLeadershipHistory,
+  CouncilHistoryAnnals,
+  CouncilSpiritualDiary,
   OfficerNominations,
   SessionUser,
   Shift,
@@ -597,8 +607,10 @@ const DB_NAME = 'kofc.db';
  *     Request for Officer Input threads bound to a charitable request (Sprint 6H).
  * 47: Event.Budget and Event.Spend dropped - event budgets and spend come only from budget lines and expense sheets
  *     (Sprint 6I).
+ * 48: CouncilHistoryAnnals and CouncilSpiritualDiary - the Team Legacy year annals and the one-entry-a-day diary that
+ *     carries Oral History Testimonials (Sprint 6K).
  */
-const SCHEMA_VERSION = 47;
+const SCHEMA_VERSION = 48;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -5810,6 +5822,94 @@ export class SqliteDataService implements DataService {
     }
     return ids;
   }
+
+  history: DataService['history'] = {
+    getLegacyMatrix: async (actorId, councilId) => {
+      const db = await this.ready();
+      const actor = await this.memberWriteActor(db, actorId);
+      assertMayReadCouncilHistory(actor, councilId, `read the history of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const [annals, leadership, diary, roles, members] = await Promise.all([
+        db.getAllAsync<CouncilHistoryAnnals>('SELECT * FROM [CouncilHistoryAnnals] WHERE [council_id] = ?', [councilId]),
+        db.getAllAsync<CouncilLeadershipHistory>('SELECT * FROM [CouncilLeadershipHistory] WHERE [CouncilID] = ?', [councilId]),
+        db.getAllAsync<CouncilSpiritualDiary>('SELECT * FROM [CouncilSpiritualDiary] WHERE [council_id] = ?', [councilId]),
+        db.getAllAsync<Role>('SELECT * FROM [Role]'),
+        db.getAllAsync<Member>(
+          `SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member]
+            WHERE [id] IN (SELECT [MemberID] FROM [CouncilLeadershipHistory] WHERE [CouncilID] = ?)
+               OR [id] IN (SELECT [user_id] FROM [CouncilSpiritualDiary] WHERE [council_id] = ?)`,
+          [councilId, councilId],
+        ),
+      ]);
+      return buildCouncilLegacyMatrix({
+        councilId,
+        annals,
+        leadership,
+        diary,
+        roles,
+        members,
+        actorId,
+        canKeepAnnals: mayKeepCouncilAnnals(actor, councilId),
+        today: this.now(),
+      });
+    },
+
+    saveYearAnnals: async (actorId, councilId, fraternalYear, input) => {
+      const year = assertFraternalYear(fraternalYear);
+      const clean = cleanCouncilAnnals(input);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayKeepCouncilAnnals(await this.memberWriteActor(db, actorId), councilId, `keep the annals of council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        const existing = await db.getFirstAsync<CouncilHistoryAnnals>(
+          'SELECT * FROM [CouncilHistoryAnnals] WHERE [council_id] = ? AND [fraternal_year] = ?',
+          [councilId, year],
+        );
+        const v = mergeCouncilAnnals(existing, clean);
+        const fields = [v.establishment_date, v.original_chaplain, v.charter_photo_url, v.collective_accomplishments, v.team_metrics_summary, actorId, toTimestamp(this.now())];
+        if (existing) {
+          await db.runAsync(
+            `UPDATE [CouncilHistoryAnnals] SET [establishment_date] = ?, [original_chaplain] = ?, [charter_photo_url] = ?, [collective_accomplishments] = ?,
+                    [team_metrics_summary] = ?, [updated_by_member_id] = ?, [updated_at] = ? WHERE [id] = ?`,
+            [...fields, existing.id],
+          );
+        } else {
+          await db.runAsync(
+            `INSERT INTO [CouncilHistoryAnnals] ([establishment_date], [original_chaplain], [charter_photo_url], [collective_accomplishments],
+                    [team_metrics_summary], [updated_by_member_id], [updated_at], [council_id], [fraternal_year]) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [...fields, councilId, year],
+          );
+        }
+      });
+      return (await db.getFirstAsync<CouncilHistoryAnnals>('SELECT * FROM [CouncilHistoryAnnals] WHERE [council_id] = ? AND [fraternal_year] = ?', [councilId, year]))!;
+    },
+
+    addDiaryEntry: async (actorId, councilId, input) => {
+      const db = await this.ready();
+      const clean = cleanDiaryEntry(input, this.now());
+      let entryId = 0;
+      await db.withTransactionAsync(async () => {
+        assertMayReadCouncilHistory(await this.memberWriteActor(db, actorId), councilId, `write in the diary of council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        assertDiaryDayFree(
+          await db.getAllAsync<CouncilSpiritualDiary>('SELECT [user_id], [entry_date] FROM [CouncilSpiritualDiary] WHERE [user_id] = ? AND [entry_date] = ?', [
+            actorId,
+            clean.entry_date,
+          ]),
+          actorId,
+          clean.entry_date,
+        );
+        entryId = (
+          await db.runAsync(
+            `INSERT INTO [CouncilSpiritualDiary] ([council_id], [user_id], [entry_date], [fraternal_year], [diary_text], [audio_asset_url], [created_at])
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [councilId, actorId, clean.entry_date, clean.fraternal_year, clean.diary_text, clean.audio_asset_url ?? null, toTimestamp(this.now())],
+          )
+        ).lastInsertRowId;
+      });
+      return (await db.getFirstAsync<CouncilSpiritualDiary>('SELECT * FROM [CouncilSpiritualDiary] WHERE [id] = ?', [entryId]))!;
+    },
+  };
 
   feedback: DataService['feedback'] = {
     submit: async (memberId, text) => {

@@ -975,3 +975,33 @@ export interface JournalEntry {
   /** VARCHAR(50) (Sprint 5Z-8): the UUID every line of one posting shares. */
   TransactionID: string;
 }
+
+// 14. COUNCIL HISTORY ANNALS AND THE SPIRITUAL DIARY (Sprint 6K)
+/**
+ * One fraternal year of a council's history (Sprint 6K): the officer core's collective accomplishments and team metrics,
+ * as prose. One row per council and year. The founding columns describe the council's charter.
+ */
+export interface CouncilHistoryAnnals {
+  id: number;
+  council_id: number;
+  fraternal_year: string; // e.g. '2026-2027'
+  establishment_date?: string | null; // DATE, YYYY-MM-DD: when the council was chartered
+  original_chaplain?: string | null; // VARCHAR(200)
+  charter_photo_url?: string | null; // VARCHAR(2000): a Drive file id or an https link
+  collective_accomplishments?: string | null; // TEXT, at most HISTORY_TEXT_MAX_LENGTH characters
+  team_metrics_summary?: string | null; // TEXT, at most HISTORY_TEXT_MAX_LENGTH characters
+  updated_by_member_id?: number | null;
+  updated_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+/** One member's diary entry (Sprint 6K): at most one per member per day. */
+export interface CouncilSpiritualDiary {
+  id: number;
+  council_id: number;
+  user_id: number; // Member
+  entry_date: string; // DATE, YYYY-MM-DD
+  fraternal_year: string; // the year of council history the entry is filed under
+  diary_text: string; // TEXT, at most DIARY_TEXT_MAX_LENGTH characters
+  audio_asset_url?: string | null; // VARCHAR(2000): the Oral History Testimonial (Drive file id or blob link)
+  created_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}

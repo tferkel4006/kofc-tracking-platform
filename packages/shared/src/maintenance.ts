@@ -105,6 +105,8 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
     // Sprint 6Y: the web server's vault rows; a data driver's own copy of the table is always empty.
     { table: 'CouncilCredentialsVault', column: 'council_id', noun: ['saved credential', 'saved credentials'] },
     { table: 'CouncilAssetsInventory', column: 'council_id', noun: ['inventory asset', 'inventory assets'] },
+    { table: 'CouncilHistoryAnnals', column: 'council_id', noun: ['history annals year', 'history annals years'] },
+    { table: 'CouncilSpiritualDiary', column: 'council_id', noun: ['diary entry', 'diary entries'] },
   ],
   Parish: [{ table: 'Pastor', column: 'ParishID', noun: ['pastor', 'pastors'] }],
   Pastor: [],

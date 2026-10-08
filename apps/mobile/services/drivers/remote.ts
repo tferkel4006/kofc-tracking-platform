@@ -264,6 +264,11 @@ export function createRemoteDataService(): DataService {
       listSyncHistory: notImplemented('supreme.listSyncHistory'),
       syncSupremeRoster: notImplemented('supreme.syncSupremeRoster'),
     },
+    history: {
+      getLegacyMatrix: notImplemented('history.getLegacyMatrix'),
+      saveYearAnnals: notImplemented('history.saveYearAnnals'),
+      addDiaryEntry: notImplemented('history.addDiaryEntry'),
+    },
     feedback: {
       submit: notImplemented('feedback.submit'),
       listInbox: notImplemented('feedback.listInbox'),

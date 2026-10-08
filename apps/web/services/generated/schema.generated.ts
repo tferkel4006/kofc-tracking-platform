@@ -5326,6 +5326,186 @@ export const TABLES: Record<string, TableMeta> = {
       }
     ],
     "uniqueKeys": []
+  },
+  "CouncilHistoryAnnals": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "council_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "fraternal_year",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "establishment_date",
+        "kind": "date",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "original_chaplain",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "charter_photo_url",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "collective_accomplishments",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "team_metrics_summary",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "updated_by_member_id",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "updated_at",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "council_id",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "updated_by_member_id",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "council_id",
+        "fraternal_year"
+      ]
+    ]
+  },
+  "CouncilSpiritualDiary": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "council_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "user_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "entry_date",
+        "kind": "date",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "fraternal_year",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "diary_text",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "audio_asset_url",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "created_at",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "council_id",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "user_id",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "user_id",
+        "entry_date"
+      ]
+    ]
   }
 };
 
