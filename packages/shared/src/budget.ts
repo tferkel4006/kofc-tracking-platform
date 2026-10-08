@@ -6,10 +6,12 @@
 // rows already scoped to one council, call these, then only store. Who may
 // act is decided in rules.ts (assertMayViewBudgetForecast, assertMayManageBudgetForecast, assertMayApproveBudget,
 // assertMayReviewBudgetPerformance). Sprint 5Y-4 adds the Draft -> Proposed -> Approved lifecycle and the
-// budget-versus-actual performance figures behind the dashboard gauges and the historical KPIs.
+// budget-versus-actual performance figures behind the dashboard gauges and the historical KPIs. Sprint 6D adds
+// quantity x unit_cost estimates and the budget_version snapshots of mid-year amendments (currentBudgetLines).
 // =========================================================================
 import type {
   BudgetCategoryPerformance,
+  BudgetLineAmendment,
   BudgetHistoricalKPIs,
   BudgetLinePerformance,
   BudgetWriteOptions,
@@ -19,6 +21,7 @@ import type {
 } from './contract';
 import { assertMoney, assertText, BusinessRuleError, hasSuperAdminRights, toIsoDate, type MemberWriteActor } from './rules';
 import type { BudgetCategoryType, BudgetLineStatus, CouncilBudgetCategory, CouncilBudgetForecast } from './types';
+import { nextBudgetLineStatus, nextBudgetVersionStatus } from './workflow';
 
 /** CouncilBudgetForecast.CategoryType values, in the order a forecast lists them. */
 export const BUDGET_CATEGORY_TYPES: readonly BudgetCategoryType[] = ['Event', 'Donation', 'Operational'];
@@ -432,9 +435,171 @@ export function assertBudgetYearApprovable(
 
 /** What approval stores on each line: its proposed figure becomes the approved figure, and the line is 'Approved'. */
 export function planBudgetApproval(
-  lines: readonly Pick<CouncilBudgetForecast, 'id' | 'ProposedBudgetAmount'>[],
+  lines: readonly (Pick<CouncilBudgetForecast, 'id' | 'ProposedBudgetAmount'> & Partial<Pick<CouncilBudgetForecast, 'BudgetStatus' | 'budget_version'>>)[],
 ): Pick<CouncilBudgetForecast, 'id' | 'ApprovedBudgetAmount' | 'BudgetStatus'>[] {
-  return lines.map((l) => ({ id: l.id, ApprovedBudgetAmount: cents(l.ProposedBudgetAmount) / 100, BudgetStatus: 'Approved' }));
+  // Sprint 6D: a stored row moves through BUDGET_LINE_WORKFLOW, so an approved snapshot can never be approved again.
+  return lines.map((l) => ({
+    id: l.id,
+    ApprovedBudgetAmount: cents(l.ProposedBudgetAmount) / 100,
+    BudgetStatus: l.BudgetStatus === undefined ? 'Approved' : nextBudgetLineStatus({ id: l.id, BudgetStatus: l.BudgetStatus, budget_version: l.budget_version }, 'approve'),
+  }));
+}
+
+// ---- quantity x unit cost estimates and approved versions (Sprint 6D) -----------------------------------------------
+
+/** The most occurrences one line may pay for. */
+export const BUDGET_QUANTITY_MAX = 999;
+
+/** A line's quantity (a missing or bad value reads as 1), unit cost (0) and version (1), as the columns' defaults. */
+export const budgetLineQuantity = (line: Pick<CouncilBudgetForecast, 'quantity'>): number =>
+  Number.isInteger(line.quantity) && (line.quantity as number) >= 1 ? (line.quantity as number) : 1;
+export const budgetLineUnitCost = (line: Pick<CouncilBudgetForecast, 'unit_cost'>): number =>
+  line.unit_cost != null && Number.isFinite(line.unit_cost) && line.unit_cost > 0 ? cents(line.unit_cost) / 100 : 0;
+export const budgetLineVersion = (line: Pick<CouncilBudgetForecast, 'budget_version'>): number =>
+  Number.isInteger(line.budget_version) && (line.budget_version as number) >= 1 ? (line.budget_version as number) : 1;
+
+/** A line's count of occurrences: a whole number from 1 to BUDGET_QUANTITY_MAX. Rejects INVALID_INPUT otherwise. */
+export function assertBudgetQuantity(value: unknown): number {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= BUDGET_QUANTITY_MAX) return value;
+  throw invalid(`Quantity must be a whole number from 1 to ${BUDGET_QUANTITY_MAX}; received ${String(value)}.`, { field: 'quantity', value });
+}
+
+/** quantity x unit cost in whole cents. */
+export const budgetLineEstimate = (quantity: number, unitCost: number): number => (quantity * cents(unitCost)) / 100;
+
+/**
+ * budget.setLineQuantityAndUnitCost's changes: the quantity, the unit cost, and the proposed figure they make
+ * (quantity x unit cost). A unit cost of 0 is allowed and proposes 0.
+ */
+export function cleanLineQuantityAndUnitCost(
+  quantity: unknown,
+  unitCost: unknown,
+): Required<Pick<CouncilBudgetForecast, 'quantity' | 'unit_cost'>> & Pick<CouncilBudgetForecast, 'ProposedBudgetAmount'> {
+  const q = assertBudgetQuantity(quantity);
+  const unit = assertMoney(unitCost, 'Unit cost');
+  return { quantity: q, unit_cost: unit, ProposedBudgetAmount: budgetLineEstimate(q, unit) };
+}
+
+/**
+ * The unit_cost a lump-sum update (budget.updateLineItemBudget) leaves on the line: kept while quantity x unit cost still
+ * equals the new figure, otherwise cleared to 0 so the figure is split evenly over the quantity instead.
+ */
+export const unitCostAfterLumpSum = (line: Pick<CouncilBudgetForecast, 'quantity' | 'unit_cost'>, amount: number): number => {
+  const unit = budgetLineUnitCost(line);
+  return unit > 0 && cents(budgetLineEstimate(budgetLineQuantity(line), unit)) === cents(amount) ? unit : 0;
+};
+
+/** One line's identity across its versions: council, year, category type, source and name (ignoring case and spacing). */
+export const budgetLineIdentity = (
+  line: Pick<CouncilBudgetForecast, 'CouncilID' | 'FraternalYear' | 'CategoryType' | 'ReferenceSourceID' | 'LineItemName'>,
+): string => [line.CouncilID, line.FraternalYear, line.CategoryType, line.ReferenceSourceID ?? '', lineKey(line.LineItemName)].join('|');
+
+/**
+ * Each line's highest budget_version, in the order given: what every budget reader counts. Earlier versions of an
+ * amended line are its audit trail (budget.listLineVersions) and never enter a figure.
+ */
+export function currentBudgetLines<T extends CouncilBudgetForecast>(lines: readonly T[]): T[] {
+  const latest = new Map<string, T>();
+  for (const l of lines) {
+    const key = budgetLineIdentity(l);
+    const held = latest.get(key);
+    if (!held || budgetLineVersion(l) > budgetLineVersion(held)) latest.set(key, l);
+  }
+  const keep = new Set(latest.values());
+  return lines.filter((l) => keep.has(l));
+}
+
+/** Every version of `line` among `lines`, oldest first. */
+export const budgetLineVersions = <T extends CouncilBudgetForecast>(lines: readonly T[], line: CouncilBudgetForecast): T[] =>
+  lines
+    .filter((l) => budgetLineIdentity(l) === budgetLineIdentity(line))
+    .sort((a, b) => budgetLineVersion(a) - budgetLineVersion(b) || a.id - b.id);
+
+/**
+ * budget.amendApprovedLine's checks on the version being amended and its year:
+ * - it must be the line's latest version (BUDGET_VERSION_SUPERSEDED; details.currentLineId names the latest);
+ * - it must be an approved snapshot (BUDGET_LINE_WORKFLOW 'amend': ILLEGAL_STATE_TRANSITION otherwise; a year still in
+ *   drafting is changed with updateLineItemBudget);
+ * - its fraternal year must not have ended (BUDGET_YEAR_CLOSED), unless an Active Super Admin passes superAdminOverride.
+ * An amendment is mid-year by nature, so it is allowed from the approval until the year's June 30.
+ */
+export function assertBudgetLineAmendable(
+  line: CouncilBudgetForecast,
+  versions: readonly CouncilBudgetForecast[],
+  today: Date,
+  actor: MemberWriteActor,
+  options: BudgetWriteOptions = {},
+): void {
+  const latest = versions.reduce<CouncilBudgetForecast | null>((top, v) => (!top || budgetLineVersion(v) > budgetLineVersion(top) ? v : top), null);
+  if (latest && latest.id !== line.id) {
+    throw new BusinessRuleError(
+      'BUDGET_VERSION_SUPERSEDED',
+      `Budget line ${line.id} is version ${budgetLineVersion(line)} of "${line.LineItemName}"; version ${budgetLineVersion(latest)} (line ${latest.id}) replaced it, so amend that one.`,
+      { lineId: line.id, currentLineId: latest.id, currentVersion: budgetLineVersion(latest) },
+    );
+  }
+  nextBudgetVersionStatus(line);
+  if (fraternalYearBounds(line.FraternalYear).toDate >= toIsoDate(today)) return;
+  if (options.superAdminOverride === true && hasSuperAdminRights(actor)) return;
+  throw new BusinessRuleError('BUDGET_YEAR_CLOSED', `The ${line.FraternalYear} fraternal year has ended; its approved budget can no longer be amended.`, {
+    fraternalYear: line.FraternalYear,
+    lineId: line.id,
+  });
+}
+
+/**
+ * The row a mid-year amendment resolution inserts: a copy of the approved version `line` with the next budget_version,
+ * the amended quantity and unit cost, and the amended approved figure (also recorded as the proposed figure, since the
+ * resolution carried it). The earlier row is never touched.
+ * - With a unit cost above 0, the figure is quantity x unit cost; an approvedAmount that differs rejects INVALID_INPUT.
+ * - With a unit cost of 0, the figure is approvedAmount, or the line's current figure when it is omitted (a lump sum
+ *   split evenly over the quantity).
+ * - notes undefined keeps the line's Notes; blank or null clears them.
+ * Rejects INVALID_INPUT for an unknown field or an amendment that changes nothing.
+ */
+export function planBudgetAmendment(
+  line: CouncilBudgetForecast,
+  amendment: BudgetLineAmendment,
+): Omit<CouncilBudgetForecast, 'id'> & Required<Pick<CouncilBudgetForecast, 'quantity' | 'unit_cost' | 'budget_version'>> {
+  if (typeof amendment !== 'object' || amendment === null) throw invalid('Amendment details are required.');
+  const allowed = ['quantity', 'unitCost', 'approvedAmount', 'notes'];
+  for (const key of Object.keys(amendment)) {
+    if (!allowed.includes(key)) throw invalid(`A budget amendment has no field "${key}"; its fields are ${allowed.join(', ')}.`, { field: key });
+  }
+  const quantity = amendment.quantity === undefined ? budgetLineQuantity(line) : assertBudgetQuantity(amendment.quantity);
+  const unitCost = amendment.unitCost === undefined ? budgetLineUnitCost(line) : assertMoney(amendment.unitCost, 'Unit cost');
+  const requested = amendment.approvedAmount === undefined ? undefined : assertMoney(amendment.approvedAmount, 'Approved budget amount');
+  let approved: number;
+  if (unitCost > 0) {
+    approved = budgetLineEstimate(quantity, unitCost);
+    if (requested !== undefined && cents(requested) !== cents(approved)) {
+      throw invalid(`${quantity} x ${unitCost.toFixed(2)} is ${approved.toFixed(2)}; the approved amount cannot be ${requested.toFixed(2)}.`, {
+        field: 'approvedAmount',
+        quantity,
+        unitCost,
+      });
+    }
+  } else {
+    approved = requested ?? cents(line.ApprovedBudgetAmount) / 100;
+  }
+  const notes = amendment.notes === undefined ? (line.Notes ?? null) : optionalNotes(amendment.notes);
+  const unchanged =
+    quantity === budgetLineQuantity(line) &&
+    cents(unitCost) === cents(budgetLineUnitCost(line)) &&
+    cents(approved) === cents(line.ApprovedBudgetAmount) &&
+    notes === (line.Notes ?? null);
+  if (unchanged) throw invalid(`The amendment does not change budget line ${line.id}.`, { lineId: line.id });
+  const { id: _id, ...rest } = line;
+  return {
+    ...rest,
+    quantity,
+    unit_cost: unitCost,
+    ApprovedBudgetAmount: approved,
+    ProposedBudgetAmount: approved,
+    Notes: notes,
+    BudgetStatus: nextBudgetVersionStatus(line),
+    budget_version: budgetLineVersion(line) + 1,
+  };
 }
 
 // ---- budget versus actual spend (Sprint 5Y-4) ------------------------------------------------------

@@ -780,6 +780,18 @@ export interface CouncilBudgetForecast {
   BudgetCategoryID?: number | null; // Sprint 5Y-3: the council budget category it is filed under; NULL while uncategorized
   ProposedBudgetAmount: number; // DECIMAL(18,2) (Sprint 5Y-4): the figure leadership drafts May 1 - June 30
   BudgetStatus: BudgetLineStatus; // Sprint 5Y-4
+  /**
+   * Sprint 6D (Schema 42): how many occurrences the line pays for, 1 or more (DEFAULT 1). Each scheduled occurrence of
+   * the line's event gets one block of it, in date order (allocateBudgetLineOccurrences). A missing value reads as 1.
+   */
+  quantity?: number;
+  /** Sprint 6D: DECIMAL(18,2), the cost of one block (DEFAULT 0.00: a lump sum split evenly over the quantity). */
+  unit_cost?: number;
+  /**
+   * Sprint 6D: the approved snapshot's number (DEFAULT 1). An approved row is never changed; a mid-year amendment adds a
+   * row with the next version (budget.amendApprovedLine). Readers use each line's highest version. Missing reads as 1.
+   */
+  budget_version?: number;
 }
 
 /**

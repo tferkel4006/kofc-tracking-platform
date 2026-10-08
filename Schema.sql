@@ -2133,3 +2133,26 @@ GO
 -- =========================================================================
 ALTER TABLE [Council] ADD [base_dues_rate] DECIMAL(10,2) NOT NULL DEFAULT 40.00;
 GO
+
+-- =========================================================================
+-- Sprint 6D (Phase 5): QUANTITY / UNIT COST ESTIMATES AND MID-YEAR BUDGET VERSIONS (schema version 42)
+-- quantity and unit_cost break a line into equal blocks: a line for three Pancake Breakfasts at 500.00 each is
+-- quantity 3, unit_cost 500.00, and budgets 1,500.00. The concluded-performance grid gives each scheduled occurrence of
+-- the line's event one unit_cost block, in date order (allocateBudgetLineOccurrences in dues.ts). A unit_cost of 0.00
+-- means the line was drafted as a lump sum, which is then split evenly over its quantity.
+-- budget_version numbers the approved snapshots of one line. An approved row is never changed again: a mid-year
+-- amendment resolution (budget.amendApprovedLine) inserts a copy with the next budget_version and the new figures, and
+-- the earlier rows stay as the audit trail. Readers use the highest version of each line (currentBudgetLines in
+-- budget.ts). quantity is 1 or more and unit_cost whole cents, 0 or more (rules layer, no CHECK).
+-- The line index gains budget_version so versions of one line can coexist.
+-- =========================================================================
+ALTER TABLE [CouncilBudgetForecast] ADD [quantity] INT NOT NULL DEFAULT 1;
+GO
+ALTER TABLE [CouncilBudgetForecast] ADD [unit_cost] DECIMAL(18,2) NOT NULL DEFAULT 0.00;
+GO
+ALTER TABLE [CouncilBudgetForecast] ADD [budget_version] INT NOT NULL DEFAULT 1;
+GO
+DROP INDEX [CouncilBudgetForecast_Line_Idx] ON [CouncilBudgetForecast];
+GO
+CREATE UNIQUE INDEX [CouncilBudgetForecast_Line_Idx] ON [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [budget_version]);
+GO

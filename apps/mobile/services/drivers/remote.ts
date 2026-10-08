@@ -237,6 +237,9 @@ export function createRemoteDataService(): DataService {
       getBudgetProgress: notImplemented('budget.getBudgetProgress'),
       getHistoricalKPIs: notImplemented('budget.getHistoricalKPIs'),
       getConcludedPerformance: notImplemented('budget.getConcludedPerformance'),
+      setLineQuantityAndUnitCost: notImplemented('budget.setLineQuantityAndUnitCost'),
+      amendApprovedLine: notImplemented('budget.amendApprovedLine'),
+      listLineVersions: notImplemented('budget.listLineVersions'),
       getPriorYearBaselines: notImplemented('budget.getPriorYearBaselines'),
     },
     finance: {

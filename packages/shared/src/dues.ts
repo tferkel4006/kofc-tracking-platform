@@ -9,11 +9,23 @@
 //     cash on hand.
 //     Sprint 6C: an event's budget is the ApprovedBudgetAmount of its year's 'Event' forecast line (CouncilBudgetForecast),
 //     never the manual Event.Budget field.
+//     Sprint 6D: a line with a quantity above 1 is split into blocks - each scheduled occurrence of its event gets one
+//     unit_cost block, in date order (allocateBudgetLineOccurrences) - and only each line's latest budget_version counts.
 // Drivers load rows already scoped to one council, call these, and return the result.
 // Sprint 6B: councils.setDuesRate writes base_dues_rate, and only the council's Grand Knight or Financial Secretary may
 // (assertMayEditDuesRate / canEditDuesRate) - no Admin or Super Admin bypass.
 // =========================================================================
-import { budgetAlertOf, budgetPercentUsed, currentFraternalYear, fraternalYearBounds, BUDGET_MEETINGS_LINE_NAME, type BudgetAlert } from './budget';
+import {
+  budgetAlertOf,
+  budgetLineQuantity,
+  budgetLineUnitCost,
+  budgetPercentUsed,
+  currentBudgetLines,
+  currentFraternalYear,
+  fraternalYearBounds,
+  BUDGET_MEETINGS_LINE_NAME,
+  type BudgetAlert,
+} from './budget';
 import { BusinessRuleError, describeActor, SecurityPrivilegeError, type MemberWriteActor } from './rules';
 import type { CouncilBudgetForecast, MemberStatus } from './types';
 
@@ -116,6 +128,51 @@ export function cleanDuesRate(value: unknown): number {
   return cents(value) / 100;
 }
 
+// ---- sequential allocation of a line over its occurrences (Sprint 6D) -----------
+
+/** One occurrence's share of a forecast line: its place in the line's date order and the block it is budgeted. */
+export interface BudgetOccurrenceAllocation {
+  /** 1 for the line's first occurrence by StartDate (then id), 2 for the next, and so on. */
+  sequence: number;
+  /** The line's quantity: how many occurrences it pays for. */
+  quantity: number;
+  /** The block this occurrence is budgeted; null past the line's quantity (an occurrence the line never paid for). */
+  budget: number | null;
+}
+
+/**
+ * Splits an approved line over the scheduled occurrences of its event, in date order (StartDate, then id). Occurrence
+ * n of a line with quantity q gets the n-th block while n <= q, and no budget after that:
+ * - with a unit_cost above 0, each block is one unit_cost;
+ * - with a unit_cost of 0 (a lump sum), the ApprovedBudgetAmount is split into q equal blocks in whole cents, the
+ *   earliest blocks taking the odd cents.
+ * Blocks never add up to more than the ApprovedBudgetAmount: a block is cut to what is left of it. Keyed by event id.
+ */
+export function allocateBudgetLineOccurrences(
+  line: Pick<CouncilBudgetForecast, 'ApprovedBudgetAmount' | 'quantity' | 'unit_cost'>,
+  occurrences: readonly { id: number; StartDate: string }[],
+): Map<number, BudgetOccurrenceAllocation> {
+  const quantity = budgetLineQuantity(line);
+  const totalCents = Math.max(0, cents(line.ApprovedBudgetAmount));
+  const unitCents = cents(budgetLineUnitCost(line));
+  const evenCents = Math.floor(totalCents / quantity);
+  const oddCents = totalCents % quantity;
+  let leftCents = totalCents;
+  const result = new Map<number, BudgetOccurrenceAllocation>();
+  [...occurrences]
+    .sort((a, b) => a.StartDate.localeCompare(b.StartDate) || a.id - b.id)
+    .forEach((o, i) => {
+      if (i >= quantity) {
+        result.set(o.id, { sequence: i + 1, quantity, budget: null });
+        return;
+      }
+      const block = Math.min(unitCents > 0 ? unitCents : evenCents + (i < oddCents ? 1 : 0), leftCents);
+      leftCents -= block;
+      result.set(o.id, { sequence: i + 1, quantity, budget: block / 100 });
+    });
+  return result;
+}
+
 // ---- budgeted vs. actual for concluded events and meetings ----------------------
 
 /** The rows a driver loads for budget.getConcludedPerformance, all scoped to one council. */
@@ -135,7 +192,8 @@ export interface ConcludedPerformanceRows {
   /**
    * The council's forecast lines, every fraternal year (Sprint 6C). Each event's budget is its year's approved 'Event'
    * line; earlier years supply the benchmarks' budgets. The active year's 'Council Meetings' line supplies the meetings
-   * budget. A line counts only once its year is approved.
+   * budget. A line counts only once its year is approved. Sprint 6D: rows of every budget_version may be passed; only
+   * each line's latest version is read.
    */
   lines: readonly CouncilBudgetForecast[];
 }
@@ -145,7 +203,7 @@ export interface HistoricalBenchmark {
   eventId: number;
   eventName: string;
   startDate: string;
-  /** The approved cap of the benchmark's own year's forecast line; null when there is none. */
+  /** The benchmark's block of its own year's forecast line (Sprint 6D); null when there is none. */
   budget: number | null;
   actual: number;
   percentUsed: number | null;
@@ -163,8 +221,13 @@ export interface ConcludedEventPerformance {
    * without such a line or until the year is approved. The manual Event.Budget field is never read.
    */
   budget: number | null;
-  /** The CouncilBudgetForecast line the budget comes from; null when there is none. */
+  /** The CouncilBudgetForecast line (its latest budget_version) the budget comes from; null when there is none. */
   budgetLineId: number | null;
+  /**
+   * Sprint 6D: the event's place among the scheduled occurrences of its line and the line's quantity. `budget` is that
+   * occurrence's block (allocateBudgetLineOccurrences), not the whole line. Null without a line.
+   */
+  allocation: { sequence: number; quantity: number } | null;
   /**
    * The sum of the event's line items on 'Approved' and 'Reimbursed' expense sheets (Sprint 6B: the manual Event.Spend
    * field is never read).
@@ -199,8 +262,8 @@ export interface ConcludedBudgetPerformance {
   events: ConcludedEventPerformance[];
   meetings: ConcludedMeetingsPerformance;
   /**
-   * Events and meetings together; benchmarks are excluded. A forecast line shared by several events (by name) adds its
-   * cap to the budget total once.
+   * Events and meetings together; benchmarks are excluded. Each event adds its own block (Sprint 6D), so a line shared
+   * by several occurrences never counts more than its approved figure.
    */
   totals: { budget: number; actual: number; variance: number; percentUsed: number | null; alert: BudgetAlert };
 }
@@ -237,7 +300,8 @@ export function buildConcludedBudgetPerformance(input: {
   }
   const actualOf = (e: ConcludedPerformanceRows['events'][number]) => (eventExpenseCents.get(e.id) ?? 0) / 100;
   const yearOf = (iso: string) => currentFraternalYear(new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))));
-  const approvedLines = rows.lines.filter((l) => l.BudgetStatus === 'Approved');
+  const lines = currentBudgetLines(rows.lines);
+  const approvedLines = lines.filter((l) => l.BudgetStatus === 'Approved');
   const eventLineOf = (e: ConcludedPerformanceRows['events'][number]): CouncilBudgetForecast | null => {
     const year = yearOf(e.EndDate);
     const candidates = approvedLines.filter((l) => l.CategoryType === 'Event' && l.FraternalYear === year);
@@ -247,10 +311,14 @@ export function buildConcludedBudgetPerformance(input: {
       null
     );
   };
-  const budgetOf = (e: ConcludedPerformanceRows['events'][number]) => {
-    const l = eventLineOf(e);
-    return l ? cents(l.ApprovedBudgetAmount) / 100 : null;
-  };
+  // Sprint 6D: every scheduled occurrence of a line (concluded or not) takes its block in date order.
+  const lineOfEvent = new Map(rows.events.map((e) => [e.id, eventLineOf(e)]));
+  const allocations = new Map<number, BudgetOccurrenceAllocation>();
+  for (const l of approvedLines) {
+    const occurrences = rows.events.filter((e) => lineOfEvent.get(e.id) === l);
+    for (const [eventId, a] of allocateBudgetLineOccurrences(l, occurrences)) allocations.set(eventId, a);
+  }
+  const budgetOf = (e: ConcludedPerformanceRows['events'][number]) => allocations.get(e.id)?.budget ?? null;
   const concluded = rows.events.filter((e) => e.EndDate < today);
 
   const benchmarkOf = (e: ConcludedPerformanceRows['events'][number]): HistoricalBenchmark | null => {
@@ -267,8 +335,9 @@ export function buildConcludedBudgetPerformance(input: {
     .filter((e) => inYear(e.EndDate))
     .sort((a, b) => b.EndDate.localeCompare(a.EndDate) || b.id - a.id)
     .map((e) => {
-      const budgetLine = eventLineOf(e);
-      const budget = budgetLine ? cents(budgetLine.ApprovedBudgetAmount) / 100 : null;
+      const budgetLine = lineOfEvent.get(e.id) ?? null;
+      const allocation = allocations.get(e.id) ?? null;
+      const budget = allocation?.budget ?? null;
       const actual = actualOf(e);
       const isAnnual = !!e.IsAnnual;
       return {
@@ -279,6 +348,7 @@ export function buildConcludedBudgetPerformance(input: {
         isAnnual,
         budget,
         budgetLineId: budgetLine?.id ?? null,
+        allocation: allocation ? { sequence: allocation.sequence, quantity: allocation.quantity } : null,
         actual,
         variance: budget == null ? null : sumCents([budget, -actual]),
         percentUsed: budgetPercentUsed(budget ?? 0, actual),
@@ -289,7 +359,7 @@ export function buildConcludedBudgetPerformance(input: {
 
   const heldMeetings = rows.meetings.filter((m) => inYear(m.EndDate ?? m.Date));
   const meetingsActual = heldMeetings.reduce((t, m) => t + (meetingExpenseCents.get(m.id) ?? 0), 0) / 100;
-  const meetingsLine = rows.lines.find(
+  const meetingsLine = lines.find(
     (l) =>
       l.FraternalYear === fraternalYear &&
       l.CategoryType === 'Operational' && l.ReferenceSourceID == null && nameKey(l.LineItemName) === nameKey(BUDGET_MEETINGS_LINE_NAME),
@@ -305,13 +375,7 @@ export function buildConcludedBudgetPerformance(input: {
     alert: budgetAlertOf(meetingsBudget ?? 0, meetingsActual),
   };
 
-  const countedLines = new Set<number>();
-  const eventBudgets = events.map((e) => {
-    if (e.budgetLineId == null || countedLines.has(e.budgetLineId)) return null;
-    countedLines.add(e.budgetLineId);
-    return e.budget;
-  });
-  const budget = sumCents([...eventBudgets, meetings.budget]);
+  const budget = sumCents([...events.map((e) => e.budget), meetings.budget]);
   const actual = sumCents([...events.map((e) => e.actual), meetings.actual]);
   return {
     councilId,

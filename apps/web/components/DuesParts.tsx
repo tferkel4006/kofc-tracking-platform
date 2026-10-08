@@ -6,6 +6,7 @@
 //   - ConcludedPerformanceGrid: budget.getConcludedPerformance - each concluded event and the year's held meetings,
 //     budget against actual, with annual events' Historical Benchmark lines shown apart from every total.
 //     Sprint 6C: an event's budget is its approved CouncilBudgetForecast line, never Event.Budget.
+//     Sprint 6D: a line with a quantity is split, so each event shows its own block ("Occurrence 2 of 3").
 import type { ReactNode } from 'react';
 import type { BudgetAlert, ConcludedBudgetPerformance, ConcludedEventPerformance, DuesForecast } from '@kofc/shared';
 import { formatPercent } from '@/components/BudgetParts';
@@ -84,7 +85,8 @@ function EventRows({ e }: { e: ConcludedEventPerformance }) {
           <span className="block text-sm">
             Ended {formatFullDate(e.endDate)}
             {e.isAnnual ? ' · Annual' : ''}
-            {e.budget === null ? ' · no approved forecast line' : ''}
+            {e.allocation && e.allocation.quantity > 1 ? ` · Occurrence ${e.allocation.sequence} of ${e.allocation.quantity}` : ''}
+            {e.budget === null ? (e.allocation ? ' · past the forecast line’s quantity' : ' · no approved forecast line') : ''}
           </span>
         </th>
         <td className="px-3 py-2 text-right tabular-nums">{formatMoney(e.budget)}</td>

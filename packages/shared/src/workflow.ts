@@ -12,12 +12,14 @@
 //   - Expense vouchers:   Draft -> Submitted -> Approved -> Reimbursed, with Submitted -> Draft when leadership returns it.
 //   - Member onboarding:  Provisioned -> Invited (setup code) -> Registered (password set).
 //   - Event tracking:     Upcoming -> In Progress -> Completed by the calendar, with the gate intake opened and closed.
+//   - Budget lines:       Draft -> Proposed -> Approved; an approved version is an immutable snapshot, and a mid-year
+//                         amendment adds the next version as a new row (Sprint 6D).
 //   - Tenant gates:       a council's feature flags and its tenant type decide which operations may run at all
 //                         (isFeatureEnabled, isFraternalExtension; Sprint 6Z-Dual-Gate-Model).
 import { councilFeatureFlags, FEATURE_FLAG_LABELS, type FeatureFlagName } from './features';
 import { BusinessRuleError, toIsoDate, UNREGISTERED_PASSWORD, type BusinessRuleCode } from './rules';
 import { councilTenantType, TENANT_TYPES, type TenantType } from './tenant';
-import type { Council, Event, EventIntakeSessionStatus, ExpenseReportStatus } from './types';
+import type { BudgetLineStatus, Council, CouncilBudgetForecast, Event, EventIntakeSessionStatus, ExpenseReportStatus } from './types';
 
 /** One action of a workflow: the states it may start from and the state it leads to. */
 export interface WorkflowTransition<S extends string> {
@@ -225,6 +227,54 @@ export const nextIntakeSessionStatus = (current: unknown, requested: EventIntake
     requested === 'Active' ? 'open' : 'close',
     eventId === undefined ? "The event's gate intake" : `Event ${eventId}'s gate intake`,
   );
+
+// ---- Budget line versions (Sprint 6D) ---------------------------------------------------------------------------------
+
+export type BudgetLineAction = 'propose' | 'approve' | 'amend';
+
+/**
+ * CouncilBudgetForecast.BudgetStatus of one budget_version row. Leadership drafts a figure (propose) until the council's
+ * vote approves the year (approve). An approved row is a read-only snapshot: no action rewrites it. 'amend' is the
+ * council's mid-year amendment resolution: it starts from an Approved version and leads to an Approved version, but the
+ * drivers store that version as a NEW row with the next budget_version (planBudgetAmendment), leaving the earlier one
+ * untouched as the audit trail. assertBudgetVersionWritable is the gate every in-place write passes.
+ */
+export const BUDGET_LINE_WORKFLOW = defineWorkflow<BudgetLineStatus, BudgetLineAction>({
+  name: 'Budget line',
+  states: ['Draft', 'Proposed', 'Approved'],
+  initial: 'Draft',
+  terminal: [],
+  transitions: {
+    propose: { from: ['Draft', 'Proposed'], to: 'Proposed' },
+    approve: { from: ['Draft', 'Proposed'], to: 'Approved' },
+    amend: { from: ['Approved'], to: 'Approved' },
+  },
+  conflictCode: 'ILLEGAL_STATE_TRANSITION',
+});
+
+/** The actions that change a stored row in place; 'amend' never does (it inserts the next version). */
+const IN_PLACE_BUDGET_ACTIONS: readonly BudgetLineAction[] = ['propose', 'approve'];
+
+const budgetLineSubject = (line: Pick<CouncilBudgetForecast, 'id' | 'budget_version'>) =>
+  `Budget line ${line.id} (version ${line.budget_version ?? 1})`;
+
+/**
+ * The BudgetStatus a row takes when `action` rewrites it in place. An Approved version is immutable, so 'propose' and
+ * 'approve' on it reject ILLEGAL_STATE_TRANSITION (the drivers' assertBudgetYearNotApproved runs first and gives callers
+ * BUDGET_YEAR_APPROVED). 'amend' is refused here: an amendment is a new row (nextBudgetVersionStatus).
+ */
+export function nextBudgetLineStatus(line: Pick<CouncilBudgetForecast, 'id' | 'BudgetStatus' | 'budget_version'>, action: BudgetLineAction): BudgetLineStatus {
+  if (!IN_PLACE_BUDGET_ACTIONS.includes(action)) throw new Error(`Budget line action "${action}" never rewrites a row; it adds a version.`);
+  return nextWorkflowState(BUDGET_LINE_WORKFLOW, line.BudgetStatus, action, budgetLineSubject(line));
+}
+
+/** The status of the version an amendment adds on top of `line`; rejects ILLEGAL_STATE_TRANSITION unless it is Approved. */
+export const nextBudgetVersionStatus = (line: Pick<CouncilBudgetForecast, 'id' | 'BudgetStatus' | 'budget_version'>): BudgetLineStatus =>
+  nextWorkflowState(BUDGET_LINE_WORKFLOW, line.BudgetStatus, 'amend', budgetLineSubject(line));
+
+/** True while the row may still be changed in place: it is not yet an approved snapshot. */
+export const isBudgetVersionWritable = (line: Pick<CouncilBudgetForecast, 'BudgetStatus'>): boolean =>
+  canTransition(BUDGET_LINE_WORKFLOW, line.BudgetStatus, 'propose');
 
 // ---- Tenant gates (Sprint 6Z-Dual-Gate-Model) ------------------------------------------------------------------------
 //

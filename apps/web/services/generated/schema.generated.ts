@@ -3643,6 +3643,36 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": true,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "quantity",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 1
+        }
+      },
+      {
+        "name": "unit_cost",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "budget_version",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 1
+        }
       }
     ],
     "foreignKeys": [
@@ -3663,7 +3693,8 @@ export const TABLES: Record<string, TableMeta> = {
         "FraternalYear",
         "CategoryType",
         "ReferenceSourceID",
-        "LineItemName"
+        "LineItemName",
+        "budget_version"
       ]
     ]
   },

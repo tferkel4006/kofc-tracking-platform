@@ -163,7 +163,13 @@ function parseSchema(sql) {
     } else if ((m = stmt.match(/^CREATE (UNIQUE )?INDEX \[([^\]]+)\]\s+ON\s+\[([^\]]+)\]\s*\(([^)]*)\)(?:\s*INCLUDE\s*\([^)]*\))?(?:\s+WHERE\s+\[([^\]]+)\]\s+IS\s+NOT\s+NULL)?$/i))) {
       // A filtered index may only skip NULLs: SQLite's partial index keeps the same rule, and the web mock already
       // lets a unique key holding a NULL repeat (SQLite semantics), so the filter needs nothing more there.
+      if (indexes.some((ix) => ix.name === m[2])) fail(`Index [${m[2]}] already exists; DROP INDEX it first`, stmt);
       indexes.push({ unique: Boolean(m[1]), name: m[2], table: m[3], columns: m[4].trim(), notNullColumn: m[5] ?? null, stmt });
+    } else if ((m = stmt.match(/^DROP INDEX \[([^\]]+)\]\s+ON\s+\[([^\]]+)\]$/i))) {
+      // A later sprint redefining an index (Sprint 6D): both targets simply create the new definition.
+      const at = indexes.findIndex((ix) => ix.name === m[1] && ix.table === m[2]);
+      if (at < 0) fail(`DROP INDEX of unknown index [${m[1]}] on [${m[2]}]`, stmt);
+      indexes.splice(at, 1);
     } else if ((m = stmt.match(/^CREATE OR ALTER VIEW \[([^\]]+)\]\s+AS\s+([\s\S]+)$/i))) {
       views.push({ name: m[1], body: m[2].trim() });
     } else {

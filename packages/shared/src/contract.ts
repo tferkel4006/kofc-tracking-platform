@@ -1131,6 +1131,27 @@ export interface BudgetLineUpdateOptions extends BudgetWriteOptions {
   budgetCategoryId?: number | null;
 }
 
+/**
+ * budget.amendApprovedLine (Sprint 6D): what a mid-year amendment resolution changes on an approved line. Omitted fields
+ * keep the line's values. With a unit cost above 0 the approved figure is quantity x unitCost (an approvedAmount must
+ * then match it); with a unit cost of 0 it is approvedAmount (default: unchanged), split evenly over the quantity.
+ * notes: blank or null clears them; undefined keeps them.
+ */
+export interface BudgetLineAmendment {
+  quantity?: number;
+  unitCost?: number;
+  approvedAmount?: number;
+  notes?: string | null;
+}
+
+/** budget.listLineVersions (Sprint 6D): every approved snapshot and draft of one line, oldest version first. */
+export interface BudgetLineVersionHistory {
+  /** The line's latest version: the one every budget figure counts. */
+  current: CouncilBudgetForecast;
+  /** Every version, budget_version 1 first; the last is `current`. */
+  versions: CouncilBudgetForecast[];
+}
+
 /** budget.listAnnualForecast: a council's year with its own budget categories. */
 export interface AnnualBudgetForecast {
   councilId: number;
@@ -1141,7 +1162,10 @@ export interface AnnualBudgetForecast {
   status: BudgetLineStatus;
   /** The council's CouncilBudgetCategory rows in id order (the order the council created them). */
   categories: CouncilBudgetCategory[];
-  /** Event, then Donation, then Operational lines, each LineItemName A-Z ignoring case, then id. */
+  /**
+   * Event, then Donation, then Operational lines, each LineItemName A-Z ignoring case, then id. Sprint 6D: only each
+   * line's latest budget_version; earlier versions are read with budget.listLineVersions.
+   */
   lines: CouncilBudgetForecast[];
 }
 
@@ -2862,6 +2886,39 @@ export interface DataService {
      * (assertMayReviewBudgetPerformance).
      */
     getConcludedPerformance(actorId: number, councilId: number): Promise<ConcludedBudgetPerformance>;
+    /**
+     * Sprint 6D: drafts a line as quantity x unit cost - stores quantity (1 to BUDGET_QUANTITY_MAX) and unit_cost, sets
+     * ProposedBudgetAmount to their product and BudgetStatus to 'Proposed' (BUDGET_LINE_WORKFLOW 'propose'), and resolves
+     * to the stored line. The same writers, window and checks as updateLineItemBudget: RECORD_NOT_FOUND,
+     * BUDGET_YEAR_APPROVED, BUDGET_WINDOW_NOT_OPEN / BUDGET_YEAR_FINALIZED, INVALID_INPUT for a bad quantity or cost.
+     */
+    setLineQuantityAndUnitCost(
+      actorId: number,
+      budgetLineItemId: number,
+      quantity: number,
+      unitCost: number,
+      options?: BudgetWriteOptions,
+    ): Promise<CouncilBudgetForecast>;
+    /**
+     * Sprint 6D: records a mid-year amendment resolution on an approved line. The approved row is an immutable snapshot:
+     * a new row is inserted with the next budget_version, the amended figures (planBudgetAmendment) and BudgetStatus
+     * 'Approved', and the earlier versions stay as the audit trail. Resolves to the new version. Council leadership, as
+     * approveAndFinalizeEntireBudget (assertMayApproveBudget). Rejects RECORD_NOT_FOUND for an unknown line,
+     * BUDGET_VERSION_SUPERSEDED for a line a later version replaced, ILLEGAL_STATE_TRANSITION for a line that is not
+     * approved, BUDGET_YEAR_CLOSED once the line's fraternal year has ended (unless an Active Super Admin passes
+     * superAdminOverride), and INVALID_INPUT for a bad field or an amendment that changes nothing.
+     */
+    amendApprovedLine(
+      actorId: number,
+      budgetLineItemId: number,
+      amendment: BudgetLineAmendment,
+      options?: BudgetWriteOptions,
+    ): Promise<CouncilBudgetForecast>;
+    /**
+     * Sprint 6D: the version history of the line `budgetLineItemId` belongs to (any of its versions may be named),
+     * oldest first. Whoever may read the budget (assertMayViewBudgetForecast). Rejects RECORD_NOT_FOUND.
+     */
+    listLineVersions(actorId: number, budgetLineItemId: number): Promise<BudgetLineVersionHistory>;
   };
 
   /**

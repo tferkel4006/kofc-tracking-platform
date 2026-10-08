@@ -246,6 +246,13 @@ import {
   budgetLineExists,
   budgetLineNotFound,
   cleanBudgetLineUpdate,
+  assertBudgetLineAmendable,
+  budgetLineVersions,
+  cleanLineQuantityAndUnitCost,
+  currentBudgetLines,
+  nextBudgetLineStatus,
+  planBudgetAmendment,
+  unitCostAfterLumpSum,
   cleanCustomBudgetLine,
   findOperationalBudgetLine,
   fraternalYearBounds,
@@ -4232,9 +4239,56 @@ export class MemoryDataService implements DataService {
         assertBudgetYearNotApproved(line.FraternalYear as string, this.budgetLines(s, councilId, line.FraternalYear as string));
         assertBudgetYearWritable(line.FraternalYear as string, this.now(), actor, options);
         const category = assertCouncilBudgetCategory(options.budgetCategoryId, this.budgetCategories(s, councilId), councilId);
-        Object.assign(line, changes, category === undefined ? {} : { BudgetCategoryID: category });
+        const stored = line as unknown as CouncilBudgetForecast;
+        Object.assign(
+          line,
+          changes,
+          // Sprint 6D: the row moves through BUDGET_LINE_WORKFLOW; a lump sum that no longer equals quantity x unit cost clears the unit cost.
+          { BudgetStatus: nextBudgetLineStatus(stored, 'propose'), unit_cost: unitCostAfterLumpSum(stored, changes.ProposedBudgetAmount) },
+          category === undefined ? {} : { BudgetCategoryID: category },
+        );
         return { ...line } as unknown as CouncilBudgetForecast;
       });
+    },
+
+    setLineQuantityAndUnitCost: async (actorId, budgetLineItemId, quantity, unitCost, options = {}) => {
+      const changes = cleanLineQuantityAndUnitCost(quantity, unitCost);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const line = s.rows('CouncilBudgetForecast').find((l) => l.id === budgetLineItemId);
+        if (!line) throw budgetLineNotFound(budgetLineItemId);
+        const councilId = line.CouncilID as number;
+        assertMayManageBudgetForecast(actor, councilId, `change budget line ${budgetLineItemId}`);
+        assertBudgetYearNotApproved(line.FraternalYear as string, this.budgetLines(s, councilId, line.FraternalYear as string));
+        assertBudgetYearWritable(line.FraternalYear as string, this.now(), actor, options);
+        Object.assign(line, changes, { BudgetStatus: nextBudgetLineStatus(line as unknown as CouncilBudgetForecast, 'propose') });
+        return { ...line } as unknown as CouncilBudgetForecast;
+      });
+    },
+
+    amendApprovedLine: async (actorId, budgetLineItemId, amendment, options = {}) => {
+      const s = await this.ready();
+      const row = s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const line = s.rows('CouncilBudgetForecast').find((l) => l.id === budgetLineItemId) as unknown as CouncilBudgetForecast | undefined;
+        if (!line) throw budgetLineNotFound(budgetLineItemId);
+        assertMayApproveBudget(actor, line.CouncilID, `amend the ${line.FraternalYear} budget of council ${line.CouncilID}`);
+        assertBudgetLineAmendable(line, budgetLineVersions(this.allBudgetLines(s, line.CouncilID), line), this.now(), actor, options);
+        // The approved row is an immutable snapshot: the amendment is a new row with the next budget_version.
+        return s.insert('CouncilBudgetForecast', { ...planBudgetAmendment({ ...line }, amendment) });
+      });
+      return { ...row } as unknown as CouncilBudgetForecast;
+    },
+
+    listLineVersions: async (actorId, budgetLineItemId) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const line = s.rows('CouncilBudgetForecast').find((l) => l.id === budgetLineItemId) as unknown as CouncilBudgetForecast | undefined;
+      if (!line) throw budgetLineNotFound(budgetLineItemId);
+      assertMayViewBudgetForecast(actor, line.CouncilID, `read the budget forecast of council ${line.CouncilID}`);
+      const versions = budgetLineVersions(this.allBudgetLines(s, line.CouncilID), line).map((l) => ({ ...l }));
+      return { current: versions[versions.length - 1], versions };
     },
 
     addCustomBudgetLine: async (actorId, councilId, data, options = {}) => {
@@ -4414,11 +4468,9 @@ export class MemoryDataService implements DataService {
             .rows('Meeting')
             .filter((m) => m.CouncilID === councilId)
             .map((m) => ({ id: m.id as number, Date: m.Date as string, EndDate: (m.EndDate as string | null) ?? null })),
-          // Every year's forecast lines: event budgets (and the benchmarks') come from the approved Event lines (Sprint 6C).
-          lines: s
-            .rows('CouncilBudgetForecast')
-            .filter((l) => l.CouncilID === councilId)
-            .map((l) => ({ ...l })) as unknown as CouncilBudgetForecast[],
+          // Every year's forecast lines: event budgets (and the benchmarks') come from the approved Event lines (Sprint 6C),
+          // the latest budget_version of each (Sprint 6D).
+          lines: currentBudgetLines(this.allBudgetLines(s, councilId)).map((l) => ({ ...l })),
         },
       });
     },
@@ -4490,11 +4542,17 @@ export class MemoryDataService implements DataService {
     return (s.rows('CouncilBudgetCategory').filter((c) => c.CouncilID === councilId) as unknown as CouncilBudgetCategory[]).sort((a, b) => a.id - b.id);
   }
 
-  /** The council's forecast lines for one fraternal year, as stored (not copied). */
+  /**
+   * The council's forecast lines for one fraternal year, as stored (not copied): the latest budget_version of each line
+   * (Sprint 6D), so superseded snapshots never enter a figure.
+   */
   private budgetLines(s: MemoryStore, councilId: number, fraternalYear: string): CouncilBudgetForecast[] {
-    return s
-      .rows('CouncilBudgetForecast')
-      .filter((l) => l.CouncilID === councilId && l.FraternalYear === fraternalYear) as unknown as CouncilBudgetForecast[];
+    return currentBudgetLines(this.allBudgetLines(s, councilId).filter((l) => l.FraternalYear === fraternalYear));
+  }
+
+  /** Every forecast row of the council, every year and every budget_version, as stored. */
+  private allBudgetLines(s: MemoryStore, councilId: number): CouncilBudgetForecast[] {
+    return s.rows('CouncilBudgetForecast').filter((l) => l.CouncilID === councilId) as unknown as CouncilBudgetForecast[];
   }
 
   private charityProposalDetails(s: MemoryStore, keep: (p: Row) => boolean, order: 'queue' | 'newest'): CharityProposalDetail[] {
