@@ -10,6 +10,9 @@
 // run first and give the caller their precise reason. The engine is the last gate before the write.
 //
 //   - Expense vouchers:   Draft -> Submitted -> Approved -> Reimbursed, with Submitted -> Draft when leadership returns it.
+//                         Approving a long-term asset sheet converts it into an inventory row (Sprint 6E).
+//   - Budget catch-all:   approved spend and charitable gifts with no budget line of their own fall to the year's
+//                         'Miscellaneous Others' line (Sprint 6E).
 //   - Member onboarding:  Provisioned -> Invited (setup code) -> Registered (password set).
 //   - Event tracking:     Upcoming -> In Progress -> Completed by the calendar, with the gate intake opened and closed.
 //   - Budget lines:       Draft -> Proposed -> Approved; an approved version is an immutable snapshot, and a mid-year
@@ -19,7 +22,18 @@
 import { councilFeatureFlags, FEATURE_FLAG_LABELS, type FeatureFlagName } from './features';
 import { BusinessRuleError, toIsoDate, UNREGISTERED_PASSWORD, type BusinessRuleCode } from './rules';
 import { councilTenantType, TENANT_TYPES, type TenantType } from './tenant';
-import type { BudgetLineStatus, Council, CouncilBudgetForecast, Event, EventIntakeSessionStatus, ExpenseReportStatus } from './types';
+import type {
+  BudgetLineStatus,
+  CharitableRequest,
+  Council,
+  CouncilAssetsInventory,
+  CouncilBudgetForecast,
+  Event,
+  EventIntakeSessionStatus,
+  ExpenseLineItem,
+  ExpenseReport,
+  ExpenseReportStatus,
+} from './types';
 
 /** One action of a workflow: the states it may start from and the state it leads to. */
 export interface WorkflowTransition<S extends string> {
@@ -139,6 +153,88 @@ export const EXPENSE_WORKFLOW = defineWorkflow<ExpenseReportStatus, ExpenseWorkf
 /** The Status an expense sheet takes after `action`; a new sheet (`current` null) starts as Draft. */
 export const nextExpenseStatus = (current: unknown, action: ExpenseWorkflowAction, reportId?: number | null): ExpenseReportStatus =>
   nextWorkflowState(EXPENSE_WORKFLOW, current ?? EXPENSE_WORKFLOW.initial, action, reportId == null ? 'The expense report' : `Expense report ${reportId}`);
+
+// ---- Expense-to-asset conversion (Sprint 6E) -------------------------------------------------------------------------
+
+/** Longest CouncilAssetsInventory.asset_name (VARCHAR(255)). */
+export const ASSET_NAME_MAX_LENGTH = 255;
+/** CouncilAssetsInventory.current_status values; a converted asset starts ACTIVE. */
+export const COUNCIL_ASSET_STATUSES = ['ACTIVE', 'DISPOSED', 'LOST'] as const;
+/** The Status values a long-term asset sheet is converted on entering. */
+export const EXPENSE_ASSET_CONVERSION_STATUSES: readonly ExpenseReportStatus[] = ['Approved', 'Reimbursed'];
+
+/** A CouncilAssetsInventory row before the driver gives it an id. */
+export type NewCouncilAsset = Omit<CouncilAssetsInventory, 'id'>;
+
+/** True when the sheet carries the "This item is a long-term Council Asset" checkbox. */
+export const isLongTermAssetExpense = (report: Pick<ExpenseReport, 'is_long_term_asset'>): boolean => Number(report.is_long_term_asset ?? 0) === 1;
+
+/**
+ * The conversion hook on an expense sheet's status change. A sheet marked is_long_term_asset that legally moves from
+ * `from` to 'Approved' (the Grand Knight's counter-signature) becomes one inventory row, written by the driver in the
+ * same transaction as the Status: asset_name from the receipts' descriptions, cost_basis their sum in exact cents,
+ * purchase_date the earliest DateOfExpense, original_expense_id the sheet. A sheet reaching 'Reimbursed' without a row
+ * (approved before schema 43) is converted then. Returns null when nothing is to be written: the sheet is not an asset,
+ * the move is not into a conversion status or not legal, `alreadyConverted` (original_expense_id is unique), or the
+ * sheet has no receipts.
+ */
+export function planExpenseAssetConversion(input: {
+  from: unknown;
+  to: ExpenseReportStatus;
+  report: Pick<ExpenseReport, 'id' | 'CouncilID' | 'is_long_term_asset'>;
+  lineItems: readonly Pick<ExpenseLineItem, 'DateOfExpense' | 'Amount' | 'VendorName' | 'ExpenseDescription'>[];
+  alreadyConverted: boolean;
+}): NewCouncilAsset | null {
+  const { from, to, report, lineItems, alreadyConverted } = input;
+  if (!isLongTermAssetExpense(report) || alreadyConverted || lineItems.length === 0) return null;
+  if (!EXPENSE_ASSET_CONVERSION_STATUSES.includes(to) || !isLegalTransition(EXPENSE_WORKFLOW, from, to)) return null;
+  const items = [...lineItems].sort((a, b) => String(a.DateOfExpense).localeCompare(String(b.DateOfExpense)));
+  const descriptions = [...new Set(items.map((i) => String(i.ExpenseDescription).trim().replace(/\s+/g, ' ')).filter(Boolean))];
+  const joined = descriptions.join('; ') || `Expense report ${report.id} asset`;
+  const vendors = [...new Set(items.map((i) => String(i.VendorName).trim()).filter(Boolean))];
+  return {
+    council_id: report.CouncilID,
+    asset_name: joined.length > ASSET_NAME_MAX_LENGTH ? `${joined.slice(0, ASSET_NAME_MAX_LENGTH - 1).trimEnd()}\u2026` : joined,
+    purchase_date: `${String(items[0].DateOfExpense).slice(0, 10)} 00:00:00`,
+    cost_basis: items.reduce((t, i) => t + Math.round(i.Amount * 100), 0) / 100,
+    original_expense_id: report.id,
+    current_status: 'ACTIVE',
+    notes: `Converted from expense report ${report.id} when it became ${to}.${vendors.length ? ` Vendor: ${vendors.join(', ')}.` : ''}`,
+  };
+}
+
+// ---- Miscellaneous budget catch-all (Sprint 6E) -----------------------------------------------------------------------
+
+/** The Operational budget line that takes approved spend no other line claims. */
+export const BUDGET_MISCELLANEOUS_LINE_NAME = 'Miscellaneous Others';
+
+/**
+ * The year's 'Miscellaneous Others' line among `lines` (an Operational line with no ReferenceSourceID, matched ignoring
+ * case and spacing; the highest budget_version when several are passed), or undefined when the council has none.
+ */
+export function findMiscellaneousBudgetLine<T extends Pick<CouncilBudgetForecast, 'CategoryType' | 'ReferenceSourceID' | 'LineItemName' | 'budget_version'>>(
+  lines: readonly T[],
+): T | undefined {
+  const key = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
+  return lines
+    .filter((l) => l.CategoryType === 'Operational' && l.ReferenceSourceID == null && key(l.LineItemName) === key(BUDGET_MISCELLANEOUS_LINE_NAME))
+    .sort((a, b) => (b.budget_version ?? 1) - (a.budget_version ?? 1))[0];
+}
+
+/**
+ * The catch-all hook on a charitable request's vote. A request the council approves (VoteStatus 'Approved') with no
+ * TargetBudgetLineID is tagged with the 'Miscellaneous Others' line of `yearLines` (the council's lines for the
+ * fraternal year of the vote), so its check debits that line. Returns the change to store, or null when the request
+ * already names a line, is not approved, or the year has no such line.
+ */
+export function planCharitableBudgetFallback(
+  request: Pick<CharitableRequest, 'VoteStatus' | 'TargetBudgetLineID'>,
+  yearLines: readonly CouncilBudgetForecast[],
+): Pick<CharitableRequest, 'TargetBudgetLineID'> | null {
+  if (request.VoteStatus !== 'Approved' || request.TargetBudgetLineID != null) return null;
+  const line = findMiscellaneousBudgetLine(yearLines);
+  return line ? { TargetBudgetLineID: line.id } : null;
+}
 
 // ---- Member onboarding -----------------------------------------------------------------------------------------------
 

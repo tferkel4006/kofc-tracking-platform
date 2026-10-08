@@ -21,7 +21,7 @@ import type {
 } from './contract';
 import { assertMoney, assertText, BusinessRuleError, hasSuperAdminRights, toIsoDate, type MemberWriteActor } from './rules';
 import type { BudgetCategoryType, BudgetLineStatus, CouncilBudgetCategory, CouncilBudgetForecast } from './types';
-import { nextBudgetLineStatus, nextBudgetVersionStatus } from './workflow';
+import { findMiscellaneousBudgetLine, nextBudgetLineStatus, nextBudgetVersionStatus } from './workflow';
 
 /** CouncilBudgetForecast.CategoryType values, in the order a forecast lists them. */
 export const BUDGET_CATEGORY_TYPES: readonly BudgetCategoryType[] = ['Event', 'Donation', 'Operational'];
@@ -194,8 +194,9 @@ function priorLineOf<T extends BudgetActuals['priorLines'][number]>(
  * lines - Event.Spend is never read, Sprint 6B), one per annual charity
  * (the sum of its checks), the meetings line when the council met, and each of last year's custom Operational lines
  * again under the same name. Custom lines have no spend to read, so their baseline is last year's approved cap, its
- * ApprovedBudgetAmount (Sprint 5Y-6.5; 0 when last year was never approved). Each keeps the category of the previous
- * year's line it continues. In listAnnualForecast order.
+ * ApprovedBudgetAmount (Sprint 5Y-6.5; 0 when last year was never approved), so a 'Miscellaneous Others' catch-all
+ * line carries forward like any other. Each keeps the category of the previous year's line it continues. In
+ * listAnnualForecast order.
  */
 export function planBudgetPrePopulation(actuals: BudgetActuals): BudgetSeed[] {
   const seeds: Omit<BudgetSeed, 'BudgetCategoryID'>[] = actuals.annualEvents.map((e) => ({
@@ -645,28 +646,39 @@ export interface BudgetYearSpend {
    * name) or meeting the sheet is linked to.
    */
   expenses: readonly { EventID: number | null; EventName: string | null; MeetingID: number | null; Amount: number }[];
-  /** The council's charity checks paid in the period. */
-  charityChecks: readonly { CharityID: number; Amount: number }[];
+  /**
+   * The council's charity checks paid in the period. BudgetLineID is the TargetBudgetLineID of the charitable request
+   * the check paid (CharitableRequest.PaymentOrderId), when there is one (Sprint 6E).
+   */
+  charityChecks: readonly { CharityID: number; Amount: number; BudgetLineID?: number | null }[];
 }
 
 /**
  * Which budget line each piece of spend counts against, in cents by line id, plus what no line claims:
  * - expenses linked to an event go to the year's Event line of the same name ignoring case (or whose
  *   ReferenceSourceID is the event) - each year's event is a new Event row, so the name carries it;
- * - charity checks go to the Donation line of that charity;
+ * - charity checks go to the line their charitable request was assigned (TargetBudgetLineID), else the Donation line
+ *   of that charity;
  * - expenses linked to a meeting go to the 'Council Meetings' line (BUDGET_MEETINGS_LINE_NAME);
- * - everything else - a one-off event, an unlinked expense, a charity with no line - is unbudgeted.
- * Custom Operational lines have no source to read, so their actual is 0.
+ * - everything else - a one-off event, an unlinked expense, a charity with no line - falls to the year's
+ *   'Miscellaneous Others' line (BUDGET_MISCELLANEOUS_LINE_NAME, Sprint 6E), counted in `miscellaneousCents`; only
+ *   a year without that line leaves it unbudgeted.
+ * Other custom Operational lines have no source to read, so their actual is 0.
  */
 export function attributeBudgetSpend(
   lines: readonly CouncilBudgetForecast[],
   spend: BudgetYearSpend,
-): { byLine: Map<number, number>; unbudgetedCents: number } {
+): { byLine: Map<number, number>; unbudgetedCents: number; miscellaneousCents: number } {
   const byLine = new Map<number, number>(lines.map((l) => [l.id, 0]));
+  const miscellaneousLine = findMiscellaneousBudgetLine(lines);
   let unbudgetedCents = 0;
+  let miscellaneousCents = 0;
   const charge = (line: CouncilBudgetForecast | undefined, amount: number | null | undefined) => {
     if (line) byLine.set(line.id, byLine.get(line.id)! + cents(amount));
-    else unbudgetedCents += cents(amount);
+    else if (miscellaneousLine) {
+      byLine.set(miscellaneousLine.id, byLine.get(miscellaneousLine.id)! + cents(amount));
+      miscellaneousCents += cents(amount);
+    } else unbudgetedCents += cents(amount);
   };
   const eventLine = (id: number | null, name: string | null) =>
     lines.find(
@@ -678,8 +690,11 @@ export function attributeBudgetSpend(
     else if (x.MeetingID !== null) charge(meetingsLine, x.Amount);
     else charge(undefined, x.Amount);
   }
-  for (const c of spend.charityChecks) charge(lines.find((l) => l.CategoryType === 'Donation' && l.ReferenceSourceID === c.CharityID), c.Amount);
-  return { byLine, unbudgetedCents };
+  for (const c of spend.charityChecks) {
+    const assigned = c.BudgetLineID == null ? undefined : lines.find((l) => l.id === c.BudgetLineID);
+    charge(assigned ?? lines.find((l) => l.CategoryType === 'Donation' && l.ReferenceSourceID === c.CharityID), c.Amount);
+  }
+  return { byLine, unbudgetedCents, miscellaneousCents };
 }
 
 /**
@@ -734,7 +749,7 @@ export function buildBudgetYearPerformance(input: {
   const { councilId, fraternalYear, categories, spend, throughDate } = input;
   const { fromDate, toDate } = fraternalYearBounds(fraternalYear);
   const lines = sortBudgetLines(input.lines);
-  const { byLine, unbudgetedCents } = attributeBudgetSpend(lines, spend);
+  const { byLine, unbudgetedCents, miscellaneousCents } = attributeBudgetSpend(lines, spend);
   const actualOf = (l: CouncilBudgetForecast) => (byLine.get(l.id) ?? 0) / 100;
   const linePerformance: BudgetLinePerformance[] = lines.map((line) => {
     const actual = actualOf(line);
@@ -775,6 +790,7 @@ export function buildBudgetYearPerformance(input: {
     approvedTotal,
     budgetedActual,
     unbudgetedActual,
+    miscellaneousActual: miscellaneousCents / 100,
     actualTotal,
     variance: sumCents([approvedTotal, -actualTotal]),
     utilizationPercent: budgetPercentUsed(approvedTotal, actualTotal),

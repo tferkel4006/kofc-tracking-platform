@@ -17,6 +17,7 @@ import {
   expenseReferenceKey,
   expenseReferenceLabel,
   expenseReferenceSpan,
+  isLongTermAssetExpense,
   expenseWindowLockMessage,
   listExpenseReferences,
   parseExpenseReferenceKey,
@@ -61,6 +62,7 @@ function ExpenseSheetForm({
   const nextKey = useRef(0);
   const keyed = (line: ExpenseLineDraft): Row => ({ ...line, key: nextKey.current++ });
   const [reference, setReference] = useState(() => (detail ? expenseReferenceKey(detail.report) : ''));
+  const [longTermAsset, setLongTermAsset] = useState(() => isLongTermAssetExpense(detail?.report ?? {}));
   const [rows, setRows] = useState<Row[]>(() =>
     detail && detail.lineItems.length > 0 ? detail.lineItems.map((li) => keyed(expenseLineDraftFrom(li))) : [keyed(blankExpenseLine(today))],
   );
@@ -88,7 +90,7 @@ function ExpenseSheetForm({
     setError(null);
     try {
       const items = expenseLinesFromDrafts(rows);
-      const saved = await db.expenses.submitReport(user.memberId, { id: detail?.report.id ?? null, Status: status, ...parseExpenseReferenceKey(reference) }, items);
+      const saved = await db.expenses.submitReport(user.memberId, { id: detail?.report.id ?? null, Status: status, ...parseExpenseReferenceKey(reference), is_long_term_asset: longTermAsset }, items);
       await onSaved(saved);
     } catch (err) {
       setError(describeError(err));
@@ -134,6 +136,16 @@ function ExpenseSheetForm({
           </Select>
         )}
       </Field>
+
+      <label className="flex max-w-xl items-start gap-2 text-sm">
+        <input type="checkbox" className="mt-0.5 size-4" checked={longTermAsset} onChange={(e) => setLongTermAsset(e.target.checked)} />
+        <span>
+          <span className="font-bold">This item is a long-term Council Asset</span>
+          <span className="block text-xs text-muted">
+            When the Grand Knight approves this report, the item is added to the council’s assets inventory at the report total.
+          </span>
+        </span>
+      </label>
 
       <Table caption="Receipt line items" head={['#', 'Expense date', 'Vendor name', 'Description', 'Amount ($)', 'Receipt', '']}>
         {rows.map((row, i) => (
@@ -238,6 +250,7 @@ function ExpenseSheetView({ detail, refs }: { detail: ExpenseReportDetail; refs:
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <ExpenseStatusPill report={report} />
         <span>{expenseReferenceLabel(report, refs)}</span>
+        {isLongTermAssetExpense(report) ? <span className="text-xs font-bold uppercase tracking-wide">Long-term Council Asset</span> : null}
         <span className="text-muted">{note[report.Status]}</span>
       </div>
       {disbursement ? (

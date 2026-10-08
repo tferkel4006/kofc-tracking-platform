@@ -626,6 +626,26 @@ export interface ExpenseReport {
   FinancialSecretaryApprovedAt?: string | null;
   GrandKnightMemberID?: number | null;
   GrandKnightApprovedAt?: string | null;
+  /** BIT, Sprint 6E: "This item is a long-term Council Asset"; approval converts the sheet into a CouncilAssetsInventory row. */
+  is_long_term_asset?: number;
+}
+
+/** CouncilAssetsInventory.current_status (Sprint 6E; rules layer, no CHECK). */
+export type CouncilAssetStatus = 'ACTIVE' | 'DISPOSED' | 'LOST';
+
+/**
+ * One long-lived item the council owns (Sprint 6E). The workflow engine writes a row when an expense sheet marked
+ * is_long_term_asset is approved (planExpenseAssetConversion); original_expense_id is that sheet, at most one row each.
+ */
+export interface CouncilAssetsInventory {
+  id: number;
+  council_id: number;
+  asset_name: string; // VARCHAR(255)
+  purchase_date: string; // DATETIME, 'YYYY-MM-DD 00:00:00': the sheet's earliest DateOfExpense
+  cost_basis: number; // DECIMAL(18,2): the sum of the sheet's line items
+  original_expense_id?: number | null;
+  current_status: CouncilAssetStatus;
+  notes?: string | null;
 }
 
 /** One receipt on an expense sheet. */

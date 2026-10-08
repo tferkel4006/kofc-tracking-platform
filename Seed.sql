@@ -563,7 +563,8 @@ VALUES
 (1, '2026-2027', 'Donation', 1, 'St. Jude Parish Food Pantry', 1000.00, 1500.00, NULL, 2, 1500.00, 'Approved'),
 (1, '2026-2027', 'Donation', 2, 'Holy Family Pregnancy Resource Center', 1350.00, 1500.00, NULL, 4, 1500.00, 'Approved'),
 (1, '2026-2027', 'Donation', 4, 'Cathedral School Tuition Assistance Fund', 1000.00, 1200.00, NULL, 3, 1200.00, 'Approved'),
-(1, '2026-2027', 'Operational', NULL, 'Outside Organization Requests', 0.00, 5000.00, 'Pool for vetted intake requests', 4, 5000.00, 'Approved');
+(1, '2026-2027', 'Operational', NULL, 'Outside Organization Requests', 0.00, 5000.00, 'Pool for vetted intake requests', 4, 5000.00, 'Approved'),
+(1, '2026-2027', 'Operational', NULL, 'Miscellaneous Others', 0.00, 750.00, 'Sprint 6E catch-all: approved spend and gifts with no budget line of their own', 5, 750.00, 'Approved');
 GO
 
 -- Sprint 5Z-8: Council 15295's general ledger since the 2026-2027 fraternal year opened. Each TransactionID groups one

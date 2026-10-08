@@ -2655,6 +2655,16 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "is_long_term_asset",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
       }
     ],
     "foreignKeys": [
@@ -5095,6 +5105,89 @@ export const TABLES: Record<string, TableMeta> = {
       [
         "council_id",
         "credential_key"
+      ]
+    ]
+  },
+  "CouncilAssetsInventory": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "council_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "asset_name",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "purchase_date",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "cost_basis",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "original_expense_id",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "current_status",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": "ACTIVE"
+        }
+      },
+      {
+        "name": "notes",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "council_id",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "original_expense_id",
+        "refTable": "ExpenseReport",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "original_expense_id"
       ]
     ]
   }
@@ -7743,6 +7836,19 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "Notes": "Pool for vetted intake requests",
         "BudgetCategoryID": 4,
         "ProposedBudgetAmount": 5000,
+        "BudgetStatus": "Approved"
+      },
+      {
+        "CouncilID": 1,
+        "FraternalYear": "2026-2027",
+        "CategoryType": "Operational",
+        "ReferenceSourceID": null,
+        "LineItemName": "Miscellaneous Others",
+        "PrePopulatedAmount": 0,
+        "ApprovedBudgetAmount": 750,
+        "Notes": "Sprint 6E catch-all: approved spend and gifts with no budget line of their own",
+        "BudgetCategoryID": 5,
+        "ProposedBudgetAmount": 750,
         "BudgetStatus": "Approved"
       }
     ]

@@ -26,6 +26,7 @@ import type {
   Council,
   CouncilBudgetCategory,
   BudgetLineStatus,
+  CouncilAssetsInventory,
   CouncilBudgetForecast,
   CouncilCharityLink,
   CouncilDonationMethod,
@@ -655,6 +656,11 @@ export interface ExpenseReportInput {
   LinkedEventID?: number | null;
   /** A meeting of the submitter's council, or null. */
   LinkedMeetingID?: number | null;
+  /**
+   * Sprint 6E: "This item is a long-term Council Asset". When the sheet is approved, the workflow engine adds it to
+   * the council's CouncilAssetsInventory. Left out it is false.
+   */
+  is_long_term_asset?: boolean | number;
 }
 
 /** One receipt for expenses.submitReport; its sheet comes from the call. */
@@ -1247,8 +1253,13 @@ export interface BudgetYearPerformance {
   approvedTotal: number;
   /** Spend counted against a budget line. */
   budgetedActual: number;
-  /** Spend no line claims: one-off events, unlinked expenses, charities without a line. */
+  /**
+   * Spend no line claims: one-off events, unlinked expenses, charities without a line. Since Sprint 6E this is 0
+   * whenever the year has a 'Miscellaneous Others' line, which takes that spend instead (miscellaneousActual).
+   */
   unbudgetedActual: number;
+  /** Spend with no line of its own routed to the 'Miscellaneous Others' line; included in budgetedActual (Sprint 6E). */
+  miscellaneousActual: number;
   actualTotal: number;
   /** approvedTotal minus actualTotal. */
   variance: number;
@@ -2083,6 +2094,13 @@ export interface DataService {
       reportIds: readonly number[],
       checkDetails: DisbursementCheckDetails,
     ): Promise<ExpenseDisbursementResult>;
+    /**
+     * The council's assets inventory (Sprint 6E): every CouncilAssetsInventory row, newest purchase_date first, then
+     * highest id. Rows are written only by the workflow engine's conversion hook when a sheet marked
+     * is_long_term_asset is approved (grandKnightAuthorizeOrder) or, if it has none yet, reimbursed. Read by council
+     * leadership, as listCouncilQueue (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED); INVALID_INPUT for an unknown council.
+     */
+    listAssetsInventory(actorId: number, councilId: number): Promise<CouncilAssetsInventory[]>;
   };
 
   events: {

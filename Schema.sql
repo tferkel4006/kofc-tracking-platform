@@ -2156,3 +2156,46 @@ DROP INDEX [CouncilBudgetForecast_Line_Idx] ON [CouncilBudgetForecast];
 GO
 CREATE UNIQUE INDEX [CouncilBudgetForecast_Line_Idx] ON [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [budget_version]);
 GO
+
+-- =========================================================================
+-- Sprint 6E (Phase 5): LONG-TERM ASSET EXPENSES AND THE COUNCIL ASSETS INVENTORY (schema version 43)
+-- ExpenseReport.is_long_term_asset is the submitter's "This item is a long-term Council Asset" checkbox. The moment such
+-- a sheet's Status leaves 'Submitted' for 'Approved' (the Grand Knight's counter-signature), the workflow engine's
+-- conversion hook (planExpenseAssetConversion in workflow.ts) writes one CouncilAssetsInventory row in the same
+-- transaction: asset_name from the sheet's receipt descriptions, cost_basis the sum of its line items, purchase_date its
+-- earliest DateOfExpense, original_expense_id the sheet. A sheet reaching 'Reimbursed' without a row (one approved
+-- before schema 43) gets its row then. original_expense_id is unique, so a sheet is converted once.
+-- current_status is ACTIVE, DISPOSED or LOST (rules layer, no CHECK). purchase_date and the snake_case names follow the
+-- requested layout; DATETIME rather than TIMESTAMP, which in SQL Server is a row-version counter.
+-- =========================================================================
+ALTER TABLE [ExpenseReport] ADD [is_long_term_asset] BIT NOT NULL DEFAULT 0;
+GO
+
+CREATE TABLE [CouncilAssetsInventory] (
+	[id] INT NOT NULL IDENTITY,
+	[council_id] INT NOT NULL,
+	[asset_name] VARCHAR(255) NOT NULL,
+	[purchase_date] DATETIME NOT NULL,
+	[cost_basis] DECIMAL(18,2) NOT NULL,
+	[original_expense_id] INT NULL,
+	[current_status] VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+	[notes] TEXT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CouncilAssetsInventory]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilAssetsInventory]
+ADD FOREIGN KEY([original_expense_id])
+REFERENCES [ExpenseReport]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [CouncilAssetsInventory_Expense_Idx] ON [CouncilAssetsInventory] ([original_expense_id]) WHERE [original_expense_id] IS NOT NULL;
+GO
+CREATE INDEX [CouncilAssetsInventory_Council_Idx] ON [CouncilAssetsInventory] ([council_id], [current_status]);
+GO

@@ -125,6 +125,9 @@ function BudgetTracking({ actorId, councilId, fraternalYear }: { actorId: number
             <span>
               Unbudgeted spend: <span className="font-bold">{formatMoney(p.unbudgetedActual)}</span>{' '}
               {p.unbudgetedActual > 0 ? <BudgetAlertTag alert="Unbudgeted" /> : null}
+              {p.miscellaneousActual > 0 ? (
+                <span className="text-muted"> · {formatMoney(p.miscellaneousActual)} routed to Miscellaneous Others</span>
+              ) : null}
             </span>
             <span className="text-muted">
               {formatFullDate(p.fromDate)} to {formatFullDate(p.throughDate)} · {formatPercent(p.utilizationPercent)} of the approved budget used

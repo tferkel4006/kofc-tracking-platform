@@ -48,6 +48,8 @@ export interface CleanExpenseReportInput {
   Status: 'Draft' | 'Submitted';
   LinkedEventID: number | null;
   LinkedMeetingID: number | null;
+  /** BIT (Sprint 6E): 1 when the submitter ticked "This item is a long-term Council Asset". */
+  is_long_term_asset: number;
 }
 
 /** expenses.submitReport: the sheet's own fields. Only 'Draft' and 'Submitted' may be written by a member. */
@@ -63,7 +65,15 @@ export function cleanExpenseReportInput(input: ExpenseReportInput): CleanExpense
     Status: input.Status,
     LinkedEventID: optionalId(input.LinkedEventID, 'Linked event'),
     LinkedMeetingID: optionalId(input.LinkedMeetingID, 'Linked meeting'),
+    is_long_term_asset: longTermAssetFlag(input.is_long_term_asset),
   };
+}
+
+/** The long-term asset checkbox as a BIT: true or 1 is 1; false, 0 or left out is 0 (Sprint 6E). */
+function longTermAssetFlag(value: unknown): number {
+  if (value === undefined || value === null || value === false || value === 0) return 0;
+  if (value === true || value === 1) return 1;
+  throw invalid(`The long-term asset flag must be true or false; received ${JSON.stringify(value)}.`, { field: 'is_long_term_asset' });
 }
 
 /**
