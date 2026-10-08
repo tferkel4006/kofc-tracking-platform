@@ -28,7 +28,9 @@ import type {
   ChatThread,
   Council,
   CouncilBudgetCategory,
+  BudgetCategoryType,
   BudgetLineStatus,
+  UniversalBudgetCategory,
   CouncilAssetsInventory,
   CouncilBudgetForecast,
   CouncilCharityLink,
@@ -1295,6 +1297,95 @@ export interface BudgetPriorYearBaselines {
   priorStatus: BudgetLineStatus | null;
   /** One entry per line of the year, in listAnnualForecast order. */
   lines: BudgetLineBaseline[];
+}
+
+/**
+ * Sprint 6G Extension 2: a CouncilBudgetForecast.universal_category key, or 'UNASSIGNED' for a line that has none.
+ */
+export type BudgetAnalysisCategoryKey = UniversalBudgetCategory | 'UNASSIGNED';
+
+/** How an approved figure moved from last year: 'New' had no prior approved cap, 'Discontinued' has none this year. */
+export type BudgetYearOverYearChange = 'Increased' | 'Decreased' | 'Unchanged' | 'New' | 'Discontinued';
+
+/** One universal category's share of the year's approved budget and its change from last year (buildBudgetAnalysis). */
+export interface BudgetAnalysisCategory {
+  key: BudgetAnalysisCategoryKey;
+  /** UNIVERSAL_BUDGET_CATEGORIES label, or 'Unassigned'. */
+  label: string;
+  /** This year's lines in the category. */
+  lineCount: number;
+  /** The category's approved spending cap this year. */
+  approved: number;
+  /** `approved` as a percentage of the year's approved total, to one decimal place; null when the total is 0. */
+  allocationPercent: number | null;
+  /** Last year's approved cap for the category (0 when last year was never approved). */
+  priorApproved: number;
+  /** approved - priorApproved. */
+  delta: number;
+  /** delta as a percentage of priorApproved, to one decimal place; null when priorApproved is 0. */
+  variancePercent: number | null;
+  change: BudgetYearOverYearChange;
+}
+
+/** One line's approved cap against the previous year's line it continues (or a discontinued line of last year). */
+export interface BudgetAnalysisLine {
+  /** This year's CouncilBudgetForecast.id; null for a discontinued line of last year. */
+  lineId: number | null;
+  /** The previous year's line it continues, or null. */
+  priorLineId: number | null;
+  LineItemName: string;
+  CategoryType: BudgetCategoryType;
+  category: BudgetAnalysisCategoryKey;
+  approved: number;
+  priorApproved: number;
+  delta: number;
+  variancePercent: number | null;
+  change: BudgetYearOverYearChange;
+}
+
+/** Whether the approved budget fits a target spending ceiling. */
+export type BudgetCeilingStatus = 'Within Ceiling' | 'At Ceiling' | 'Over Ceiling';
+
+/** The year's approved total against a target spending ceiling (buildBudgetCeilingTrack). */
+export interface BudgetCeilingTrack {
+  ceiling: number;
+  allocated: number;
+  /** ceiling - allocated: the unallocated contingency buffer, negative when the budget is over the ceiling. */
+  buffer: number;
+  /** allocated as a percentage of the ceiling, to one decimal place; null for a ceiling of 0. */
+  percentOfCeiling: number | null;
+  status: BudgetCeilingStatus;
+}
+
+/**
+ * budget.getBudgetAnalysis (Sprint 6G Extension 2): a council year's approved lines grouped by universal_category with
+ * each category's allocation percentage, the year-over-year variance against the previous year's approved lines, and
+ * (when a target spending ceiling is given) the contingency buffer left under it.
+ */
+export interface BudgetAnalysis {
+  councilId: number;
+  fraternalYear: string;
+  priorFraternalYear: string;
+  /** The year's lifecycle; caps are ApprovedBudgetAmount, so a year that is not Approved has none. */
+  status: BudgetLineStatus;
+  /** The previous year's lifecycle, or null when it has no budget lines. */
+  priorStatus: BudgetLineStatus | null;
+  approvedTotal: number;
+  priorApprovedTotal: number;
+  totalDelta: number;
+  totalVariancePercent: number | null;
+  /** UNIVERSAL_BUDGET_CATEGORIES order, then 'UNASSIGNED'; only categories with a line in either year. */
+  categories: BudgetAnalysisCategory[];
+  /** This year's lines in listAnnualForecast order, then last year's discontinued lines. */
+  lines: BudgetAnalysisLine[];
+  /** Null unless a target spending ceiling was given. */
+  ceiling: BudgetCeilingTrack | null;
+}
+
+/** budget.getBudgetAnalysis options. */
+export interface BudgetAnalysisOptions {
+  /** A target spending ceiling for the year, in dollars (0 or more, at most two decimal places). Not stored. */
+  targetSpendingCeiling?: number | null;
 }
 
 export interface BudgetYearPerformance {
@@ -2972,6 +3063,15 @@ export interface DataService {
      * INVALID_INPUT for a malformed year or an unknown council.
      */
     getPriorYearBaselines(actorId: number, councilId: number, fraternalYear: string): Promise<BudgetPriorYearBaselines>;
+    /**
+     * Sprint 6G Extension 2 (buildBudgetAnalysis): the year's approved lines grouped by universal_category with each
+     * category's percentage of the approved total, the dollar and percentage change from the previous year's approved
+     * lines (by category and by line, matched as getPriorYearBaselines matches), and - when options.targetSpendingCeiling
+     * is given - the approved total against that ceiling with the unallocated contingency buffer. The ceiling is a
+     * what-if figure and is never stored. Read by whoever may read the budget (assertMayViewBudgetForecast). Rejects
+     * MEMBER_NOT_FOUND, COUNCIL_ACCESS_DENIED, and INVALID_INPUT for a malformed year or ceiling or an unknown council.
+     */
+    getBudgetAnalysis(actorId: number, councilId: number, fraternalYear: string, options?: BudgetAnalysisOptions): Promise<BudgetAnalysis>;
     /**
      * Records the council's vote (Sprint 5Y-4), usually at its July meeting: in one transaction every line of the
      * council's year gets ApprovedBudgetAmount = ProposedBudgetAmount and BudgetStatus 'Approved', and resolves to the

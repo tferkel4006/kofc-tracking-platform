@@ -21,8 +21,8 @@ const STATUS_LABEL: Record<BudgetAlert, string> = {
   Unbudgeted: '○ No budget set',
 };
 
-/** The black high-contrast card frame shared by both panels. */
-function HighContrastCard({ id, title, subtitle, children }: { id: string; title: string; subtitle?: string; children: ReactNode }) {
+/** The black high-contrast card frame shared by both panels (and, since Sprint 6G Extension 2, the Budget Analyzer). */
+export function HighContrastCard({ id, title, subtitle, children }: { id: string; title: string; subtitle?: string; children: ReactNode }) {
   return (
     <section aria-labelledby={id} data-surface="black" className="rounded border-4 border-hc-gold bg-black p-4 font-bold text-white sm:p-6">
       <h2 id={id} className="font-serif text-2xl">

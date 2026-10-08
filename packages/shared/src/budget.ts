@@ -7,9 +7,16 @@
 // act is decided in rules.ts (assertMayViewBudgetForecast, assertMayManageBudgetForecast, assertMayApproveBudget,
 // assertMayReviewBudgetPerformance). Sprint 5Y-4 adds the Draft -> Proposed -> Approved lifecycle and the
 // budget-versus-actual performance figures behind the dashboard gauges and the historical KPIs. Sprint 6D adds
-// quantity x unit_cost estimates and the budget_version snapshots of mid-year amendments (currentBudgetLines).
+// quantity x unit_cost estimates and the budget_version snapshots of mid-year amendments (currentBudgetLines). Sprint
+// 6G Extension 2 adds the budget analyzer: universal-category allocation, year-over-year variance and a target ceiling.
 // =========================================================================
 import type {
+  BudgetAnalysis,
+  BudgetAnalysisCategory,
+  BudgetAnalysisCategoryKey,
+  BudgetAnalysisLine,
+  BudgetCeilingTrack,
+  BudgetYearOverYearChange,
   BudgetCategoryPerformance,
   BudgetLineAmendment,
   BudgetHistoricalKPIs,
@@ -770,6 +777,140 @@ export function buildPriorYearBaselines(input: {
         priorActual: prior ? (byLine.get(prior.id) ?? 0) / 100 : 0,
       };
     }),
+  };
+}
+
+// ---- budget analyzer (Sprint 6G Extension 2) -------------------------------------------------------
+
+/** The label of the analyzer bucket for lines with no universal_category. */
+export const UNASSIGNED_UNIVERSAL_CATEGORY_LABEL = 'Unassigned';
+
+/** A line's analyzer bucket: its universal_category, or 'UNASSIGNED'. */
+export const budgetAnalysisCategoryOf = (line: Pick<CouncilBudgetForecast, 'universal_category'>): BudgetAnalysisCategoryKey =>
+  isUniversalBudgetCategory(line.universal_category) ? line.universal_category : 'UNASSIGNED';
+
+/** `part` as a percentage of `whole`, to one decimal place; null when `whole` is 0 or less. */
+function percentOf(part: number, whole: number): number | null {
+  if (cents(whole) <= 0) return null;
+  return Math.round((cents(part) / cents(whole)) * 1000) / 10;
+}
+
+/** The dollar and percentage change from `priorApproved` to `approved`, and which way it went. */
+export function budgetYearOverYear(
+  approved: number,
+  priorApproved: number,
+  presence: { current: boolean; prior: boolean } = { current: true, prior: true },
+): { delta: number; variancePercent: number | null; change: BudgetYearOverYearChange } {
+  const delta = sumCents([approved, -priorApproved]);
+  let change: BudgetYearOverYearChange;
+  if (!presence.current) change = 'Discontinued';
+  else if (!presence.prior || cents(priorApproved) <= 0) change = cents(approved) > 0 ? 'New' : 'Unchanged';
+  else change = cents(delta) > 0 ? 'Increased' : cents(delta) < 0 ? 'Decreased' : 'Unchanged';
+  return { delta, variancePercent: percentOf(delta, priorApproved), change };
+}
+
+/**
+ * The approved total against a target spending ceiling: the unallocated contingency buffer (ceiling minus allocated,
+ * negative when over) and the share of the ceiling used. Validates the ceiling as money (INVALID_INPUT).
+ */
+export function buildBudgetCeilingTrack(allocated: number, ceiling: unknown): BudgetCeilingTrack {
+  const target = assertMoney(ceiling, 'Target spending ceiling');
+  const buffer = sumCents([target, -allocated]);
+  return {
+    ceiling: target,
+    allocated: sumCents([allocated]),
+    buffer,
+    percentOfCeiling: percentOf(allocated, target),
+    status: cents(buffer) > 0 ? 'Within Ceiling' : cents(buffer) === 0 ? 'At Ceiling' : 'Over Ceiling',
+  };
+}
+
+/**
+ * A council year's budget analysis (budget.getBudgetAnalysis). Caps are ApprovedBudgetAmount on the current version of
+ * each line; last year's caps count only when last year was Approved, as in buildPriorYearBaselines. Each line is
+ * compared with the previous year's line it continues (priorLineOf); a prior line no current line continues is listed
+ * as 'Discontinued'. Categories compare the universal_category totals of both years, so a line moved between categories
+ * shows in both.
+ */
+export function buildBudgetAnalysis(input: {
+  councilId: number;
+  fraternalYear: string;
+  lines: readonly CouncilBudgetForecast[];
+  priorLines: readonly CouncilBudgetForecast[];
+  targetSpendingCeiling?: number | null;
+}): BudgetAnalysis {
+  const { councilId, fraternalYear } = input;
+  const lines = sortBudgetLines(currentBudgetLines(input.lines));
+  const priorLines = sortBudgetLines(currentBudgetLines(input.priorLines));
+  const status = budgetStatusOf(lines);
+  const priorStatus = priorLines.length > 0 ? budgetStatusOf(priorLines) : null;
+  const priorCap = (l: CouncilBudgetForecast) => (priorStatus === 'Approved' ? l.ApprovedBudgetAmount : 0);
+
+  const continued = new Set<number>();
+  const analysisLines: BudgetAnalysisLine[] = lines.map((line) => {
+    const prior = priorLineOf(line, priorLines.filter((p) => !continued.has(p.id))) as CouncilBudgetForecast | undefined;
+    if (prior) continued.add(prior.id);
+    const priorApproved = prior ? sumCents([priorCap(prior)]) : 0;
+    return {
+      lineId: line.id,
+      priorLineId: prior?.id ?? null,
+      LineItemName: line.LineItemName,
+      CategoryType: line.CategoryType,
+      category: budgetAnalysisCategoryOf(line),
+      approved: sumCents([line.ApprovedBudgetAmount]),
+      priorApproved,
+      ...budgetYearOverYear(line.ApprovedBudgetAmount, priorApproved, { current: true, prior: prior !== undefined }),
+    };
+  });
+  for (const prior of priorLines) {
+    if (continued.has(prior.id)) continue;
+    analysisLines.push({
+      lineId: null,
+      priorLineId: prior.id,
+      LineItemName: prior.LineItemName,
+      CategoryType: prior.CategoryType,
+      category: budgetAnalysisCategoryOf(prior),
+      approved: 0,
+      priorApproved: sumCents([priorCap(prior)]),
+      ...budgetYearOverYear(0, priorCap(prior), { current: false, prior: true }),
+    });
+  }
+
+  const approvedTotal = sumCents(lines.map((l) => l.ApprovedBudgetAmount));
+  const priorApprovedTotal = sumCents(priorLines.map(priorCap));
+  const keys: BudgetAnalysisCategoryKey[] = [...(Object.keys(UNIVERSAL_BUDGET_CATEGORIES) as UniversalBudgetCategory[]), 'UNASSIGNED'];
+  const categories: BudgetAnalysisCategory[] = keys.flatMap((key) => {
+    const mine = lines.filter((l) => budgetAnalysisCategoryOf(l) === key);
+    const theirs = priorLines.filter((l) => budgetAnalysisCategoryOf(l) === key);
+    if (mine.length === 0 && theirs.length === 0) return [];
+    const approved = sumCents(mine.map((l) => l.ApprovedBudgetAmount));
+    const priorApproved = sumCents(theirs.map(priorCap));
+    return [
+      {
+        key,
+        label: key === 'UNASSIGNED' ? UNASSIGNED_UNIVERSAL_CATEGORY_LABEL : UNIVERSAL_BUDGET_CATEGORIES[key],
+        lineCount: mine.length,
+        approved,
+        allocationPercent: percentOf(approved, approvedTotal),
+        priorApproved,
+        ...budgetYearOverYear(approved, priorApproved, { current: mine.length > 0, prior: theirs.length > 0 }),
+      },
+    ];
+  });
+  const total = budgetYearOverYear(approvedTotal, priorApprovedTotal);
+  return {
+    councilId,
+    fraternalYear,
+    priorFraternalYear: previousFraternalYear(fraternalYear),
+    status,
+    priorStatus,
+    approvedTotal,
+    priorApprovedTotal,
+    totalDelta: total.delta,
+    totalVariancePercent: total.variancePercent,
+    categories,
+    lines: analysisLines,
+    ceiling: input.targetSpendingCeiling == null ? null : buildBudgetCeilingTrack(approvedTotal, input.targetSpendingCeiling),
   };
 }
 

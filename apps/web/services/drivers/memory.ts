@@ -249,6 +249,7 @@ import {
   budgetStatusOf,
   budgetWindowOf,
   buildBudgetYearPerformance,
+  buildBudgetAnalysis,
   buildPriorYearBaselines,
   completedFraternalYears,
   buildConcludedBudgetPerformance,
@@ -4589,6 +4590,20 @@ export class MemoryDataService implements DataService {
         lines: this.budgetLines(s, councilId, year).map((l) => ({ ...l })),
         priorLines: this.budgetLines(s, councilId, prior).map((l) => ({ ...l })),
         priorSpend: this.budgetYearSpend(s, councilId, prior, fraternalYearBounds(prior).toDate),
+      });
+    },
+
+    getBudgetAnalysis: async (actorId, councilId, fraternalYear, options = {}) => {
+      const year = assertFraternalYear(fraternalYear);
+      const s = await this.ready();
+      assertMayViewBudgetForecast(this.memberWriteActor(s, actorId), councilId, `read the budget analysis of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return buildBudgetAnalysis({
+        councilId,
+        fraternalYear: year,
+        lines: this.budgetLines(s, councilId, year).map((l) => ({ ...l })),
+        priorLines: this.budgetLines(s, councilId, previousFraternalYear(year)).map((l) => ({ ...l })),
+        targetSpendingCeiling: options.targetSpendingCeiling,
       });
     },
 

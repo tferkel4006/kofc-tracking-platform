@@ -253,6 +253,7 @@ import {
   budgetStatusOf,
   budgetWindowOf,
   buildBudgetYearPerformance,
+  buildBudgetAnalysis,
   buildPriorYearBaselines,
   completedFraternalYears,
   buildConcludedBudgetPerformance,
@@ -5355,6 +5356,20 @@ export class SqliteDataService implements DataService {
         lines: await this.budgetLines(db, councilId, year),
         priorLines: await this.budgetLines(db, councilId, prior),
         priorSpend: await this.budgetYearSpend(db, councilId, prior, fraternalYearBounds(prior).toDate),
+      });
+    },
+
+    getBudgetAnalysis: async (actorId, councilId, fraternalYear, options = {}) => {
+      const year = assertFraternalYear(fraternalYear);
+      const db = await this.ready();
+      assertMayViewBudgetForecast(await this.memberWriteActor(db, actorId), councilId, `read the budget analysis of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return buildBudgetAnalysis({
+        councilId,
+        fraternalYear: year,
+        lines: await this.budgetLines(db, councilId, year),
+        priorLines: await this.budgetLines(db, councilId, previousFraternalYear(year)),
+        targetSpendingCeiling: options.targetSpendingCeiling,
       });
     },
 

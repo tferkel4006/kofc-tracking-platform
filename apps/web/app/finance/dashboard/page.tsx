@@ -11,11 +11,14 @@
 //   - Sprint 6A (Phase 5): the Membership Dues Revenue Forecast (Active and Inactive members times the council's
 //     base_dues_rate, buildDuesForecast) and the Budgeted vs. Current Actual Spend grid (budget.getConcludedPerformance),
 //     both high-contrast cards (DuesParts). Read-only: neither posts to the books nor changes cash on hand.
+//   - Sprint 6G Extension 2: the Budget Allocation & YOY Variance Analyzer (budget.getBudgetAnalysis, BudgetAnalyzerParts)
+//     for the current fraternal year, with a what-if Target Spending Ceiling for the budget's editors. Read-only too.
 import Link from 'next/link';
 import { useState } from 'react';
-import { buildDuesForecast, buildLiquidityGauges, canPostGeneralLedger } from '@kofc/shared';
+import { buildDuesForecast, buildLiquidityGauges, canManageBudgetForecast, canPostGeneralLedger, currentFraternalYear } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { BalanceScale, BankStatementUploader, LiquidityGaugeCard, TransferDrawer } from '@/components/FinanceParts';
+import { BudgetAnalyzerCard } from '@/components/BudgetAnalyzerParts';
 import { ConcludedPerformanceGrid, DuesForecastCard } from '@/components/DuesParts';
 import { Button, Empty, Notice, PageTitle, Panel } from '@/components/ui';
 import { formatFullDate } from '@/lib/format';
@@ -34,6 +37,8 @@ function FinanceDashboard() {
     return buildDuesForecast({ council, members, statuses });
   }, [councilId]);
   const concluded = useLoad(() => db.budget.getConcludedPerformance(user.memberId, councilId), [user.memberId, councilId]);
+  const analysisYear = currentFraternalYear(new Date());
+  const analysis = useLoad(() => db.budget.getBudgetAnalysis(user.memberId, councilId, analysisYear), [user.memberId, councilId, analysisYear]);
   const [transferring, setTransferring] = useState(false);
   const canPost = canPostGeneralLedger(user, councilId);
   const reload = async () => {
@@ -85,6 +90,12 @@ function FinanceDashboard() {
       {concluded.error ? <Notice tone="error">{concluded.error}</Notice> : null}
       {dues.data ? <DuesForecastCard forecast={dues.data} /> : dues.loading ? <p className="text-sm">Loading…</p> : null}
       {concluded.data ? <ConcludedPerformanceGrid performance={concluded.data} /> : concluded.loading ? <p className="text-sm">Loading…</p> : null}
+      {analysis.error ? <Notice tone="error">{analysis.error}</Notice> : null}
+      {analysis.data ? (
+        <BudgetAnalyzerCard analysis={analysis.data} canSetCeiling={canManageBudgetForecast(user, councilId)} />
+      ) : analysis.loading ? (
+        <p className="text-sm">Loading…</p>
+      ) : null}
 
       <Panel
         title="Quick actions"
