@@ -57,6 +57,7 @@ describe.each(drivers)('officer elections ($name driver)', (d) => {
       'Community Director',
       'Program Director',
       'Family Director',
+      'Council Historian',
     ]);
     await expectRule(db.elections.listOfficerSeats(999), 'INVALID_INPUT');
   });

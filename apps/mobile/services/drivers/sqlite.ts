@@ -249,6 +249,8 @@ import {
   assertMayKeepCouncilAnnals,
   assertMayReadCouncilHistory,
   buildCouncilLegacyMatrix,
+  buildYearClosingMetrics,
+  composeYearClosingSummary,
   cleanCouncilAnnals,
   cleanDiaryEntry,
   mayKeepCouncilAnnals,
@@ -522,6 +524,8 @@ import type {
   GlobalCharityRegistry,
   CouncilLeadershipHistory,
   CouncilHistoryAnnals,
+  FraternalYearClosingMetrics,
+  YearClosingRows,
   CouncilSpiritualDiary,
   OfficerNominations,
   SessionUser,
@@ -609,8 +613,9 @@ const DB_NAME = 'kofc.db';
  *     (Sprint 6I).
  * 48: CouncilHistoryAnnals and CouncilSpiritualDiary - the Team Legacy year annals and the one-entry-a-day diary that
  *     carries Oral History Testimonials (Sprint 6K).
+ * 49: the Council Historian role seeded - the appointed seat that keeps the history annals (Sprint 6L).
  */
-const SCHEMA_VERSION = 48;
+const SCHEMA_VERSION = 49;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -4609,13 +4614,65 @@ export class SqliteDataService implements DataService {
         const rows = await this.electionRows(db, councilId);
         const plan = planConclusionFromSeats(buildOfficerSeats(councilId, rows), newGrandKnightId);
         const fraternalYear = electionTermYear(now);
+        // Sprint 6L: the concluded year's totals, read before any term closes, go into its annals.
+        const closingMetrics = buildYearClosingMetrics(councilId, previousFraternalYear(fraternalYear), await this.yearClosingRows(db, councilId), now);
         await this.applySeatTransitions(db, councilId, rows, plan.transitions, fraternalYear, toIsoDate(now));
         const reset = await db.runAsync('DELETE FROM [CouncilElectionBallot] WHERE [CouncilID] = ?', [councilId]);
-        result = conclusionResult(plan, rows.roles, fraternalYear, reset.changes);
+        await this.bakeClosingMetrics(db, councilId, actorId, closingMetrics);
+        result = { ...conclusionResult(plan, rows.roles, fraternalYear, reset.changes), closingMetrics };
       });
       return result;
     },
   };
+
+  /** Everything buildYearClosingMetrics reads for one council (Sprint 6L). */
+  private async yearClosingRows(db: SQLite.SQLiteDatabase, councilId: number): Promise<YearClosingRows> {
+    const councilEvents = 'SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?';
+    const [roles, members, leadership, events, eventTime, activityTime, charitableGifts, meetings] = await Promise.all([
+      this.allRoles(db),
+      db.getAllAsync<Member>('SELECT [id], [MemberFirstName], [MemberLastName], [DateJoinedCouncil] FROM [Member] WHERE [CouncilID] = ?', [councilId]),
+      db.getAllAsync<CouncilLeadershipHistory>('SELECT * FROM [CouncilLeadershipHistory] WHERE [CouncilID] = ?', [councilId]),
+      db.getAllAsync<CouncilEvent>(`SELECT * FROM [Event] WHERE [id] IN (${councilEvents})`, [councilId]),
+      db.getAllAsync<{ MemberID: number; Hours: number; ShiftDate: string }>(
+        `SELECT t.[MemberID], t.[Hours], sh.[ShiftDate] FROM [EventTime] t
+           JOIN [Shift] sh ON sh.[id] = t.[ShiftID]
+          WHERE sh.[EventID] IN (${councilEvents})`,
+        [councilId],
+      ),
+      db.getAllAsync<{ MemberID: number; Hours: number; ActivityDate: string }>(
+        `SELECT t.[MemberID], t.[Hours], t.[ActivityDate] FROM [ActivityTime] t
+           JOIN [Activities] a ON a.[id] = t.[ActivityID]
+          WHERE a.[CouncilID] = ?`,
+        [councilId],
+      ),
+      db.getAllAsync<{ Amount: number; PayoutDate: string }>('SELECT [Amount], [PayoutDate] FROM [CharitableDisbursementLedger] WHERE [CouncilID] = ?', [councilId]),
+      db.getAllAsync<{ Date: string }>('SELECT [Date] FROM [Meeting] WHERE [CouncilID] = ?', [councilId]),
+    ]);
+    return { roles, members, leadership, events, eventTime, activityTime, charitableGifts, meetings };
+  }
+
+  /** Writes the closing metrics into the concluded year's annals row (creating it), keeping the keepers' own notes. */
+  private async bakeClosingMetrics(db: SQLite.SQLiteDatabase, councilId: number, actorId: number, metrics: FraternalYearClosingMetrics): Promise<void> {
+    const existing = await db.getFirstAsync<CouncilHistoryAnnals>(
+      'SELECT * FROM [CouncilHistoryAnnals] WHERE [council_id] = ? AND [fraternal_year] = ?',
+      [councilId, metrics.fraternalYear],
+    );
+    const summary = composeYearClosingSummary(existing?.team_metrics_summary, metrics);
+    const stamp = toTimestamp(this.now());
+    if (existing) {
+      await db.runAsync('UPDATE [CouncilHistoryAnnals] SET [team_metrics_summary] = ?, [updated_by_member_id] = ?, [updated_at] = ? WHERE [id] = ?', [
+        summary,
+        actorId,
+        stamp,
+        existing.id,
+      ]);
+    } else {
+      await db.runAsync(
+        'INSERT INTO [CouncilHistoryAnnals] ([council_id], [fraternal_year], [team_metrics_summary], [updated_by_member_id], [updated_at]) VALUES (?, ?, ?, ?, ?)',
+        [councilId, metrics.fraternalYear, summary, actorId, stamp],
+      );
+    }
+  }
 
   private allRoles(db: SQLite.SQLiteDatabase): Promise<Role[]> {
     return db.getAllAsync<Role>('SELECT * FROM [Role] ORDER BY [id]');

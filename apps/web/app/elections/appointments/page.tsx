@@ -340,7 +340,9 @@ function FraternalYearSimulator({ data, onDone }: { data: DeskData; onDone: () =
           <div className="flex flex-col gap-2">
             <Notice tone="info" onDismiss={() => setResult(null)}>
               Fraternal year concluded. {result.rotated ? 'The chairs rotated' : 'No chairs moved'}; new terms start in {result.fraternalYear}, and{' '}
-              {result.ballotsReset} ballot switch{result.ballotsReset === 1 ? ' was' : 'es were'} cleared.
+              {result.ballotsReset} ballot switch{result.ballotsReset === 1 ? ' was' : 'es were'} cleared. The {result.closingMetrics.fraternalYear} closing
+              metrics ({result.closingMetrics.volunteerHours.total} volunteer hours, {result.closingMetrics.officers.length} officer terms) are saved in that
+              year&apos;s Council History annals.
             </Notice>
             {result.changes.length ? <ConclusionSummary result={result} names={namesAtRun} /> : null}
           </div>

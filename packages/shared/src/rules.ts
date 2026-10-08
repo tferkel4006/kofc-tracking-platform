@@ -119,7 +119,8 @@ export type BusinessRuleCode =
   | 'FEATURE_DISABLED'
   | 'FRATERNAL_EXTENSION_REQUIRED'
   | 'HISTORY_KEEPER_REQUIRED'
-  | 'DIARY_ENTRY_EXISTS';
+  | 'DIARY_ENTRY_EXISTS'
+  | 'DIARY_CONTENT_BLOCKED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {

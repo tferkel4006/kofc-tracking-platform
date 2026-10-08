@@ -918,6 +918,52 @@ export interface FraternalYearConclusion {
   changes: SeatChange[];
   /** Ballot rows cleared for the next cycle. */
   ballotsReset: number;
+  /**
+   * Sprint 6L: the concluded year's closing metrics, also written into that year's CouncilHistoryAnnals
+   * team_metrics_summary (composeYearClosingSummary in history.ts).
+   */
+  closingMetrics: FraternalYearClosingMetrics;
+}
+
+/** One officer seat held during a concluded fraternal year (Sprint 6L). */
+export interface ClosingOfficerSeat {
+  roleName: string;
+  memberId: number;
+  firstName: string;
+  lastName: string;
+  /** The term ended early ('Abdicated'). */
+  steppedDown: boolean;
+}
+
+/**
+ * The team totals of one concluded fraternal year (July 1 - June 30), compiled automatically by
+ * elections.concludeFraternalYear (Sprint 6L). Council-wide sums only: no member's own hours are listed.
+ */
+export interface FraternalYearClosingMetrics {
+  councilId: number;
+  /** The year that concluded, e.g. '2025-2026'. */
+  fraternalYear: string;
+  fromDate: string;
+  toDate: string;
+  /** The day the year was concluded (YYYY-MM-DD). */
+  compiledOn: string;
+  /** The seated officer roster of the tenure, in Role id order. */
+  officers: ClosingOfficerSeat[];
+  /** Logged volunteer hours: event shifts dated in the year plus council activities dated in the year. */
+  volunteerHours: { events: number; activities: number; total: number };
+  /** Distinct members who logged any of those hours. */
+  volunteers: number;
+  /** FundsRaised-Cash and FundsRaised-Electronic of the council's events that started in the year. */
+  fundsRaised: { cash: number; electronic: number; total: number };
+  /** CharitableDisbursementLedger checks paid out in the year. */
+  charitableGiving: number;
+  eventsHeld: number;
+  /** ActualNumberAttendees summed over those events. */
+  attendees: number;
+  /** The council's meetings dated in the year. */
+  meetingsHeld: number;
+  /** The council's members whose DateJoinedCouncil falls in the year. */
+  newMembers: number;
 }
 
 // 17. CHARITABLE GIVING AND DISBURSEMENTS (Sprint 5V)

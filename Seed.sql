@@ -45,7 +45,8 @@ VALUES
 ('Program Director', 0),
 ('Family Director', 0),
 ('Chaplain', 0),
-('Member', 0);
+('Member', 0),
+('Council Historian', 0); -- Sprint 6L: appointed by the Grand Knight; keeps the council history annals (not an officer seat)
 GO
 
 -- 4. Member Type Data Load

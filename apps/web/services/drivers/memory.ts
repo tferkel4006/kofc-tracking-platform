@@ -245,6 +245,8 @@ import {
   assertMayKeepCouncilAnnals,
   assertMayReadCouncilHistory,
   buildCouncilLegacyMatrix,
+  buildYearClosingMetrics,
+  composeYearClosingSummary,
   cleanCouncilAnnals,
   cleanDiaryEntry,
   mayKeepCouncilAnnals,
@@ -434,6 +436,8 @@ import type {
   CouncilElectionBallot,
   CouncilLeadershipHistory,
   CouncilHistoryAnnals,
+  FraternalYearClosingMetrics,
+  YearClosingRows,
   CouncilSpiritualDiary,
   OfficerNominations,
   Activities,
@@ -3982,12 +3986,56 @@ export class MemoryDataService implements DataService {
         const rows = this.electionRows(s, councilId);
         const plan = planConclusionFromSeats(buildOfficerSeats(councilId, rows), newGrandKnightId);
         const fraternalYear = electionTermYear(now);
+        // Sprint 6L: the concluded year's totals, read before any term closes, go into its annals.
+        const closingMetrics = buildYearClosingMetrics(councilId, previousFraternalYear(fraternalYear), this.yearClosingRows(s, councilId), now);
         this.applySeatTransitions(s, councilId, rows, plan.transitions, fraternalYear, toIsoDate(now));
         const ballotsReset = s.remove('CouncilElectionBallot', (b) => b.CouncilID === councilId);
-        return conclusionResult(plan, rows.roles, fraternalYear, ballotsReset);
+        this.bakeClosingMetrics(s, councilId, actorId, closingMetrics);
+        return { ...conclusionResult(plan, rows.roles, fraternalYear, ballotsReset), closingMetrics };
       });
     },
   };
+
+  /** Everything buildYearClosingMetrics reads for one council (Sprint 6L), copied out of the store. */
+  private yearClosingRows(s: MemoryStore, councilId: number): YearClosingRows {
+    const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+    const shiftDate = new Map(s.rows('Shift').filter((sh) => linked.has(sh.EventID)).map((sh) => [sh.id, sh.ShiftDate as string]));
+    const activities = new Set(s.rows('Activities').filter((a) => a.CouncilID === councilId).map((a) => a.id));
+    return {
+      roles: this.copyRows<Role>(s, 'Role', () => true),
+      members: this.copyRows<Member>(s, 'Member', (m) => m.CouncilID === councilId),
+      leadership: this.copyRows<CouncilLeadershipHistory>(s, 'CouncilLeadershipHistory', (h) => h.CouncilID === councilId),
+      events: this.copyRows<CouncilEvent>(s, 'Event', (e) => linked.has(e.id)),
+      eventTime: s
+        .rows('EventTime')
+        .filter((t) => shiftDate.has(t.ShiftID))
+        .map((t) => ({ MemberID: t.MemberID as number, Hours: t.Hours as number, ShiftDate: shiftDate.get(t.ShiftID)! })),
+      activityTime: s
+        .rows('ActivityTime')
+        .filter((t) => activities.has(t.ActivityID))
+        .map((t) => ({ MemberID: t.MemberID as number, Hours: t.Hours as number, ActivityDate: t.ActivityDate as string })),
+      charitableGifts: s
+        .rows('CharitableDisbursementLedger')
+        .filter((g) => g.CouncilID === councilId)
+        .map((g) => ({ Amount: g.Amount as number, PayoutDate: g.PayoutDate as string })),
+      meetings: s
+        .rows('Meeting')
+        .filter((m) => m.CouncilID === councilId)
+        .map((m) => ({ Date: m.Date as string })),
+    };
+  }
+
+  /** Writes the closing metrics into the concluded year's annals row (creating it), keeping the keepers' own notes. */
+  private bakeClosingMetrics(s: MemoryStore, councilId: number, actorId: number, metrics: FraternalYearClosingMetrics): void {
+    const existing = s.rows('CouncilHistoryAnnals').find((r) => r.council_id === councilId && r.fraternal_year === metrics.fraternalYear);
+    const values = {
+      team_metrics_summary: composeYearClosingSummary(existing?.team_metrics_summary as string | null | undefined, metrics),
+      updated_by_member_id: actorId,
+      updated_at: toTimestamp(this.now()),
+    };
+    if (existing) Object.assign(existing, values);
+    else s.insert('CouncilHistoryAnnals', { council_id: councilId, fraternal_year: metrics.fraternalYear, ...values });
+  }
 
   /** Everything the election views read for one council (elections.ts ElectionRows), copied out of the store. */
   private electionRows(s: MemoryStore, councilId: number): ElectionRows {

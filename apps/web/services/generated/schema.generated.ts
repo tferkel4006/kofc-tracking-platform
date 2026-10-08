@@ -5639,6 +5639,10 @@ export const SEED_DATA: readonly SeedTable[] = [
       {
         "Role": "Member",
         "Officer": 0
+      },
+      {
+        "Role": "Council Historian",
+        "Officer": 0
       }
     ]
   },

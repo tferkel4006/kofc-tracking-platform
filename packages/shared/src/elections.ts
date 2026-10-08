@@ -26,6 +26,11 @@ import type { CouncilElectionBallot, CouncilLeadershipHistory, Member, OfficerNo
 
 export const GRAND_KNIGHT_ROLE = 'Grand Knight';
 export const DEPUTY_GRAND_KNIGHT_ROLE = 'Deputy Grand Knight';
+/**
+ * The Council Historian (Sprint 6L): an appointed, non-officer seat (Officer = 0) that keeps the council's history annals
+ * with full write access (assertMayKeepCouncilAnnals in history.ts). Stored by display name like every other Role.
+ */
+export const COUNCIL_HISTORIAN_ROLE = 'Council Historian';
 /** The trustee ladder, lowest seat first: Trustee 1 is the 1-year seat, Trustee 3 the 3-year seat. */
 export const TRUSTEE_ROLE_NAMES = ['Trustee 1', 'Trustee 2', 'Trustee 3'] as const;
 /** Offices the council elects each year; the only seats a ballot may open. */
@@ -49,6 +54,7 @@ export const APPOINTED_ROLE_NAMES = [
   'Community Director',
   'Program Director',
   'Family Director',
+  COUNCIL_HISTORIAN_ROLE,
 ] as const;
 /** Every single-holder council office, in the order screens list them. */
 export const OFFICE_ROLE_NAMES: readonly string[] = [...ELECTED_ROLE_NAMES, ...TRUSTEE_ROLE_NAMES, ...APPOINTED_ROLE_NAMES];
@@ -548,13 +554,13 @@ export function chairMoves(transitions: readonly SeatTransition[]): ChairMove[] 
   }));
 }
 
-/** The result screens show, from the plan and the Role ids. */
+/** The result screens show, from the plan and the Role ids; the drivers add closingMetrics (Sprint 6L). */
 export function conclusionResult(
   plan: { rotated: boolean; transitions: readonly SeatTransition[] },
   roles: readonly Role[],
   fraternalYear: string,
   ballotsReset: number,
-): FraternalYearConclusion {
+): Omit<FraternalYearConclusion, 'closingMetrics'> {
   return {
     rotated: plan.rotated,
     fraternalYear,
