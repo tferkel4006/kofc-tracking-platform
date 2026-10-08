@@ -16,7 +16,7 @@ import { DEFAULT_TENANT_TYPE, withTenantGate, type TenantType } from './tenant';
 import { AGENDA_EDITOR_ROLE_NAMES } from './agenda';
 import { GRAND_KNIGHT_ROLE } from './elections';
 import { FINANCE_LOOKUP_TABLES, FINANCIAL_SECRETARY_ROLE_NAME, holdsExecutiveRole, holdsFinanceRole } from './rules';
-import type { BudgetLineStatus, Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
+import type { BudgetLineStatus, CharitableRequest, CharitableThreadType, Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
 
 /** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. `isBudgetDirector` only to the budget. */
 type Actor = Pick<SessionUser, 'memberId' | 'councilId' | 'memberType' | 'isOfficer'> & { roles?: readonly string[]; isBudgetDirector?: boolean };
@@ -387,6 +387,22 @@ export const canOverrideVettingClaim = (u: Actor, councilId: number): boolean =>
  * request the viewer carries as its Knight Shepherd (the Four-Eyes Principle, assertIndependentVetter).
  */
 export const isSponsorRestricted = (u: Actor, request: { ShepherdMemberID: number }): boolean => request.ShepherdMemberID === u.memberId;
+
+/**
+ * The vetting threads on one request (Sprint 6H), mirroring charitableThreadAccess (activity status and the request's
+ * stage are checked there). The Knight Shepherd uses only 'MORE_INFO'. 'MORE_INFO' is otherwise for the request's
+ * vetting officer - its claiming vetter, or the council's Admins, Grand Knight and Deputy Grand Knight and any Super
+ * Admin - and 'OFFICER_INPUT' for everyone with vetting authority for the council.
+ */
+export function canUseCharitableThread(
+  u: Actor,
+  request: Pick<CharitableRequest, 'CouncilID' | 'ShepherdMemberID' | 'VetterMemberID'>,
+  threadType: CharitableThreadType,
+): boolean {
+  if (isSponsorRestricted(u, request)) return threadType === 'MORE_INFO';
+  if (!canVetCharitableRequests(u, request.CouncilID)) return false;
+  return threadType === 'OFFICER_INPUT' || request.VetterMemberID === u.memberId || canOverrideVettingClaim(u, request.CouncilID);
+}
 
 /**
  * Edit controls on the annual budget, mirroring assertMayManageBudgetForecast (Sprint 5Y; activity status is checked

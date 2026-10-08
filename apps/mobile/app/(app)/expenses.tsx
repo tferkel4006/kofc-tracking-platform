@@ -114,7 +114,7 @@ function ExpenseDraftForm({
     setError(null);
     try {
       const items = expenseLinesFromDrafts(rows);
-      const saved = await db.expenses.submitReport(user.memberId, { id: detail?.report.id ?? null, Status: status, ...parseExpenseReferenceKey(reference) }, items);
+      const saved = await db.expenses.submitReport(user.memberId, { id: detail?.report.id ?? null, Status: status, ...parseExpenseReferenceKey(reference), charity_request_id: detail?.report.charity_request_id ?? null }, items); // keeps a link set on the web (Sprint 6H)
       await onSaved(saved);
     } catch (err) {
       setError(describeError(err));

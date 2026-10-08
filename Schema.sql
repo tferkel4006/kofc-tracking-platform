@@ -2240,3 +2240,59 @@ ADD FOREIGN KEY([charity_request_id])
 REFERENCES [CharitableRequest]([id])
 ON UPDATE NO ACTION ON DELETE NO ACTION;
 GO
+
+-- =========================================================================
+-- Sprint 6H (Phase 6): CHARITABLE VETTING THREADS (schema version 46)
+-- Two discussion threads may be bound to each CharitableRequest (one of each thread_type, a unique index):
+--   'MORE_INFO'     - Request for More Information: started by the request's vetting officer (the claiming vetter, or
+--                     the council's Admins, Grand Knight, Deputy Grand Knight or any Super Admin) and private to them
+--                     and the request's Knight Shepherd, who reads and answers it.
+--   'OFFICER_INPUT' - Request for Officer Input: an advisory forum open to everyone with vetting authority for the
+--                     council (its Active officers and Admins, any Super Admin) except the Shepherd.
+-- The rules live in charitableThreadAccess (charities.ts); posts close once the request is declined or voted on.
+-- =========================================================================
+CREATE TABLE [CharitableRequestThread] (
+	[id] INT NOT NULL IDENTITY,
+	[request_id] INT NOT NULL,
+	[thread_type] VARCHAR(20) NOT NULL, -- MORE_INFO, OFFICER_INPUT
+	[opened_by_member_id] INT NOT NULL,
+	[opened_at] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [CharitableRequestThreadMessage] (
+	[id] INT NOT NULL IDENTITY,
+	[thread_id] INT NOT NULL,
+	[author_member_id] INT NOT NULL,
+	[posted_at] DATETIME NOT NULL DEFAULT getdate(),
+	[message_body] TEXT NOT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CharitableRequestThread]
+ADD FOREIGN KEY([request_id])
+REFERENCES [CharitableRequest]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequestThread]
+ADD FOREIGN KEY([opened_by_member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequestThreadMessage]
+ADD FOREIGN KEY([thread_id])
+REFERENCES [CharitableRequestThread]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequestThreadMessage]
+ADD FOREIGN KEY([author_member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [CharitableRequestThread_Request_Type_Idx] ON [CharitableRequestThread] ([request_id], [thread_type]);
+GO
+CREATE INDEX [CharitableRequestThreadMessage_Thread_Idx] ON [CharitableRequestThreadMessage] ([thread_id], [posted_at]);
+GO

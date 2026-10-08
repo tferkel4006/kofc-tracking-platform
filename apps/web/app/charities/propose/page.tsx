@@ -7,6 +7,8 @@
 // (Submitted, in the council's Pooled Vetting Desk) and dispatches the Shepherd's 3-step tracking notice
 // (dispatchCharitableTrackingNotice: Vetting -> Presentation -> Disbursement, plus the date the Trustees are prompted
 // for a status report). My requests (charities.listMyCharitableRequests) follows each request along that track.
+// Sprint 6H: each request's "Request More Info" button opens the private thread its vetting officer started with the
+// Shepherd, to read and answer it. The officers' "Request Officer Input" forum is never shown here.
 import { useState, type ReactNode } from 'react';
 import {
   CHARITABLE_FORM_TEXT_MAX_LENGTH,
@@ -18,6 +20,7 @@ import {
 } from '@kofc/shared';
 import { RequireArea } from '@/components/CouncilScope';
 import { TrackingSteps } from '@/components/IntakeParts';
+import { RequestThreadButtons, RequestThreadDrawer } from '@/components/RequestThreads';
 import { Button, Empty, Field, Input, Notice, PageTitle, Panel, Select, Table, Td, Textarea } from '@/components/ui';
 import { blankToNull, formatFullDate, formatMoney, parseNumberField } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -101,9 +104,11 @@ function GrantProposal() {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
+  const [threadId, setThreadId] = useState<number | null>(null);
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((d) => ({ ...d, [key]: value }));
   const text = (key: keyof Draft) => draft[key] as string;
   const rows = mine.data ?? [];
+  const threadRequest = rows.find((d) => d.request.id === threadId)?.request ?? null;
 
   const submit = async () => {
     setBusy(true);
@@ -271,7 +276,7 @@ function GrantProposal() {
           ) : rows.length === 0 ? (
             <Empty>You have not proposed a charity grant yet.</Empty>
           ) : (
-            <Table caption="Your charity grant requests, newest first" head={['Request', 'Organization / Ministry', 'Amount', 'Tracking', 'Trustee follow-up']}>
+            <Table caption="Your charity grant requests, newest first" head={['Request', 'Organization / Ministry', 'Amount', 'Tracking', 'Trustee follow-up', 'Vetting messages']}>
               {rows.map(({ request }) => (
                 <tr key={request.id}>
                   <Td className="font-bold">#{request.id}</Td>
@@ -281,16 +286,21 @@ function GrantProposal() {
                     <TrackingSteps request={request} />
                   </Td>
                   <Td className="whitespace-nowrap">{formatFullDate(charitableTrusteeFollowUpDate(request))}</Td>
+                  <Td>
+                    <RequestThreadButtons request={request} types={['MORE_INFO']} onOpen={() => setThreadId(request.id)} />
+                  </Td>
                 </tr>
               ))}
             </Table>
           )}
           <p className="mt-3 text-xs text-muted">
             An officer or Trustee other than you vets each request, the council votes on it at a Monthly meeting, and the Financial Secretary or Treasurer issues
-            the check. The Trustees ask for a status report {CHARITABLE_TRUSTEE_FOLLOWUP_MONTHS} months after you file.
+            the check. The Trustees ask for a status report {CHARITABLE_TRUSTEE_FOLLOWUP_MONTHS} months after you file. If the vetting officer needs more
+            information, their questions appear under Request More Info; answer them there.
           </p>
         </Panel>
       </div>
+      {threadRequest ? <RequestThreadDrawer key={threadRequest.id} request={threadRequest} threadType="MORE_INFO" onClose={() => setThreadId(null)} /> : null}
     </>
   );
 }

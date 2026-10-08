@@ -6,6 +6,9 @@
 // red banner quoting their reason until it is resubmitted. The drivers show a member only their own sheets.
 // Sprint 5Z-6: a sheet naming an event or meeting outside its submission window (from the day it starts through 30 days
 // after it ends) shows a padlock and its submit button is disabled; it can still be saved as a draft.
+// Sprint 6H: 'Link to Vetted Charity Request' names the council's vetted charitable request the receipts were spent for
+// (charities.listLinkableCharitableRequests), saved as ExpenseReport.charity_request_id. The signature desks then
+// pre-select that request's target budget line.
 import { useMemo, useRef, useState } from 'react';
 import {
   blankExpenseLine,
@@ -27,6 +30,7 @@ import {
   type ExpenseLineDraft,
   type ExpenseReferenceOptions,
   type ExpenseReportDetail,
+  type LinkableCharitableRequest,
 } from '@kofc/shared';
 import { RequireArea } from '@/components/CouncilScope';
 import { ExpenseLineItemsTable, ExpenseStatusPill, ReceiptLink } from '@/components/ExpenseParts';
@@ -41,6 +45,17 @@ type Message = { tone: 'error' | 'info'; text: string };
 type Row = ExpenseLineDraft & { key: number };
 
 const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [] };
+const NO_CHARITIES: LinkableCharitableRequest[] = [];
+
+/** 'St. Jude Youth Ministry · $800.00 (#7)' for the charity link dropdown and the read-only sheet. */
+const charityLabel = (r: Pick<LinkableCharitableRequest, 'id' | 'OrganizationName' | 'AmountRequested'>) =>
+  `${r.OrganizationName} · ${formatMoney(r.AmountRequested)} (#${r.id})`;
+
+/** The linked request's label, or its number when it is no longer open for linking. */
+const linkedCharityLabel = (requestId: number, charities: readonly LinkableCharitableRequest[]) => {
+  const found = charities.find((c) => c.id === requestId);
+  return found ? charityLabel(found) : `Charitable request #${requestId}`;
+};
 
 // ---- the sheet editor ------------------------------------------------------------------
 
@@ -48,12 +63,14 @@ const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [] };
 function ExpenseSheetForm({
   detail,
   refs,
+  charities,
   today,
   onSaved,
   onCancel,
 }: {
   detail: ExpenseReportDetail | null;
   refs: ExpenseReferenceOptions;
+  charities: readonly LinkableCharitableRequest[];
   today: string;
   onSaved: (saved: ExpenseReportDetail) => Promise<void>;
   onCancel: () => void;
@@ -62,6 +79,7 @@ function ExpenseSheetForm({
   const nextKey = useRef(0);
   const keyed = (line: ExpenseLineDraft): Row => ({ ...line, key: nextKey.current++ });
   const [reference, setReference] = useState(() => (detail ? expenseReferenceKey(detail.report) : ''));
+  const [charityRequestId, setCharityRequestId] = useState(() => (detail?.report.charity_request_id != null ? String(detail.report.charity_request_id) : ''));
   const [longTermAsset, setLongTermAsset] = useState(() => isLongTermAssetExpense(detail?.report ?? {}));
   const [rows, setRows] = useState<Row[]>(() =>
     detail && detail.lineItems.length > 0 ? detail.lineItems.map((li) => keyed(expenseLineDraftFrom(li))) : [keyed(blankExpenseLine(today))],
@@ -90,7 +108,13 @@ function ExpenseSheetForm({
     setError(null);
     try {
       const items = expenseLinesFromDrafts(rows);
-      const saved = await db.expenses.submitReport(user.memberId, { id: detail?.report.id ?? null, Status: status, ...parseExpenseReferenceKey(reference), is_long_term_asset: longTermAsset }, items);
+      const saved = await db.expenses.submitReport(user.memberId, {
+          id: detail?.report.id ?? null,
+          Status: status,
+          ...parseExpenseReferenceKey(reference),
+          is_long_term_asset: longTermAsset,
+          charity_request_id: charityRequestId ? Number(charityRequestId) : null,
+        }, items);
       await onSaved(saved);
     } catch (err) {
       setError(describeError(err));
@@ -133,6 +157,26 @@ function ExpenseSheetForm({
                 </optgroup>
               );
             })}
+          </Select>
+        )}
+      </Field>
+
+      <Field
+        label="Link to Vetted Charity Request"
+        hint={charities.length === 0 ? 'Your council has no vetted charity requests open right now.' : 'The vetted charity request these receipts were spent for, if any.'}
+        className="max-w-xl"
+      >
+        {(id) => (
+          <Select id={id} value={charityRequestId} onChange={(e) => setCharityRequestId(e.target.value)}>
+            <option value="">Not for a charity request</option>
+            {charities.map((c) => (
+              <option key={c.id} value={c.id}>
+                {charityLabel(c)}
+              </option>
+            ))}
+            {charityRequestId && !charities.some((c) => String(c.id) === charityRequestId) ? (
+              <option value={charityRequestId}>{linkedCharityLabel(Number(charityRequestId), charities)} (no longer open)</option>
+            ) : null}
           </Select>
         )}
       </Field>
@@ -235,7 +279,7 @@ function ExpenseSheetForm({
 
 // ---- a sheet that is no longer the member's to edit ------------------------------------
 
-function ExpenseSheetView({ detail, refs }: { detail: ExpenseReportDetail; refs: ExpenseReferenceOptions }) {
+function ExpenseSheetView({ detail, refs, charities }: { detail: ExpenseReportDetail; refs: ExpenseReferenceOptions; charities: readonly LinkableCharitableRequest[] }) {
   const { report, disbursement } = detail;
   const note: Record<typeof report.Status, string> = {
     Draft: '',
@@ -250,6 +294,7 @@ function ExpenseSheetView({ detail, refs }: { detail: ExpenseReportDetail; refs:
       <div className="flex flex-wrap items-center gap-3 text-sm">
         <ExpenseStatusPill report={report} />
         <span>{expenseReferenceLabel(report, refs)}</span>
+        {report.charity_request_id != null ? <span className="font-bold">Charity: {linkedCharityLabel(report.charity_request_id, charities)}</span> : null}
         {isLongTermAssetExpense(report) ? <span className="text-xs font-bold uppercase tracking-wide">Long-term Council Asset</span> : null}
         <span className="text-muted">{note[report.Status]}</span>
       </div>
@@ -271,6 +316,8 @@ function MyExpenses() {
   const reports = useLoad(() => db.expenses.listUserReports(user.memberId), [user.memberId]);
   const refsLoad = useLoad(() => listExpenseReferences(db, user.councilId), [user.councilId]);
   const refs = refsLoad.data ?? NO_REFS;
+  const charitiesLoad = useLoad(() => db.charities.listLinkableCharitableRequests(user.memberId, user.councilId), [user.memberId, user.councilId]);
+  const charities = charitiesLoad.data ?? NO_CHARITIES;
   const [openId, setOpenId] = useState<number | 'new' | null>(null);
   const [message, setMessage] = useState<Message | null>(null);
 
@@ -286,7 +333,7 @@ function MyExpenses() {
   return (
     <>
       <PageTitle actions={<Button onClick={() => open('new')}>New expense report</Button>}>My Expense Reports</PageTitle>
-      {reports.error ?? refsLoad.error ? <Notice tone="error">{reports.error ?? refsLoad.error}</Notice> : null}
+      {reports.error ?? refsLoad.error ?? charitiesLoad.error ? <Notice tone="error">{reports.error ?? refsLoad.error ?? charitiesLoad.error}</Notice> : null}
 
       {returned.map(({ report, total }) => (
         <section key={report.id} role="alert" aria-labelledby={`returned-${report.id}`} className="mb-4 overflow-hidden rounded border-4 border-brand-red bg-white">
@@ -351,6 +398,7 @@ function MyExpenses() {
               key={String(openId)}
               detail={selected ?? null}
               refs={refs}
+              charities={charities}
               today={today}
               onCancel={() => open(null)}
               onSaved={async (saved) => {
@@ -368,7 +416,7 @@ function MyExpenses() {
           </Panel>
         ) : selected ? (
           <Panel title={`Expense report #${selected.report.id}`} actions={<Button size="sm" variant="secondary" onClick={() => open(null)}>Close</Button>}>
-            <ExpenseSheetView detail={selected} refs={refs} />
+            <ExpenseSheetView detail={selected} refs={refs} charities={charities} />
           </Panel>
         ) : null}
       </div>

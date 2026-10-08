@@ -10,6 +10,9 @@
 //     padlocked "Sponsor Restriction" (isSponsorRestricted; the data service refuses it too, SELF_VETTING_BLOCKED).
 //   - Sprint 5Z-6: an advanced request still awaiting its vote carries "Place on next agenda"
 //     (charities.routeRequestToNextEligibleAgenda): a Proposed Motion on the soonest Monthly meeting at least 10 days out.
+//   - Sprint 6H: each row carries the high-contrast thread buttons (RequestThreads.tsx). "Request More Info" opens the
+//     vetting officer's private thread with the Knight Shepherd; "Request Officer Input" opens the officers' advisory
+//     forum on the request, which every officer and Admin of the council can read and join.
 import { useState } from 'react';
 import {
   CHARITABLE_REQUEST_MAX_TIER,
@@ -21,11 +24,13 @@ import {
   isSponsorRestricted,
   type CharitableRequestDetail,
   type CharitableRequestStatus,
+  type CharitableThreadType,
   type CouncilBudgetForecast,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { Drawer } from '@/components/Drawer';
 import { RequestStatusPill, RequestSummary, SponsorRestriction } from '@/components/IntakeParts';
+import { RequestThreadButtons, RequestThreadDrawer } from '@/components/RequestThreads';
 import { Button, cx, Empty, Field, Notice, PageTitle, Panel, Select, Table, Td, Textarea } from '@/components/ui';
 import { formatFullDate, formatMoney } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -207,10 +212,12 @@ function VettingDesk() {
   const queue = useLoad(() => db.charities.listCharitableRequestsQueue(user.memberId, scope.councilId), [user.memberId, scope.councilId]);
   const budget = useLoad(() => db.budget.listAnnualForecast(user.memberId, scope.councilId, fraternalYear), [user.memberId, scope.councilId, fraternalYear]);
   const [openId, setOpenId] = useState<number | null>(null);
+  const [threadFor, setThreadFor] = useState<{ requestId: number; threadType: CharitableThreadType } | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [message, setMessage] = useState<Message | null>(null);
   const rows = queue.data ?? [];
   const open = rows.find((d) => d.request.id === openId) ?? null;
+  const threadRequest = threadFor ? (rows.find((d) => d.request.id === threadFor.requestId)?.request ?? null) : null;
 
   const claim = async (detail: CharitableRequestDetail) => {
     setBusyId(detail.request.id);
@@ -297,7 +304,18 @@ function VettingDesk() {
                       <RequestStatusPill detail={d} />
                     </Td>
                     <Td>
-                      <RowAction detail={d} busy={busyId === r.id} onClaim={() => void claim(d)} onOpen={() => setOpenId(r.id)} onRoute={() => void route(d)} />
+                      <div className="flex flex-col items-start gap-2">
+                        <RowAction detail={d} busy={busyId === r.id} onClaim={() => void claim(d)} onOpen={() => { setThreadFor(null); setOpenId(r.id); }} onRoute={() => void route(d)} />
+                        {restricted ? null : (
+                          <RequestThreadButtons
+                            request={r}
+                            onOpen={(threadType) => {
+                              setOpenId(null);
+                              setThreadFor({ requestId: r.id, threadType });
+                            }}
+                          />
+                        )}
+                      </div>
                     </Td>
                   </tr>
                 );
@@ -306,7 +324,8 @@ function VettingDesk() {
           )}
           <p className="mt-2 text-xs text-muted">
             Four-Eyes Principle: a Knight Shepherd never vets their own request, so those rows are locked for you. A claimed request&apos;s drawer opens for
-            its vetter and for the council&apos;s Admins, Grand Knight and Deputy Grand Knight.
+            its vetter and for the council&apos;s Admins, Grand Knight and Deputy Grand Knight. &ldquo;Request More Info&rdquo; is the vetting officer&apos;s
+            private thread with the Knight Shepherd; &ldquo;Request Officer Input&rdquo; is open to every officer and Admin, never to the Shepherd.
           </p>
         </Panel>
       </div>
@@ -324,6 +343,10 @@ function VettingDesk() {
             await queue.reload();
           }}
         />
+      ) : null}
+
+      {threadFor && threadRequest ? (
+        <RequestThreadDrawer key={`${threadFor.requestId}-${threadFor.threadType}`} request={threadRequest} threadType={threadFor.threadType} onClose={() => setThreadFor(null)} />
       ) : null}
     </>
   );

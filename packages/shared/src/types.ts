@@ -915,6 +915,30 @@ export interface CharitableRequest {
   TargetBudgetLineID?: number | null; // Sprint 5Z-2: the CouncilBudgetForecast line the vetter would pay it from
 }
 
+/**
+ * CharitableRequestThread.thread_type (Sprint 6H; see CHARITABLE_THREAD_TYPES): 'MORE_INFO' is the private exchange
+ * between a request's vetting officer and its Knight Shepherd; 'OFFICER_INPUT' is the officers' advisory forum on it.
+ */
+export type CharitableThreadType = 'MORE_INFO' | 'OFFICER_INPUT';
+
+/** A discussion thread bound to one charitable request (Sprint 6H); at most one of each type per request. */
+export interface CharitableRequestThread {
+  id: number;
+  request_id: number; // CharitableRequest
+  thread_type: CharitableThreadType;
+  opened_by_member_id: number; // the vetting officer or officer who started it
+  opened_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+/** One post in a CharitableRequestThread (Sprint 6H). */
+export interface CharitableRequestThreadMessage {
+  id: number;
+  thread_id: number;
+  author_member_id: number;
+  posted_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+  message_body: string; // TEXT, at most CHARITABLE_THREAD_MESSAGE_MAX_LENGTH characters
+}
+
 /** GLAccount.AccountType (Sprint 5Z-7); see GL_ACCOUNT_TYPES. */
 export type GLAccountType = 'Asset' | 'Liability' | 'Equity' | 'Revenue' | 'Expense';
 

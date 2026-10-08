@@ -204,6 +204,14 @@ import {
   buildCharitableRequestDetails,
   CHARITABLE_REQUEST_FORM_COLUMNS,
   charitableRequestNotFound,
+  assertCharitableThreadAccess,
+  assertCharitableThreadType,
+  buildCharitableRequestThreads,
+  buildCharitableThreadDetail,
+  charitableThreadAccess,
+  charitableThreadNotFound,
+  cleanCharitableThreadMessage,
+  linkableCharitableRequests,
   cleanCharitableRequest,
   planCharitableTriage,
   assertOneCharitySource,
@@ -479,6 +487,9 @@ import type {
   CouncilMeetingType,
   CharitableRequest,
   CharitableRequestDetail,
+  CharitableRequestThread,
+  CharitableRequestThreadDetail,
+  CharitableRequestThreadMessage,
   CouncilMissionArea,
   CouncilRelationshipType,
   CouncilAgendaTemplate,
@@ -4261,6 +4272,61 @@ export class MemoryDataService implements DataService {
       return this.charitableRequestDetails(s, (r) => r.id === requestId)[0];
     },
 
+    listLinkableCharitableRequests: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayProposeCharityGift(this.memberWriteActor(s, actorId), councilId, `read the charitable requests of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return linkableCharitableRequests(s.rows('CharitableRequest') as unknown as CharitableRequest[], councilId);
+    },
+
+    listRequestThreads: async (actorId, requestId) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const request = s.rows('CharitableRequest').find((r) => r.id === requestId) as unknown as CharitableRequest | undefined;
+      if (!request) throw charitableRequestNotFound(requestId);
+      const threads = this.copyRows<CharitableRequestThread>(s, 'CharitableRequestThread', (t) => t.request_id === requestId);
+      const ids = new Set(threads.map((t) => t.id));
+      return buildCharitableRequestThreads(
+        actor,
+        { ...request },
+        threads,
+        this.copyRows<CharitableRequestThreadMessage>(s, 'CharitableRequestThreadMessage', (m) => ids.has(m.thread_id as number)),
+        s.rows('Member') as unknown as Member[],
+      );
+    },
+
+    openRequestThread: async (actorId, requestId, threadType, messageBody) => {
+      const type = assertCharitableThreadType(threadType);
+      const body = cleanCharitableThreadMessage(messageBody);
+      const s = await this.ready();
+      const threadId = s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const request = s.rows('CharitableRequest').find((r) => r.id === requestId) as unknown as CharitableRequest | undefined;
+        if (!request) throw charitableRequestNotFound(requestId);
+        const existing = s.rows('CharitableRequestThread').find((t) => t.request_id === requestId && t.thread_type === type);
+        assertCharitableThreadAccess(actor, request, type, existing ? 'post' : 'open');
+        const now = toTimestamp(this.now());
+        const thread = existing ?? s.insert('CharitableRequestThread', { request_id: requestId, thread_type: type, opened_by_member_id: actorId, opened_at: now });
+        s.insert('CharitableRequestThreadMessage', { thread_id: thread.id, author_member_id: actorId, posted_at: now, message_body: body });
+        return thread.id as number;
+      });
+      return this.charitableThreadDetail(s, actorId, threadId);
+    },
+
+    postRequestThreadMessage: async (actorId, threadId, messageBody) => {
+      const body = cleanCharitableThreadMessage(messageBody);
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const thread = s.rows('CharitableRequestThread').find((t) => t.id === threadId) as unknown as CharitableRequestThread | undefined;
+        if (!thread) throw charitableThreadNotFound(threadId);
+        const request = s.rows('CharitableRequest').find((r) => r.id === thread.request_id) as unknown as CharitableRequest;
+        assertCharitableThreadAccess(actor, request, thread.thread_type, 'post');
+        s.insert('CharitableRequestThreadMessage', { thread_id: threadId, author_member_id: actorId, posted_at: toTimestamp(this.now()), message_body: body });
+      });
+      return this.charitableThreadDetail(s, actorId, threadId);
+    },
+
     routeRequestToNextEligibleAgenda: async (actorId, requestId) => {
       const s = await this.ready();
       return s.transaction(() => {
@@ -4660,6 +4726,23 @@ export class MemoryDataService implements DataService {
   private relationshipTypes(s: MemoryStore, councilId: number): CouncilRelationshipType[] {
     return (s.rows('CouncilRelationshipType').filter((t) => t.CouncilID === councilId) as unknown as CouncilRelationshipType[]).sort((a, b) =>
       a.RelationshipName < b.RelationshipName ? -1 : a.RelationshipName > b.RelationshipName ? 1 : a.id - b.id,
+    );
+  }
+
+  /** Copies of the table's rows that `keep` accepts. */
+  private copyRows<T>(s: MemoryStore, table: string, keep: (r: Row) => boolean): T[] {
+    return s.rows(table).filter(keep).map((r) => ({ ...r })) as unknown as T[];
+  }
+
+  /** One request thread as the caller sees it, after a write the caller was allowed to make. */
+  private charitableThreadDetail(s: MemoryStore, actorId: number, threadId: number): CharitableRequestThreadDetail {
+    const thread = { ...s.rows('CharitableRequestThread').find((t) => t.id === threadId)! } as unknown as CharitableRequestThread;
+    const request = s.rows('CharitableRequest').find((r) => r.id === thread.request_id) as unknown as CharitableRequest;
+    return buildCharitableThreadDetail(
+      thread,
+      this.copyRows<CharitableRequestThreadMessage>(s, 'CharitableRequestThreadMessage', (m) => m.thread_id === threadId),
+      s.rows('Member') as unknown as Member[],
+      charitableThreadAccess(this.memberWriteActor(s, actorId), request, thread.thread_type).post,
     );
   }
 

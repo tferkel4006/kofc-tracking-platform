@@ -9,6 +9,9 @@
 // =========================================================================
 import type {
   CharitableRequestDetail,
+  CharitableRequestThreadDetail,
+  CharitableRequestThreads,
+  LinkableCharitableRequest,
   CharitableTriageAction,
   CharitableTriageInput,
   CharityCheckDetails,
@@ -25,10 +28,24 @@ import { cleanDisbursementCheck, sumAmounts } from './expenses';
 import { fraternalYearBounds } from './budget';
 import { addDays } from './planning';
 import { toTimestamp } from './messaging';
-import { assertIsoDate, assertMoney, assertText, BusinessRuleError, donationMethodKind, optionalText } from './rules';
+import {
+  assertIsoDate,
+  assertMoney,
+  assertText,
+  BusinessRuleError,
+  donationMethodKind,
+  mayOverrideVettingClaim,
+  mayVetCharitableRequests,
+  optionalText,
+  SecurityPrivilegeError,
+  type MemberWriteActor,
+} from './rules';
 import type {
   CharitableDisbursementLedger,
   CharitableRequest,
+  CharitableRequestThread,
+  CharitableRequestThreadMessage,
+  CharitableThreadType,
   CharitableRequestStatus,
   CharitableRequestVoteStatus,
   CharityDonationProposal,
@@ -873,3 +890,169 @@ export function assertRoutableRequest(request: Pick<CharitableRequest, 'id' | 'R
 /** The motion read to the floor for a routed request: 'That the council donate $500.00 to St. Mary's Food Pantry (charitable request #7).' */
 export const charitableMotionText = (request: Pick<CharitableRequest, 'id' | 'OrganizationName' | 'AmountRequested'>): string =>
   `That the council donate $${Number(request.AmountRequested).toFixed(2)} to ${request.OrganizationName} (charitable request #${request.id}).`;
+
+// ---- request threads and the expense link (Sprint 6H) ----
+
+/** CharitableRequestThread.thread_type values, in the order the screens list them. */
+export const CHARITABLE_THREAD_TYPES: readonly CharitableThreadType[] = ['MORE_INFO', 'OFFICER_INPUT'];
+
+/** The vetting desk's buttons that start each thread. */
+export const CHARITABLE_THREAD_BUTTON_LABELS: Record<CharitableThreadType, string> = {
+  MORE_INFO: '💬 Request More Info',
+  OFFICER_INPUT: '📣 Request Officer Input',
+};
+
+/** Thread headings on the vetting desk and the Shepherd's page. */
+export const CHARITABLE_THREAD_TITLES: Record<CharitableThreadType, string> = {
+  MORE_INFO: 'Request for More Information',
+  OFFICER_INPUT: 'Request for Officer Input',
+};
+
+/** Longest CharitableRequestThreadMessage.message_body. */
+export const CHARITABLE_THREAD_MESSAGE_MAX_LENGTH = 2000;
+
+/**
+ * A request an expense sheet may be linked to from the expense forms (Sprint 6H): vetting is finished (RequestStatus
+ * 'Advanced') and the council has not voted it down.
+ */
+export const isLinkableCharitableRequest = (request: Pick<CharitableRequest, 'RequestStatus' | 'VoteStatus'>): boolean =>
+  request.RequestStatus === 'Advanced' && request.VoteStatus !== 'Rejected';
+
+/** The council's linkable requests for the expense forms' 'Link to Vetted Charity Request' dropdown, by name then id. */
+export function linkableCharitableRequests(requests: readonly CharitableRequest[], councilId: number): LinkableCharitableRequest[] {
+  return requests
+    .filter((r) => r.CouncilID === councilId && isLinkableCharitableRequest(r))
+    .sort((a, b) => a.OrganizationName.localeCompare(b.OrganizationName) || a.id - b.id)
+    .map((r) => ({ id: r.id, OrganizationName: r.OrganizationName, AmountRequested: r.AmountRequested, RequestStatus: r.RequestStatus, VoteStatus: r.VoteStatus }));
+}
+
+/** What one caller may do with one thread type on one request. */
+export interface CharitableThreadAccess {
+  read: boolean;
+  /** Start the thread (its first post). */
+  open: boolean;
+  /** Add a post to the thread once it exists. */
+  post: boolean;
+}
+
+/** Requests whose threads still take posts: not declined, and not yet voted on. */
+export const charitableThreadsOpen = (request: Pick<CharitableRequest, 'RequestStatus' | 'VoteStatus'>): boolean =>
+  request.RequestStatus !== 'Declined' && request.VoteStatus === 'Pending';
+
+type ThreadRequest = Pick<CharitableRequest, 'id' | 'CouncilID' | 'ShepherdMemberID' | 'VetterMemberID' | 'RequestStatus' | 'VoteStatus'>;
+
+/**
+ * Who reads and writes a request's threads (Sprint 6H). The Knight Shepherd sees only 'MORE_INFO' and only answers it.
+ * 'MORE_INFO' is otherwise private to the request's vetting officer: its claiming vetter, or anyone who may override a
+ * claim (the council's Admins, Grand Knight and Deputy Grand Knight, any Super Admin). 'OFFICER_INPUT' is open to
+ * everyone with vetting authority for the council (its Active officers and Admins, any Super Admin) except the
+ * Shepherd, under the Four-Eyes Principle. Nobody writes once the request is declined or voted on.
+ */
+export function charitableThreadAccess(actor: MemberWriteActor, request: ThreadRequest, threadType: CharitableThreadType): CharitableThreadAccess {
+  const writable = charitableThreadsOpen(request);
+  if (request.ShepherdMemberID === actor.memberId) {
+    const read = actor.active && threadType === 'MORE_INFO';
+    return { read, open: false, post: read && writable };
+  }
+  const vetter = mayVetCharitableRequests(actor, request.CouncilID);
+  const read =
+    threadType === 'OFFICER_INPUT' ? vetter : vetter && (request.VetterMemberID === actor.memberId || mayOverrideVettingClaim(actor, request.CouncilID));
+  return { read, open: read && writable, post: read && writable };
+}
+
+/** Rejects a caller charitableThreadAccess does not allow `need` on the thread type, naming the reason. */
+export function assertCharitableThreadAccess(actor: MemberWriteActor, request: ThreadRequest, threadType: CharitableThreadType, need: keyof CharitableThreadAccess): void {
+  const access = charitableThreadAccess(actor, request, threadType);
+  if (access[need]) return;
+  const title = CHARITABLE_THREAD_TITLES[threadType];
+  const details = { actorId: actor.memberId, requestId: request.id, threadType };
+  if (access.read && !charitableThreadsOpen(request)) {
+    throw new BusinessRuleError(
+      'REQUEST_STATUS_CONFLICT',
+      `Charitable request ${request.id} is ${request.RequestStatus === 'Declined' ? 'declined' : `voted ${request.VoteStatus}`}, so its ${title} thread is closed.`,
+      { ...details, requestStatus: request.RequestStatus, voteStatus: request.VoteStatus },
+    );
+  }
+  if (request.ShepherdMemberID === actor.memberId) {
+    throw new BusinessRuleError(
+      'SELF_VETTING_BLOCKED',
+      threadType === 'OFFICER_INPUT'
+        ? `The Knight Shepherd of charitable request ${request.id} cannot see the officers' ${title} thread.`
+        : `The Knight Shepherd of charitable request ${request.id} answers the ${title} thread once the vetting officer starts it.`,
+      details,
+    );
+  }
+  if (mayVetCharitableRequests(actor, request.CouncilID)) {
+    throw new SecurityPrivilegeError(
+      'VETTING_AUTHORITY_REQUIRED',
+      `The ${title} thread on charitable request ${request.id} is private to its Knight Shepherd and its vetting officer (the claiming vetter, an Admin, the Grand Knight or the Deputy Grand Knight).`,
+      details,
+    );
+  }
+  const otherCouncilOfficer = actor.active && actor.councilId !== request.CouncilID && (actor.officer === true || actor.memberType === 'Admin');
+  throw new SecurityPrivilegeError(
+    otherCouncilOfficer ? 'COUNCIL_ACCESS_DENIED' : 'VETTING_AUTHORITY_REQUIRED',
+    `Only the council's officers and Admins (and the request's Knight Shepherd, on the ${CHARITABLE_THREAD_TITLES.MORE_INFO} thread) can use the threads on charitable request ${request.id}.`,
+    details,
+  );
+}
+
+/** A thread type the data service accepts, else INVALID_INPUT. */
+export function assertCharitableThreadType(value: unknown): CharitableThreadType {
+  if ((CHARITABLE_THREAD_TYPES as readonly unknown[]).includes(value)) return value as CharitableThreadType;
+  throw invalid(`Thread type must be one of ${CHARITABLE_THREAD_TYPES.join(', ')}; received ${JSON.stringify(value)}.`, { threadType: value });
+}
+
+/** A trimmed post of 1 to CHARITABLE_THREAD_MESSAGE_MAX_LENGTH characters, else INVALID_INPUT. */
+export const cleanCharitableThreadMessage = (value: unknown): string => assertText(value, 'Message', CHARITABLE_THREAD_MESSAGE_MAX_LENGTH);
+
+export const charitableThreadNotFound = (threadId: number): BusinessRuleError =>
+  new BusinessRuleError('THREAD_NOT_FOUND', `Charitable request thread ${threadId} does not exist.`, { table: 'CharitableRequestThread', id: threadId });
+
+/** Joins one thread with its opener, its posts (oldest first) and their authors. */
+export function buildCharitableThreadDetail(
+  thread: CharitableRequestThread,
+  messages: readonly CharitableRequestThreadMessage[],
+  members: readonly Pick<Member, 'id' | 'MemberFirstName' | 'MemberLastName'>[],
+  canPost: boolean,
+): CharitableRequestThreadDetail {
+  const member = (id: number) => members.find((m) => m.id === id);
+  const opener = member(thread.opened_by_member_id);
+  return {
+    thread,
+    openedByFirstName: opener?.MemberFirstName ?? '',
+    openedByLastName: opener?.MemberLastName ?? '',
+    messages: messages
+      .filter((m) => m.thread_id === thread.id)
+      .sort((a, b) => a.posted_at.localeCompare(b.posted_at) || a.id - b.id)
+      .map((message) => {
+        const author = member(message.author_member_id);
+        return { message, authorFirstName: author?.MemberFirstName ?? '', authorLastName: author?.MemberLastName ?? '' };
+      }),
+    canPost,
+  };
+}
+
+/**
+ * charities.listRequestThreads: the request's threads the caller may read, MORE_INFO first, and the types the caller
+ * may still start. Rejects (assertCharitableThreadAccess) when the caller may read neither type.
+ */
+export function buildCharitableRequestThreads(
+  actor: MemberWriteActor,
+  request: ThreadRequest,
+  threads: readonly CharitableRequestThread[],
+  messages: readonly CharitableRequestThreadMessage[],
+  members: readonly Pick<Member, 'id' | 'MemberFirstName' | 'MemberLastName'>[],
+): CharitableRequestThreads {
+  const readable = CHARITABLE_THREAD_TYPES.filter((t) => charitableThreadAccess(actor, request, t).read);
+  if (readable.length === 0) assertCharitableThreadAccess(actor, request, 'MORE_INFO', 'read');
+  const own = threads.filter((t) => t.request_id === request.id);
+  return {
+    requestId: request.id,
+    threads: readable.flatMap((type) => {
+      const thread = own.find((t) => t.thread_type === type);
+      return thread ? [buildCharitableThreadDetail(thread, messages, members, charitableThreadAccess(actor, request, type).post)] : [];
+    }),
+    canOpen: readable.filter((type) => !own.some((t) => t.thread_type === type) && charitableThreadAccess(actor, request, type).open),
+  };
+}

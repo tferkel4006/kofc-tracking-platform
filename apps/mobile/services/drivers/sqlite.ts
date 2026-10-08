@@ -207,6 +207,14 @@ import {
   CHARITABLE_REQUEST_FORM_COLUMNS,
   CHARITABLE_TRIAGE_COLUMNS,
   charitableRequestNotFound,
+  assertCharitableThreadAccess,
+  assertCharitableThreadType,
+  buildCharitableRequestThreads,
+  buildCharitableThreadDetail,
+  charitableThreadAccess,
+  charitableThreadNotFound,
+  cleanCharitableThreadMessage,
+  linkableCharitableRequests,
   cleanCharitableRequest,
   planCharitableTriage,
   assertOneCharitySource,
@@ -472,6 +480,9 @@ import type {
   CouncilMeetingType,
   CharitableRequest,
   CharitableRequestDetail,
+  CharitableRequestThread,
+  CharitableRequestThreadDetail,
+  CharitableRequestThreadMessage,
   CouncilMissionArea,
   CouncilRelationshipType,
   CouncilAgendaTemplate,
@@ -580,8 +591,10 @@ const DB_NAME = 'kofc.db';
  *     2026-2027 budget seeded (Sprint 6F).
  * 45: ExpenseReport.budget_line_id and charity_request_id - the budget line the signers charge a sheet to, which the
  *     budget engine reads instead of matching names, and the charitable request a sheet spends for (Sprint 6G Extension).
+ * 46: CharitableRequestThread and CharitableRequestThreadMessage - the vetting desk's Request for More Information and
+ *     Request for Officer Input threads bound to a charitable request (Sprint 6H).
  */
-const SCHEMA_VERSION = 45;
+const SCHEMA_VERSION = 46;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -4957,6 +4970,75 @@ export class SqliteDataService implements DataService {
       return (await this.charitableRequestDetails(db, '[id] = ?', [requestId]))[0];
     },
 
+    listLinkableCharitableRequests: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayProposeCharityGift(await this.memberWriteActor(db, actorId), councilId, `read the charitable requests of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return linkableCharitableRequests(await db.getAllAsync<CharitableRequest>('SELECT * FROM [CharitableRequest] WHERE [CouncilID] = ?', [councilId]), councilId);
+    },
+
+    listRequestThreads: async (actorId, requestId) => {
+      const db = await this.ready();
+      const actor = await this.memberWriteActor(db, actorId);
+      const request = await db.getFirstAsync<CharitableRequest>('SELECT * FROM [CharitableRequest] WHERE [id] = ?', [requestId]);
+      if (!request) throw charitableRequestNotFound(requestId);
+      const threads = await db.getAllAsync<CharitableRequestThread>('SELECT * FROM [CharitableRequestThread] WHERE [request_id] = ?', [requestId]);
+      const messages = await selectIn<CharitableRequestThreadMessage>(
+        db,
+        (m) => `SELECT * FROM [CharitableRequestThreadMessage] WHERE [thread_id] IN (${m})`,
+        threads.map((t) => t.id),
+      );
+      return buildCharitableRequestThreads(actor, request, threads, messages, await this.threadAuthors(db, threads, messages));
+    },
+
+    openRequestThread: async (actorId, requestId, threadType, messageBody) => {
+      const type = assertCharitableThreadType(threadType);
+      const body = cleanCharitableThreadMessage(messageBody);
+      const db = await this.ready();
+      let threadId = 0;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const request = await db.getFirstAsync<CharitableRequest>('SELECT * FROM [CharitableRequest] WHERE [id] = ?', [requestId]);
+        if (!request) throw charitableRequestNotFound(requestId);
+        const existing = await db.getFirstAsync<CharitableRequestThread>(
+          'SELECT * FROM [CharitableRequestThread] WHERE [request_id] = ? AND [thread_type] = ?',
+          [requestId, type],
+        );
+        assertCharitableThreadAccess(actor, request, type, existing ? 'post' : 'open');
+        const now = toTimestamp(this.now());
+        threadId =
+          existing?.id ??
+          (
+            await db.runAsync(
+              'INSERT INTO [CharitableRequestThread] ([request_id], [thread_type], [opened_by_member_id], [opened_at]) VALUES (?, ?, ?, ?)',
+              [requestId, type, actorId, now],
+            )
+          ).lastInsertRowId;
+        await db.runAsync(
+          'INSERT INTO [CharitableRequestThreadMessage] ([thread_id], [author_member_id], [posted_at], [message_body]) VALUES (?, ?, ?, ?)',
+          [threadId, actorId, now, body],
+        );
+      });
+      return this.charitableThreadDetail(db, actorId, threadId);
+    },
+
+    postRequestThreadMessage: async (actorId, threadId, messageBody) => {
+      const body = cleanCharitableThreadMessage(messageBody);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const thread = await db.getFirstAsync<CharitableRequestThread>('SELECT * FROM [CharitableRequestThread] WHERE [id] = ?', [threadId]);
+        if (!thread) throw charitableThreadNotFound(threadId);
+        const request = (await db.getFirstAsync<CharitableRequest>('SELECT * FROM [CharitableRequest] WHERE [id] = ?', [thread.request_id]))!;
+        assertCharitableThreadAccess(actor, request, thread.thread_type, 'post');
+        await db.runAsync(
+          'INSERT INTO [CharitableRequestThreadMessage] ([thread_id], [author_member_id], [posted_at], [message_body]) VALUES (?, ?, ?, ?)',
+          [threadId, actorId, toTimestamp(this.now()), body],
+        );
+      });
+      return this.charitableThreadDetail(db, actorId, threadId);
+    },
+
     routeRequestToNextEligibleAgenda: async (actorId, requestId) => {
       const db = await this.ready();
       let motionId = 0;
@@ -5439,6 +5521,29 @@ export class SqliteDataService implements DataService {
     return db.getAllAsync<CouncilRelationshipType>('SELECT * FROM [CouncilRelationshipType] WHERE [CouncilID] = ? ORDER BY [RelationshipName], [id]', [
       councilId,
     ]);
+  }
+
+  /** The names of everyone who opened or posted to the threads. */
+  private async threadAuthors(
+    db: SQLite.SQLiteDatabase,
+    threads: readonly CharitableRequestThread[],
+    messages: readonly CharitableRequestThreadMessage[],
+  ): Promise<Member[]> {
+    const ids = [...new Set([...threads.map((t) => t.opened_by_member_id), ...messages.map((m) => m.author_member_id)])];
+    return selectIn<Member>(db, (m) => `SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member] WHERE [id] IN (${m})`, ids);
+  }
+
+  /** One request thread as the caller sees it, after a write the caller was allowed to make. */
+  private async charitableThreadDetail(db: SQLite.SQLiteDatabase, actorId: number, threadId: number): Promise<CharitableRequestThreadDetail> {
+    const thread = (await db.getFirstAsync<CharitableRequestThread>('SELECT * FROM [CharitableRequestThread] WHERE [id] = ?', [threadId]))!;
+    const request = (await db.getFirstAsync<CharitableRequest>('SELECT * FROM [CharitableRequest] WHERE [id] = ?', [thread.request_id]))!;
+    const messages = await db.getAllAsync<CharitableRequestThreadMessage>('SELECT * FROM [CharitableRequestThreadMessage] WHERE [thread_id] = ?', [threadId]);
+    return buildCharitableThreadDetail(
+      thread,
+      messages,
+      await this.threadAuthors(db, [thread], messages),
+      charitableThreadAccess(await this.memberWriteActor(db, actorId), request, thread.thread_type).post,
+    );
   }
 
   private async charitableRequestDetails(db: SQLite.SQLiteDatabase, where: string, params: number[]): Promise<CharitableRequestDetail[]> {

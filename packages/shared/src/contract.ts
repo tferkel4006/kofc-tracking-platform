@@ -16,6 +16,9 @@ import type {
   Category,
   CharitableDisbursementLedger,
   CharitableRequest,
+  CharitableRequestThread,
+  CharitableRequestThreadMessage,
+  CharitableThreadType,
   ProposedMotion,
   BallotSelection,
   LiveAttendance,
@@ -1058,6 +1061,43 @@ export interface CharitableRequestDetail {
   missionAreaName: string | null;
   /** The target budget line's LineItemName and FraternalYear (Sprint 5Z-2); null while the vetter has named none. */
   targetBudgetLine: { name: string; fraternalYear: string } | null;
+}
+
+/**
+ * A vetted charitable request a member may link an expense sheet to (Sprint 6H; ExpenseReport.charity_request_id):
+ * charities.listLinkableCharitableRequests.
+ */
+export interface LinkableCharitableRequest {
+  id: number;
+  OrganizationName: string;
+  AmountRequested: number;
+  RequestStatus: CharitableRequest['RequestStatus'];
+  VoteStatus: CharitableRequest['VoteStatus'];
+}
+
+/** One post in a request thread with its author's name (Sprint 6H). */
+export interface CharitableThreadMessageDetail {
+  message: CharitableRequestThreadMessage;
+  authorFirstName: string;
+  authorLastName: string;
+}
+
+/** A request thread with its posts, oldest first (Sprint 6H). */
+export interface CharitableRequestThreadDetail {
+  thread: CharitableRequestThread;
+  openedByFirstName: string;
+  openedByLastName: string;
+  messages: CharitableThreadMessageDetail[];
+  /** The caller may add a post: a participant, and the request is neither declined nor voted on. */
+  canPost: boolean;
+}
+
+/** charities.listRequestThreads (Sprint 6H): the threads the caller may read, and which ones the caller may start. */
+export interface CharitableRequestThreads {
+  requestId: number;
+  threads: CharitableRequestThreadDetail[];
+  /** The thread types the caller may start on the request that do not exist yet. */
+  canOpen: CharitableThreadType[];
 }
 
 /** What meetings.populateAnnualCadence laid down (Sprint 5Z-5). */
@@ -2800,6 +2840,37 @@ export interface DataService {
      * (assertMayAuditCouncilExpenses: its Admins, Financial Secretary and Treasurer, any Active Super Admin).
      */
     listApprovedFundingQueue(actorId: number, councilId: number): Promise<CharitableRequest[]>;
+    // ---- request threads and the expense link (Sprint 6H) ----
+    /**
+     * The council's vetted requests a member may link an expense sheet to (ExpenseReport.charity_request_id): RequestStatus
+     * 'Advanced' and a vote not 'Rejected' (isLinkableCharitableRequest), by OrganizationName then id. Any Active member
+     * of the council, or an Active Super Admin (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for an unknown council.
+     */
+    listLinkableCharitableRequests(actorId: number, councilId: number): Promise<LinkableCharitableRequest[]>;
+    /**
+     * The request's threads the caller may read (charitableThreadAccess), MORE_INFO first, each with its posts oldest
+     * first, and the thread types the caller may still start. The 'MORE_INFO' thread is private to the request's Knight
+     * Shepherd and its vetting officer (the claiming vetter, or the council's Admins, Grand Knight, Deputy Grand Knight
+     * and any Super Admin); 'OFFICER_INPUT' is open to everyone with vetting authority for the council except the
+     * Shepherd. Rejects RECORD_NOT_FOUND for an unknown request, VETTING_AUTHORITY_REQUIRED or COUNCIL_ACCESS_DENIED when
+     * the caller may read neither thread.
+     */
+    listRequestThreads(actorId: number, requestId: number): Promise<CharitableRequestThreads>;
+    /**
+     * Starts the request's thread of `threadType` with the caller's first post, or adds the post to the thread when it
+     * already exists (one thread of each type per request). 'MORE_INFO' is started by the request's vetting officer;
+     * 'OFFICER_INPUT' by anyone with vetting authority for the council except the Shepherd. Rejects RECORD_NOT_FOUND
+     * for an unknown request, INVALID_INPUT for an unknown type or a blank post or one over
+     * CHARITABLE_THREAD_MESSAGE_MAX_LENGTH characters, SELF_VETTING_BLOCKED for the Shepherd, VETTING_AUTHORITY_REQUIRED
+     * or COUNCIL_ACCESS_DENIED for anyone else not allowed, and REQUEST_STATUS_CONFLICT once the request is declined or
+     * voted on.
+     */
+    openRequestThread(actorId: number, requestId: number, threadType: CharitableThreadType, messageBody: string): Promise<CharitableRequestThreadDetail>;
+    /**
+     * Adds a post to an existing thread. The thread's participants, as for listRequestThreads (the Shepherd answers on
+     * 'MORE_INFO'). Rejects THREAD_NOT_FOUND for an unknown thread, and otherwise as openRequestThread.
+     */
+    postRequestThreadMessage(actorId: number, threadId: number, messageBody: string): Promise<CharitableRequestThreadDetail>;
     /**
      * Puts a vetted request on the council floor (Sprint 5Z-5): finds the request council's soonest Monthly meeting
      * (a Meeting whose MeetingTypeID is the council's CouncilMeetingType named MONTHLY_MEETING_TYPE_NAME) dated at

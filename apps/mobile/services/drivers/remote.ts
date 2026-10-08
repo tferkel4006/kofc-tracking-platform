@@ -228,6 +228,10 @@ export function createRemoteDataService(): DataService {
       triageRequestStatus: notImplemented('charities.triageRequestStatus'),
       routeRequestToNextEligibleAgenda: notImplemented('charities.routeRequestToNextEligibleAgenda'),
       listApprovedFundingQueue: notImplemented('charities.listApprovedFundingQueue'),
+      listLinkableCharitableRequests: notImplemented('charities.listLinkableCharitableRequests'),
+      listRequestThreads: notImplemented('charities.listRequestThreads'),
+      openRequestThread: notImplemented('charities.openRequestThread'),
+      postRequestThreadMessage: notImplemented('charities.postRequestThreadMessage'),
     },
     budget: {
       listAnnualForecast: notImplemented('budget.listAnnualForecast'),
