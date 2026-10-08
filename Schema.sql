@@ -2199,3 +2199,16 @@ CREATE UNIQUE INDEX [CouncilAssetsInventory_Expense_Idx] ON [CouncilAssetsInvent
 GO
 CREATE INDEX [CouncilAssetsInventory_Council_Idx] ON [CouncilAssetsInventory] ([council_id], [current_status]);
 GO
+
+-- =========================================================================
+-- Sprint 6F (Phase 5): UNIVERSAL BUDGET CATEGORY KEYS (schema version 44)
+-- CouncilBudgetForecast.universal_category maps each budget line to one universal financial category, so councils
+-- whose funds carry their own names (BudgetCategoryID, e.g. St. Mary's 'Father George Wolf Memorial Fund') still compare
+-- line for line across tenants. Values are the keys of UNIVERSAL_BUDGET_CATEGORIES in budget.ts: CHARITABLE_DONATIONS,
+-- CAPITAL_PROJECTS, COMMUNITY_EVENTS, YOUTH_PROGRAMS, FRATERNAL_ACTIVITIES, MEMBERSHIP_RECOGNITION,
+-- ADMINISTRATIVE_OPERATIONS, MISCELLANEOUS (rules layer, no CHECK). The old combined 'Donations and Projects' grouping
+-- is two keys, CHARITABLE_DONATIONS and CAPITAL_PROJECTS. NULL while a line is unmapped. A mid-year amendment copies the
+-- key to the new budget_version, and prePopulateNextYear carries it to the line that continues it next year.
+-- =========================================================================
+ALTER TABLE [CouncilBudgetForecast] ADD [universal_category] VARCHAR(50) NULL;
+GO

@@ -20,7 +20,7 @@ import type {
   NewCustomBudgetLine,
 } from './contract';
 import { assertMoney, assertText, BusinessRuleError, hasSuperAdminRights, toIsoDate, type MemberWriteActor } from './rules';
-import type { BudgetCategoryType, BudgetLineStatus, CouncilBudgetCategory, CouncilBudgetForecast } from './types';
+import type { BudgetCategoryType, BudgetLineStatus, CouncilBudgetCategory, CouncilBudgetForecast, UniversalBudgetCategory } from './types';
 import { findMiscellaneousBudgetLine, nextBudgetLineStatus, nextBudgetVersionStatus } from './workflow';
 
 /** CouncilBudgetForecast.CategoryType values, in the order a forecast lists them. */
@@ -31,6 +31,27 @@ export const BUDGET_LINE_NAME_MAX_LENGTH = 255;
 export const BUDGET_NOTES_MAX_LENGTH = 2000;
 /** The Operational line prePopulateNextYear seeds from the expenses of the council's meetings. */
 export const BUDGET_MEETINGS_LINE_NAME = 'Council Meetings';
+
+/**
+ * Sprint 6F: the universal financial categories (CouncilBudgetForecast.universal_category), keyed by the stored value,
+ * in report order. A council's fund header stays its own; the key is what lines compare by across tenants. The old
+ * combined 'Donations and Projects' grouping is two keys: gifts are CHARITABLE_DONATIONS, building, grounds and major
+ * equipment projects are CAPITAL_PROJECTS.
+ */
+export const UNIVERSAL_BUDGET_CATEGORIES: Readonly<Record<UniversalBudgetCategory, string>> = {
+  CHARITABLE_DONATIONS: 'Charitable Donations',
+  CAPITAL_PROJECTS: 'Capital Projects',
+  COMMUNITY_EVENTS: 'Community Events',
+  YOUTH_PROGRAMS: 'Youth Programs',
+  FRATERNAL_ACTIVITIES: 'Fraternal Activities',
+  MEMBERSHIP_RECOGNITION: 'Membership & Recognition',
+  ADMINISTRATIVE_OPERATIONS: 'Administrative Operations',
+  MISCELLANEOUS: 'Miscellaneous',
+};
+
+/** True when `value` is a key of UNIVERSAL_BUDGET_CATEGORIES. */
+export const isUniversalBudgetCategory = (value: unknown): value is UniversalBudgetCategory =>
+  typeof value === 'string' && Object.prototype.hasOwnProperty.call(UNIVERSAL_BUDGET_CATEGORIES, value);
 
 const invalid = (message: string, details: Record<string, unknown> = {}) => new BusinessRuleError('INVALID_INPUT', message, details);
 
@@ -167,7 +188,8 @@ export interface BudgetActuals {
    * 5Y-2) at their ApprovedBudgetAmount (Sprint 5Y-6.5), and every line passes its BudgetCategoryID on to the line that
    * continues it (Sprint 5Y-3).
    */
-  priorLines: readonly Pick<CouncilBudgetForecast, 'CategoryType' | 'ReferenceSourceID' | 'LineItemName' | 'BudgetCategoryID' | 'ApprovedBudgetAmount'>[];
+  priorLines: readonly (Pick<CouncilBudgetForecast, 'CategoryType' | 'ReferenceSourceID' | 'LineItemName' | 'BudgetCategoryID' | 'ApprovedBudgetAmount'> &
+    Partial<Pick<CouncilBudgetForecast, 'universal_category'>>)[];
 }
 
 /** One line prePopulateNextYear wants in the new year. */
@@ -175,6 +197,8 @@ export type BudgetSeed = Pick<CouncilBudgetForecast, 'CategoryType' | 'LineItemN
   ReferenceSourceID: number | null;
   /** The category of the previous year's line this one continues, or null. */
   BudgetCategoryID: number | null;
+  /** Sprint 6F: the universal category of the previous year's line this one continues; undefined when it had none. */
+  universal_category?: UniversalBudgetCategory;
 };
 
 /**
@@ -195,11 +219,12 @@ function priorLineOf<T extends BudgetActuals['priorLines'][number]>(
  * (the sum of its checks), the meetings line when the council met, and each of last year's custom Operational lines
  * again under the same name. Custom lines have no spend to read, so their baseline is last year's approved cap, its
  * ApprovedBudgetAmount (Sprint 5Y-6.5; 0 when last year was never approved), so a 'Miscellaneous Others' catch-all
- * line carries forward like any other. Each keeps the category of the previous year's line it continues. In
+ * line carries forward like any other. Each keeps the category (and Sprint 6F universal category) of the previous
+ * year's line it continues. In
  * listAnnualForecast order.
  */
 export function planBudgetPrePopulation(actuals: BudgetActuals): BudgetSeed[] {
-  const seeds: Omit<BudgetSeed, 'BudgetCategoryID'>[] = actuals.annualEvents.map((e) => ({
+  const seeds: Omit<BudgetSeed, 'BudgetCategoryID' | 'universal_category'>[] = actuals.annualEvents.map((e) => ({
     CategoryType: 'Event',
     ReferenceSourceID: e.id,
     LineItemName: e.EventName,
@@ -229,7 +254,13 @@ export function planBudgetPrePopulation(actuals: BudgetActuals): BudgetSeed[] {
     carried.add(lineKey(LineItemName));
     seeds.push({ CategoryType: 'Operational', ReferenceSourceID: null, LineItemName, PrePopulatedAmount: sumCents([ApprovedBudgetAmount]) });
   }
-  return sortBudgetLines(seeds.map((seed) => ({ ...seed, BudgetCategoryID: priorLineOf(seed, actuals.priorLines)?.BudgetCategoryID ?? null })));
+  return sortBudgetLines(
+    seeds.map((seed) => {
+      const prior = priorLineOf(seed, actuals.priorLines);
+      const universal = prior?.universal_category;
+      return { ...seed, BudgetCategoryID: prior?.BudgetCategoryID ?? null, ...(isUniversalBudgetCategory(universal) ? { universal_category: universal } : {}) };
+    }),
+  );
 }
 
 /** A line prePopulateNextYear refreshes in place. */

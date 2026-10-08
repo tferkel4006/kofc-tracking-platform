@@ -572,8 +572,10 @@ const DB_NAME = 'kofc.db';
  *     quantity x unit cost estimates and the immutable approved snapshots of mid-year amendments (Sprint 6D).
  * 43: ExpenseReport.is_long_term_asset and CouncilAssetsInventory - approved long-term asset expenses convert into
  *     inventory rows (Sprint 6E).
+ * 44: CouncilBudgetForecast.universal_category - each line's universal financial category, and Council 15295's real
+ *     2026-2027 budget seeded (Sprint 6F).
  */
-const SCHEMA_VERSION = 43;
+const SCHEMA_VERSION = 44;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -5045,8 +5047,8 @@ export class SqliteDataService implements DataService {
         // The approved row is an immutable snapshot: the amendment is a new row with the next budget_version.
         const v = planBudgetAmendment(line, amendment);
         const res = await db.runAsync(
-          `INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [PrePopulatedAmount], [ApprovedBudgetAmount], [Notes], [BudgetCategoryID], [ProposedBudgetAmount], [BudgetStatus], [quantity], [unit_cost], [budget_version])
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [PrePopulatedAmount], [ApprovedBudgetAmount], [Notes], [BudgetCategoryID], [ProposedBudgetAmount], [BudgetStatus], [quantity], [unit_cost], [budget_version], [universal_category])
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             v.CouncilID,
             v.FraternalYear,
@@ -5062,6 +5064,7 @@ export class SqliteDataService implements DataService {
             v.quantity,
             v.unit_cost,
             v.budget_version,
+            v.universal_category ?? null,
           ],
         );
         lineId = res.lastInsertRowId;
@@ -5170,9 +5173,9 @@ export class SqliteDataService implements DataService {
         }
         for (const seed of plan.inserts) {
           await db.runAsync(
-            `INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [PrePopulatedAmount], [ProposedBudgetAmount], [ApprovedBudgetAmount], [BudgetStatus], [BudgetCategoryID])
-             VALUES (?, ?, ?, ?, ?, ?, 0, 0, 'Draft', ?)`,
-            [councilId, target, seed.CategoryType, seed.ReferenceSourceID, seed.LineItemName, seed.PrePopulatedAmount, seed.BudgetCategoryID],
+            `INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [PrePopulatedAmount], [ProposedBudgetAmount], [ApprovedBudgetAmount], [BudgetStatus], [BudgetCategoryID], [universal_category])
+             VALUES (?, ?, ?, ?, ?, ?, 0, 0, 'Draft', ?, ?)`,
+            [councilId, target, seed.CategoryType, seed.ReferenceSourceID, seed.LineItemName, seed.PrePopulatedAmount, seed.BudgetCategoryID, seed.universal_category ?? null],
           );
         }
         created = plan.inserts.length;

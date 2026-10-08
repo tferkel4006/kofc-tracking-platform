@@ -555,16 +555,60 @@ VALUES
 (1, '2026-07-19', 4, 2, NULL, 'Baby bottle campaign, Zelle', 7, 400.00, 7);
 GO
 
--- Sprint 5Z-2: the council's approved 2026-2027 budget lines a vetter may name as a request's target (BudgetCategoryID 1-6
--- are the six funds above: 2 Sister Rita Rose Vistica Parish Community Fund, 3 Cathedral School & Student Support, 4 Other
--- Donations & Projects).
-INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [PrePopulatedAmount], [ApprovedBudgetAmount], [Notes], [BudgetCategoryID], [ProposedBudgetAmount], [BudgetStatus])
-VALUES 
-(1, '2026-2027', 'Donation', 1, 'St. Jude Parish Food Pantry', 1000.00, 1500.00, NULL, 2, 1500.00, 'Approved'),
-(1, '2026-2027', 'Donation', 2, 'Holy Family Pregnancy Resource Center', 1350.00, 1500.00, NULL, 4, 1500.00, 'Approved'),
-(1, '2026-2027', 'Donation', 4, 'Cathedral School Tuition Assistance Fund', 1000.00, 1200.00, NULL, 3, 1200.00, 'Approved'),
-(1, '2026-2027', 'Operational', NULL, 'Outside Organization Requests', 0.00, 5000.00, 'Pool for vetted intake requests', 4, 5000.00, 'Approved'),
-(1, '2026-2027', 'Operational', NULL, 'Miscellaneous Others', 0.00, 750.00, 'Sprint 6E catch-all: approved spend and gifts with no budget line of their own', 5, 750.00, 'Approved');
+-- ==============================================================================
+-- Sprint 6F: Council 15295's (CouncilID 1) real 2026-2027 budget, from St. Mary's "BUDGET SUMMARY - 2026-2027
+-- Fraternal Year" spreadsheet: 40 lines under the six funds above, totalling 41,700.00 (subtotals 4,600 / 3,400 /
+-- 4,200 / 14,300 / 8,900 / 6,300), voted and so Approved at version 1. The spreadsheet's * ("funded by request or when an
+-- event/recipient is available") is moved from the name into Notes, so 'Miscellaneous Others' is the Sprint 6E
+-- catch-all line. Council-run gatherings are Event lines with no ReferenceSourceID (linked to an event by name, Sprint
+-- 6C); every other line is Operational, since the recipients are not GlobalCharityRegistry rows. PrePopulatedAmount is
+-- 0.00: no prior-year actuals came with the spreadsheet. quantity/unit_cost follow the spreadsheet's own counts where
+-- they divide evenly. universal_category maps each line to its universal financial category (Sprint 6F,
+-- UNIVERSAL_BUDGET_CATEGORIES in budget.ts); the fund names stay St. Mary's own, and the 'Other Donations & Projects'
+-- fund splits into CHARITABLE_DONATIONS and CAPITAL_PROJECTS.
+-- ==============================================================================
+INSERT INTO [CouncilBudgetForecast] ([CouncilID], [FraternalYear], [CategoryType], [ReferenceSourceID], [LineItemName], [PrePopulatedAmount], [ApprovedBudgetAmount], [Notes], [BudgetCategoryID], [ProposedBudgetAmount], [BudgetStatus], [quantity], [unit_cost], [budget_version], [universal_category])
+VALUES
+(1, '2026-2027', 'Operational', NULL, 'Annual Donation to Pastor', 0.00, 1400.00, 'For any purpose chosen by our Pastor', 1, 1400.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Donation for Deacon or Parochial Vicar', 0.00, 500.00, 'For any purpose chosen by our Deacon', 1, 500.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Annual Donation for Church Office Staff', 0.00, 300.00, '$150/staff member, for personal use', 1, 300.00, 'Approved', 2, 150.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Annual Donation to Seminarian(s)', 0.00, 700.00, 'Funded by request or when an event/recipient is available. $700 provided by the Council; starting 7/1; RSVP', 1, 700.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Pennies for Heaven', 0.00, 400.00, 'Supreme/State program: supports seminarians', 1, 400.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Seminarian and Parochial Vicar Contributions', 0.00, 1300.00, 'Funded by request or when an event/recipient is available. For Cathedral seminarians (up to $1,300 total)', 1, 1300.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Event', NULL, 'Pancake Breakfasts (3x/year - Oct, Feb, May)', 0.00, 1100.00, '$370/breakfast: food & beverages ~60 people plus ~$70/breakfast for supplies', 2, 1100.00, 'Approved', 3, 0.00, 1, 'COMMUNITY_EVENTS'),
+(1, '2026-2027', 'Event', NULL, 'Annual Parish Barbecue', 0.00, 1600.00, 'Food, beverages, and supplies; serves ~170 people (~$9.50/person)', 2, 1600.00, 'Approved', 1, 0.00, 1, 'COMMUNITY_EVENTS'),
+(1, '2026-2027', 'Event', NULL, 'Simple Suppers (5x/year - Lenten Fridays + fish fry)', 0.00, 700.00, 'Most food donated by volunteer hosts; fish fry and supplies are main expense', 2, 700.00, 'Approved', 5, 140.00, 1, 'COMMUNITY_EVENTS'),
+(1, '2026-2027', 'Event', NULL, 'Annual Cathedral School Event', 0.00, 1000.00, 'Annual Autumn gathering; goes to general fund', 3, 1000.00, 'Approved', 1, 0.00, 1, 'YOUTH_PROGRAMS'),
+(1, '2026-2027', 'Operational', NULL, 'Awards for Cathedral Students', 0.00, 600.00, 'Cash awards: one boy, one girl; three plaques', 3, 600.00, 'Approved', 1, 0.00, 1, 'YOUTH_PROGRAMS'),
+(1, '2026-2027', 'Operational', NULL, 'St. Mary''s Cathedral Tuition Fund', 0.00, 1000.00, 'Via Cathedral Parish; helps families with financial need', 3, 1000.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Scouts General Support', 0.00, 300.00, 'For scouting affiliated with Cathedral School students', 3, 300.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Event', NULL, 'Bingo for April in Paris[h]', 0.00, 500.00, 'Food, beverages, and prizes for bingo night', 3, 500.00, 'Approved', 1, 0.00, 1, 'YOUTH_PROGRAMS'),
+(1, '2026-2027', 'Event', NULL, 'Field Day for Graduation', 0.00, 800.00, 'Knights provide burgers, snow cones, etc.', 3, 800.00, 'Approved', 1, 0.00, 1, 'YOUTH_PROGRAMS'),
+(1, '2026-2027', 'Operational', NULL, 'St. Andrew Nativity School', 0.00, 1000.00, 'Benefit lunch; provides free education', 4, 1000.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Community Faith Services', 0.00, 500.00, 'Donation for Legion of Mary, Cathedral', 4, 500.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Our Lady of Peace Retreat House', 0.00, 1000.00, 'Contribution for equipment/facilities improvements', 4, 1000.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Parking Lot Maintenance', 0.00, 1000.00, 'Funded by request or when an event/recipient is available. Lot striping expenses, signage', 4, 1000.00, 'Approved', 1, 0.00, 1, 'CAPITAL_PROJECTS'),
+(1, '2026-2027', 'Operational', NULL, 'Other Cathedral Maintenance', 0.00, 1000.00, 'Funded by request or when an event/recipient is available. Lights, paint; can be carried to next year', 4, 1000.00, 'Approved', 1, 0.00, 1, 'CAPITAL_PROJECTS'),
+(1, '2026-2027', 'Operational', NULL, 'Family Clinic', 0.00, 1000.00, 'Funded by request or when an event/recipient is available. Open to all; activities focus on Catholic ethics', 4, 1000.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Sisters of Mary of Kakamega', 0.00, 1000.00, 'Supports children in African centers', 4, 1000.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Food for Families (e.g., Lift Up)', 0.00, 500.00, 'Funded by request or when an event/recipient is available. Adds to Lenten food collection efforts', 4, 500.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'St. Patrick Parish Benefit Lunch', 0.00, 300.00, 'Funded by request or when an event/recipient is available. Up to 10 members at $30 each (reimbursed)', 4, 300.00, 'Approved', 10, 30.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Miscellaneous Others', 0.00, 2500.00, 'Funded by request or when an event/recipient is available. Special requests/projects; typically $500 each (e.g., Medical Team Intl., Mother & Child). Sprint 6E catch-all: approved spend and gifts with no budget line of their own', 4, 2500.00, 'Approved', 1, 0.00, 1, 'MISCELLANEOUS'),
+(1, '2026-2027', 'Operational', NULL, 'Major Project(s)', 0.00, 4500.00, 'Ultrasound; destination/amount determined by future council vote', 4, 4500.00, 'Approved', 1, 0.00, 1, 'CAPITAL_PROJECTS'),
+(1, '2026-2027', 'Operational', NULL, 'State Convention', 0.00, 1000.00, 'Funded by request or when an event/recipient is available. Expenses for two representatives (and wives)', 5, 1000.00, 'Approved', 1, 0.00, 1, 'ADMINISTRATIVE_OPERATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Exemplification / Member Support', 0.00, 500.00, 'Membership and degree advancement; 4th degree fees', 5, 500.00, 'Approved', 1, 0.00, 1, 'MEMBERSHIP_RECOGNITION'),
+(1, '2026-2027', 'Operational', NULL, 'Equipment Purchases', 0.00, 500.00, 'Funded by request or when an event/recipient is available. Purchases not covered under other budget headings', 5, 500.00, 'Approved', 1, 0.00, 1, 'ADMINISTRATIVE_OPERATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Shirts, Plaques, Badges, Pins', 0.00, 400.00, 'Funded by request or when an event/recipient is available. Materials representing the Knights', 5, 400.00, 'Approved', 1, 0.00, 1, 'MEMBERSHIP_RECOGNITION'),
+(1, '2026-2027', 'Operational', NULL, 'Cathedral Bulletin Ad', 0.00, 1300.00, 'Annual cost; promotes Knights membership', 5, 1300.00, 'Approved', 1, 0.00, 1, 'ADMINISTRATIVE_OPERATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Per Capita, Bank Fees, Postage', 0.00, 1500.00, '~$24/member x 60 members', 5, 1500.00, 'Approved', 1, 0.00, 1, 'ADMINISTRATIVE_OPERATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Contributions to State/Supreme & K of C Projects', 0.00, 1500.00, 'Father Taaffe Homes ($400); Coats for Kids ($1,100)', 5, 1500.00, 'Approved', 1, 0.00, 1, 'CHARITABLE_DONATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Roses for Easter and Mother''s Day', 0.00, 1000.00, 'Roses purchased in bulk and distributed by Knights', 5, 1000.00, 'Approved', 1, 0.00, 1, 'COMMUNITY_EVENTS'),
+(1, '2026-2027', 'Operational', NULL, 'Council Knight Awards', 0.00, 700.00, 'Plaques, hammers, honorary funds', 5, 700.00, 'Approved', 1, 0.00, 1, 'MEMBERSHIP_RECOGNITION'),
+(1, '2026-2027', 'Operational', NULL, 'Grand Knight Discretionary Fund', 0.00, 500.00, 'Funded by request or when an event/recipient is available. Applied by GK according to perceived needs, once/year', 5, 500.00, 'Approved', 1, 0.00, 1, 'ADMINISTRATIVE_OPERATIONS'),
+(1, '2026-2027', 'Operational', NULL, 'Monthly Council Meetings', 0.00, 1500.00, 'Food & beverages: 10 meetings, ~$120/meeting, ~20 attendees', 6, 1500.00, 'Approved', 1, 0.00, 1, 'FRATERNAL_ACTIVITIES'),
+(1, '2026-2027', 'Event', NULL, 'Council Camping Trip', 0.00, 1200.00, 'For campsite reservation, food, and supplies', 6, 1200.00, 'Approved', 1, 0.00, 1, 'FRATERNAL_ACTIVITIES'),
+(1, '2026-2027', 'Event', NULL, 'Council Retreats (Black Butte, Lent)', 0.00, 600.00, 'Faith-building fraternal gathering with Msgr. O''Connor; 8-10 Knights', 6, 600.00, 'Approved', 1, 0.00, 1, 'FRATERNAL_ACTIVITIES'),
+(1, '2026-2027', 'Event', NULL, 'Christmas Party', 0.00, 3000.00, 'Elks Lodge rental, main course, music', 6, 3000.00, 'Approved', 1, 0.00, 1, 'FRATERNAL_ACTIVITIES');
 GO
 
 -- Sprint 5Z-8: Council 15295's general ledger since the 2026-2027 fraternal year opened. Each TransactionID groups one

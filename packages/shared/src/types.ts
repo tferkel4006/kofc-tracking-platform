@@ -812,7 +812,26 @@ export interface CouncilBudgetForecast {
    * row with the next version (budget.amendApprovedLine). Readers use each line's highest version. Missing reads as 1.
    */
   budget_version?: number;
+  /**
+   * Sprint 6F (Schema 44): the universal financial category the line rolls up to across every tenant (a key of
+   * UNIVERSAL_BUDGET_CATEGORIES in budget.ts), whatever the council's own fund header is. NULL while unmapped.
+   */
+  universal_category?: UniversalBudgetCategory | null;
 }
+
+/**
+ * Sprint 6F: the universal financial categories every council's budget lines map to, so councils with their own fund
+ * names (BudgetCategoryID) still compare line for line. Labels are UNIVERSAL_BUDGET_CATEGORIES in budget.ts.
+ */
+export type UniversalBudgetCategory =
+  | 'CHARITABLE_DONATIONS'
+  | 'CAPITAL_PROJECTS'
+  | 'COMMUNITY_EVENTS'
+  | 'YOUTH_PROGRAMS'
+  | 'FRATERNAL_ACTIVITIES'
+  | 'MEMBERSHIP_RECOGNITION'
+  | 'ADMINISTRATIVE_OPERATIONS'
+  | 'MISCELLANEOUS';
 
 /**
  * CouncilBudgetForecast.BudgetStatus (Sprint 5Y-4): 'Draft' when seeded with no figure proposed yet, 'Proposed' once

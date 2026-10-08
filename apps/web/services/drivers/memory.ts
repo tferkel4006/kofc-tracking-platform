@@ -4399,6 +4399,7 @@ export class MemoryDataService implements DataService {
             CouncilID: councilId,
             FraternalYear: target,
             ...seed,
+            universal_category: seed.universal_category ?? null,
             ProposedBudgetAmount: 0,
             ApprovedBudgetAmount: 0,
             BudgetStatus: 'Draft',
