@@ -262,10 +262,12 @@ describe.each(drivers)('$name driver: presentation data', (d) => {
     const db = await makePresentation();
     expect(d.count(db, 'Member')).toBeGreaterThanOrEqual(19); // 3 test profiles, 15 officers and directors, the unregistered member
     expect(d.count(db, 'ExpenseReport')).toBe(13);
-    // Sprint 5Z-4: one sheet on each dual-approval desk and one in the Treasurer's vault.
+    // Sprint 5Z-4: one sheet awaiting the written order and one in the Treasurer's vault. Sprint 6Q: the ordered sheet
+    // now waits on the Treasurer Ledger Audit Desk, so the Grand Knight's desk is empty until it is coded.
     const expenseQueue = await db.expenses.listCouncilQueue(MEMBER.admin, OWN);
     expect(expenseQueue.filter((q) => awaitsWrittenOrder(q.report)).map((q) => q.report.id)).toEqual([11]);
-    expect((await db.expenses.listAuthorizationQueue(MEMBER.superAdmin, OWN)).map((q) => [q.report.id, q.financialSecretaryName])).toEqual([[12, 'Council Admin']]);
+    expect((await db.expenses.listTreasurerQueue(MEMBER.superAdmin, OWN)).map((q) => [q.report.id, q.financialSecretaryName])).toEqual([[12, 'Council Admin']]);
+    expect(await db.expenses.listAuthorizationQueue(MEMBER.superAdmin, OWN)).toEqual([]);
     expect(expenseQueue.filter((q) => isPayableExpenseReport(q.report)).map((q) => q.report.id)).toEqual([13]);
     expect(d.count(db, 'CharitableDisbursementLedger')).toBe(8);
 

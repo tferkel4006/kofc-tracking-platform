@@ -1,6 +1,6 @@
 // Sprint 6G Extension (Phase 5): Expense Budget Binding - schema 45's ExpenseReport.budget_line_id and
-// charity_request_id. The two dual-approval signatures save the desks' 'Assign Ledger Budget Line Item' pick on the
-// sheet (planExpenseBudgetLineSave), the budget engine charges approved sheets only to that saved line
+// charity_request_id. Since Sprint 6Q only the Treasurer's ledger coding saves the 'Assign Ledger Budget Line Item'
+// pick on the sheet, together with its general ledger account; the budget engine charges approved sheets only to that saved line
 // (attributeBudgetSpend, read through amendments by currentBudgetLineIdOf), and the desks pre-select a meeting's
 // expenses by universal category (findMeetingBudgetLine) and a charity-linked sheet by its request's line.
 import { readFileSync } from 'node:fs';
@@ -22,7 +22,7 @@ import {
 import { MemoryDataService } from '../apps/web/services/drivers/memory';
 import { SqliteDataService } from '../apps/mobile/services/drivers/sqlite';
 import { TABLES } from '../apps/web/services/generated/schema.generated';
-import { drivers, expectRule, MEMBER, NOW, type DriverUnderTest } from './helpers';
+import { drivers, expectRule, ledgerCoder, MEMBER, NOW, type DriverUnderTest } from './helpers';
 import { openDatabases } from './shims/expo-sqlite';
 
 const read = (path: string) => readFileSync(join(__dirname, '..', path), 'utf8');
@@ -201,7 +201,7 @@ const addLine = (
     ...over,
   });
 
-async function meetingSheet(db: DataService) {
+async function meetingSheet(db: DataService, submitter: number = MEMBER.member) {
   const meetingType = (await db.lookups.list('MeetingType'))[0].id;
   const meeting = await db.meetings.create({
     OwnerID: null,
@@ -213,60 +213,92 @@ async function meetingSheet(db: DataService) {
     Location: 'Council Hall',
     MeetingType: meetingType,
   });
-  return (await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted', LinkedMeetingID: meeting.id }, [receipt()])).report;
+  return (await db.expenses.submitReport(submitter, { Status: 'Submitted', LinkedMeetingID: meeting.id }, [receipt()])).report;
 }
 
 describe.each(drivers)('expense budget binding ($name driver)', (d) => {
-  it('saves the written order’s pick on the sheet, keeps it through the counter-signature, and charges only that line', async () => {
+  // Sprint 6Q: only the Treasurer codes a sheet's budget line (and ledger account); the written order and the
+  // counter-signature no longer touch it.
+  const EVENT_COSTS = 12; // GLAccount 12, 'Event Operational Costs', an Expense account of council 1
+  const code = async (db: DataService, reportId: number, budgetLineId: number, generalLedgerAccountId = EVENT_COSTS) =>
+    db.expenses.treasurerLedgerAudit(await ledgerCoder(db), reportId, { budgetLineId, generalLedgerAccountId });
+
+  it('saves the Treasurer’s pick on the sheet, keeps it through the counter-signature, and charges only that line', async () => {
     const db = await d.make();
     const meetings = addLine(d, db, 'Monthly Council Meetings', { universal_category: 'FRATERNAL_ACTIVITIES' });
     const awards = addLine(d, db, 'Council Knight Awards', { universal_category: 'MEMBERSHIP_RECOGNITION' });
     const sheet = await meetingSheet(db);
     expect(sheet.budget_line_id ?? null).toBeNull();
 
-    const ordered = await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id, awards);
-    expect(ordered.report.budget_line_id).toBe(awards);
+    const ordered = await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id);
+    expect(ordered.report.budget_line_id ?? null).toBeNull();
+    const coded = await code(db, sheet.id, awards);
+    expect(coded.report).toMatchObject({ budget_line_id: awards, general_ledger_account_id: EVENT_COSTS, TreasurerMemberID: await ledgerCoder(db) });
+    expect(coded.treasurerName).toBe('Ledger Coder');
     const approved = await db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, sheet.id);
-    expect(approved.report).toMatchObject({ Status: 'Approved', budget_line_id: awards });
+    expect(approved.report).toMatchObject({ Status: 'Approved', budget_line_id: awards, general_ledger_account_id: EVENT_COSTS });
 
-    // The meeting link would have pointed at the meetings line; the saved pick wins.
+    // The meeting link would have pointed at the meetings line; the Treasurer's pick wins.
     const progress = await db.budget.getBudgetProgress(MEMBER.admin, OWN, YEAR);
     expect(progress.lines.find((l) => l.line.id === awards)?.actual).toBe(120);
     expect(progress.lines.find((l) => l.line.id === meetings)?.actual).toBe(0);
   });
 
-  it("defaults a meeting's sheet to the fraternal activities meetings line when signed without a pick", async () => {
+  it('makes both picks mandatory and refuses a line or account that cannot take the spend, writing nothing', async () => {
     const db = await d.make();
-    addLine(d, db, 'Council Camping Trip', { CategoryType: 'Event', universal_category: 'FRATERNAL_ACTIVITIES' });
-    const meetings = addLine(d, db, 'Monthly Council Meetings', { universal_category: 'FRATERNAL_ACTIVITIES' });
-    const sheet = await meetingSheet(db);
-    expect((await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id)).report.budget_line_id).toBe(meetings);
-    expect(rawGet(d, db, 'ExpenseReport', sheet.id, 'budget_line_id')).toBe(meetings);
-  });
-
-  it('lets the Grand Knight change the line, and refuses a line that cannot take spend', async () => {
-    const db = await d.make();
-    const meetings = addLine(d, db, 'Monthly Council Meetings', { universal_category: 'FRATERNAL_ACTIVITIES' });
     const awards = addLine(d, db, 'Council Knight Awards');
     const proposed = addLine(d, db, 'Draft Idea', { BudgetStatus: 'Proposed', ApprovedBudgetAmount: 0 });
     const foreign = addLine(d, db, 'Other Council Line', { CouncilID: 2 });
     const sheet = await meetingSheet(db);
-    await expectRule(db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id, proposed), 'INVALID_INPUT');
-    await expectRule(db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id, foreign), 'INVALID_INPUT');
-    await expectRule(db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id, 9999), 'INVALID_INPUT');
-    // A refused pick changes nothing: the order was not issued.
-    expect(rawGet(d, db, 'ExpenseReport', sheet.id, 'FinancialSecretaryMemberID') ?? null).toBeNull();
+    // Coding waits for the written order, and the counter-signature waits for the coding.
+    await expectRule(code(db, sheet.id, awards), 'EXPENSE_STATUS_CONFLICT');
+    await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id);
+    await expectRule(db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, sheet.id), 'EXPENSE_STATUS_CONFLICT');
 
-    await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id, meetings);
-    expect((await db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, sheet.id, awards)).report.budget_line_id).toBe(awards);
+    const coder = await ledgerCoder(db);
+    await expectRule(db.expenses.treasurerLedgerAudit(coder, sheet.id, { generalLedgerAccountId: EVENT_COSTS } as never), 'INVALID_INPUT');
+    await expectRule(db.expenses.treasurerLedgerAudit(coder, sheet.id, { budgetLineId: awards } as never), 'INVALID_INPUT');
+    for (const line of [proposed, foreign, 9999]) await expectRule(code(db, sheet.id, line), 'INVALID_INPUT');
+    // Revenue (7), an asset (1, Operating Checking), physical property on an ordinary sheet (6) and an unknown account.
+    for (const account of [7, 1, 6, 9999]) await expectRule(code(db, sheet.id, awards, account), 'INVALID_INPUT');
+    expect(rawGet(d, db, 'ExpenseReport', sheet.id, 'TreasurerMemberID') ?? null).toBeNull();
+    expect(rawGet(d, db, 'ExpenseReport', sheet.id, 'budget_line_id') ?? null).toBeNull();
+
+    // A long-term asset sheet may also be charged to the physical property account.
+    rawSet(d, db, 'ExpenseReport', sheet.id, 'is_long_term_asset', 1);
+    expect((await code(db, sheet.id, awards, 6)).report.general_ledger_account_id).toBe(6);
+    await expectRule(code(db, sheet.id, awards), 'EXPENSE_STATUS_CONFLICT');
   });
 
-  it('clears the line when the sheet is returned, so it is chosen afresh', async () => {
+  it("keeps the desk to the council's Treasurer or a Super Admin, never on their own sheet or the order's issuer", async () => {
     const db = await d.make();
     const awards = addLine(d, db, 'Council Knight Awards');
     const sheet = await meetingSheet(db);
-    await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id, awards);
+    await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id);
+    const coding = { budgetLineId: awards, generalLedgerAccountId: EVENT_COSTS };
+    await expectRule(db.expenses.treasurerLedgerAudit(MEMBER.member, sheet.id, coding), 'TREASURER_REQUIRED');
+    await expectRule(db.expenses.treasurerLedgerAudit(MEMBER.admin, sheet.id, coding), 'TREASURER_REQUIRED');
+    await expectRule(db.expenses.listTreasurerQueue(MEMBER.member, OWN), 'TREASURER_REQUIRED');
+    expect((await db.expenses.listTreasurerQueue(MEMBER.admin, OWN)).map((q) => q.report.id)).toEqual([sheet.id]);
+    // The member who submitted it, now Treasurer, still may not code their own sheet.
+    raw(d, db, 'MemberRoles', { RoleID: 6, MemberID: MEMBER.member });
+    expect((await db.expenses.listTreasurerQueue(MEMBER.member, OWN)).map((q) => q.report.id)).toEqual([sheet.id]);
+    await expectRule(db.expenses.treasurerLedgerAudit(MEMBER.member, sheet.id, coding), 'SELF_APPROVAL_BLOCKED');
+    await expectRule(db.expenses.listTreasurerQueue(MEMBER.member, 2), 'COUNCIL_ACCESS_DENIED');
+    // A Treasurer of the council codes a colleague's sheet.
+    const other = await meetingSheet(db, MEMBER.superAdmin);
+    await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, other.id);
+    expect((await db.expenses.treasurerLedgerAudit(MEMBER.member, other.id, coding)).report.TreasurerMemberID).toBe(MEMBER.member);
+  });
+
+  it('clears the coding when the sheet is returned, so it is chosen afresh', async () => {
+    const db = await d.make();
+    const awards = addLine(d, db, 'Council Knight Awards');
+    const sheet = await meetingSheet(db);
+    await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id);
+    await code(db, sheet.id, awards);
     const returned = await db.expenses.rejectReport(MEMBER.admin, sheet.id, 'Attach the itemized receipt.');
+    expect(returned.report).toMatchObject({ Status: 'Draft', TreasurerMemberID: null, TreasurerReviewedAt: null, general_ledger_account_id: null });
     expect(returned.report.budget_line_id ?? null).toBeNull();
   });
 
@@ -274,7 +306,8 @@ describe.each(drivers)('expense budget binding ($name driver)', (d) => {
     const db = await d.make();
     const awards = addLine(d, db, 'Council Knight Awards', { ApprovedBudgetAmount: 700, ProposedBudgetAmount: 700 });
     const sheet = await meetingSheet(db);
-    await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id, awards);
+    await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, sheet.id);
+    await code(db, sheet.id, awards);
     await db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, sheet.id);
     const amended = await db.budget.amendApprovedLine(MEMBER.admin, awards, { approvedAmount: 900 });
     const progress = await db.budget.getBudgetProgress(MEMBER.admin, OWN, YEAR);
@@ -284,7 +317,7 @@ describe.each(drivers)('expense budget binding ($name driver)', (d) => {
     expect(row.actual).toBe(120);
   });
 
-  it("links a sheet to a charitable request of its council and pre-selects the request's line", async () => {
+  it("links a sheet to a charitable request of its council and exposes the request's line for the desk's default", async () => {
     const db = await d.make();
     const gift = addLine(d, db, 'Family Clinic', { universal_category: 'CHARITABLE_DONATIONS' });
     const { request } = await db.charities.submitCharitableRequest(MEMBER.member, { OrganizationName: 'Family Clinic', AmountRequested: 300, RelationshipTypeID: 1, Is501c3: true });
@@ -293,7 +326,11 @@ describe.each(drivers)('expense budget binding ($name driver)', (d) => {
     expect(report.charity_request_id).toBe(request.id);
     const [queued] = (await db.expenses.listCouncilQueue(MEMBER.admin, OWN)).filter((x) => x.report.id === report.id);
     expect(queued.charityBudgetLineId).toBe(gift);
-    expect((await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, report.id)).report.budget_line_id).toBe(gift);
+    // The written order saves no line; the Treasurer's desk starts on the request's line and saves it when coded.
+    expect((await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, report.id)).report.budget_line_id ?? null).toBeNull();
+    const [onDesk] = await db.expenses.listTreasurerQueue(MEMBER.superAdmin, OWN);
+    expect(onDesk.charityBudgetLineId).toBe(gift);
+    expect((await code(db, report.id, gift)).report.budget_line_id).toBe(gift);
 
     await expectRule(db.expenses.submitReport(MEMBER.member, { Status: 'Draft', charity_request_id: 9999 }, []), 'INVALID_INPUT');
     const foreign = raw(d, db, 'CharitableRequest', { CouncilID: 2, ShepherdMemberID: MEMBER.superAdmin, OrganizationName: 'Elsewhere', AmountRequested: 50, RequestStatus: 'Submitted', SubmittedAt: '2026-09-01 00:00:00' });

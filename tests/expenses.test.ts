@@ -12,6 +12,7 @@ import {
   blankExpenseLine,
   BusinessRuleError,
   awaitsCounterSignature,
+  awaitsTreasurerCoding,
   awaitsWrittenOrder,
   canAuditCouncilExpenses,
   canCounterSignExpenseOrder,
@@ -48,7 +49,7 @@ import {
   type MemberWriteActor,
 } from '@kofc/shared';
 import { MemoryDataService } from '../apps/web/services/drivers/memory';
-import { drivers, expectRule, MEMBER, NOW, type DriverUnderTest } from './helpers';
+import { drivers, expectRule, ledgerCoder, MEMBER, NOW, testBudgetLine, testExpenseAccount, treasurerCode, type DriverUnderTest } from './helpers';
 import { openDatabases } from './shims/expo-sqlite';
 
 // Dev seed: council 1 is 15295 (Super Admin 1, Admin 2 who is also Financial Secretary, Member 3); council 2 exists.
@@ -139,6 +140,7 @@ async function dualApprove(db: DataService, report: { id: number; CouncilID: num
   const fs = orderSigners.find((id) => id !== report.SubmitterMemberID) ?? (await secondSuperAdmin(db));
   const gk = [MEMBER.superAdmin].find((id) => id !== report.SubmitterMemberID && id !== fs) ?? (await secondSuperAdmin(db));
   await db.expenses.financialSecretaryAuditOrder(fs, report.id);
+  await treasurerCode(db, report.id);
   await db.expenses.grandKnightAuthorizeOrder(gk, report.id);
 }
 
@@ -337,6 +339,7 @@ describe.each(drivers)('expense reporting ($name driver)', (d) => {
       expect('approveReport' in db.expenses).toBe(false);
       const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted' }, [receipt()]);
       expect((await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, report.id)).report.Status).toBe('Submitted');
+      await treasurerCode(db, report.id);
       expect((await db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, report.id)).report.Status).toBe('Approved');
     });
   });
@@ -469,6 +472,7 @@ describe.each(drivers)('financial controls ($name driver, Sprint 5R-1.5)', (d) =
       const [mine] = await db.expenses.listUserReports(MEMBER.superAdmin);
       expect(mine.report.Status).toBe('Submitted');
       // Another officer counter-signs it.
+      await treasurerCode(db, report.id);
       await db.expenses.grandKnightAuthorizeOrder(await secondSuperAdmin(db), report.id);
       expect((await db.expenses.listUserReports(MEMBER.superAdmin))[0].report.Status).toBe('Approved');
     });
@@ -611,26 +615,32 @@ describe('self-payout and the expense forms (pure, Sprint 5R-2)', () => {
     expect(mayDisburseCouncilExpenses(actor({ roles: ['Treasurer'] }), OWN)).toBe(true);
   });
 
-  it('round-trips the single Event-or-Meeting picker key', () => {
+  it('round-trips the single Event, Meeting or Activity picker key', () => {
+    const none = { LinkedEventID: null, LinkedMeetingID: null, LinkedActivityID: null };
     expect(expenseReferenceKey({ LinkedEventID: 12, LinkedMeetingID: null })).toBe('event:12');
     expect(expenseReferenceKey({ LinkedEventID: null, LinkedMeetingID: 3 })).toBe('meeting:3');
+    expect(expenseReferenceKey({ LinkedActivityID: 5 })).toBe('activity:5');
     expect(expenseReferenceKey({})).toBe('');
     expect(expenseReferenceKey({ LinkedEventID: 12, LinkedMeetingID: 3 })).toBe('event:12');
-    expect(parseExpenseReferenceKey('event:12')).toEqual({ LinkedEventID: 12, LinkedMeetingID: null });
-    expect(parseExpenseReferenceKey('meeting:3')).toEqual({ LinkedEventID: null, LinkedMeetingID: 3 });
-    expect(parseExpenseReferenceKey('')).toEqual({ LinkedEventID: null, LinkedMeetingID: null });
-    expect(parseExpenseReferenceKey('council:1')).toEqual({ LinkedEventID: null, LinkedMeetingID: null });
+    expect(parseExpenseReferenceKey('event:12')).toEqual({ ...none, LinkedEventID: 12 });
+    expect(parseExpenseReferenceKey('meeting:3')).toEqual({ ...none, LinkedMeetingID: 3 });
+    expect(parseExpenseReferenceKey('activity:5')).toEqual({ ...none, LinkedActivityID: 5 });
+    expect(parseExpenseReferenceKey('')).toEqual(none);
+    expect(parseExpenseReferenceKey('council:1')).toEqual(none);
   });
 
   it('labels the picker choices and a sheet’s reference', () => {
     const refs = {
       events: [{ id: 12, EventName: 'Pancake Breakfast', StartDate: '2026-09-12' } as never],
       meetings: [{ id: 3, 'Meeting Name': 'Business Meeting', Date: '2025-12-02' } as never],
+      activities: [{ id: 5, ActivityName: 'Ultrasound', CouncilID: OWN } as never],
     };
     expect(expenseReferenceChoices(refs)).toEqual([
       { group: 'Events', key: 'event:12', label: 'Pancake Breakfast · Sat, Sep 12, 2026' },
       { group: 'Meetings', key: 'meeting:3', label: 'Business Meeting · Tue, Dec 2, 2025' },
+      { group: 'Activities', key: 'activity:5', label: 'Ultrasound · ongoing' },
     ]);
+    expect(expenseReferenceLabel({ LinkedActivityID: 5 }, refs)).toBe('Activity: Ultrasound');
     expect(expenseReferenceLabel({ LinkedEventID: 12 }, refs)).toBe('Event: Pancake Breakfast');
     expect(expenseReferenceLabel({ LinkedMeetingID: 3 }, refs)).toBe('Meeting: Business Meeting');
     expect(expenseReferenceLabel({ LinkedEventID: 99 }, refs)).toBe('Event: #99');
@@ -791,6 +801,7 @@ describe.each(drivers)('dual approval ($name driver, Sprint 5Z-3)', (d) => {
     const ordered = (await db.expenses.financialSecretaryAuditOrder(FS, id)).report;
     expect(ordered).toMatchObject({ Status: 'Submitted', FinancialSecretaryMemberID: FS, FinancialSecretaryApprovedAt: toTimestamp(NOW) });
     expect(ordered.GrandKnightMemberID ?? null).toBeNull();
+    await treasurerCode(db, id);
     const signed = (await db.expenses.grandKnightAuthorizeOrder(GK, id)).report;
     expect(signed).toMatchObject({
       Status: 'Approved',
@@ -807,6 +818,7 @@ describe.each(drivers)('dual approval ($name driver, Sprint 5Z-3)', (d) => {
     await expectRule(db.expenses.grandKnightAuthorizeOrder(GK, id), 'EXPENSE_STATUS_CONFLICT');
     await db.expenses.financialSecretaryAuditOrder(FS, id);
     await expectRule(db.expenses.financialSecretaryAuditOrder(FS, id), 'EXPENSE_STATUS_CONFLICT');
+    await treasurerCode(db, id);
     await db.expenses.grandKnightAuthorizeOrder(GK, id);
     await expectRule(db.expenses.grandKnightAuthorizeOrder(GK, id), 'EXPENSE_STATUS_CONFLICT');
     const draft = (await db.expenses.submitReport(MEMBER.member, { Status: 'Draft' }, [])).report.id;
@@ -856,7 +868,11 @@ describe.each(drivers)('dual approval ($name driver, Sprint 5Z-3)', (d) => {
     // The Super Admin may issue the order for any council, but then cannot also counter-sign it.
     const id = await submitted(db);
     await db.expenses.financialSecretaryAuditOrder(GK, id);
+    // Sprint 6Q: the order's issuer may not code the sheet either, nor may the Treasurer who coded it counter-sign.
+    await expectRule(db.expenses.treasurerLedgerAudit(GK, id, { budgetLineId: testBudgetLine(db, OWN), generalLedgerAccountId: testExpenseAccount(db, OWN) }), 'DUAL_SIGNATURE_CONFLICT');
+    await treasurerCode(db, id);
     await expectRule(db.expenses.grandKnightAuthorizeOrder(GK, id), 'DUAL_SIGNATURE_CONFLICT');
+    await expectRule(db.expenses.grandKnightAuthorizeOrder(await ledgerCoder(db), id), 'DUAL_SIGNATURE_CONFLICT');
     const secondGk = await addMember(db, OWN, 'Member', 'second.gk@example.org');
     grantRole(d, db, secondGk, 'Grand Knight');
     expect((await db.expenses.grandKnightAuthorizeOrder(secondGk, id)).report.Status).toBe('Approved');
@@ -871,18 +887,27 @@ describe.each(drivers)('dual approval ($name driver, Sprint 5Z-3)', (d) => {
     await db.expenses.submitReport(MEMBER.member, { id, Status: 'Submitted' }, [receipt()]);
     await expectRule(db.expenses.grandKnightAuthorizeOrder(GK, id), 'EXPENSE_STATUS_CONFLICT');
     await db.expenses.financialSecretaryAuditOrder(FS, id);
+    await treasurerCode(db, id);
     expect((await db.expenses.grandKnightAuthorizeOrder(GK, id)).report.Status).toBe('Approved');
   });
 });
 
 describe('dual-approval desks and vault (pure, Sprint 5Z-4)', () => {
-  const report = (over = {}) => ({ Status: 'Submitted' as const, FinancialSecretaryMemberID: null, GrandKnightMemberID: null, ...over });
+  const report = (over = {}) => ({ Status: 'Submitted' as const, FinancialSecretaryMemberID: null, TreasurerMemberID: null, GrandKnightMemberID: null, ...over });
 
   it('sorts a sheet onto its desk, and only a dual-signed approved sheet into the vault', () => {
     expect(awaitsWrittenOrder(report())).toBe(true);
     expect(awaitsCounterSignature(report())).toBe(false);
     expect(awaitsWrittenOrder(report({ FinancialSecretaryMemberID: 2 }))).toBe(false);
-    expect(awaitsCounterSignature(report({ FinancialSecretaryMemberID: 2 }))).toBe(true);
+    // Sprint 6Q: an ordered sheet waits for the Treasurer's coding before it reaches the Grand Knight.
+    expect(awaitsTreasurerCoding(report({ FinancialSecretaryMemberID: 2 }))).toBe(true);
+    expect(awaitsCounterSignature(report({ FinancialSecretaryMemberID: 2 }))).toBe(false);
+    expect(awaitsTreasurerCoding(report({ FinancialSecretaryMemberID: 2, TreasurerMemberID: 7 }))).toBe(false);
+    expect(awaitsCounterSignature(report({ FinancialSecretaryMemberID: 2, TreasurerMemberID: 7 }))).toBe(true);
+    expect(expenseStatusBadge({ Status: 'Submitted', RejectionReason: null, FinancialSecretaryMemberID: 2, TreasurerMemberID: 7 })).toEqual({
+      label: 'Ledger Coded',
+      tone: 'gold',
+    });
     expect(awaitsWrittenOrder(report({ Status: 'Draft' }))).toBe(false);
     expect(isPayableExpenseReport(report({ Status: 'Approved', FinancialSecretaryMemberID: 2, GrandKnightMemberID: 1 }))).toBe(true);
     // A sheet approved without both signatures (such as one approved before Sprint 5Z-3) never reaches the checkbook.
@@ -951,9 +976,14 @@ describe.each(drivers)('dual-approval desks and vault ($name driver, Sprint 5Z-4
     const done = await submitted(db);
     await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, ordered.id);
     await dualApprove(db, done);
+    // Sprint 6Q: the ordered sheet waits on the Treasurer desk first, then moves to the Grand Knight's.
+    expect((await db.expenses.listTreasurerQueue(MEMBER.superAdmin, OWN)).map((q) => q.report.id)).toEqual([ordered.id]);
+    expect(await db.expenses.listAuthorizationQueue(MEMBER.superAdmin, OWN)).toEqual([]);
+    await treasurerCode(db, ordered.id);
+    expect(await db.expenses.listTreasurerQueue(MEMBER.superAdmin, OWN)).toEqual([]);
     const desk = await db.expenses.listAuthorizationQueue(MEMBER.superAdmin, OWN);
     expect(desk.map((q) => q.report.id)).toEqual([ordered.id]);
-    expect(desk[0]).toMatchObject({ financialSecretaryName: 'Council Admin', grandKnightName: '' });
+    expect(desk[0]).toMatchObject({ financialSecretaryName: 'Council Admin', treasurerName: 'Ledger Coder', grandKnightName: '' });
     expect(desk.map((q) => q.report.id)).not.toContain(waiting.id);
     const [paid] = (await db.expenses.listCouncilQueue(MEMBER.admin, OWN)).filter((q) => q.report.id === done.id);
     expect(paid.grandKnightName).not.toBe('');

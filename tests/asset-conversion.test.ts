@@ -21,7 +21,7 @@ import {
 } from '@kofc/shared';
 import { MemoryDataService } from '../apps/web/services/drivers/memory';
 import { TABLES } from '../apps/web/services/generated/schema.generated';
-import { drivers, expectRule, MEMBER, type DriverUnderTest } from './helpers';
+import { drivers, expectRule, MEMBER, type DriverUnderTest, treasurerCode } from './helpers';
 import { openDatabases } from './shims/expo-sqlite';
 
 const read = (path: string) => readFileSync(join(__dirname, '..', path), 'utf8');
@@ -97,6 +97,7 @@ const addMiscellaneousLine = (d: DriverUnderTest, db: DataService): number =>
 async function approvedSheet(db: DataService, isAsset: boolean, items = [receipt()]) {
   const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted', is_long_term_asset: isAsset }, items);
   await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, report.id);
+  await treasurerCode(db, report.id);
   return db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, report.id);
 }
 
@@ -230,6 +231,7 @@ describe.each(drivers)('expense assets and the catch-all ($name driver)', (d) =>
     ]);
     await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, resubmitted.report.id);
     expect(d.count(db, 'CouncilAssetsInventory')).toBe(0); // the order alone does not approve
+    await treasurerCode(db, resubmitted.report.id);
     await db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, resubmitted.report.id);
 
     const inventory = await db.expenses.listAssetsInventory(MEMBER.admin, OWN);
@@ -270,7 +272,10 @@ describe.each(drivers)('expense assets and the catch-all ($name driver)', (d) =>
 
   it('debits approved spend with no line of its own against Miscellaneous Others', async () => {
     const db = await d.make();
-    await approvedSheet(db, false, [receipt({ Amount: 64.25 })]);
+    const approved = await approvedSheet(db, false, [receipt({ Amount: 64.25 })]);
+    // Since Sprint 6Q every sheet approved through the desks carries the Treasurer's line; a sheet approved before then
+    // has none, which is the case this rule covers.
+    rawSet(d, db, 'ExpenseReport', approved.report.id, 'budget_line_id', null);
     const before = await db.budget.getBudgetProgress(MEMBER.admin, OWN, YEAR);
     expect(before).toMatchObject({ unbudgetedActual: 64.25, miscellaneousActual: 0 });
 

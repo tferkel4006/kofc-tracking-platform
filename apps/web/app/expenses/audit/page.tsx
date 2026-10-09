@@ -2,18 +2,19 @@
 // Financial Secretary Audit Desk (Sprint 5Z-4): the first line of expense dual approval. The council's Financial
 // Secretary, its Admins and any Super Admin open it (canOpenExpenseAuditDesk). It lists every 'Submitted' sheet still
 // waiting for its written order, oldest first, with a receipt drawer and the gold 'Approve Expense' command
-// (expenses.financialSecretaryAuditOrder), which saves the row's 'Assign Ledger Budget Line Item' pick on the sheet
-// (Sprint 6G Extension). Only the Financial Secretary or a Super Admin signs, never on their own sheet
-// (expenseOrderBlock; the drivers: FINANCIAL_SECRETARY_REQUIRED, SELF_APPROVAL_BLOCKED); a viewer who may not sign a
-// row sees neither the picker nor the button, only why. An Admin without the seat reads the desk and may return sheets. A signed row stays on the desk for the session with a confirmation badge,
-// then moves to the Grand Knight Authorization Desk.
+// (expenses.financialSecretaryAuditOrder). Sprint 6Q removed the budget line picker: the Treasurer codes the budget
+// line and ledger account next, on the Treasurer Ledger Audit Desk. Only the Financial Secretary or a Super Admin
+// signs, never on their own sheet (expenseOrderBlock; the drivers: FINANCIAL_SECRETARY_REQUIRED,
+// SELF_APPROVAL_BLOCKED); a viewer who may not sign a row sees no button, only why. An Admin without the seat reads the
+// desk and may return sheets. A signed row stays on the desk for the session with a confirmation badge, then moves to
+// the Treasurer Ledger Audit Desk.
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import {
   awaitsWrittenOrder,
   canAuditCouncilExpenses,
   canOpenExpenseAuditDesk,
-  canOpenExpenseAuthorizeDesk,
+  canOpenTreasurerDesk,
   describeError,
   expenseOrderBlock,
   listExpenseReferences,
@@ -22,24 +23,17 @@ import {
   type ExpenseReportDetail,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import {
-  BudgetLinePicker,
-  EXPENSE_APPROVE_LABEL,
-  ReturnToMemberForm,
-  SignatureDeskTable,
-  submitterName,
-  useExpenseBudgetLineAssignments,
-} from '@/components/ExpenseParts';
+import { EXPENSE_APPROVE_LABEL, ReturnToMemberForm, SignatureDeskTable, submitterName } from '@/components/ExpenseParts';
 import { Button, Notice, PageTitle, Panel, Pill } from '@/components/ui';
 import { formatMoney } from '@/lib/format';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
-/** `next` links the confirmation to the Grand Knight Authorization Desk. */
+/** `next` links the confirmation to the Treasurer Ledger Audit Desk. */
 type Message = { tone: 'error' | 'info'; text: string; next?: boolean };
 
-const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [] };
+const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [], activities: [] };
 
 function AuditDesk() {
   const user = useUser();
@@ -49,7 +43,6 @@ function AuditDesk() {
   const queue = useLoad(() => (canOpen ? db.expenses.listCouncilQueue(user.memberId, councilId) : Promise.resolve([])), [user.memberId, councilId, canOpen]);
   const refsLoad = useLoad(() => listExpenseReferences(db, councilId), [councilId]);
   const refs = refsLoad.data ?? NO_REFS;
-  const budgetLines = useExpenseBudgetLineAssignments(councilId, refs);
   // Sheets ordered from this desk in this session: they stay in view, advanced, with a confirmation badge.
   const [ordered, setOrdered] = useState<ReadonlyMap<number, ExpenseReportDetail>>(new Map());
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -68,11 +61,11 @@ function AuditDesk() {
     setBusyId(d.report.id);
     setMessage(null);
     try {
-      const signed = await db.expenses.financialSecretaryAuditOrder(user.memberId, d.report.id, budgetLines.lineIdOf(d));
+      const signed = await db.expenses.financialSecretaryAuditOrder(user.memberId, d.report.id);
       setOrdered((now) => new Map(now).set(signed.report.id, signed));
       setMessage({
         tone: 'info',
-        text: `Written order issued on report #${signed.report.id} (${formatMoney(signed.total)}) for ${submitterName(signed)}. It now waits for the Grand Knight's counter-signature.`,
+        text: `Written order issued on report #${signed.report.id} (${formatMoney(signed.total)}) for ${submitterName(signed)}. It now waits for the Treasurer to code it to the ledger.`,
         next: true,
       });
       await queue.reload();
@@ -86,7 +79,7 @@ function AuditDesk() {
   const action = (d: ExpenseReportDetail) => {
     if (ordered.has(d.report.id)) return <Pill tone="navy">✓ Written order issued</Pill>;
     const block = expenseOrderBlock(user, d.report);
-    // Sprint 6G Extension: a row the viewer may not sign shows no signing controls at all, only who signs it.
+    // A row the viewer may not sign shows no signing control at all, only who signs it.
     if (block === 'own-report') {
       return (
         <span title="For accounting controls, another officer must approve your own report.">
@@ -95,20 +88,10 @@ function AuditDesk() {
       );
     }
     if (block === 'seat') return <Pill tone="outline">Financial Secretary signs</Pill>;
-    const unassigned = budgetLines.lineIdOf(d) === null;
     return (
-      <span className="inline-flex flex-col items-start gap-2">
-        <BudgetLinePicker detail={d} assignments={budgetLines} disabled={busyId !== null} />
-        <Button
-          variant="gold"
-          disabled={busyId !== null || unassigned}
-          aria-label={`Approve expense report ${d.report.id}`}
-          title={unassigned ? 'Assign a ledger budget line item first.' : undefined}
-          onClick={() => void issue(d)}
-        >
-          {busyId === d.report.id ? 'Approving…' : EXPENSE_APPROVE_LABEL}
-        </Button>
-      </span>
+      <Button variant="gold" disabled={busyId !== null} aria-label={`Approve expense report ${d.report.id}`} onClick={() => void issue(d)}>
+        {busyId === d.report.id ? 'Approving…' : EXPENSE_APPROVE_LABEL}
+      </Button>
     );
   };
 
@@ -119,17 +102,17 @@ function AuditDesk() {
         <Notice tone="error">Only this council&apos;s Financial Secretary and Admins, or a Super Admin, open its audit desk.</Notice>
       ) : (
         <div className="flex flex-col gap-4">
-          {(queue.error ?? refsLoad.error ?? budgetLines.error) ? (
-            <Notice tone="error">{queue.error ?? refsLoad.error ?? budgetLines.error}</Notice>
+          {(queue.error ?? refsLoad.error) ? (
+            <Notice tone="error">{queue.error ?? refsLoad.error}</Notice>
           ) : null}
           {message ? (
             <Notice tone={message.tone} onDismiss={() => setMessage(null)}>
               {message.text}
-              {message.next && canOpenExpenseAuthorizeDesk(user, councilId) ? (
+              {message.next && canOpenTreasurerDesk(user, councilId) ? (
                 <>
                   {' '}
-                  <Link href="/expenses/authorize" className="font-bold underline">
-                    Open the Grand Knight Authorization Desk
+                  <Link href="/finance/treasurer-desk" className="font-bold underline">
+                    Open the Treasurer Ledger Audit Desk
                   </Link>
                 </>
               ) : null}

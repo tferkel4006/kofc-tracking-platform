@@ -122,6 +122,7 @@ export type BusinessRuleCode =
   | 'DIARY_ENTRY_EXISTS'
   | 'DIARY_CONTENT_BLOCKED'
   | 'TRUSTEE_REQUIRED'
+  | 'TREASURER_REQUIRED'
   | 'AUDIT_PERIOD_LOCKED'
   | 'AUDIT_PERIOD_OPEN'
   | 'AUDIT_INCOMPLETE'
@@ -160,6 +161,7 @@ export class SecurityPrivilegeError extends BusinessRuleError {
       | 'DUES_RATE_EDITOR_REQUIRED'
       | 'HISTORY_KEEPER_REQUIRED'
       | 'TRUSTEE_REQUIRED'
+      | 'TREASURER_REQUIRED'
       | 'PRAYER_INTENTION_CLOSER_REQUIRED',
     message: string,
     details: Record<string, unknown> = {},
@@ -1272,15 +1274,26 @@ export function assertMayReadAuthorizationDesk(actor: MemberWriteActor, councilI
 
 /**
  * expenses.grandKnightAuthorizeOrder (Sprint 5Z-3): the counter-signature must come from someone other than the officer
- * who issued the order, so one Super Admin cannot sign both lines (DUAL_SIGNATURE_CONFLICT).
+ * who issued the order and, since Sprint 6Q, the Treasurer who coded the sheet, so one Super Admin cannot sign two lines
+ * (DUAL_SIGNATURE_CONFLICT). expenses.treasurerLedgerAudit passes a report without a Treasurer yet, so only the order's
+ * issuer is checked there.
  */
-export function assertDistinctExpenseSigners(actor: MemberWriteActor, report: { id: number; FinancialSecretaryMemberID?: number | null }): void {
-  if (report.FinancialSecretaryMemberID !== actor.memberId) return;
-  throw new BusinessRuleError(
-    'DUAL_SIGNATURE_CONFLICT',
-    'For accounting controls, the officer who issued an expense order cannot also counter-sign it.',
-    { actorId: actor.memberId, reportId: report.id },
-  );
+export function assertDistinctExpenseSigners(
+  actor: MemberWriteActor,
+  report: { id: number; FinancialSecretaryMemberID?: number | null; TreasurerMemberID?: number | null },
+): void {
+  if (report.FinancialSecretaryMemberID === actor.memberId) {
+    throw new BusinessRuleError('DUAL_SIGNATURE_CONFLICT', 'For accounting controls, the officer who issued an expense order cannot also sign its later lines.', {
+      actorId: actor.memberId,
+      reportId: report.id,
+    });
+  }
+  if (report.TreasurerMemberID != null && report.TreasurerMemberID === actor.memberId) {
+    throw new BusinessRuleError('DUAL_SIGNATURE_CONFLICT', 'For accounting controls, the Treasurer who coded an expense report cannot also counter-sign it.', {
+      actorId: actor.memberId,
+      reportId: report.id,
+    });
+  }
 }
 
 const expenseAuditDenial = (actor: MemberWriteActor, councilId: number, action: string): SecurityPrivilegeError | null =>

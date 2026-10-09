@@ -62,6 +62,12 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
   'finance/ledger': { href: '/finance/ledger', label: 'General Ledger Spreadsheet', hint: 'Chart of accounts with every posting' },
   'finance/balance-sheet': { href: '/finance/balance-sheet', label: 'Balance Sheet', hint: 'Assets against liabilities and equity' },
   'finance/audit': { href: '/finance/audit', label: 'Trustee Audit Desk', hint: 'Semiannual Form 1295 audit: verify ledger lines, sign and lock' },
+  'finance/treasurer-desk': {
+    href: '/finance/treasurer-desk',
+    label: 'Treasurer Ledger Audit Desk',
+    hint: 'Code ordered expense reports to a budget line and ledger account',
+    restrictedTo: 'the Treasurer and Admins',
+  },
   donations: { href: '/donations', label: 'Donations History', hint: 'Record and review council donations' },
   expenses: { href: '/expenses', label: 'My Expense Reports', hint: 'Receipts and reimbursement status' },
   'expenses/queue': { href: '/expenses/queue', label: 'Leadership Auditing Queue', hint: 'Track signatures and return reports' },

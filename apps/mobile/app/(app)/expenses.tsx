@@ -11,6 +11,8 @@
 // Sprint 6I: the "Long-term Council Asset" switch matches the web form's checkbox (ExpenseReport.is_long_term_asset). A
 // draft opens with its saved value and every save sends it, as it does the web-set charity link, so re-saving on the
 // phone never clears either.
+// Sprint 6Q: a fourth toggle, Activity, files receipts against a long-running council activity (such as the Ultrasound
+// Initiative). Activities have no dates, so every activity of the council is listed and no padlock applies.
 import { useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
@@ -54,16 +56,24 @@ const multiline = { minHeight: 72, textAlignVertical: 'top' as const, paddingTop
 
 type Row = ExpenseLineDraft & { key: number };
 
-type SpentFor = 'event' | 'meeting' | 'general';
+type SpentFor = 'event' | 'activity' | 'meeting' | 'general';
 
 const SPENT_FOR: { key: SpentFor; label: string }[] = [
   { key: 'event', label: 'Event' },
+  { key: 'activity', label: 'Activity' },
   { key: 'meeting', label: 'Meeting' },
   { key: 'general', label: 'General' },
 ];
 
 const spentForOf = (reference: string): SpentFor =>
-  reference.startsWith('event:') ? 'event' : reference.startsWith('meeting:') ? 'meeting' : 'general';
+  reference.startsWith('event:') ? 'event' : reference.startsWith('activity:') ? 'activity' : reference.startsWith('meeting:') ? 'meeting' : 'general';
+
+/** The picker group, dropdown label and placeholder of each linked category. */
+const SPENT_FOR_PICKER: Record<Exclude<SpentFor, 'general'>, { group: 'Events' | 'Activities' | 'Meetings'; title: string; question: string }> = {
+  event: { group: 'Events', title: 'Event', question: 'WHICH EVENT?' },
+  activity: { group: 'Activities', title: 'Activity', question: 'WHICH ACTIVITY?' },
+  meeting: { group: 'Meetings', title: 'Meeting', question: 'WHICH MEETING?' },
+};
 
 // ---- the draft form ------------------------------------------------------------------
 
@@ -96,10 +106,12 @@ function ExpenseDraftForm({
   // The chosen category's items whose submission window is open today, plus the draft's own pick if it is not.
   const options = useMemo(() => {
     if (spentFor === 'general') return [];
-    const group = spentFor === 'event' ? 'Events' : 'Meetings';
+    const { group } = SPENT_FOR_PICKER[spentFor];
     return expenseReferenceChoices(refs)
       .filter((c) => c.group === group)
       .filter((c) => {
+        // Activities run without dates, so they are always open for filing.
+        if (group === 'Activities') return true;
         const span = expenseReferenceSpan(c.key, refs);
         return c.key === reference || (span !== null && expenseWindowState(span, today) === 'open');
       })
@@ -168,17 +180,21 @@ function ExpenseDraftForm({
         </Field>
         {spentFor === 'general' ? (
           <AppText variant="small" tone="muted">
-            A general council expense is not tied to an event or meeting.
+            A general council expense is not tied to an event, activity or meeting.
           </AppText>
         ) : options.length === 0 ? (
           <EmptyState
-            message={`No ${spentFor}s are open for expense filing today. Filing opens when the ${spentFor} starts and closes ${EXPENSE_SUBMISSION_GRACE_DAYS} days after it ends.`}
+            message={
+              spentFor === 'activity'
+                ? 'This council has no activities yet.'
+                : `No ${spentFor}s are open for expense filing today. Filing opens when the ${spentFor} starts and closes ${EXPENSE_SUBMISSION_GRACE_DAYS} days after it ends.`
+            }
           />
         ) : (
-          <Field label={spentFor === 'event' ? 'WHICH EVENT?' : 'WHICH MEETING?'}>
+          <Field label={SPENT_FOR_PICKER[spentFor].question}>
             <Dropdown
-              title={spentFor === 'event' ? 'Event' : 'Meeting'}
-              placeholder={spentFor === 'event' ? 'Choose an event…' : 'Choose a meeting…'}
+              title={SPENT_FOR_PICKER[spentFor].title}
+              placeholder={`Choose ${spentFor === 'meeting' ? 'a' : 'an'} ${spentFor}…`}
               value={reference === '' ? null : reference}
               options={options}
               onChange={setReference}

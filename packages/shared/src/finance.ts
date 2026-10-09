@@ -71,6 +71,8 @@ export interface CleanJournalLine {
   LinkedEventID: number | null;
   LinkedMeetingID: number | null;
   CheckNumber: string | null;
+  /** Sprint 6Q: set only by finance.logConcludedRevenue (planConcludedRevenue); every other posting stores NULL. */
+  LinkedActivityID?: number | null;
 }
 
 /**

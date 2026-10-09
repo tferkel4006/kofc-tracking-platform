@@ -2672,6 +2672,34 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "TreasurerMemberID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "TreasurerReviewedAt",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "general_ledger_account_id",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "LinkedActivityID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -2718,6 +2746,21 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "charity_request_id",
         "refTable": "CharitableRequest",
+        "refColumn": "id"
+      },
+      {
+        "column": "TreasurerMemberID",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "general_ledger_account_id",
+        "refTable": "GLAccount",
+        "refColumn": "id"
+      },
+      {
+        "column": "LinkedActivityID",
+        "refTable": "Activities",
         "refColumn": "id"
       }
     ],
@@ -4572,6 +4615,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": true,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "LinkedActivityID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -4593,6 +4643,11 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "LinkedMeetingID",
         "refTable": "Meeting",
+        "refColumn": "id"
+      },
+      {
+        "column": "LinkedActivityID",
+        "refTable": "Activities",
         "refColumn": "id"
       }
     ],

@@ -2721,3 +2721,57 @@ CREATE INDEX [CouncilMediaVault_Council_Idx] ON [CouncilMediaVault] ([council_id
 GO
 CREATE INDEX [MediaSmartAlbums_Council_Idx] ON [MediaSmartAlbums] ([council_id]);
 GO
+
+-- =========================================================================
+-- Sprint 6Q: THE TREASURER LEDGER AUDIT DESK, ACTIVITY-LINKED EXPENSES AND POST-EVENT REVENUE (schema version 56)
+--
+-- An expense sheet now carries three signatures before it is paid, in this order:
+--   1. The Financial Secretary's written order (FinancialSecretaryMemberID). The audit desk no longer picks a budget line.
+--   2. The Treasurer's ledger coding (TreasurerMemberID / TreasurerReviewedAt) on the Treasurer Ledger Audit Desk
+--      (/finance/treasurer-desk). The Treasurer must choose both the budget line (budget_line_id) and the general ledger
+--      account (general_ledger_account_id); neither may be blank. Only the council's Active Treasurer or a Super Admin
+--      codes a sheet, never on their own sheet, and never the officer who issued its written order.
+--   3. The Grand Knight's counter-signature (GrandKnightMemberID), which sets Status 'Approved'. The Grand Knight keeps
+--      the Treasurer's coding and may not sign a sheet they coded as Treasurer.
+-- Returning a sheet to Draft clears all three signatures and both codes. general_ledger_account_id names an Expense
+-- account of the sheet's council (or, for a long-term asset sheet, its physical property account).
+--
+-- ExpenseReport.LinkedActivityID links a sheet to a long-running council activity (an Activities row of the sheet's
+-- council, such as the Ultrasound Initiative) instead of a dated event or meeting. A sheet names at most one of the
+-- three. Activities have no dates, so no submission window applies to them.
+--
+-- JournalEntry.LinkedActivityID ties a posting to an activity, as LinkedEventID ties it to an event. The Treasurer's
+-- '💰 Log Concluded Event Revenues' card (finance.logConcludedRevenue) posts the money a past event or an activity
+-- raised: a debit to the deposit account and a credit to the chosen Revenue account. Rules: treasurer-desk.ts.
+-- =========================================================================
+ALTER TABLE [ExpenseReport] ADD [TreasurerMemberID] INTEGER NULL;
+GO
+ALTER TABLE [ExpenseReport] ADD [TreasurerReviewedAt] DATETIME NULL;
+GO
+ALTER TABLE [ExpenseReport] ADD [general_ledger_account_id] INT NULL;
+GO
+ALTER TABLE [ExpenseReport] ADD [LinkedActivityID] INTEGER NULL;
+GO
+ALTER TABLE [JournalEntry] ADD [LinkedActivityID] INTEGER NULL;
+GO
+
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([TreasurerMemberID])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([general_ledger_account_id])
+REFERENCES [GLAccount]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [ExpenseReport]
+ADD FOREIGN KEY([LinkedActivityID])
+REFERENCES [Activities]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [JournalEntry]
+ADD FOREIGN KEY([LinkedActivityID])
+REFERENCES [Activities]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO

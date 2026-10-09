@@ -36,7 +36,7 @@ import {
   type Role,
 } from '@kofc/shared';
 import { TABLES } from '../apps/web/services/generated/schema.generated';
-import { drivers, expectRule, MEMBER, shiftByName } from './helpers';
+import { drivers, expectRule, MEMBER, shiftByName, treasurerCode } from './helpers';
 
 const read = (path: string) => readFileSync(join(__dirname, '..', path), 'utf8');
 const OWN = 1;
@@ -90,7 +90,7 @@ describe('schema 55', () => {
     expect(TABLES.MediaSmartAlbums.columns.map((c) => c.name)).toEqual(expect.arrayContaining(['council_id', 'album_name', 'album_criteria_json']));
     expect(TABLES.EventPlanningTime.columns.map((c) => c.name)).toEqual(['id', 'event_id', 'member_id', 'planning_date', 'hours', 'notes', 'logged_at']);
     expect(TABLES.CouncilAssetsInventory.columns.map((c) => c.name)).toEqual(expect.arrayContaining(['serial_number', 'storage_location']));
-    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = 55;/);
+    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = (5[5-9]|[6-9]\d);/);
     for (const table of ['CouncilLeadershipSnapshot', 'EventPlanningTime', 'CouncilMediaVault', 'MediaSmartAlbums']) {
       expect(read('data_dictionary.md')).toContain(`[${table}]`);
     }
@@ -209,6 +209,7 @@ describe.each(drivers)('asset form ($name driver)', (d) => {
     const db = await d.make();
     const { report } = await db.expenses.submitReport(MEMBER.member, { Status: 'Submitted', is_long_term_asset: true }, [receipt()]);
     await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, report.id);
+    await treasurerCode(db, report.id);
     const signed = await db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, report.id);
     expect(opensAssetForm(signed.report)).toBe(true);
 

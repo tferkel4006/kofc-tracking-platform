@@ -680,6 +680,43 @@ export interface ExpenseReportInput {
   is_long_term_asset?: boolean | number;
   /** Sprint 6G Extension: a charitable request of the submitter's council the sheet spends for, or null. */
   charity_request_id?: number | null;
+  /**
+   * Sprint 6Q: a long-running activity of the submitter's council (such as the Ultrasound Initiative), or null. A sheet
+   * linked to an activity names no event or meeting, and no submission window applies.
+   */
+  LinkedActivityID?: number | null;
+}
+
+/** expenses.treasurerLedgerAudit's coding (Sprint 6Q): both are required. */
+export interface ExpenseLedgerCoding {
+  /** An Approved CouncilBudgetForecast line of the sheet's council at its latest budget_version. */
+  budgetLineId: number;
+  /**
+   * A GLAccount of the sheet's council: an Expense account, or for a sheet marked is_long_term_asset also its physical
+   * property account (isPhysicalPropertyAccount).
+   */
+  generalLedgerAccountId: number;
+}
+
+/** finance.logConcludedRevenue's input (Sprint 6Q): the money one past event or one activity raised. */
+export interface ConcludedRevenueInput {
+  /** An event linked to the council that has ended (EndDate before today, or today). Exactly one of the two links. */
+  LinkedEventID?: number | null;
+  /** An activity of the council. */
+  LinkedActivityID?: number | null;
+  /** The total collected, above 0 in whole cents. */
+  Amount: number;
+  /** The Revenue account of the council the money is credited to. */
+  RevenueAccountID: number;
+  /**
+   * The cash account the money was deposited to: a non-virtual Asset account of the council that is not physical
+   * property. Default: the council's first such account (Operating Checking in the standard chart).
+   */
+  DepositAccountID?: number | null;
+  /** 'YYYY-MM-DD'; default today. Not in the future. */
+  DateLogged?: string;
+  /** Default 'Revenue collected: <event or activity name>'. */
+  Description?: string;
 }
 
 /** One receipt for expenses.submitReport; its sheet comes from the call. */
@@ -705,6 +742,8 @@ export interface ExpenseReportDetail {
   disbursement: ExpenseDisbursement | null;
   /** 'First Last' of the officer who issued the written order (FinancialSecretaryMemberID); '' until then (Sprint 5Z-4). */
   financialSecretaryName: string;
+  /** 'First Last' of the Treasurer who coded the sheet to the ledger (TreasurerMemberID); '' until then (Sprint 6Q). */
+  treasurerName: string;
   /** 'First Last' of the officer who counter-signed (GrandKnightMemberID); '' until then (Sprint 5Z-4). */
   grandKnightName: string;
   /**
@@ -2593,22 +2632,35 @@ export interface DataService {
      * FINANCIAL_SECRETARY_REQUIRED or COUNCIL_ACCESS_DENIED for anyone else, SELF_APPROVAL_BLOCKED for the actor's own
      * sheet (every role), RECORD_NOT_FOUND for an unknown sheet, and EXPENSE_STATUS_CONFLICT for a sheet not
      * 'Submitted' or already carrying the order.
-     * Sprint 6G Extension: the order saves `budgetLineId` (the desk's 'Assign Ledger Budget Line Item' pick) as the sheet's
-     * budget_line_id; left out, it saves the line the sheet's link matches (expenseBudgetLineDefault), or NULL when none
-     * does. A pick must be an Approved line of the sheet's council at its latest budget_version (INVALID_INPUT).
+     * Sprint 6Q: the order no longer touches the sheet's budget line; the Treasurer codes it (treasurerLedgerAudit).
      */
-    financialSecretaryAuditOrder(actorId: number, reportId: number, budgetLineId?: number | null): Promise<ExpenseReportDetail>;
+    financialSecretaryAuditOrder(actorId: number, reportId: number): Promise<ExpenseReportDetail>;
     /**
-     * Dual approval, second signature (Sprint 5Z-3): the council's Active Grand Knight, or an Active Super Admin,
-     * counter-signs a sheet that carries the Financial Secretary's order, stamping GrandKnightMemberID and
-     * GrandKnightApprovedAt and moving Status to 'Approved', which releases it to the Treasurer's disbursement desk.
-     * Rejects GRAND_KNIGHT_REQUIRED or COUNCIL_ACCESS_DENIED for anyone else, SELF_APPROVAL_BLOCKED for the actor's own
-     * sheet, DUAL_SIGNATURE_CONFLICT when the actor issued the order themselves, RECORD_NOT_FOUND for an unknown sheet,
-     * and EXPENSE_STATUS_CONFLICT for a sheet not 'Submitted' or still awaiting the order.
-     * Sprint 6G Extension: `budgetLineId` replaces the sheet's budget_line_id, checked as for the written order; left out,
-     * the order's line is kept, or the matching line saved when the sheet has none.
+     * The Treasurer's ledger coding (Sprint 6Q), the mandatory stage between the written order and the counter-signature:
+     * the council's Active Treasurer, or an Active Super Admin, saves `coding` as the sheet's budget_line_id and
+     * general_ledger_account_id and stamps TreasurerMemberID and TreasurerReviewedAt. Status stays 'Submitted'. Rejects
+     * TREASURER_REQUIRED or COUNCIL_ACCESS_DENIED for anyone else, SELF_APPROVAL_BLOCKED for the actor's own sheet,
+     * DUAL_SIGNATURE_CONFLICT when the actor issued the written order, RECORD_NOT_FOUND for an unknown sheet,
+     * EXPENSE_STATUS_CONFLICT for a sheet not 'Submitted', without the order or already coded, and INVALID_INPUT for a
+     * missing or unusable budget line (assertExpenseBudgetLine) or ledger account (assertExpenseLedgerAccount).
      */
-    grandKnightAuthorizeOrder(actorId: number, reportId: number, budgetLineId?: number | null): Promise<ExpenseReportDetail>;
+    treasurerLedgerAudit(actorId: number, reportId: number, coding: ExpenseLedgerCoding): Promise<ExpenseReportDetail>;
+    /**
+     * The Treasurer Ledger Audit Desk (Sprint 6Q): the council's 'Submitted' sheets that carry the written order but no
+     * ledger coding, oldest first. Read by the council's Active Treasurer or Admins, or an Active Super Admin
+     * (TREASURER_REQUIRED, COUNCIL_ACCESS_DENIED); INVALID_INPUT for an unknown council.
+     */
+    listTreasurerQueue(actorId: number, councilId: number): Promise<ExpenseReportDetail[]>;
+    /**
+     * The final signature (Sprint 5Z-3): the council's Active Grand Knight, or an Active Super Admin, counter-signs a
+     * sheet that carries the Financial Secretary's order and, since Sprint 6Q, the Treasurer's ledger coding, stamping
+     * GrandKnightMemberID and GrandKnightApprovedAt and moving Status to 'Approved', which releases it to the disbursement
+     * desk. Rejects GRAND_KNIGHT_REQUIRED or COUNCIL_ACCESS_DENIED for anyone else, SELF_APPROVAL_BLOCKED for the actor's
+     * own sheet, DUAL_SIGNATURE_CONFLICT when the actor issued the order or coded the sheet, RECORD_NOT_FOUND for an
+     * unknown sheet, and EXPENSE_STATUS_CONFLICT for a sheet not 'Submitted' or still awaiting the order or the coding.
+     * Sprint 6Q: the Grand Knight keeps the Treasurer's budget line and ledger account; this call changes neither.
+     */
+    grandKnightAuthorizeOrder(actorId: number, reportId: number): Promise<ExpenseReportDetail>;
     /**
      * Records one check paying the listed sheets of `councilId` (the council's Active Financial Secretary or Treasurer,
      * or an Active Super Admin; anyone else rejects FINANCE_OFFICER_REQUIRED or COUNCIL_ACCESS_DENIED): creates the
@@ -3579,6 +3631,16 @@ export interface DataService {
      * and UNBALANCED_TRANSACTION (details: debits, credits, difference) when the debits do not equal the credits.
      */
     logDoubleEntryTransaction(actorId: number, linesData: readonly JournalLineInput[]): Promise<JournalEntry[]>;
+    /**
+     * '💰 Log Concluded Event Revenues' (Sprint 6Q): posts the money a past event or an activity raised as one balanced
+     * transaction - a debit to the deposit account and a credit to the Revenue account - with the event or activity linked
+     * on both lines. Only the council's Active Treasurer or an Active Super Admin (TREASURER_REQUIRED,
+     * COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for both links or neither, an unknown event or activity or one outside
+     * the council, an event that has not ended, an amount not above 0 in whole cents, a future date, or an account that is
+     * not a Revenue account (or a cash account, for the deposit) of the council; AUDIT_PERIOD_LOCKED for a date inside a
+     * signed audit period. Resolves to the two stored lines, debit first.
+     */
+    logConcludedRevenue(actorId: number, councilId: number, input: ConcludedRevenueInput): Promise<JournalEntry[]>;
     /**
      * Moves `amount` between two Asset accounts of one council as a balanced pair of lines: a debit to the target and a
      * credit to the source (planAssetTransfer). Funding or releasing a virtual goal is a transfer with its parent

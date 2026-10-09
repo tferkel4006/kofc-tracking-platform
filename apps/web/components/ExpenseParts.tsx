@@ -1,7 +1,8 @@
 'use client';
 // Pieces shared by the expense screens (My Expense Reports, the audit queue, the two dual-approval desks and check
 // disbursements): the status chip, the receipt link, the read-only receipt grid, the signature trail, the return form
-// and the signature desk grid (Sprint 5Z-4), and the desks' 'Assign Ledger Budget Line Item' picker (Sprint 6G).
+// and the signature desk grid (Sprint 5Z-4), and the Treasurer Ledger Audit Desk's budget line and ledger account
+// pickers (Sprint 6G; the Treasurer's alone since Sprint 6Q).
 import { Fragment, useState, type ReactNode } from 'react';
 import {
   assignableExpenseBudgetLines,
@@ -12,7 +13,10 @@ import {
   expenseStatusBadge,
   REJECTION_REASON_MAX_LENGTH,
   type CouncilBudgetForecast,
+  type ChartOfAccountsNode,
   type ExpenseLineItem,
+  type GLAccount,
+  expenseLedgerAccountChoices,
   type ExpenseReferenceOptions,
   type ExpenseReport,
   type ExpenseReportDetail,
@@ -29,7 +33,7 @@ import { db } from '@/services/db';
 export const submitterName = (d: ExpenseReportDetail) =>
   formatPersonName(d.submitterFirstName, d.submitterLastName) || `Member ${d.report.SubmitterMemberID}`;
 
-export function ExpenseStatusPill({ report }: { report: Pick<ExpenseReport, 'Status' | 'RejectionReason' | 'FinancialSecretaryMemberID'> }) {
+export function ExpenseStatusPill({ report }: { report: Pick<ExpenseReport, 'Status' | 'RejectionReason' | 'FinancialSecretaryMemberID' | 'TreasurerMemberID'> }) {
   const { label, tone } = expenseStatusBadge(report);
   return <Pill tone={tone}>{label}</Pill>;
 }
@@ -106,17 +110,21 @@ function SignatureLine({ label, memberId, name, at }: { label: string; memberId:
   );
 }
 
-/** The two dual-approval signatures on a sheet (Sprint 5Z-3): the written order, then the counter-signature. */
+/**
+ * The signatures on a sheet: the written order (Sprint 5Z-3), the Treasurer's ledger coding (Sprint 6Q), then the
+ * counter-signature.
+ */
 export function SignatureTrail({ detail }: { detail: ExpenseReportDetail }) {
   const { report } = detail;
   return (
-    <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2" aria-label={`Signatures on expense report ${report.id}`}>
+    <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3" aria-label={`Signatures on expense report ${report.id}`}>
       <SignatureLine
         label="📜 Written order · Financial Secretary"
         memberId={report.FinancialSecretaryMemberID}
         name={detail.financialSecretaryName}
         at={report.FinancialSecretaryApprovedAt}
       />
+      <SignatureLine label="🧾 Ledger coding · Treasurer" memberId={report.TreasurerMemberID} name={detail.treasurerName} at={report.TreasurerReviewedAt} />
       <SignatureLine
         label="✍️ Counter-signature · Grand Knight"
         memberId={report.GrandKnightMemberID}
@@ -314,7 +322,7 @@ export function useExpenseBudgetLineAssignments(councilId: number, refs: Expense
   };
 }
 
-/** A desk row's 'Assign Ledger Budget Line Item' dropdown. Blank means unassigned, and the approval stays locked. */
+/** The Treasurer desk row's 'Assign Ledger Budget Line Item' dropdown. Blank means unassigned, and coding stays locked. */
 export function BudgetLinePicker({
   detail,
   assignments,
@@ -332,7 +340,7 @@ export function BudgetLinePicker({
         ? 'Loading the budget…'
         : `The ${fraternalYear} budget has no approved lines yet.`
       : value === null
-        ? 'Choose a line to unlock the approval.'
+        ? 'Choose a line to unlock the coding.'
         : undefined;
   return (
     <Field label={ASSIGN_BUDGET_LINE_LABEL} hint={hint} className="min-w-56">
@@ -354,5 +362,84 @@ export function BudgetLinePicker({
         </Select>
       )}
     </Field>
+  );
+}
+
+// ---- 'Assign General Ledger Account' (Sprint 6Q) --------------------------------------------------
+
+export const ASSIGN_LEDGER_ACCOUNT_LABEL = 'Assign General Ledger Account';
+
+/** Every account of the chart, parents before children (finance.listChartOfAccounts flattened). */
+export function flattenChart(nodes: readonly ChartOfAccountsNode[]): GLAccount[] {
+  return nodes.flatMap((n) => [n.account, ...flattenChart(n.children)]);
+}
+
+/** The council's general ledger accounts, for the Treasurer's pickers and the coding note. */
+export function useCouncilGLAccounts(councilId: number): { accounts: GLAccount[]; loading: boolean; error: string | null } {
+  const user = useUser();
+  const chart = useLoad(() => db.finance.listChartOfAccounts(user.memberId, councilId), [user.memberId, councilId]);
+  return { accounts: flattenChart(chart.data?.accounts ?? []), loading: chart.loading && !chart.data, error: chart.error };
+}
+
+/**
+ * A Treasurer desk row's 'Assign General Ledger Account' dropdown: the council's Expense accounts (and its physical
+ * property account for a long-term asset sheet). Blank keeps the coding locked.
+ */
+export function LedgerAccountPicker({
+  detail,
+  accounts,
+  value,
+  onChange,
+  disabled,
+}: {
+  detail: ExpenseReportDetail;
+  accounts: readonly GLAccount[];
+  value: number | null;
+  onChange: (accountId: number | null) => void;
+  disabled?: boolean;
+}) {
+  const choices = expenseLedgerAccountChoices(accounts, detail.report);
+  return (
+    <Field label={ASSIGN_LEDGER_ACCOUNT_LABEL} hint={choices.length === 0 ? 'The chart of accounts has no expense accounts.' : undefined} className="min-w-56">
+      {(id) => (
+        <Select
+          id={id}
+          value={value === null ? '' : String(value)}
+          disabled={disabled || choices.length === 0}
+          required
+          aria-invalid={value === null}
+          onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        >
+          <option value="">— Select a ledger account —</option>
+          {choices.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.AccountName}
+            </option>
+          ))}
+        </Select>
+      )}
+    </Field>
+  );
+}
+
+/** The Treasurer's coding on a sheet, as the Grand Knight reads it: 'Charged to <line> · <account>'. */
+export function LedgerCodingNote({
+  detail,
+  lines,
+  accounts,
+}: {
+  detail: ExpenseReportDetail;
+  lines: readonly CouncilBudgetForecast[];
+  accounts: readonly GLAccount[];
+}) {
+  const { budget_line_id: lineId, general_ledger_account_id: accountId } = detail.report;
+  if (lineId == null && accountId == null) return null;
+  const line = lines.find((l) => l.id === lineId);
+  const account = accounts.find((a) => a.id === accountId);
+  return (
+    <p className="text-sm">
+      <span className="font-bold">Charged to:</span> {line?.LineItemName ?? (lineId == null ? 'no budget line' : `budget line #${lineId}`)} ·{' '}
+      {account?.AccountName ?? (accountId == null ? 'no ledger account' : `account #${accountId}`)}
+    </p>
   );
 }

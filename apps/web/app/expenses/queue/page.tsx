@@ -29,7 +29,7 @@ import { db } from '@/services/db';
 
 type Message = { tone: 'error' | 'info'; text: string };
 
-const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [] };
+const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [], activities: [] };
 
 function AuditQueue() {
   const user = useUser();

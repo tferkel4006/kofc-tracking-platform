@@ -638,6 +638,16 @@ export interface ExpenseReport {
   budget_line_id?: number | null;
   /** Sprint 6G Extension: the CharitableRequest of the same council the sheet spends for; its TargetBudgetLineID is the desks' default. */
   charity_request_id?: number | null;
+  /**
+   * Sprint 6Q (Schema 56): the Treasurer's ledger coding, the middle of the three signatures. Set by
+   * expenses.treasurerLedgerAudit together with budget_line_id and general_ledger_account_id; cleared on return.
+   */
+  TreasurerMemberID?: number | null;
+  TreasurerReviewedAt?: string | null;
+  /** Sprint 6Q: the GLAccount (an Expense account of the council) the Treasurer charged the sheet to. */
+  general_ledger_account_id?: number | null;
+  /** Sprint 6Q: a long-running council activity (Activities) the sheet spends for, instead of an event or meeting. */
+  LinkedActivityID?: number | null;
 }
 
 /** CouncilAssetsInventory.current_status (Sprint 6E; rules layer, no CHECK). */
@@ -986,6 +996,8 @@ export interface JournalEntry {
   CheckNumber?: string | null; // VARCHAR(50)
   /** VARCHAR(50) (Sprint 5Z-8): the UUID every line of one posting shares. */
   TransactionID: string;
+  /** Sprint 6Q: an activity of the council the posting belongs to (post-event revenue logged against an activity). */
+  LinkedActivityID?: number | null;
 }
 
 // 14. COUNCIL HISTORY ANNALS AND THE SPIRITUAL DIARY (Sprint 6K)

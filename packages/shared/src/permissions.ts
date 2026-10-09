@@ -16,6 +16,7 @@ import { DEFAULT_TENANT_TYPE, withTenantGate, type TenantType } from './tenant';
 import { AGENDA_EDITOR_ROLE_NAMES } from './agenda';
 import { GRAND_KNIGHT_ROLE, TRUSTEE_ROLE_NAMES } from './elections';
 import { FINANCE_LOOKUP_TABLES, FINANCIAL_SECRETARY_ROLE_NAME, holdsExecutiveRole, holdsFinanceRole } from './rules';
+import { TREASURER_ROLE_NAME } from './treasurer-desk';
 import type { BudgetLineStatus, CharitableRequest, CharitableThreadType, Donation, Event, ExpenseReport, Meeting, Member, MemberType } from './types';
 
 /** `roles` (Role names) matters only to the finance areas; omitted, the member holds none. `isBudgetDirector` only to the budget. */
@@ -59,6 +60,7 @@ export type PortalArea =
   | 'finance/ledger'
   | 'finance/balance-sheet'
   | 'finance/audit'
+  | 'finance/treasurer-desk'
   | 'supreme-sync'
   | 'financials/budget'
   | 'messages'
@@ -277,6 +279,8 @@ export const canDisburseCouncilExpenses = (u: Actor, councilId: number): boolean
 
 /** Holds the council's Financial Secretary seat (Sprint 5Z-4: the seat that issues expense written orders). */
 export const isFinancialSecretary = (u: Actor): boolean => (u.roles ?? []).includes(FINANCIAL_SECRETARY_ROLE_NAME);
+/** Holds the council's Treasurer seat (Sprint 6Q: the seat that codes expense sheets to the ledger). */
+export const isTreasurer = (u: Actor): boolean => (u.roles ?? []).includes(TREASURER_ROLE_NAME);
 /** Holds the council's Grand Knight seat (Sprint 5Z-4: the seat that counter-signs expense orders). */
 export const isGrandKnight = (u: Actor): boolean => (u.roles ?? []).includes(GRAND_KNIGHT_ROLE);
 
@@ -293,6 +297,19 @@ export const canOpenExpenseAuditDesk = (u: Actor, councilId: number): boolean =>
  */
 export const canOpenExpenseAuthorizeDesk = (u: Actor, councilId: number): boolean =>
   canAdministerCouncil(u, councilId) || (isGrandKnight(u) && u.councilId === councilId);
+
+/**
+ * The Treasurer Ledger Audit Desk of a council (Sprint 6Q), mirroring assertMayReadTreasurerDesk: its Treasurer, its
+ * Admins and any Super Admin may open it. Only the Treasurer or a Super Admin codes there (expenseLedgerCodeBlock).
+ */
+export const canOpenTreasurerDesk = (u: Actor, councilId: number): boolean =>
+  canAdministerCouncil(u, councilId) || (isTreasurer(u) && u.councilId === councilId);
+
+/**
+ * The '💰 Log Concluded Event Revenues' card (Sprint 6Q), mirroring assertMayCodeExpenseLedger: the council's Treasurer
+ * or any Super Admin.
+ */
+export const canLogConcludedRevenue = (u: Actor, councilId: number): boolean => isSuperAdmin(u) || (isTreasurer(u) && u.councilId === councilId);
 
 /** Why the signed-in officer may not sign a line on a sheet (Sprint 5Z-4), or null when they may. */
 export type ExpenseSignatureBlock = 'seat' | 'own-report' | 'collusion';
@@ -317,16 +334,34 @@ export const canIssueExpenseOrder = (u: Actor, report: Pick<ExpenseReport, 'Coun
  */
 export function expenseCounterSignBlock(
   u: Actor,
-  report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID' | 'FinancialSecretaryMemberID'>,
+  report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID' | 'FinancialSecretaryMemberID'> & Partial<Pick<ExpenseReport, 'TreasurerMemberID'>>,
 ): ExpenseSignatureBlock | null {
   if (!(isSuperAdmin(u) || (isGrandKnight(u) && u.councilId === report.CouncilID))) return 'seat';
   if (report.SubmitterMemberID === u.memberId) return 'own-report';
   if (report.FinancialSecretaryMemberID === u.memberId) return 'collusion';
+  if (report.TreasurerMemberID != null && report.TreasurerMemberID === u.memberId) return 'collusion';
   return null;
 }
 
-export const canCounterSignExpenseOrder = (u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID' | 'FinancialSecretaryMemberID'>): boolean =>
-  expenseCounterSignBlock(u, report) === null;
+export const canCounterSignExpenseOrder = (
+  u: Actor,
+  report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID' | 'FinancialSecretaryMemberID'> & Partial<Pick<ExpenseReport, 'TreasurerMemberID'>>,
+): boolean => expenseCounterSignBlock(u, report) === null;
+
+/**
+ * The '🧾 Code to Ledger' control on one sheet (Sprint 6Q), mirroring assertMayCodeExpenseLedger, assertNotSelfApproval
+ * and assertDistinctExpenseSigners: the council's Treasurer or any Super Admin, never on their own sheet, and never the
+ * officer who issued its written order ('collusion').
+ */
+export function expenseLedgerCodeBlock(
+  u: Actor,
+  report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID' | 'FinancialSecretaryMemberID'>,
+): ExpenseSignatureBlock | null {
+  if (!canLogConcludedRevenue(u, report.CouncilID)) return 'seat';
+  if (report.SubmitterMemberID === u.memberId) return 'own-report';
+  if (report.FinancialSecretaryMemberID === u.memberId) return 'collusion';
+  return null;
+}
 
 /**
  * The pay checkbox on one approved expense sheet (drivers: assertMayDisburseCouncilExpenses, then
@@ -548,6 +583,8 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, ten
   if (isAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/queue');
   if (isAdmin(u) || isFinancialSecretary(u)) areas.push('expenses/audit');
   if (isAdmin(u) || isGrandKnight(u)) areas.push('expenses/authorize');
+  // Sprint 6Q: the Treasurer codes each ordered sheet to a budget line and a ledger account before the Grand Knight signs.
+  if (isAdmin(u) || isTreasurer(u)) areas.push('finance/treasurer-desk');
   if (isSuperAdmin(u) || isFinanceOfficer(u)) areas.push('expenses/disbursements', 'charities/queue');
   if (canVetCharitableRequests(u, u.councilId)) areas.push('charities/vetting');
   if (canBrowseLessonsRegistry(u)) areas.push('lessons-registry');
@@ -610,6 +647,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
       'finance/balance-sheet',
       'finance/dashboard',
       'finance/audit',
+      'finance/treasurer-desk',
       'expenses',
       'expenses/queue',
       'expenses/disbursements',

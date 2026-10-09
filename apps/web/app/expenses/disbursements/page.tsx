@@ -32,7 +32,7 @@ import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
-const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [] };
+const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [], activities: [] };
 
 /** The check just issued: its number, date, total and the sheets it paid. */
 function IssuedCheck({ result, onDismiss }: { result: ExpenseDisbursementResult; onDismiss: () => void }) {

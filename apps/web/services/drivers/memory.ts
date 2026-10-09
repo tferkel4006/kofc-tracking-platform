@@ -463,6 +463,15 @@ import {
   sortLeadershipSnapshots,
   sortSmartAlbums,
   toSmartAlbum,
+  assertExpenseActivityLink,
+  assertExpenseBudgetLine,
+  assertExpenseLedgerAccount,
+  assertMayCodeExpenseLedger,
+  assertMayReadTreasurerDesk,
+  awaitsTreasurerCoding,
+  cleanExpenseLedgerCoding,
+  concludedRevenueLink,
+  planConcludedRevenue,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -2221,6 +2230,11 @@ export class MemoryDataService implements DataService {
           councilId,
           (s.rows('CharitableRequest').find((r) => r.id === clean.charity_request_id) as unknown as { CouncilID: number } | undefined) ?? null,
         );
+        assertExpenseActivityLink(
+          clean,
+          councilId,
+          (s.rows('Activities').find((a) => a.id === clean.LinkedActivityID) as unknown as { CouncilID: number } | undefined) ?? null,
+        );
         const linkedEvent = eventId === null ? undefined : (s.rows('Event').find((e) => e.id === eventId) as unknown as Event | undefined);
         const linkedMeeting = s.rows('Meeting').find((m) => m.id === clean.LinkedMeetingID) as unknown as Meeting | undefined;
         assertExpenseSubmissionWindow(
@@ -2234,6 +2248,7 @@ export class MemoryDataService implements DataService {
           Status: status,
           LinkedEventID: clean.LinkedEventID,
           LinkedMeetingID: clean.LinkedMeetingID,
+          LinkedActivityID: clean.LinkedActivityID,
           is_long_term_asset: clean.is_long_term_asset,
           charity_request_id: clean.charity_request_id,
         };
@@ -2266,7 +2281,7 @@ export class MemoryDataService implements DataService {
       return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
     },
 
-    financialSecretaryAuditOrder: async (actorId, reportId, budgetLineId) => {
+    financialSecretaryAuditOrder: async (actorId, reportId) => {
       const s = await this.ready();
       s.transaction(() => {
         const actor = this.memberWriteActor(s, actorId);
@@ -2275,16 +2290,41 @@ export class MemoryDataService implements DataService {
         assertMayIssueExpenseOrder(actor, report.CouncilID, `issue the written order for expense report ${reportId}`);
         assertNotSelfApproval(actor, report);
         assertExpenseSignatureStage(report, 'financialSecretary');
+        Object.assign(row, { FinancialSecretaryMemberID: actorId, FinancialSecretaryApprovedAt: toTimestamp(this.now()) });
+      });
+      return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
+    },
+
+    listTreasurerQueue: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReadTreasurerDesk(this.memberWriteActor(s, actorId), councilId, `read the Treasurer desk of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      const reports = s.rows('ExpenseReport').filter((r) => r.CouncilID === councilId && awaitsTreasurerCoding(r as unknown as ExpenseReport));
+      return this.expenseDetails(s, [...reports].sort((a, b) => (a.id as number) - (b.id as number)));
+    },
+
+    treasurerLedgerAudit: async (actorId, reportId, coding) => {
+      const picked = cleanExpenseLedgerCoding(coding);
+      const s = await this.ready();
+      s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const row = this.requireExpenseReport(s, reportId);
+        const report = row as unknown as ExpenseReport;
+        assertMayCodeExpenseLedger(actor, report.CouncilID, `code expense report ${reportId} to the ledger`);
+        assertNotSelfApproval(actor, report);
+        assertExpenseSignatureStage(report, 'treasurer');
+        assertDistinctExpenseSigners(actor, report);
         Object.assign(row, {
-          FinancialSecretaryMemberID: actorId,
-          FinancialSecretaryApprovedAt: toTimestamp(this.now()),
-          budget_line_id: this.expenseBudgetLineToSave(s, row, budgetLineId),
+          TreasurerMemberID: actorId,
+          TreasurerReviewedAt: toTimestamp(this.now()),
+          budget_line_id: assertExpenseBudgetLine(this.allBudgetLines(s, report.CouncilID), report.CouncilID, picked.budgetLineId),
+          general_ledger_account_id: assertExpenseLedgerAccount(this.glAccounts(s, report.CouncilID), report, picked.generalLedgerAccountId),
         });
       });
       return this.expenseDetails(s, [this.requireExpenseReport(s, reportId)])[0];
     },
 
-    grandKnightAuthorizeOrder: async (actorId, reportId, budgetLineId) => {
+    grandKnightAuthorizeOrder: async (actorId, reportId) => {
       const s = await this.ready();
       s.transaction(() => {
         const actor = this.memberWriteActor(s, actorId);
@@ -2299,7 +2339,6 @@ export class MemoryDataService implements DataService {
           Status: nextExpenseStatus(row.Status, 'approve', reportId),
           GrandKnightMemberID: actorId,
           GrandKnightApprovedAt: toTimestamp(this.now()),
-          budget_line_id: this.expenseBudgetLineToSave(s, row, budgetLineId),
         });
         this.convertExpenseToAsset(s, row, from);
       });
@@ -2345,30 +2384,6 @@ export class MemoryDataService implements DataService {
   };
 
   /** The workflow engine's asset conversion hook, run inside the status change's transaction (Sprint 6E). */
-  /**
-   * The budget_line_id a signature saves on `row` (Sprint 6G Extension): the signer's pick, else the sheet's saved line,
-   * else the default for its link among the council's Approved lines of the fraternal year in progress.
-   */
-  private expenseBudgetLineToSave(s: MemoryStore, row: Row, picked: number | null | undefined): number | null {
-    const councilId = row.CouncilID as number;
-    const eventId = (row.LinkedEventID as number | null) ?? null;
-    const requestId = (row.charity_request_id as number | null) ?? null;
-    return planExpenseBudgetLineSave({
-      allLines: this.allBudgetLines(s, councilId),
-      assignable: assignableExpenseBudgetLines(this.budgetLines(s, councilId, currentFraternalYear(this.now()))),
-      councilId,
-      picked,
-      saved: (row.budget_line_id as number | null) ?? null,
-      link: {
-        EventID: eventId,
-        EventName: eventId === null ? null : ((s.rows('Event').find((e) => e.id === eventId)?.EventName as string | undefined) ?? null),
-        MeetingID: (row.LinkedMeetingID as number | null) ?? null,
-        CharityBudgetLineID:
-          requestId === null ? null : ((s.rows('CharitableRequest').find((r) => r.id === requestId)?.TargetBudgetLineID as number | null | undefined) ?? null),
-      },
-    });
-  }
-
   private convertExpenseToAsset(s: MemoryStore, row: Row, from: unknown): void {
     const asset = planExpenseAssetConversion({
       from,
@@ -5086,6 +5101,27 @@ export class MemoryDataService implements DataService {
       });
     },
 
+    logConcludedRevenue: async (actorId, councilId, input) => {
+      const link = concludedRevenueLink(input);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        assertMayCodeExpenseLedger(actor, councilId, `log revenue for council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const source =
+          link.kind === 'event'
+            ? {
+                kind: 'event' as const,
+                event: (s.rows('Event').find((e) => e.id === link.id) as unknown as Event | undefined) ?? null,
+                eventCouncilIds: s.rows('Event').some((e) => e.id === link.id) ? this.councilIdsOf(s, link.id) : [],
+              }
+            : { kind: 'activity' as const, activity: (s.rows('Activities').find((a) => a.id === link.id) as unknown as Activities | undefined) ?? null };
+        const lines = planConcludedRevenue(councilId, input, source, this.glAccounts(s, councilId), this.now());
+        assertLedgerPeriodsOpen(lines, this.councilAudits(s, councilId));
+        return this.insertJournalLines(s, councilId, lines);
+      });
+    },
+
     transferAssetFunds: async (actorId, sourceAccountId, targetAccountId, amount, options = {}) => {
       const s = await this.ready();
       return s.transaction(() => {
@@ -5285,7 +5321,10 @@ export class MemoryDataService implements DataService {
    */
   private insertJournalLines(s: MemoryStore, councilId: number, lines: readonly CleanJournalLine[]): JournalEntry[] {
     const TransactionID = formatTransactionId(globalThis.crypto.getRandomValues(new Uint8Array(16)));
-    return lines.map((line) => ({ ...s.insert('JournalEntry', { CouncilID: councilId, ...line, IsBankReconciled: 0, TransactionID }) }) as unknown as JournalEntry);
+    return lines.map(
+      (line) =>
+        ({ ...s.insert('JournalEntry', { CouncilID: councilId, ...line, LinkedActivityID: line.LinkedActivityID ?? null, IsBankReconciled: 0, TransactionID }) }) as unknown as JournalEntry,
+    );
   }
 
   history: DataService['history'] = {

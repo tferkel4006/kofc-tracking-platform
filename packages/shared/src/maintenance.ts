@@ -116,7 +116,11 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
   ],
   Parish: [{ table: 'Pastor', column: 'ParishID', noun: ['pastor', 'pastors'] }],
   Pastor: [],
-  Activities: [{ table: 'ActivityTime', column: 'ActivityID', noun: ['time entry', 'time entries'] }],
+  Activities: [
+    { table: 'ActivityTime', column: 'ActivityID', noun: ['time entry', 'time entries'] },
+    { table: 'ExpenseReport', column: 'LinkedActivityID', noun: ['expense report', 'expense reports'] },
+    { table: 'JournalEntry', column: 'LinkedActivityID', noun: ['ledger posting', 'ledger postings'] },
+  ],
   DistributionLists: [], // DistributionListMembers rows are deleted with their list
   DonationType: [{ table: 'Donation', column: 'DonationTypeID', noun: ['donation', 'donations'] }],
   CouncilDonationMethod: [], // donations point at DonationMethod, so disabling a method keeps their history

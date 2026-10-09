@@ -466,6 +466,14 @@ import {
   sortLeadershipSnapshots,
   sortSmartAlbums,
   toSmartAlbum,
+  assertExpenseActivityLink,
+  assertExpenseBudgetLine,
+  assertExpenseLedgerAccount,
+  assertMayCodeExpenseLedger,
+  assertMayReadTreasurerDesk,
+  cleanExpenseLedgerCoding,
+  concludedRevenueLink,
+  planConcludedRevenue,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -683,8 +691,10 @@ const DB_NAME = 'kofc.db';
  * 55: CouncilLeadershipSnapshot (the locked officer records), CouncilAssetsInventory.serial_number and storage_location,
  *     EventPlanningTime (Planning Hours), CouncilMediaVault and MediaSmartAlbums; All-Hands shifts store a target of 0
  *     (Sprint 6P).
+ * 56: ExpenseReport.TreasurerMemberID, TreasurerReviewedAt, general_ledger_account_id and LinkedActivityID - the Treasurer
+ *     Ledger Audit Desk and activity-linked expenses; JournalEntry.LinkedActivityID - post-event revenue (Sprint 6Q).
  */
-const SCHEMA_VERSION = 55;
+const SCHEMA_VERSION = 56;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -2543,7 +2553,21 @@ export class SqliteDataService implements DataService {
       await this.assertCouncilsExist(db, [councilId]);
       const reports = await db.getAllAsync<ExpenseReport>(
         `SELECT * FROM [ExpenseReport]
-          WHERE [CouncilID] = ? AND [Status] = 'Submitted' AND [FinancialSecretaryMemberID] IS NOT NULL AND [GrandKnightMemberID] IS NULL
+          WHERE [CouncilID] = ? AND [Status] = 'Submitted' AND [FinancialSecretaryMemberID] IS NOT NULL AND [TreasurerMemberID] IS NOT NULL
+            AND [GrandKnightMemberID] IS NULL
+          ORDER BY [id]`,
+        [councilId],
+      );
+      return this.expenseDetails(db, reports);
+    },
+
+    listTreasurerQueue: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayReadTreasurerDesk(await this.memberWriteActor(db, actorId), councilId, `read the Treasurer desk of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const reports = await db.getAllAsync<ExpenseReport>(
+        `SELECT * FROM [ExpenseReport]
+          WHERE [CouncilID] = ? AND [Status] = 'Submitted' AND [FinancialSecretaryMemberID] IS NOT NULL AND [TreasurerMemberID] IS NULL
           ORDER BY [id]`,
         [councilId],
       );
@@ -2577,6 +2601,13 @@ export class SqliteDataService implements DataService {
             ? null
             : await db.getFirstAsync<{ CouncilID: number }>('SELECT [CouncilID] FROM [CharitableRequest] WHERE [id] = ?', [clean.charity_request_id]),
         );
+        assertExpenseActivityLink(
+          clean,
+          councilId,
+          clean.LinkedActivityID === null
+            ? null
+            : await db.getFirstAsync<{ CouncilID: number }>('SELECT [CouncilID] FROM [Activities] WHERE [id] = ?', [clean.LinkedActivityID]),
+        );
         const linkedEvent = eventId === null ? null : await db.getFirstAsync<Event>('SELECT [id], [StartDate], [EndDate] FROM [Event] WHERE [id] = ?', [eventId]);
         const linkedMeeting =
           clean.LinkedMeetingID === null
@@ -2589,20 +2620,20 @@ export class SqliteDataService implements DataService {
         );
         // The workflow engine decides the stored Status: a new sheet starts as Draft, and only a Draft is saved or submitted.
         const status = nextExpenseStatus(draft?.Status ?? null, clean.Status === 'Submitted' ? 'submit' : 'saveDraft', clean.id);
-        const fields: Bind[] = [status, clean.LinkedEventID, clean.LinkedMeetingID, clean.is_long_term_asset, clean.charity_request_id];
+        const fields: Bind[] = [status, clean.LinkedEventID, clean.LinkedMeetingID, clean.is_long_term_asset, clean.charity_request_id, clean.LinkedActivityID];
         if (draft) {
           // Resubmitting answers the rejection, so its reason goes; a draft keeps it for the member to read.
           await db.runAsync(
             `UPDATE [ExpenseReport] SET [Status] = ?, [LinkedEventID] = ?, [LinkedMeetingID] = ?, [is_long_term_asset] = ?, [charity_request_id] = ?,
-                    [RejectionReason] = CASE WHEN ? = 'Submitted' THEN NULL ELSE [RejectionReason] END
+                    [LinkedActivityID] = ?, [RejectionReason] = CASE WHEN ? = 'Submitted' THEN NULL ELSE [RejectionReason] END
               WHERE [id] = ?`,
             [...fields, status, draft.id],
           );
           await db.runAsync('DELETE FROM [ExpenseLineItem] WHERE [ExpenseReportID] = ?', [draft.id]);
         } else {
           const res = await db.runAsync(
-            `INSERT INTO [ExpenseReport] ([Status], [LinkedEventID], [LinkedMeetingID], [is_long_term_asset], [charity_request_id], [CouncilID], [SubmitterMemberID])
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO [ExpenseReport] ([Status], [LinkedEventID], [LinkedMeetingID], [is_long_term_asset], [charity_request_id], [LinkedActivityID], [CouncilID], [SubmitterMemberID])
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [...fields, councilId, actorId],
           );
           reportId = res.lastInsertRowId;
@@ -2630,7 +2661,8 @@ export class SqliteDataService implements DataService {
         await db.runAsync(
           `UPDATE [ExpenseReport] SET [Status] = ?, [RejectionReason] = ?,
                   [FinancialSecretaryMemberID] = NULL, [FinancialSecretaryApprovedAt] = NULL,
-                  [GrandKnightMemberID] = NULL, [GrandKnightApprovedAt] = NULL, [budget_line_id] = NULL
+                  [TreasurerMemberID] = NULL, [TreasurerReviewedAt] = NULL,
+                  [GrandKnightMemberID] = NULL, [GrandKnightApprovedAt] = NULL, [budget_line_id] = NULL, [general_ledger_account_id] = NULL
             WHERE [id] = ?`,
           [nextExpenseStatus(row.Status, 'return', reportId), reason, reportId],
         );
@@ -2638,7 +2670,7 @@ export class SqliteDataService implements DataService {
       return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
     },
 
-    financialSecretaryAuditOrder: async (actorId, reportId, budgetLineId) => {
+    financialSecretaryAuditOrder: async (actorId, reportId) => {
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
         const actor = await this.memberWriteActor(db, actorId);
@@ -2646,16 +2678,36 @@ export class SqliteDataService implements DataService {
         assertMayIssueExpenseOrder(actor, row.CouncilID, `issue the written order for expense report ${reportId}`);
         assertNotSelfApproval(actor, row);
         assertExpenseSignatureStage(row, 'financialSecretary');
-        const lineId = await this.expenseBudgetLineToSave(db, row, budgetLineId);
+        await db.runAsync('UPDATE [ExpenseReport] SET [FinancialSecretaryMemberID] = ?, [FinancialSecretaryApprovedAt] = ? WHERE [id] = ?', [
+          actorId,
+          toTimestamp(this.now()),
+          reportId,
+        ]);
+      });
+      return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
+    },
+
+    treasurerLedgerAudit: async (actorId, reportId, coding) => {
+      const picked = cleanExpenseLedgerCoding(coding);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const row = await this.requireExpenseReport(db, reportId);
+        assertMayCodeExpenseLedger(actor, row.CouncilID, `code expense report ${reportId} to the ledger`);
+        assertNotSelfApproval(actor, row);
+        assertExpenseSignatureStage(row, 'treasurer');
+        assertDistinctExpenseSigners(actor, row);
+        const lineId = assertExpenseBudgetLine(await this.allBudgetLines(db, row.CouncilID), row.CouncilID, picked.budgetLineId);
+        const accountId = assertExpenseLedgerAccount(await this.glAccounts(db, row.CouncilID), row, picked.generalLedgerAccountId);
         await db.runAsync(
-          'UPDATE [ExpenseReport] SET [FinancialSecretaryMemberID] = ?, [FinancialSecretaryApprovedAt] = ?, [budget_line_id] = ? WHERE [id] = ?',
-          [actorId, toTimestamp(this.now()), lineId, reportId],
+          'UPDATE [ExpenseReport] SET [TreasurerMemberID] = ?, [TreasurerReviewedAt] = ?, [budget_line_id] = ?, [general_ledger_account_id] = ? WHERE [id] = ?',
+          [actorId, toTimestamp(this.now()), lineId, accountId, reportId],
         );
       });
       return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
     },
 
-    grandKnightAuthorizeOrder: async (actorId, reportId, budgetLineId) => {
+    grandKnightAuthorizeOrder: async (actorId, reportId) => {
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
         const actor = await this.memberWriteActor(db, actorId);
@@ -2664,11 +2716,12 @@ export class SqliteDataService implements DataService {
         assertNotSelfApproval(actor, row);
         assertExpenseSignatureStage(row, 'grandKnight');
         assertDistinctExpenseSigners(actor, row);
-        const lineId = await this.expenseBudgetLineToSave(db, row, budgetLineId);
-        await db.runAsync(
-          'UPDATE [ExpenseReport] SET [Status] = ?, [GrandKnightMemberID] = ?, [GrandKnightApprovedAt] = ?, [budget_line_id] = ? WHERE [id] = ?',
-          [nextExpenseStatus(row.Status, 'approve', reportId), actorId, toTimestamp(this.now()), lineId, reportId],
-        );
+        await db.runAsync('UPDATE [ExpenseReport] SET [Status] = ?, [GrandKnightMemberID] = ?, [GrandKnightApprovedAt] = ? WHERE [id] = ?', [
+          nextExpenseStatus(row.Status, 'approve', reportId),
+          actorId,
+          toTimestamp(this.now()),
+          reportId,
+        ]);
         await this.convertExpenseToAsset(db, reportId, row.Status);
       });
       return (await this.expenseDetails(db, [await this.requireExpenseReport(db, reportId)]))[0];
@@ -2737,10 +2790,10 @@ export class SqliteDataService implements DataService {
 
   private async expenseDetails(db: SQLite.SQLiteDatabase, reports: readonly ExpenseReport[]): Promise<ExpenseReportDetail[]> {
     const reportIds = reports.map((r) => r.id);
-    // Submitters and both signers (Sprint 5Z-4), for the names the desks show.
+    // Submitters and every signer (Sprint 5Z-4; the Treasurer since Sprint 6Q), for the names the desks show.
     const memberIds = [
       ...new Set(
-        reports.flatMap((r) => [r.SubmitterMemberID, r.FinancialSecretaryMemberID, r.GrandKnightMemberID]).filter((id): id is number => id != null),
+        reports.flatMap((r) => [r.SubmitterMemberID, r.FinancialSecretaryMemberID, r.TreasurerMemberID, r.GrandKnightMemberID]).filter((id): id is number => id != null),
       ),
     ];
     const disbursementIds = [...new Set(reports.map((r) => r.DisbursementID).filter((id): id is number => id != null))];
@@ -5746,28 +5799,6 @@ export class SqliteDataService implements DataService {
    * The workflow engine's asset conversion hook, run inside the status change's transaction once the new Status is
    * stored (Sprint 6E): a long-term asset sheet leaving `from` gets its CouncilAssetsInventory row.
    */
-  /**
-   * The budget_line_id a signature saves on `row` (Sprint 6G Extension): the signer's pick, else the sheet's saved line,
-   * else the default for its link among the council's Approved lines of the fraternal year in progress.
-   */
-  private async expenseBudgetLineToSave(db: SQLite.SQLiteDatabase, row: ExpenseReport, picked: number | null | undefined): Promise<number | null> {
-    const eventId = row.LinkedEventID ?? null;
-    const requestId = row.charity_request_id ?? null;
-    const event = eventId === null ? null : await db.getFirstAsync<{ EventName: string }>('SELECT [EventName] FROM [Event] WHERE [id] = ?', [eventId]);
-    const request =
-      requestId === null
-        ? null
-        : await db.getFirstAsync<{ TargetBudgetLineID: number | null }>('SELECT [TargetBudgetLineID] FROM [CharitableRequest] WHERE [id] = ?', [requestId]);
-    return planExpenseBudgetLineSave({
-      allLines: await this.allBudgetLines(db, row.CouncilID),
-      assignable: assignableExpenseBudgetLines(await this.budgetLines(db, row.CouncilID, currentFraternalYear(this.now()))),
-      councilId: row.CouncilID,
-      picked,
-      saved: row.budget_line_id ?? null,
-      link: { EventID: eventId, EventName: event?.EventName ?? null, MeetingID: row.LinkedMeetingID ?? null, CharityBudgetLineID: request?.TargetBudgetLineID ?? null },
-    });
-  }
-
   private async convertExpenseToAsset(db: SQLite.SQLiteDatabase, reportId: number, from: unknown): Promise<void> {
     const report = await this.requireExpenseReport(db, reportId);
     const asset = planExpenseAssetConversion({
@@ -6008,6 +6039,29 @@ export class SqliteDataService implements DataService {
       return this.journalEntriesById(db, ids);
     },
 
+    logConcludedRevenue: async (actorId, councilId, input) => {
+      const link = concludedRevenueLink(input);
+      const db = await this.ready();
+      let ids: number[] = [];
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        assertMayCodeExpenseLedger(actor, councilId, `log revenue for council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        let source;
+        if (link.kind === 'event') {
+          const event = await db.getFirstAsync<Event>('SELECT [id], [EventName], [EndDate] FROM [Event] WHERE [id] = ?', [link.id]);
+          source = { kind: 'event' as const, event, eventCouncilIds: event ? await this.councilIdsOf(db, event.id) : [] };
+        } else {
+          const activity = await db.getFirstAsync<Activities>('SELECT * FROM [Activities] WHERE [id] = ?', [link.id]);
+          source = { kind: 'activity' as const, activity };
+        }
+        const lines = planConcludedRevenue(councilId, input, source, await this.glAccounts(db, councilId), this.now());
+        assertLedgerPeriodsOpen(lines, await this.councilAudits(db, councilId));
+        ids = await this.insertJournalLines(db, councilId, lines);
+      });
+      return this.journalEntriesById(db, ids);
+    },
+
     transferAssetFunds: async (actorId, sourceAccountId, targetAccountId, amount, options = {}) => {
       const db = await this.ready();
       let ids: number[] = [];
@@ -6231,9 +6285,21 @@ export class SqliteDataService implements DataService {
     const ids: number[] = [];
     for (const l of lines) {
       const res = await db.runAsync(
-        `INSERT INTO [JournalEntry] ([CouncilID], [GLAccountID], [DateLogged], [Description], [DebitAmount], [CreditAmount], [LinkedEventID], [LinkedMeetingID], [IsBankReconciled], [CheckNumber], [TransactionID])
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
-        [councilId, l.GLAccountID, l.DateLogged, l.Description, l.DebitAmount, l.CreditAmount, l.LinkedEventID, l.LinkedMeetingID, l.CheckNumber, transactionId],
+        `INSERT INTO [JournalEntry] ([CouncilID], [GLAccountID], [DateLogged], [Description], [DebitAmount], [CreditAmount], [LinkedEventID], [LinkedMeetingID], [LinkedActivityID], [IsBankReconciled], [CheckNumber], [TransactionID])
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        [
+          councilId,
+          l.GLAccountID,
+          l.DateLogged,
+          l.Description,
+          l.DebitAmount,
+          l.CreditAmount,
+          l.LinkedEventID,
+          l.LinkedMeetingID,
+          l.LinkedActivityID ?? null,
+          l.CheckNumber,
+          transactionId,
+        ],
       );
       ids.push(res.lastInsertRowId);
     }

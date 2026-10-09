@@ -389,6 +389,9 @@ GO
 -- Sprint 5Z-4: every paid sheet carries both dual-approval signatures, the Financial Secretary's written order
 -- (member 2) and the Grand Knight's counter-signature (member 1). Sheets 11-13 are in the pipeline: one awaiting the
 -- written order, one awaiting the counter-signature, and one dual-signed in the Treasurer's disbursement vault.
+-- Sprint 6Q: sheet 12 carries the written order, so it now waits on the Treasurer Ledger Audit Desk for its budget line
+-- and ledger account before the Grand Knight may counter-sign. The paid sheets and sheet 13 were signed before the
+-- Treasurer stage existed, so they carry no Treasurer coding.
 INSERT INTO [ExpenseReport] ([CouncilID], [SubmitterMemberID], [Status], [DisbursementID], [FinancialSecretaryMemberID], [FinancialSecretaryApprovedAt], [GrandKnightMemberID], [GrandKnightApprovedAt])
 VALUES
 (1, 4, 'Reimbursed', 1, 2, '2025-10-06 16:10:00', 1, '2025-10-07 18:45:00'),

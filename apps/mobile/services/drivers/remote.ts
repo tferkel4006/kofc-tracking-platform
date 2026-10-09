@@ -114,6 +114,8 @@ export function createRemoteDataService(): DataService {
       submitReport: notImplemented('expenses.submitReport'),
       rejectReport: notImplemented('expenses.rejectReport'),
       financialSecretaryAuditOrder: notImplemented('expenses.financialSecretaryAuditOrder'),
+      treasurerLedgerAudit: notImplemented('expenses.treasurerLedgerAudit'),
+      listTreasurerQueue: notImplemented('expenses.listTreasurerQueue'),
       grandKnightAuthorizeOrder: notImplemented('expenses.grandKnightAuthorizeOrder'),
       recordDisbursement: notImplemented('expenses.recordDisbursement'),
     },
@@ -259,6 +261,7 @@ export function createRemoteDataService(): DataService {
     finance: {
       listChartOfAccounts: notImplemented('finance.listChartOfAccounts'),
       logDoubleEntryTransaction: notImplemented('finance.logDoubleEntryTransaction'),
+      logConcludedRevenue: notImplemented('finance.logConcludedRevenue'),
       transferAssetFunds: notImplemented('finance.transferAssetFunds'),
       getLatestBalanceSheet: notImplemented('finance.getLatestBalanceSheet'),
       getAccountLedger: notImplemented('finance.getAccountLedger'),

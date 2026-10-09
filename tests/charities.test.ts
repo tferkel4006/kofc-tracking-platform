@@ -29,7 +29,7 @@ import {
   type NewGlobalCharity,
 } from '@kofc/shared';
 import { MemoryDataService } from '../apps/web/services/drivers/memory';
-import { drivers, expectRule, MEMBER, type DriverUnderTest } from './helpers';
+import { drivers, expectRule, MEMBER, type DriverUnderTest, treasurerCode } from './helpers';
 import { openDatabases } from './shims/expo-sqlite';
 
 // Dev seed: council 1 is 15295 in OR (Super Admin 1, Admin 2 who is also Financial Secretary, Member 3); council 2 exists.
@@ -536,6 +536,7 @@ describe.each(drivers)('$name driver: charitable giving', (d) => {
       [{ DateOfExpense: '2026-09-12', Amount: 40, VendorName: 'Costco', ReceiptPhotoURL: null, ExpenseDescription: 'Supplies' }],
     );
     await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, report.id);
+    await treasurerCode(db, report.id);
     await db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, report.id);
     await db.expenses.recordDisbursement(MEMBER.admin, OWN, [report.id], { CheckNumber: '3001', PayoutDate: '2026-09-15' });
 
@@ -549,6 +550,7 @@ describe.each(drivers)('$name driver: charitable giving', (d) => {
       [{ DateOfExpense: '2026-09-13', Amount: 12, VendorName: 'Safeway', ReceiptPhotoURL: null, ExpenseDescription: 'Ice' }],
     );
     await db.expenses.financialSecretaryAuditOrder(MEMBER.admin, second.id);
+    await treasurerCode(db, second.id);
     await db.expenses.grandKnightAuthorizeOrder(MEMBER.superAdmin, second.id);
     await expectRule(db.expenses.recordDisbursement(MEMBER.admin, OWN, [second.id], { CheckNumber: '2001', PayoutDate: '2026-09-20' }), 'INVALID_INPUT');
   });

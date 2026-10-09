@@ -17,13 +17,25 @@
 //     Council Balance Sheet & Equity Ledger card (finance.getCouncilNetWorth, NetWorthParts) states the council's true net
 //     worth: liquid cash plus equipment at cost, less approved expense reports not yet paid. The Semiannual Trustee Audit
 //     Desk (/finance/audit) is linked from the title bar.
+//   - Sprint 6Q: the '💰 Log Concluded Event Revenues' card (finance.logConcludedRevenue, RevenueParts) lets the
+//     Treasurer (or a Super Admin; canLogConcludedRevenue) post what a past event or an activity raised straight into the
+//     ledger. The Treasurer Ledger Audit Desk (/finance/treasurer-desk) is linked from the title bar.
 import Link from 'next/link';
 import { useState } from 'react';
-import { buildDuesForecast, buildLiquidityGauges, canManageBudgetForecast, canPostGeneralLedger, currentFraternalYear } from '@kofc/shared';
+import {
+  buildDuesForecast,
+  buildLiquidityGauges,
+  canLogConcludedRevenue,
+  canManageBudgetForecast,
+  canOpenTreasurerDesk,
+  canPostGeneralLedger,
+  currentFraternalYear,
+} from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { BalanceScale, BankStatementUploader, LiquidityGaugeCard, TransferDrawer } from '@/components/FinanceParts';
 import { BudgetAnalyzerCard } from '@/components/BudgetAnalyzerParts';
 import { NetWorthCard } from '@/components/NetWorthParts';
+import { ConcludedRevenueCard } from '@/components/RevenueParts';
 import { ConcludedPerformanceGrid, DuesForecastCard } from '@/components/DuesParts';
 import { Button, Empty, Notice, PageTitle, Panel } from '@/components/ui';
 import { formatFullDate } from '@/lib/format';
@@ -67,6 +79,11 @@ function FinanceDashboard() {
             <Link href="/finance/audit" className="text-sm font-bold underline">
               Trustee audit desk
             </Link>
+            {canOpenTreasurerDesk(user, councilId) ? (
+              <Link href="/finance/treasurer-desk" className="text-sm font-bold underline">
+                Treasurer desk
+              </Link>
+            ) : null}
           </div>
         }
       >
@@ -94,6 +111,8 @@ function FinanceDashboard() {
           {sheet.data ? <BalanceScale sheet={sheet.data} /> : sheet.loading ? <p className="text-sm">Loading…</p> : null}
         </Panel>
       </div>
+
+      {canLogConcludedRevenue(user, councilId) && chart.data ? <ConcludedRevenueCard councilId={councilId} chart={chart.data} onDone={reload} /> : null}
 
       {worth.error ? <Notice tone="error">{worth.error}</Notice> : null}
       {worth.data ? <NetWorthCard worth={worth.data} /> : worth.loading ? <p className="text-sm">Loading…</p> : null}

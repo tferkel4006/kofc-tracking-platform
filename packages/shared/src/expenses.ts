@@ -11,7 +11,7 @@ import { meetingLastDate } from './meetings';
 import { addDays } from './planning';
 import { formatDate } from './presentation';
 import { assertIsoDate, assertMoney, assertText, BusinessRuleError, optionalText, toIsoDate } from './rules';
-import type { Event, ExpenseDisbursement, ExpenseLineItem, ExpenseReport, ExpenseReportStatus, Meeting, Member } from './types';
+import type { Activities, Event, ExpenseDisbursement, ExpenseLineItem, ExpenseReport, ExpenseReportStatus, Meeting, Member } from './types';
 
 /** Every ExpenseReport.Status, in life-cycle order. */
 export const EXPENSE_REPORT_STATUSES: readonly ExpenseReportStatus[] = ['Draft', 'Submitted', 'Approved', 'Reimbursed'];
@@ -52,6 +52,8 @@ export interface CleanExpenseReportInput {
   is_long_term_asset: number;
   /** Sprint 6G Extension: the charitable request the sheet spends for; the driver checks it is the sheet's council's. */
   charity_request_id: number | null;
+  /** Sprint 6Q: a long-running activity of the sheet's council; never together with an event or meeting. */
+  LinkedActivityID: number | null;
 }
 
 /** expenses.submitReport: the sheet's own fields. Only 'Draft' and 'Submitted' may be written by a member. */
@@ -62,14 +64,19 @@ export function cleanExpenseReportInput(input: ExpenseReportInput): CleanExpense
       status: input.Status,
     });
   }
-  return {
+  const clean = {
     id: optionalId(input.id, 'Expense report id'),
     Status: input.Status,
     LinkedEventID: optionalId(input.LinkedEventID, 'Linked event'),
     LinkedMeetingID: optionalId(input.LinkedMeetingID, 'Linked meeting'),
     is_long_term_asset: longTermAssetFlag(input.is_long_term_asset),
     charity_request_id: optionalId(input.charity_request_id, 'Linked charitable request'),
+    LinkedActivityID: optionalId(input.LinkedActivityID, 'Linked activity'),
   };
+  if (clean.LinkedActivityID !== null && (clean.LinkedEventID !== null || clean.LinkedMeetingID !== null)) {
+    throw invalid('An expense report linked to an activity cannot also name an event or a meeting.', { field: 'LinkedActivityID' });
+  }
+  return clean;
 }
 
 /** The long-term asset checkbox as a BIT: true or 1 is 1; false, 0 or left out is 0 (Sprint 6E). */
@@ -134,6 +141,23 @@ export function assertExpenseLinks(
     if (meeting.CouncilID !== councilId) {
       throw invalid(`Meeting ${meetingId} belongs to another council, so an expense report of council ${councilId} cannot name it.`, { meetingId, councilId });
     }
+  }
+}
+
+/**
+ * expenses.submitReport (Sprint 6Q): a linked activity must exist and be the sheet's council's. `activity` is null when
+ * it does not exist; it is read only when the sheet links one.
+ */
+export function assertExpenseActivityLink(
+  report: Pick<CleanExpenseReportInput, 'LinkedActivityID'>,
+  councilId: number,
+  activity: Pick<Activities, 'CouncilID'> | null,
+): void {
+  const activityId = report.LinkedActivityID;
+  if (activityId === null) return;
+  if (activity === null) throw invalid(`No activity with id ${activityId}.`, { activityId });
+  if (activity.CouncilID !== councilId) {
+    throw invalid(`Activity ${activityId} belongs to another council, so an expense report of council ${councilId} cannot name it.`, { activityId, councilId });
   }
 }
 
@@ -289,48 +313,62 @@ export function assertExpenseStatus(report: Pick<ExpenseReport, 'id' | 'Status'>
   );
 }
 
-/** The two signature lines on a submitted sheet (Sprint 5Z-3), in the order they are signed. */
-export type ExpenseSignatureStage = 'financialSecretary' | 'grandKnight';
+/**
+ * The signature lines on a submitted sheet, in the order they are signed: the Financial Secretary's written order
+ * (Sprint 5Z-3), the Treasurer's ledger coding (Sprint 6Q) and the Grand Knight's counter-signature (Sprint 5Z-3).
+ */
+export type ExpenseSignatureStage = 'financialSecretary' | 'treasurer' | 'grandKnight';
+
+const stageConflict = (report: Pick<ExpenseReport, 'id' | 'Status'>, stage: ExpenseSignatureStage, message: string) =>
+  new BusinessRuleError('EXPENSE_STATUS_CONFLICT', `Expense report ${report.id} ${message}`, { reportId: report.id, status: report.Status, stage });
 
 /**
- * Rejects EXPENSE_STATUS_CONFLICT unless the sheet is ready for `stage`: 'Submitted' in both cases, with no written order
- * yet for the Financial Secretary, and with the order already issued for the Grand Knight.
+ * Rejects EXPENSE_STATUS_CONFLICT unless the sheet is ready for `stage`: 'Submitted' in every case; with no written order
+ * yet for the Financial Secretary; with the order but no ledger coding for the Treasurer; and with both for the Grand
+ * Knight.
  */
 export function assertExpenseSignatureStage(
-  report: Pick<ExpenseReport, 'id' | 'Status' | 'FinancialSecretaryMemberID'>,
+  report: Pick<ExpenseReport, 'id' | 'Status' | 'FinancialSecretaryMemberID' | 'TreasurerMemberID'>,
   stage: ExpenseSignatureStage,
 ): void {
   const ordered = report.FinancialSecretaryMemberID != null;
+  const coded = report.TreasurerMemberID != null;
   if (stage === 'financialSecretary') {
     assertExpenseStatus(report, 'Submitted', 'receive a written order');
-    if (!ordered) return;
-    throw new BusinessRuleError('EXPENSE_STATUS_CONFLICT', `Expense report ${report.id} already carries the Financial Secretary's written order.`, {
-      reportId: report.id,
-      status: report.Status,
-      stage,
-    });
+    if (ordered) throw stageConflict(report, stage, "already carries the Financial Secretary's written order.");
+    return;
+  }
+  if (stage === 'treasurer') {
+    assertExpenseStatus(report, 'Submitted', 'be coded to the ledger');
+    if (!ordered) throw stageConflict(report, stage, "awaits the Financial Secretary's written order, so the Treasurer cannot code it yet.");
+    if (coded) throw stageConflict(report, stage, "already carries the Treasurer's ledger coding.");
+    return;
   }
   assertExpenseStatus(report, 'Submitted', 'be authorized');
-  if (ordered) return;
-  throw new BusinessRuleError(
-    'EXPENSE_STATUS_CONFLICT',
-    `Expense report ${report.id} awaits the Financial Secretary's written order, so the Grand Knight cannot counter-sign it yet.`,
-    { reportId: report.id, status: report.Status, stage },
-  );
+  if (!ordered) throw stageConflict(report, stage, "awaits the Financial Secretary's written order, so the Grand Knight cannot counter-sign it yet.");
+  if (!coded) throw stageConflict(report, stage, "awaits the Treasurer's ledger coding, so the Grand Knight cannot counter-sign it yet.");
 }
 
 type SignatureFields = Pick<ExpenseReport, 'FinancialSecretaryMemberID' | 'GrandKnightMemberID'>;
 
-/** The sheet carries both the Financial Secretary's written order and the Grand Knight's counter-signature. */
+/**
+ * The sheet carries both the Financial Secretary's written order and the Grand Knight's counter-signature. Sheets
+ * approved before Sprint 6Q have no Treasurer coding, so payment does not ask for it; since then the Grand Knight
+ * cannot sign without it (assertExpenseSignatureStage).
+ */
 export const isDualSigned = (report: SignatureFields): boolean => report.FinancialSecretaryMemberID != null && report.GrandKnightMemberID != null;
 
 /** A 'Submitted' sheet on the Financial Secretary Audit Desk: no written order yet (Sprint 5Z-4). */
 export const awaitsWrittenOrder = (report: Pick<ExpenseReport, 'Status'> & SignatureFields): boolean =>
   report.Status === 'Submitted' && report.FinancialSecretaryMemberID == null;
 
-/** A 'Submitted' sheet on the Grand Knight Authorization Desk: ordered, not yet counter-signed (Sprint 5Z-4). */
-export const awaitsCounterSignature = (report: Pick<ExpenseReport, 'Status'> & SignatureFields): boolean =>
-  report.Status === 'Submitted' && report.FinancialSecretaryMemberID != null && report.GrandKnightMemberID == null;
+/** A 'Submitted' sheet on the Treasurer Ledger Audit Desk (Sprint 6Q): ordered, not yet coded to the ledger. */
+export const awaitsTreasurerCoding = (report: Pick<ExpenseReport, 'Status' | 'FinancialSecretaryMemberID' | 'TreasurerMemberID'>): boolean =>
+  report.Status === 'Submitted' && report.FinancialSecretaryMemberID != null && report.TreasurerMemberID == null;
+
+/** A 'Submitted' sheet on the Grand Knight Authorization Desk: ordered and coded (Sprint 6Q), not yet counter-signed. */
+export const awaitsCounterSignature = (report: Pick<ExpenseReport, 'Status' | 'TreasurerMemberID'> & SignatureFields): boolean =>
+  report.Status === 'Submitted' && report.FinancialSecretaryMemberID != null && report.TreasurerMemberID != null && report.GrandKnightMemberID == null;
 
 /** A sheet the checkbook may pay: 'Approved' with both signatures (the disbursement vault shows nothing else). */
 export const isPayableExpenseReport = (report: Pick<ExpenseReport, 'Status'> & SignatureFields): boolean =>
@@ -350,15 +388,18 @@ export function assertDualSigned(report: Pick<ExpenseReport, 'id'> & SignatureFi
 }
 
 /**
- * What expenses.rejectReport writes over the signature lines: a returned sheet starts its approvals again, and its
- * budget line is chosen afresh (Sprint 6G Extension).
+ * What expenses.rejectReport writes over the signature lines: a returned sheet starts its approvals again, and the
+ * Treasurer codes its budget line and ledger account afresh (Sprint 6Q).
  */
 export const CLEARED_EXPENSE_SIGNATURES = {
   FinancialSecretaryMemberID: null,
   FinancialSecretaryApprovedAt: null,
+  TreasurerMemberID: null,
+  TreasurerReviewedAt: null,
   GrandKnightMemberID: null,
   GrandKnightApprovedAt: null,
   budget_line_id: null,
+  general_ledger_account_id: null,
 } as const;
 
 /** Amounts summed to the cent, free of floating-point drift. */
@@ -395,6 +436,7 @@ export function buildExpenseReportDetails(
       submitterLastName: submitter?.MemberLastName ?? '',
       disbursement: disbursement ? { ...disbursement } : null,
       financialSecretaryName: fullName(report.FinancialSecretaryMemberID),
+      treasurerName: fullName(report.TreasurerMemberID),
       grandKnightName: fullName(report.GrandKnightMemberID),
       charityBudgetLineId:
         report.charity_request_id == null ? null : (charityRequests.find((r) => r.id === report.charity_request_id)?.TargetBudgetLineID ?? null),
@@ -407,45 +449,66 @@ export function buildExpenseReportDetails(
 /** 'Thu, Sep 24, 2026': expense sheets name events and meetings from earlier years too. */
 const datedLabel = (date: string): string => `${formatDate(date)}, ${date.slice(0, 4)}`;
 
-/** The events and meetings an expense sheet of the council may name, newest first. */
+/**
+ * The events, meetings and activities an expense sheet of the council may name: events and meetings newest first,
+ * activities by name (Sprint 6Q).
+ */
 export interface ExpenseReferenceOptions {
   events: Event[];
   meetings: Meeting[];
+  activities: Activities[];
 }
 
-/** Every event linked to the council and every meeting of it, past and future, newest first. */
-export async function listExpenseReferences(db: Pick<DataService, 'events' | 'meetings'>, councilId: number): Promise<ExpenseReferenceOptions> {
-  const [events, meetings] = await Promise.all([db.events.listByCouncil(councilId), db.meetings.listUpcoming(councilId, { fromDate: '0001-01-01' })]);
-  return { events, meetings: [...meetings].reverse() };
+/** Every event linked to the council, every meeting of it (past and future, newest first) and every activity of it. */
+export async function listExpenseReferences(db: Pick<DataService, 'events' | 'meetings' | 'activities'>, councilId: number): Promise<ExpenseReferenceOptions> {
+  const [events, meetings, activities] = await Promise.all([
+    db.events.listByCouncil(councilId),
+    db.meetings.listUpcoming(councilId, { fromDate: '0001-01-01' }),
+    db.activities.listByCouncil(councilId),
+  ]);
+  return { events, meetings: [...meetings].reverse(), activities };
 }
+
+/** The link columns the reference picker writes. */
+type ExpenseReferenceColumns = Pick<ExpenseReport, 'LinkedEventID' | 'LinkedMeetingID' | 'LinkedActivityID'>;
 
 /**
- * The single Event-or-Meeting picker on the expense forms stores one key: '' for no reference, 'event:<id>' or
- * 'meeting:<id>'. A sheet naming both (the data allows it; the forms never write it) reads as its event.
+ * The single reference picker on the expense forms stores one key: '' for no reference, 'event:<id>', 'meeting:<id>' or
+ * 'activity:<id>' (Sprint 6Q). A sheet naming an event and a meeting (the data allows it; the forms never write it)
+ * reads as its event.
  */
-export function expenseReferenceKey(report: Pick<ExpenseReport, 'LinkedEventID' | 'LinkedMeetingID'>): string {
+export function expenseReferenceKey(report: Partial<ExpenseReferenceColumns>): string {
   if (report.LinkedEventID != null) return `event:${report.LinkedEventID}`;
   if (report.LinkedMeetingID != null) return `meeting:${report.LinkedMeetingID}`;
+  if (report.LinkedActivityID != null) return `activity:${report.LinkedActivityID}`;
   return '';
 }
 
 /** A picker key back to the sheet's link columns. Anything unrecognised is no reference. */
-export function parseExpenseReferenceKey(key: string): { LinkedEventID: number | null; LinkedMeetingID: number | null } {
-  const m = /^(event|meeting):(\d+)$/.exec(key);
+export function parseExpenseReferenceKey(key: string): { LinkedEventID: number | null; LinkedMeetingID: number | null; LinkedActivityID: number | null } {
+  const m = /^(event|meeting|activity):(\d+)$/.exec(key);
   const id = m ? Number(m[2]) : null;
-  return { LinkedEventID: m?.[1] === 'event' ? id : null, LinkedMeetingID: m?.[1] === 'meeting' ? id : null };
+  return {
+    LinkedEventID: m?.[1] === 'event' ? id : null,
+    LinkedMeetingID: m?.[1] === 'meeting' ? id : null,
+    LinkedActivityID: m?.[1] === 'activity' ? id : null,
+  };
 }
 
-/** The picker's choices, events first; each label names its date. */
-export function expenseReferenceChoices(refs: ExpenseReferenceOptions): { group: 'Events' | 'Meetings'; key: string; label: string }[] {
+/** The picker's choices: events, then meetings (each label names its date), then the council's ongoing activities. */
+export function expenseReferenceChoices(refs: ExpenseReferenceOptions): { group: 'Events' | 'Meetings' | 'Activities'; key: string; label: string }[] {
   return [
     ...refs.events.map((e) => ({ group: 'Events' as const, key: `event:${e.id}`, label: `${e.EventName} · ${datedLabel(e.StartDate)}` })),
     ...refs.meetings.map((m) => ({ group: 'Meetings' as const, key: `meeting:${m.id}`, label: `${m['Meeting Name']} · ${datedLabel(m.Date)}` })),
+    ...refs.activities.map((a) => ({ group: 'Activities' as const, key: `activity:${a.id}`, label: `${a.ActivityName} · ongoing` })),
   ];
 }
 
-/** What a sheet was spent on, for grids and cards: 'Event: Pancake Breakfast', 'Meeting: …' or 'General council expense'. */
-export function expenseReferenceLabel(report: Pick<ExpenseReport, 'LinkedEventID' | 'LinkedMeetingID'>, refs: ExpenseReferenceOptions): string {
+/**
+ * What a sheet was spent on, for grids and cards: 'Event: Pancake Breakfast', 'Meeting: …', 'Activity: Ultrasound' or
+ * 'General council expense'.
+ */
+export function expenseReferenceLabel(report: Partial<ExpenseReferenceColumns>, refs: ExpenseReferenceOptions): string {
   if (report.LinkedEventID != null) {
     const event = refs.events.find((e) => e.id === report.LinkedEventID);
     return `Event: ${event?.EventName ?? `#${report.LinkedEventID}`}`;
@@ -454,18 +517,26 @@ export function expenseReferenceLabel(report: Pick<ExpenseReport, 'LinkedEventID
     const meeting = refs.meetings.find((m) => m.id === report.LinkedMeetingID);
     return `Meeting: ${meeting?.['Meeting Name'] ?? `#${report.LinkedMeetingID}`}`;
   }
+  if (report.LinkedActivityID != null) {
+    const activity = refs.activities.find((a) => a.id === report.LinkedActivityID);
+    return `Activity: ${activity?.ActivityName ?? `#${report.LinkedActivityID}`}`;
+  }
   return 'General council expense';
 }
 
 /**
  * Status chip on both platforms. A draft leadership sent back reads 'Returned' in red until it is resubmitted; a
- * submitted sheet carrying the Financial Secretary's written order reads 'Order Issued' (Sprint 5Z-4).
+ * submitted sheet carrying the Financial Secretary's written order reads 'Order Issued' (Sprint 5Z-4), and once the
+ * Treasurer has coded it, 'Ledger Coded' (Sprint 6Q).
  */
-export function expenseStatusBadge(report: Pick<ExpenseReport, 'Status' | 'RejectionReason' | 'FinancialSecretaryMemberID'>): {
+export function expenseStatusBadge(
+  report: Pick<ExpenseReport, 'Status' | 'RejectionReason' | 'FinancialSecretaryMemberID'> & Partial<Pick<ExpenseReport, 'TreasurerMemberID'>>,
+): {
   label: string;
   tone: 'outline' | 'gold' | 'navy' | 'redOutline';
 } {
   if (report.Status === 'Draft' && report.RejectionReason) return { label: 'Returned', tone: 'redOutline' };
+  if (report.Status === 'Submitted' && report.TreasurerMemberID != null) return { label: 'Ledger Coded', tone: 'gold' };
   if (report.Status === 'Submitted' && report.FinancialSecretaryMemberID != null) return { label: 'Order Issued', tone: 'gold' };
   const tone = { Draft: 'outline', Submitted: 'gold', Approved: 'navy', Reimbursed: 'navy' } as const;
   return { label: report.Status, tone: tone[report.Status] };
@@ -527,7 +598,7 @@ export function expenseLinesFromDrafts(lines: readonly ExpenseLineDraft[]): Expe
 export const expenseDraftTotal = (lines: readonly ExpenseLineDraft[]): number =>
   sumAmounts(lines.map((l) => Number(l.Amount.trim().replace(/[$,\s]/g, ''))).filter((n) => Number.isFinite(n)));
 
-/** The event or meeting a form's reference key names, as an expense window span; null for '' or an unknown id. */
+/** The event or meeting a form's reference key names, as an expense window span; null for '', an activity (activities run without dates) or an unknown id. */
 export function expenseReferenceSpan(key: string, refs: ExpenseReferenceOptions): ExpenseWindowSpan | null {
   const { LinkedEventID, LinkedMeetingID } = parseExpenseReferenceKey(key);
   if (LinkedEventID !== null) {

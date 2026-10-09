@@ -121,6 +121,7 @@ describe('portal permissions', () => {
       'expenses/queue',
       'expenses/audit',
       'expenses/authorize',
+      'finance/treasurer-desk',
       'expenses/disbursements',
       'charities/queue',
       'charities/vetting',
@@ -168,6 +169,7 @@ describe('portal permissions', () => {
       'expenses/queue',
       'expenses/audit',
       'expenses/authorize',
+      'finance/treasurer-desk',
       'charities/vetting',
       'lessons-registry',
       'charities/registry',
@@ -282,7 +284,7 @@ describe('portal permissions', () => {
         ['Faith In Action', ['activities', 'member-actions', 'events', 'calendar', 'faith-center']],
         [
           'Finances',
-          [...FIN_READ, 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'charities/vetting', 'charities/propose', 'donations', 'financials/budget'],
+          [...FIN_READ, 'finance/treasurer-desk', 'expenses', 'expenses/queue', 'expenses/audit', 'expenses/authorize', 'charities/vetting', 'charities/propose', 'donations', 'financials/budget'],
         ],
         ['Performance', ['dashboard', 'performance/charts', 'history', 'ledger', 'lessons-registry']],
         ['Resources', ['gallery', 'resources/bulletins', 'resources/marketing']],
@@ -297,7 +299,7 @@ describe('portal permissions', () => {
         ['Faith In Action', ['member-actions', 'calendar', 'faith-center']],
         [
           'Finances',
-          [...FIN_READ, 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/vetting', 'charities/propose', 'charities/queue', 'donations', 'financials/budget'],
+          [...FIN_READ, 'finance/treasurer-desk', 'expenses', 'expenses/queue', 'expenses/disbursements', 'charities/vetting', 'charities/propose', 'charities/queue', 'donations', 'financials/budget'],
         ],
         ['Performance', ['dashboard', 'performance/charts', 'history', 'ledger']],
         ['Resources', ['gallery', 'resources/bulletins', 'resources/marketing']],
@@ -492,6 +494,7 @@ describe('portal permissions', () => {
           'expenses/queue',
         // Sprint 5Z-4: the Financial Secretary alone issues written orders on the audit desk.
         ...(role === 'Financial Secretary' ? ['expenses/audit'] : []),
+        ...(role === 'Treasurer' ? ['finance/treasurer-desk'] : []),
         'expenses/disbursements',
         'charities/queue',
         'charities/vetting',

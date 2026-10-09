@@ -44,7 +44,7 @@ import { archiveToDriveVault, localFileLink } from '@/services/drive-vault-trans
 type Message = { tone: 'error' | 'info'; text: string };
 type Row = ExpenseLineDraft & { key: number };
 
-const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [] };
+const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [], activities: [] };
 const NO_CHARITIES: LinkableCharitableRequest[] = [];
 
 /** 'St. Jude Youth Ministry · $800.00 (#7)' for the charity link dropdown and the read-only sheet. */
@@ -141,11 +141,15 @@ function ExpenseSheetForm({
           {error}
         </Notice>
       ) : null}
-      <Field label="Spent for" hint="The event or meeting these receipts were for, if any." className="max-w-xl">
+      <Field
+        label="Spent for"
+        hint="The event, meeting or ongoing activity (such as the Ultrasound Initiative) these receipts were for, if any."
+        className="max-w-xl"
+      >
         {(id) => (
           <Select id={id} value={reference} onChange={(e) => setReference(e.target.value)}>
-            <option value="">General council expense (no event or meeting)</option>
-            {(['Events', 'Meetings'] as const).map((group) => {
+            <option value="">General council expense (no event, meeting or activity)</option>
+            {(['Events', 'Meetings', 'Activities'] as const).map((group) => {
               const options = choices.filter((c) => c.group === group);
               return options.length === 0 ? null : (
                 <optgroup key={group} label={group}>
