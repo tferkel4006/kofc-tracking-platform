@@ -274,6 +274,9 @@ export function createRemoteDataService(): DataService {
       getLegacyMatrix: notImplemented('history.getLegacyMatrix'),
       saveYearAnnals: notImplemented('history.saveYearAnnals'),
       addDiaryEntry: notImplemented('history.addDiaryEntry'),
+      getInMemoriamRoll: notImplemented('history.getInMemoriamRoll'),
+      saveInMemoriamEntry: notImplemented('history.saveInMemoriamEntry'),
+      compileInMemoriam: notImplemented('history.compileInMemoriam'),
     },
     prayers: {
       getBoard: notImplemented('prayers.getBoard'),

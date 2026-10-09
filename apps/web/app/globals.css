@@ -26,6 +26,8 @@
   /* Phase 4.5 liturgical tokens (LITURGICAL_COLORS): Holy Day of Obligation crimson and the Birthday Flare. */
   --color-crimson: #A50021;
   --color-birthday: #AD1457;
+  /* Sprint 6L Extension 5 (MEMORIAL_COLORS): the black of the In Memoriam card deck, under gold type. */
+  --color-memorial: #000000;
 
   --font-sans: Arial, sans-serif;
   --font-serif: Georgia, "Times New Roman", serif;

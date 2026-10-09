@@ -200,8 +200,6 @@ import {
   assertIndependentVetter,
   assertCouncilRelationshipType,
   assertCouncilMissionArea,
-  assertCategoryExists,
-  councilMissionAreaForCategory,
   assertCouncilBudgetLine,
   buildMissionAreaFootprint,
   buildCharitableRequestDetails,
@@ -257,6 +255,11 @@ import {
   type CouncilAudit,
   type TrusteeAuditWorkspace,
   assertDiaryDayFree,
+  assertTestimonialCeiling,
+  assertDeceasedMember,
+  buildInMemoriamRoll,
+  cleanInMemoriamInput,
+  mergeInMemoriamInput,
   assertMayKeepCouncilAnnals,
   assertMayReadCouncilHistory,
   buildCouncilLegacyMatrix,
@@ -462,6 +465,9 @@ import type {
   FraternalYearClosingMetrics,
   YearClosingRows,
   CouncilSpiritualDiary,
+  CouncilInMemoriam,
+  InMemoriamRoll,
+  MemberStatus as MemberStatusRow,
   CouncilPrayerIntention,
   CouncilPrayerIntentionPrayer,
   OfficerNominations,
@@ -3587,10 +3593,7 @@ export class MemoryDataService implements DataService {
     const span = cleanMeetingSpan(m);
     const meetingTypeId = m.MeetingTypeID ?? null;
     if (meetingTypeId !== null) this.requireCouncilMeetingType(this.store, m.CouncilID, meetingTypeId);
-    const categoryId = m.CategoryID ?? null;
-    assertCategoryExists(categoryId, this.store.rows('Category') as unknown as Category[]);
     const row = this.store.insert('Meeting', {
-      CategoryID: categoryId,
       OwnerID: ownerId,
       CouncilID: m.CouncilID,
       'Meeting Name': m['Meeting Name'],
@@ -4349,12 +4352,7 @@ export class MemoryDataService implements DataService {
         const actor = this.memberWriteActor(s, actorId);
         assertMayProposeCharityGift(actor, actor.councilId, 'submit a charitable request');
         assertCouncilRelationshipType(clean.RelationshipTypeID, this.relationshipTypes(s, actor.councilId), actor.councilId);
-        const areas = s.rows('CouncilMissionArea') as unknown as CouncilMissionArea[];
-        assertCouncilMissionArea(clean.MissionAreaID, areas, actor.councilId);
-        const categories = s.rows('Category') as unknown as Category[];
-        assertCategoryExists(clean.CategoryID, categories);
-        // Sprint 6L Extension 4: a local category fixes the mission area; the caller cannot override it.
-        if (clean.CategoryID != null) clean.MissionAreaID = councilMissionAreaForCategory(clean.CategoryID, categories, areas, actor.councilId);
+        assertCouncilMissionArea(clean.MissionAreaID, s.rows('CouncilMissionArea') as unknown as CouncilMissionArea[], actor.councilId);
         return s.insert('CharitableRequest', {
           ...rowValues(CHARITABLE_REQUEST_FORM_COLUMNS, clean),
           CouncilID: actor.councilId,
@@ -5209,11 +5207,70 @@ export class MemoryDataService implements DataService {
         assertMayReadCouncilHistory(this.memberWriteActor(s, actorId), councilId, `write in the diary of council ${councilId}`);
         this.assertCouncilsExist(s, [councilId]);
         assertDiaryDayFree(s.rows('CouncilSpiritualDiary') as unknown as CouncilSpiritualDiary[], actorId, clean.entry_date);
+        if (clean.audio_asset_url) assertTestimonialCeiling(s.rows('CouncilSpiritualDiary') as unknown as CouncilSpiritualDiary[], actorId);
         const row = s.insert('CouncilSpiritualDiary', { council_id: councilId, user_id: actorId, ...clean, created_at: toTimestamp(this.now()) });
         return { ...row } as unknown as CouncilSpiritualDiary;
       });
     },
+
+    getInMemoriamRoll: async (actorId, councilId) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      assertMayReadCouncilHistory(actor, councilId, `read the In Memoriam roll of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return this.inMemoriamRoll(s, councilId, mayKeepCouncilAnnals(actor, councilId));
+    },
+
+    saveInMemoriamEntry: async (actorId, councilId, memberId, input) => {
+      const clean = cleanInMemoriamInput(input);
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayKeepCouncilAnnals(this.memberWriteActor(s, actorId), councilId, `keep the In Memoriam roll of council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const member = s.rows('Member').find((m) => m.id === memberId) as unknown as Member | undefined;
+        assertDeceasedMember(member, s.rows('MemberStatus') as unknown as MemberStatusRow[], councilId, memberId);
+        const existing = s.rows('CouncilInMemoriam').find((r) => r.council_id === councilId && r.member_id === memberId);
+        const merged = mergeInMemoriamInput(existing as unknown as CouncilInMemoriam | undefined, clean);
+        const target = existing ?? s.insert('CouncilInMemoriam', { council_id: councilId, member_id: memberId, ...merged, updated_at: toTimestamp(this.now()) });
+        Object.assign(target, merged, { updated_by_member_id: actorId, updated_at: toTimestamp(this.now()) });
+        const card = this.inMemoriamRoll(s, councilId, true).cards.find((c) => c.memberId === memberId)!;
+        Object.assign(target, { officer_seats_held: card.officerSeatsHeld || null, leadership_summary: card.leadershipSummary, compiled_at: toTimestamp(this.now()) });
+        return { ...card, entryId: target.id as number, compiledAt: target.compiled_at as string };
+      });
+    },
+
+    compileInMemoriam: async (actorId, councilId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayKeepCouncilAnnals(this.memberWriteActor(s, actorId), councilId, `compile the In Memoriam roll of council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const now = toTimestamp(this.now());
+        for (const card of this.inMemoriamRoll(s, councilId, true).cards) {
+          const compiled = { officer_seats_held: card.officerSeatsHeld || null, leadership_summary: card.leadershipSummary, compiled_at: now };
+          const existing = s.rows('CouncilInMemoriam').find((r) => r.council_id === councilId && r.member_id === card.memberId);
+          if (existing) Object.assign(existing, compiled);
+          else s.insert('CouncilInMemoriam', { council_id: councilId, member_id: card.memberId, ...compiled, updated_by_member_id: actorId, updated_at: now });
+        }
+        return this.inMemoriamRoll(s, councilId, true);
+      });
+    },
   };
+
+  /** The council's In Memoriam roll, compiled fresh from the roster, the leadership history and the annals. */
+  private inMemoriamRoll(s: MemoryStore, councilId: number, canKeep: boolean): InMemoriamRoll {
+    return buildInMemoriamRoll({
+      councilId,
+      members: this.copyRows<Member>(s, 'Member', (m) => m.CouncilID === councilId),
+      statuses: s.rows('MemberStatus') as unknown as MemberStatusRow[],
+      roles: s.rows('Role') as unknown as Role[],
+      leadership: this.copyRows<CouncilLeadershipHistory>(s, 'CouncilLeadershipHistory', (h) => h.CouncilID === councilId),
+      annals: this.copyRows<CouncilHistoryAnnals>(s, 'CouncilHistoryAnnals', (a) => a.council_id === councilId),
+      closingRows: this.yearClosingRows(s, councilId),
+      stored: this.copyRows<CouncilInMemoriam>(s, 'CouncilInMemoriam', (r) => r.council_id === councilId),
+      canKeep,
+      today: this.now(),
+    });
+  }
 
   prayers: DataService['prayers'] = {
     getBoard: async (actorId, councilId) => {

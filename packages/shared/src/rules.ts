@@ -126,7 +126,9 @@ export type BusinessRuleCode =
   | 'AUDIT_PERIOD_OPEN'
   | 'AUDIT_INCOMPLETE'
   | 'PRAYER_INTENTION_CLOSER_REQUIRED'
-  | 'PRAYER_INTENTION_CLOSED';
+  | 'PRAYER_INTENTION_CLOSED'
+  | 'ORAL_HISTORY_LIMIT_REACHED'
+  | 'IN_MEMORIAM_NOT_DECEASED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {

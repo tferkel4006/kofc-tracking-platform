@@ -37,6 +37,14 @@ export const LITURGICAL_COLORS = {
   birthdayFlare: '#AD1457',
 } as const;
 
+/**
+ * Sprint 6L Extension 5: the In Memoriam card deck on the Council History page - gold type and rules on a black card
+ * (about 9.6:1). Used only there; the web portal has no high-contrast mode (the phone keeps HIGH_CONTRAST).
+ */
+export const MEMORIAL_COLORS = {
+  ink: '#000000',
+} as const;
+
 /** Body copy, forms, lists, timestamps. */
 export const FONT_BODY = 'Arial, sans-serif';
 /** Major titles only. */

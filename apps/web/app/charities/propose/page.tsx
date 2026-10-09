@@ -9,8 +9,6 @@
 // for a status report). My requests (charities.listMyCharitableRequests) follows each request along that track.
 // Sprint 6H: each request's "Request More Info" button opens the private thread its vetting officer started with the
 // Shepherd, to read and answer it. The officers' "Request Officer Input" forum is never shown here.
-// Sprint 6L Extension 4: the manual Mission area dropdown is gone. The member picks a Local Category, its fixed Supreme
-// Mission Area shows as a read-only badge, and the data service files the request under the matching council mission area.
 import { useState, type ReactNode } from 'react';
 import {
   CHARITABLE_FORM_TEXT_MAX_LENGTH,
@@ -22,7 +20,6 @@ import {
 } from '@kofc/shared';
 import { RequireArea } from '@/components/CouncilScope';
 import { TrackingSteps } from '@/components/IntakeParts';
-import { LocalCategoryField } from '@/components/MissionCategoryParts';
 import { RequestThreadButtons, RequestThreadDrawer } from '@/components/RequestThreads';
 import { Button, Empty, Field, Input, Notice, PageTitle, Panel, Select, Table, Td, Textarea } from '@/components/ui';
 import { blankToNull, formatFullDate, formatMoney, parseNumberField } from '@/lib/format';
@@ -42,7 +39,7 @@ interface Draft {
   ContactPhone: string;
   ContactEmail: string;
   RelationshipTypeID: string;
-  CategoryID: string;
+  MissionAreaID: string;
   AmountRequested: string;
   FundsNeededBy: string;
   SpecificUse: string;
@@ -62,7 +59,7 @@ const EMPTY: Draft = {
   ContactPhone: '',
   ContactEmail: '',
   RelationshipTypeID: '',
-  CategoryID: '',
+  MissionAreaID: '',
   AmountRequested: '',
   FundsNeededBy: '',
   SpecificUse: '',
@@ -102,7 +99,7 @@ function Checkbox({ checked, onChange, label, hint }: { checked: boolean; onChan
 function GrantProposal() {
   const user = useUser();
   const types = useLoad(() => db.charities.listCouncilRelationshipTypes(user.councilId), [user.councilId]);
-  const categories = useLoad(() => db.lookups.list('Category'), []);
+  const areas = useLoad(() => db.charities.listCouncilMissionAreas(user.councilId), [user.councilId]);
   const mine = useLoad(() => db.charities.listMyCharitableRequests(user.memberId), [user.memberId]);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [busy, setBusy] = useState(false);
@@ -129,7 +126,7 @@ function GrantProposal() {
         ContactPhone: blankToNull(draft.ContactPhone),
         ContactEmail: blankToNull(draft.ContactEmail),
         RelationshipTypeID: draft.RelationshipTypeID ? Number(draft.RelationshipTypeID) : null,
-        CategoryID: draft.CategoryID ? Number(draft.CategoryID) : null,
+        MissionAreaID: draft.MissionAreaID ? Number(draft.MissionAreaID) : null,
         AmountRequested: parseNumberField(draft.AmountRequested, 'Amount requested') ?? 0,
         FundsNeededBy: blankToNull(draft.FundsNeededBy),
         SpecificUse: blankToNull(draft.SpecificUse),
@@ -170,7 +167,7 @@ function GrantProposal() {
             </Notice>
           ) : null}
           {types.error ? <Notice tone="error">{types.error}</Notice> : null}
-          {categories.error ? <Notice tone="error">{categories.error}</Notice> : null}
+          {areas.error ? <Notice tone="error">{areas.error}</Notice> : null}
 
           <Section number={1} title="Organization / Ministry">
             <Field label="Organization or ministry name" className="md:col-span-2">
@@ -233,12 +230,18 @@ function GrantProposal() {
                 </Select>
               )}
             </Field>
-            <LocalCategoryField
-              className="md:col-span-2"
-              categories={categories.data ?? []}
-              value={draft.CategoryID ? Number(draft.CategoryID) : null}
-              onChange={(id) => set('CategoryID', id === null ? '' : String(id))}
-            />
+            <Field label="Mission area" hint="Faith in Action pillar the gift serves">
+              {(id) => (
+                <Select id={id} value={draft.MissionAreaID} onChange={(e) => set('MissionAreaID', e.target.value)}>
+                  <option value="">Choose a mission area…</option>
+                  {(areas.data ?? []).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.MissionAreaName}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
             <Field label="Amount requested ($)">
               {(id) => <Input id={id} required inputMode="decimal" placeholder="500.00" value={text('AmountRequested')} onChange={(e) => set('AmountRequested', e.target.value)} />}
             </Field>

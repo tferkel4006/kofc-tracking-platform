@@ -183,6 +183,25 @@ export function assertDiaryDayFree(entries: readonly Pick<CouncilSpiritualDiary,
   }
 }
 
+/** Sprint 6L Extension 5: the Oral History Testimonials one member may record, ever. */
+export const ORAL_HISTORY_TESTIMONIALS_PER_MEMBER = 1;
+
+/** The member's recorded testimonial (a diary entry carrying audio_asset_url), or undefined when none. */
+export const testimonialOf = <T extends Pick<CouncilSpiritualDiary, 'user_id' | 'audio_asset_url'>>(entries: readonly T[], memberId: number): T | undefined =>
+  entries.find((e) => e.user_id === memberId && !!e.audio_asset_url);
+
+/** Refuses ORAL_HISTORY_LIMIT_REACHED when the member already recorded ORAL_HISTORY_TESTIMONIALS_PER_MEMBER testimonials. */
+export function assertTestimonialCeiling(entries: readonly Pick<CouncilSpiritualDiary, 'user_id' | 'audio_asset_url'>[], memberId: number): void {
+  const recorded = entries.filter((e) => e.user_id === memberId && !!e.audio_asset_url).length;
+  if (recorded >= ORAL_HISTORY_TESTIMONIALS_PER_MEMBER) {
+    throw new BusinessRuleError(
+      'ORAL_HISTORY_LIMIT_REACHED',
+      `Member ${memberId} already recorded an Oral History Testimonial; each member records at most ${ORAL_HISTORY_TESTIMONIALS_PER_MEMBER}.`,
+      { memberId, limit: ORAL_HISTORY_TESTIMONIALS_PER_MEMBER },
+    );
+  }
+}
+
 // ---- the diary content guard (Sprint 6L) ----------------------------------------------------------------------
 
 /** Why a diary entry was refused. */
@@ -475,7 +494,16 @@ export function buildCouncilLegacyMatrix(input: {
 
   const todayIso = toIsoDate(today);
   const mine = diary.find((d) => d.user_id === input.actorId && d.entry_date === todayIso);
-  return { councilId, founding, years: rows, canKeepAnnals: input.canKeepAnnals, myEntryToday: mine ? { ...mine } : null, currentFraternalYear: current };
+  const testimonial = testimonialOf(diary, input.actorId);
+  return {
+    councilId,
+    founding,
+    years: rows,
+    canKeepAnnals: input.canKeepAnnals,
+    myEntryToday: mine ? { ...mine } : null,
+    myTestimonial: testimonial ? { ...testimonial } : null,
+    currentFraternalYear: current,
+  };
 }
 
 /** The recorder's countdown meter (Sprint 6M): what is left of the ORAL_HISTORY_MAX_SECONDS session. */

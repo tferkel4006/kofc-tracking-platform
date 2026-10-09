@@ -202,8 +202,6 @@ import {
   assertIndependentVetter,
   assertCouncilRelationshipType,
   assertCouncilMissionArea,
-  assertCategoryExists,
-  councilMissionAreaForCategory,
   assertCouncilBudgetLine,
   buildMissionAreaFootprint,
   buildCharitableRequestDetails,
@@ -261,6 +259,11 @@ import {
   type CouncilAudit,
   type TrusteeAuditWorkspace,
   assertDiaryDayFree,
+  assertTestimonialCeiling,
+  assertDeceasedMember,
+  buildInMemoriamRoll,
+  cleanInMemoriamInput,
+  mergeInMemoriamInput,
   assertMayKeepCouncilAnnals,
   assertMayReadCouncilHistory,
   buildCouncilLegacyMatrix,
@@ -550,6 +553,9 @@ import type {
   FraternalYearClosingMetrics,
   YearClosingRows,
   CouncilSpiritualDiary,
+  CouncilInMemoriam,
+  InMemoriamRoll,
+  MemberStatus as MemberStatusRow,
   CouncilPrayerIntention,
   CouncilPrayerIntentionPrayer,
   OfficerNominations,
@@ -643,10 +649,12 @@ const DB_NAME = 'kofc.db';
  * 51: CouncilAudits and AuditVerifiedLines - the Semiannual Trustee Audit Desk (Sprint 6N).
  * 52: CouncilPrayerIntention and CouncilPrayerIntentionPrayer - the Council Prayer Intentions List and its Praying Hands
  *     counter (Sprint 6L Extension 3).
- * 53: Category.SupremeMissionArea seeded for the six fixed categories, plus Meeting.CategoryID and
- *     CharitableRequest.CategoryID - the read-only Supreme Mission Area badge on the entry forms (Sprint 6L Extension 4).
+ * 53: Category.SupremeMissionArea seeded for the six fixed categories - the read-only Supreme Mission Area badge on the
+ *     entry forms (Sprint 6L Extension 4).
+ * 54: the seventh fixed category, Life; CouncilInMemoriam, the In Memoriam roll; Meeting.CategoryID and
+ *     CharitableRequest.CategoryID withdrawn (Sprint 6L Extension 5).
  */
-const SCHEMA_VERSION = 53;
+const SCHEMA_VERSION = 54;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -4170,13 +4178,11 @@ export class SqliteDataService implements DataService {
     const span = cleanMeetingSpan(m);
     const meetingTypeId = m.MeetingTypeID ?? null;
     if (meetingTypeId !== null) await this.requireCouncilMeetingType(db, m.CouncilID, meetingTypeId);
-    const categoryId = m.CategoryID ?? null;
-    if (categoryId !== null) assertCategoryExists(categoryId, await db.getAllAsync<Category>('SELECT [id] FROM [Category] WHERE [id] = ?', [categoryId]));
     const res = await db.runAsync(
       `INSERT INTO [Meeting] ([CouncilID], [Meeting Name], [Meeting Description], [Date],
                               [Time Start], [Time End], [Location], [Agenda], [MinutesURL], [MeetingType], [OwnerID],
-                              [IsMultiDay], [EndDate], [MeetingTypeID], [InviteReleaseDate], [CategoryID])
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                              [IsMultiDay], [EndDate], [MeetingTypeID], [InviteReleaseDate])
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         m.CouncilID,
         m['Meeting Name'],
@@ -4193,7 +4199,6 @@ export class SqliteDataService implements DataService {
         span.EndDate,
         meetingTypeId,
         m.InviteReleaseDate == null ? null : assertIsoDate(m.InviteReleaseDate, 'Invitation release date'),
-        categoryId,
       ],
     );
     const meetingId = res.lastInsertRowId;
@@ -5055,12 +5060,11 @@ export class SqliteDataService implements DataService {
         const actor = await this.memberWriteActor(db, actorId);
         assertMayProposeCharityGift(actor, actor.councilId, 'submit a charitable request');
         assertCouncilRelationshipType(clean.RelationshipTypeID, await this.relationshipTypes(db, actor.councilId), actor.councilId);
-        const areas = await db.getAllAsync<CouncilMissionArea>('SELECT * FROM [CouncilMissionArea] WHERE [CouncilID] = ?', [actor.councilId]);
-        assertCouncilMissionArea(clean.MissionAreaID, areas, actor.councilId);
-        const categories = await db.getAllAsync<Category>('SELECT * FROM [Category]');
-        assertCategoryExists(clean.CategoryID, categories);
-        // Sprint 6L Extension 4: a local category fixes the mission area; the caller cannot override it.
-        if (clean.CategoryID != null) clean.MissionAreaID = councilMissionAreaForCategory(clean.CategoryID, categories, areas, actor.councilId);
+        assertCouncilMissionArea(
+          clean.MissionAreaID,
+          await db.getAllAsync<CouncilMissionArea>('SELECT * FROM [CouncilMissionArea] WHERE [CouncilID] = ?', [actor.councilId]),
+          actor.councilId,
+        );
         const columns = [...CHARITABLE_REQUEST_FORM_COLUMNS, 'CouncilID', 'ShepherdMemberID', 'RequestStatus', 'SubmittedAt', 'VoteStatus', 'AmountApproved'];
         const result = await db.runAsync(
           `INSERT INTO [CharitableRequest] (${columns.map((c) => `[${c}]`).join(', ')}) VALUES (${marks(columns.length)})`,
@@ -6144,6 +6148,15 @@ export class SqliteDataService implements DataService {
           actorId,
           clean.entry_date,
         );
+        if (clean.audio_asset_url) {
+          assertTestimonialCeiling(
+            await db.getAllAsync<CouncilSpiritualDiary>(
+              'SELECT [user_id], [audio_asset_url] FROM [CouncilSpiritualDiary] WHERE [user_id] = ? AND [audio_asset_url] IS NOT NULL',
+              [actorId],
+            ),
+            actorId,
+          );
+        }
         entryId = (
           await db.runAsync(
             `INSERT INTO [CouncilSpiritualDiary] ([council_id], [user_id], [entry_date], [fraternal_year], [diary_text], [audio_asset_url], [created_at])
@@ -6154,7 +6167,90 @@ export class SqliteDataService implements DataService {
       });
       return (await db.getFirstAsync<CouncilSpiritualDiary>('SELECT * FROM [CouncilSpiritualDiary] WHERE [id] = ?', [entryId]))!;
     },
+
+    getInMemoriamRoll: async (actorId, councilId) => {
+      const db = await this.ready();
+      const actor = await this.memberWriteActor(db, actorId);
+      assertMayReadCouncilHistory(actor, councilId, `read the In Memoriam roll of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return this.inMemoriamRoll(db, councilId, mayKeepCouncilAnnals(actor, councilId));
+    },
+
+    saveInMemoriamEntry: async (actorId, councilId, memberId, input) => {
+      const clean = cleanInMemoriamInput(input);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayKeepCouncilAnnals(await this.memberWriteActor(db, actorId), councilId, `keep the In Memoriam roll of council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        assertDeceasedMember(
+          await db.getFirstAsync<Member>('SELECT [id], [CouncilID], [StatusID] FROM [Member] WHERE [id] = ?', [memberId]),
+          await db.getAllAsync<MemberStatusRow>('SELECT * FROM [MemberStatus]'),
+          councilId,
+          memberId,
+        );
+        const existing = await db.getFirstAsync<CouncilInMemoriam>('SELECT * FROM [CouncilInMemoriam] WHERE [council_id] = ? AND [member_id] = ?', [councilId, memberId]);
+        const merged = mergeInMemoriamInput(existing, clean);
+        const card = (await this.inMemoriamRoll(db, councilId, true)).cards.find((c) => c.memberId === memberId)!;
+        const now = toTimestamp(this.now());
+        const fields = [merged.photo_url, merged.biography, merged.past_councils, card.officerSeatsHeld || null, card.leadershipSummary, now, actorId, now];
+        if (existing) {
+          await db.runAsync(
+            `UPDATE [CouncilInMemoriam] SET [photo_url] = ?, [biography] = ?, [past_councils] = ?, [officer_seats_held] = ?, [leadership_summary] = ?,
+                    [compiled_at] = ?, [updated_by_member_id] = ?, [updated_at] = ? WHERE [id] = ?`,
+            [...fields, existing.id],
+          );
+        } else {
+          await db.runAsync(
+            `INSERT INTO [CouncilInMemoriam] ([photo_url], [biography], [past_councils], [officer_seats_held], [leadership_summary], [compiled_at],
+                    [updated_by_member_id], [updated_at], [council_id], [member_id]) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [...fields, councilId, memberId],
+          );
+        }
+      });
+      return (await this.inMemoriamRoll(db, councilId, true)).cards.find((c) => c.memberId === memberId)!;
+    },
+
+    compileInMemoriam: async (actorId, councilId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayKeepCouncilAnnals(await this.memberWriteActor(db, actorId), councilId, `compile the In Memoriam roll of council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        const now = toTimestamp(this.now());
+        for (const card of (await this.inMemoriamRoll(db, councilId, true)).cards) {
+          const compiled = [card.officerSeatsHeld || null, card.leadershipSummary, now];
+          const res = await db.runAsync(
+            'UPDATE [CouncilInMemoriam] SET [officer_seats_held] = ?, [leadership_summary] = ?, [compiled_at] = ? WHERE [council_id] = ? AND [member_id] = ?',
+            [...compiled, councilId, card.memberId],
+          );
+          if (res.changes === 0) {
+            await db.runAsync(
+              `INSERT INTO [CouncilInMemoriam] ([officer_seats_held], [leadership_summary], [compiled_at], [council_id], [member_id], [updated_by_member_id], [updated_at])
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [...compiled, councilId, card.memberId, actorId, now],
+            );
+          }
+        }
+      });
+      return this.inMemoriamRoll(db, councilId, true);
+    },
   };
+
+  /** The council's In Memoriam roll, compiled fresh from the roster, the leadership history and the annals. */
+  private async inMemoriamRoll(db: SQLite.SQLiteDatabase, councilId: number, canKeep: boolean): Promise<InMemoriamRoll> {
+    const [members, statuses, roles, leadership, annals, closingRows, stored] = await Promise.all([
+      db.getAllAsync<Member>(
+        'SELECT [id], [CouncilID], [StatusID], [MemberFirstName], [MemberLastName], [DateJoinedCouncil] FROM [Member] WHERE [CouncilID] = ?',
+        [councilId],
+      ),
+      db.getAllAsync<MemberStatusRow>('SELECT * FROM [MemberStatus]'),
+      this.allRoles(db),
+      db.getAllAsync<CouncilLeadershipHistory>('SELECT * FROM [CouncilLeadershipHistory] WHERE [CouncilID] = ?', [councilId]),
+      db.getAllAsync<CouncilHistoryAnnals>('SELECT * FROM [CouncilHistoryAnnals] WHERE [council_id] = ?', [councilId]),
+      this.yearClosingRows(db, councilId),
+      db.getAllAsync<CouncilInMemoriam>('SELECT * FROM [CouncilInMemoriam] WHERE [council_id] = ?', [councilId]),
+    ]);
+    return buildInMemoriamRoll({ councilId, members, statuses, roles, leadership, annals, closingRows, stored, canKeep, today: this.now() });
+  }
 
   prayers: DataService['prayers'] = {
     getBoard: async (actorId, councilId) => {

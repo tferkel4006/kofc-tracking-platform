@@ -94,10 +94,8 @@ export const LOOKUP_META: Record<LookupTableName, LookupTableMeta> = {
     references: [
       { table: 'Event', column: 'CategoryID' },
       { table: 'Activities', column: 'CategoryID' },
-      { table: 'Meeting', column: 'CategoryID' },
-      { table: 'CharitableRequest', column: 'CategoryID' },
     ],
-    protectedValues: FIXED_CATEGORY_NAMES, // Sprint 6L Extension 4: the six fixed categories carry Supreme couplings
+    protectedValues: FIXED_CATEGORY_NAMES, // Sprint 6L Extensions 4-5: the fixed categories carry Supreme couplings
   },
   NoShowReason: {
     label: 'No-Show Reason',

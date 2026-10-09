@@ -1061,8 +1061,7 @@ export interface CharityDisbursementResult {
  * Shepherd is the caller, RequestStatus starts 'Submitted' and VoteStatus 'Pending'. Blank optional text is stored as
  * NULL. RelationshipTypeID must be one of the council's CouncilRelationshipType rows and MissionAreaID (Sprint 5Z-2) one
  * of its CouncilMissionArea rows; EIN is folded to 'NN-NNNNNNN'; FundsNeededBy is a YYYY-MM-DD date; RequestTier is 1
- * to CHARITABLE_REQUEST_MAX_TIER (default 1). Sprint 6L Extension 4: CategoryID names a local Category; when given, the
- * stored MissionAreaID is the council's area coupled to it (councilMissionAreaForCategory), whatever MissionAreaID says.
+ * to CHARITABLE_REQUEST_MAX_TIER (default 1).
  */
 export interface NewCharitableRequest {
   OrganizationName: string;
@@ -1073,7 +1072,6 @@ export interface NewCharitableRequest {
   MailingAddress?: string | null;
   RelationshipTypeID?: number | null;
   MissionAreaID?: number | null;
-  CategoryID?: number | null;
   Is501c3?: boolean | null;
   EIN?: string | null;
   Website?: string | null;
@@ -1947,7 +1945,67 @@ export interface CouncilLegacyMatrix {
   canKeepAnnals: boolean;
   /** The caller's diary entry for today, if any: one entry per member per day. */
   myEntryToday: CouncilSpiritualDiary | null;
+  /** Sprint 6L Extension 5: the caller's Oral History Testimonial, if any; a member records at most one. */
+  myTestimonial: CouncilSpiritualDiary | null;
   currentFraternalYear: string;
+}
+
+// 20b2. THE IN MEMORIAM ROLL (Sprint 6L Extension 5)
+/** What the history keepers write on a remembrance; omitted fields keep their stored value, '' or null clears one. */
+export interface InMemoriamInput {
+  photo_url?: string | null;
+  biography?: string | null;
+  past_councils?: string | null;
+}
+
+/** One seat the brother held (a CouncilLeadershipHistory row). */
+export interface InMemoriamSeat {
+  roleName: string;
+  fraternalYear: string;
+  startDate: string;
+  endDate: string | null;
+  steppedDown: boolean;
+}
+
+/** The council's totals over the fraternal years the brother held a seat. */
+export interface InMemoriamTotals {
+  volunteerHours: number;
+  fundsRaised: number;
+  charitableGiving: number;
+  eventsHeld: number;
+  meetingsHeld: number;
+  newMembers: number;
+}
+
+/** One card of the roll, compiled fresh from the roster, the leadership history and the annals. */
+export interface InMemoriamCard {
+  memberId: number;
+  firstName: string;
+  lastName: string;
+  dateJoinedCouncil: string | null;
+  /** The stored remembrance, if a keeper saved one; null until then. */
+  entryId: number | null;
+  photoUrl: string | null;
+  biography: string | null;
+  pastCouncils: string | null;
+  seats: InMemoriamSeat[];
+  /** The seats as one line: 'Grand Knight (2024-2025); Trustee 1 (2025-2026)'; '' when none. */
+  officerSeatsHeld: string;
+  /** The fraternal years the brother held a seat, oldest first. */
+  leadershipYears: string[];
+  totals: InMemoriamTotals;
+  /** The compiled text: seats, totals and the annals' collective accomplishments of those years. */
+  leadershipSummary: string;
+  /** When the stored snapshot was last compiled; null when never. */
+  compiledAt: string | null;
+}
+
+export interface InMemoriamRoll {
+  councilId: number;
+  /** The caller may write remembrances and recompile the roll (assertMayKeepCouncilAnnals). */
+  canKeep: boolean;
+  /** Every deceased member of the council, by last name then first name. */
+  cards: InMemoriamCard[];
 }
 
 // 20c. THE COUNCIL PRAYER INTENTIONS LIST (Sprint 6L Extension 3)
@@ -2694,8 +2752,7 @@ export interface DataService {
     /**
      * OwnerID, when given, must name a member, and MeetingTypeID one of the council's own CouncilMeetingType rows
      * (INVALID_INPUT). A multi-day meeting (IsMultiDay 1) needs an EndDate after its Date and is stored with no clock
-     * times (cleanMeetingSpan); a one-day meeting may not carry an EndDate (INVALID_INPUT). CategoryID (Sprint 6L
-     * Extension 4), when given, must name a Category (INVALID_INPUT).
+     * times (cleanMeetingSpan); a one-day meeting may not carry an EndDate (INVALID_INPUT).
      */
     create(meeting: NewMeeting, invite?: MeetingInviteMode): Promise<Meeting>;
     listInvites(meetingId: number): Promise<MeetingInvites[]>;
@@ -3148,8 +3205,8 @@ export interface DataService {
      * A Knight Shepherd files a completed intake form into the shared queue of their own council: RequestStatus
      * 'Submitted', ShepherdMemberID = actorId, VoteStatus 'Pending', AmountApproved 0.00, SubmittedAt now. Any Active
      * member (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for a missing organization name, an amount of 0 or with
-     * fractions of a cent, a bad EIN, email or tier, an unknown field, a RelationshipTypeID or MissionAreaID outside
-     * the council, or a CategoryID that names no Category (Sprint 6L Extension 4: a CategoryID sets MissionAreaID);
+     * fractions of a cent, a bad EIN, email or tier, an unknown field or a RelationshipTypeID or MissionAreaID outside
+     * the council;
      * INVALID_DATE for a malformed FundsNeededBy.
      */
     submitCharitableRequest(actorId: number, requestData: NewCharitableRequest): Promise<CharitableRequestDetail>;
@@ -3544,9 +3601,27 @@ export interface DataService {
      * per member per day: a second one the same day rejects DIARY_ENTRY_EXISTS. Any Active member of the council, or an
      * Active Super Admin (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for blank text or text over
      * DIARY_TEXT_MAX_LENGTH, a malformed year, an asset link that is not a Drive file id, https or blob link, or an
-     * unknown council.
+     * unknown council. Sprint 6L Extension 5: an entry carrying an Oral History Testimonial (audio_asset_url) rejects
+     * ORAL_HISTORY_LIMIT_REACHED when the caller already recorded one; a member records at most one, ever.
      */
     addDiaryEntry(actorId: number, councilId: number, input: NewDiaryEntryInput): Promise<CouncilSpiritualDiary>;
+    /**
+     * The council's In Memoriam roll (Sprint 6L Extension 5): a card for every member of the council whose MemberStatus is
+     * 'Deceased', compiled fresh on each read from their CouncilLeadershipHistory seats and the council's annals and
+     * totals for those years, merged with the keepers' stored photo, biography and past councils. Access as
+     * getLegacyMatrix.
+     */
+    getInMemoriamRoll(actorId: number, councilId: number): Promise<InMemoriamRoll>;
+    /**
+     * Writes the photo, biography and past councils of one deceased brother's remembrance, creating the row, and stores
+     * a fresh compiled snapshot. History keepers only (HISTORY_KEEPER_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects
+     * IN_MEMORIAM_NOT_DECEASED for a member who is not a deceased member of the council, and INVALID_INPUT for text over
+     * IN_MEMORIAM_TEXT_MAX_LENGTH, past councils over IN_MEMORIAM_PAST_COUNCILS_MAX_LENGTH, or a photo that is not a
+     * Drive file id or https link.
+     */
+    saveInMemoriamEntry(actorId: number, councilId: number, memberId: number, input: InMemoriamInput): Promise<InMemoriamCard>;
+    /** Stores a fresh compiled snapshot for every card of the roll, creating missing rows. History keepers only. */
+    compileInMemoriam(actorId: number, councilId: number): Promise<InMemoriamRoll>;
   };
 
   prayers: {

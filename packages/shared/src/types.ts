@@ -339,8 +339,6 @@ export interface Meeting {
   EndDate?: string | null;
   /** The council mission area (CouncilMissionArea, Sprint 5Z-1) the meeting is filed under; null while unfiled. */
   MissionAreaID?: number | null;
-  /** The local Category (Sprint 6L Extension 4) the meeting is filed under; null while unfiled. */
-  CategoryID?: number | null;
   /**
    * DATE (Sprint 5Z-6): the day the meeting's invitations reach members' own feeds (drip release); null when released
    * at once. populateAnnualCadence sets it CADENCE_INVITE_LEAD_DAYS before Date.
@@ -920,8 +918,7 @@ export interface CharitableRequest {
   VoteStatus: CharitableRequestVoteStatus;
   AmountApproved: number; // DECIMAL(18,2); 0.00 until the council votes
   PaymentOrderId?: number | null; // the CharitableDisbursementLedger check that paid it
-  MissionAreaID?: number | null; // Sprint 5Z-2: CouncilMissionArea of the same council; since Sprint 6L Ext 4 it follows CategoryID's coupling
-  CategoryID?: number | null; // Sprint 6L Extension 4: the local Category the request is filed under
+  MissionAreaID?: number | null; // Sprint 5Z-2: CouncilMissionArea of the same council, chosen on the intake form
   TargetBudgetLineID?: number | null; // Sprint 5Z-2: the CouncilBudgetForecast line the vetter would pay it from
 }
 
@@ -1014,6 +1011,25 @@ export interface CouncilSpiritualDiary {
   diary_text: string; // TEXT, at most DIARY_TEXT_MAX_LENGTH characters
   audio_asset_url?: string | null; // VARCHAR(2000): the Oral History Testimonial (Drive file id or blob link)
   created_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+/**
+ * One remembrance on a council's In Memoriam roll (Sprint 6L Extension 5): one row per council and deceased member.
+ * photo_url, biography and past_councils are written by the history keepers; officer_seats_held and leadership_summary
+ * are the engine's compiled snapshot (compiled_at).
+ */
+export interface CouncilInMemoriam {
+  id: number;
+  council_id: number;
+  member_id: number;
+  photo_url?: string | null; // VARCHAR(2000): a Drive file id or an https link
+  biography?: string | null; // TEXT, at most IN_MEMORIAM_TEXT_MAX_LENGTH characters
+  past_councils?: string | null; // VARCHAR(1000): the other councils the brother belonged to, as free text
+  officer_seats_held?: string | null; // TEXT: compiled from CouncilLeadershipHistory
+  leadership_summary?: string | null; // TEXT: compiled accomplishments and totals of the brother's leadership years
+  compiled_at?: string | null; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+  updated_by_member_id?: number | null;
+  updated_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
 }
 
 // 15. SEMIANNUAL TRUSTEE AUDITS (Sprint 6N)

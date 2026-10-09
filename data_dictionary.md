@@ -794,12 +794,25 @@ One tap of the Praying Hands counter. One row per intention, member and day (a u
 •	prayed_on (DATE, NOT NULL) — The driver's local date of the tap.
 •	created_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was tapped (UTC).
 ________________________________________
-# 24. Fixed Categories and Supreme Mission Area Couplings (Sprint 6L Extension 4)
-Schema version 53. The six fixed local categories each count toward one Supreme Faith in Action mission area. The web event, meeting and Propose Charity Grant forms show a 'Local Category' dropdown; choosing a category shows its Supreme Mission Area as a bold read-only badge (MissionCategoryParts.tsx). No form, lookup grid field or driver method writes the coupling, and no form offers a way to override it. The six fixed categories are protected in the System Lookup grid (LOOKUP_PROTECTED on rename or delete). Rules: mission-categories.ts.
+# 24. Fixed Categories and Supreme Mission Area Couplings (Sprint 6L Extensions 4-5)
+Schema version 53 (Life added in 54). The seven fixed local categories each count toward one Supreme Faith in Action mission area. The web event form and the activity form (/activities) show a 'Local Category' drop-down; choosing a category shows its Supreme Mission Area as a bold read-only badge (MissionCategoryParts.tsx). No form, lookup grid field or driver method writes the coupling, and no form offers a way to override it. The fixed categories are protected in the System Lookup grid (LOOKUP_PROTECTED on rename or delete). Meetings carry no category, and the Propose Charity Grant form keeps its own overridable Mission area drop-down (CharitableRequest.MissionAreaID). Rules: mission-categories.ts.
 [Category] (added column)
-•	SupremeMissionArea (VARCHAR(20), NULL) — Seed data only: Fellowship → Family, Service → Community, Faith Building → Faith, Parish Community → Community, Fundraising → Community, Evangelization → Faith. A category a Super Admin adds later is NULL (badge: 'No Supreme coupling').
-[Meeting] (added column)
-•	CategoryID (INT, NULL) — Foreign Key references Category(id). The meeting's local category; NULL while unfiled. An unknown id rejects INVALID_INPUT.
-[CharitableRequest] (added column)
-•	CategoryID (INT, NULL) — Foreign Key references Category(id). The request's local category; NULL while unfiled. When given, MissionAreaID is set to the council's CouncilMissionArea whose name matches the category's coupling (NULL when none matches), whatever MissionAreaID the caller sent. The form's manual Mission area dropdown is gone.
+•	SupremeMissionArea (VARCHAR(20), NULL) — Seed data only: Fellowship → Family, Service → Community, Faith Building → Faith, Parish Community → Community, Fundraising → Community, Evangelization → Faith, Life → Life. A category a Super Admin adds later is NULL (badge: 'No Supreme coupling').
+________________________________________
+# 25. The In Memoriam Roll and the One-Testimonial Ceiling (Sprint 6L Extension 5)
+Schema version 54. The Council History page (/history) shows an In Memoriam card deck, black cards with gold type (MEMORIAL_COLORS, the --color-memorial token), one per member of the council whose MemberStatus is 'Deceased'. Each card is compiled fresh on every read (history.getInMemoriamRoll, every member): the brother's CouncilLeadershipHistory seats, the council's totals over the fraternal years the brother held a seat (volunteer hours, funds raised at events, charitable gifts paid, events, meetings and new members, as the year-end closing metrics count them) and the collective accomplishments the annals record for those years. The history keepers (the council's Active officers, Admins and Council Historian, any Active Super Admin) edit the photo, biography and past councils (history.saveInMemoriamEntry) and store a fresh snapshot of every card (history.compileInMemoriam). Rules: in-memoriam.ts. The CouncilInMemoriam table blocks deleting its council (RECORD_IN_USE).
+Each member records at most one Oral History Testimonial (a CouncilSpiritualDiary entry carrying audio_asset_url): a second recording rejects ORAL_HISTORY_LIMIT_REACHED, and the page shows the member's testimonial date in place of the recorder. Written diary entries stay one per day.
+[CouncilInMemoriam]
+One remembrance per council and deceased member (a unique index on council_id, member_id).
+•	id (INT, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	council_id (INT, NOT NULL) — Foreign Key references Council(id).
+•	member_id (INT, NOT NULL) — Foreign Key references Member(id). Must be a member of the council whose status is Deceased (else IN_MEMORIAM_NOT_DECEASED).
+•	photo_url (VARCHAR(2000), NULL) — A Google Drive file id or an https link.
+•	biography (TEXT, NULL) — At most 4,000 characters (IN_MEMORIAM_TEXT_MAX_LENGTH).
+•	past_councils (VARCHAR(1000), NULL) — The other councils the brother belonged to, as free text.
+•	officer_seats_held (TEXT, NULL) — Compiled: 'Grand Knight (2023-2024); Trustee 1 (2024-2025)'.
+•	leadership_summary (TEXT, NULL) — Compiled: the seats, the totals of those years and the annals' accomplishments.
+•	compiled_at (DATETIME, NULL) — When the snapshot was last compiled (UTC).
+•	updated_by_member_id (INT, NULL) — Foreign Key references Member(id). The keeper who last wrote it.
+•	updated_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was last written (UTC).
 ________________________________________

@@ -2519,27 +2519,60 @@ GO
 
 -- =========================================================================
 -- Sprint 6L Extension 4: FIXED CATEGORY TO SUPREME MISSION AREA COUPLING (schema version 53)
--- Category.SupremeMissionArea is the Supreme Faith in Action mission area (Faith, Family, Community or Life) each of the
--- six fixed local categories counts toward. It is seed data only: no form, lookup grid or driver method writes it, and
--- the entry forms show it as a read-only badge beside the Local Category picker, with no way to override it. A category
--- a Super Admin adds later carries NULL (no coupling). Meeting.CategoryID and CharitableRequest.CategoryID file a
--- meeting or a grant request under one local category (NULL while unfiled); a grant request's MissionAreaID follows
--- its category's coupling to the council's CouncilMissionArea of the same name. Rules: mission-categories.ts.
+-- Category.SupremeMissionArea is the Supreme Faith in Action mission area (Faith, Family, Community or Life) each fixed
+-- local category counts toward. It is seed data only: no form, lookup grid or driver method writes it, and the event
+-- and activity forms show it as a read-only badge beside the Local Category picker, with no way to override it. A
+-- category a Super Admin adds later carries NULL (no coupling). Rules: mission-categories.ts.
+-- (Sprint 6L Extension 5 withdrew the Meeting.CategoryID and CharitableRequest.CategoryID columns this block first
+-- added, before any database outside a phone's rebuilt copy carried them: the category picker belongs to events and
+-- activities only, and a grant request keeps its own overridable MissionAreaID.)
 -- =========================================================================
 ALTER TABLE [Category] ADD [SupremeMissionArea] VARCHAR(20) NULL;
 GO
-ALTER TABLE [Meeting] ADD [CategoryID] INTEGER NULL;
-GO
-ALTER TABLE [CharitableRequest] ADD [CategoryID] INTEGER NULL;
+
+-- =========================================================================
+-- Sprint 6L Extension 5: THE IN MEMORIAM ROLL (schema version 54)
+-- Seed.sql adds the seventh fixed category, 'Life', coupled to the Life mission area.
+-- CouncilInMemoriam holds one remembrance per deceased brother of a council (a unique index on council_id, member_id).
+-- The roll on the Council History page (/history) is built from the roster: every member of the council whose
+-- MemberStatus is 'Deceased' gets a card, with or without a row here. Each card cross-references the brother's
+-- CouncilLeadershipHistory terms and compiles the council's collective accomplishments (CouncilHistoryAnnals) and team
+-- totals for the fraternal years the brother held a seat. The history keepers (assertMayKeepCouncilAnnals) write photo_url, a
+-- Drive file id or https link; biography; and past_councils, the other councils the brother belonged to, as free text.
+-- officer_seats_held and leadership_summary are the compiled snapshot the engine stores whenever a keeper saves the
+-- entry or recompiles the roll (compiled_at); the page itself always shows a fresh compilation. Rules: in-memoriam.ts.
+-- =========================================================================
+CREATE TABLE [CouncilInMemoriam] (
+	[id] INT NOT NULL IDENTITY,
+	[council_id] INT NOT NULL,
+	[member_id] INT NOT NULL,
+	[photo_url] VARCHAR(2000) NULL,
+	[biography] TEXT NULL,
+	[past_councils] VARCHAR(1000) NULL,
+	[officer_seats_held] TEXT NULL,
+	[leadership_summary] TEXT NULL,
+	[compiled_at] DATETIME NULL,
+	[updated_by_member_id] INT NULL,
+	[updated_at] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([id])
+);
 GO
 
-ALTER TABLE [Meeting]
-ADD FOREIGN KEY([CategoryID])
-REFERENCES [Category]([id])
+ALTER TABLE [CouncilInMemoriam]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
 ON UPDATE NO ACTION ON DELETE NO ACTION;
 GO
-ALTER TABLE [CharitableRequest]
-ADD FOREIGN KEY([CategoryID])
-REFERENCES [Category]([id])
+ALTER TABLE [CouncilInMemoriam]
+ADD FOREIGN KEY([member_id])
+REFERENCES [Member]([id])
 ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilInMemoriam]
+ADD FOREIGN KEY([updated_by_member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE UNIQUE INDEX [CouncilInMemoriam_Member_Idx] ON [CouncilInMemoriam] ([council_id], [member_id]);
 GO

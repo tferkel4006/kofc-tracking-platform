@@ -43,3 +43,4 @@ export * from './history';
 export * from './audits';
 export * from './prayers';
 export * from './mission-categories';
+export * from './in-memoriam';

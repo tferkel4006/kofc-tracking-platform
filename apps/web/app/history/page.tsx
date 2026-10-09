@@ -5,6 +5,8 @@
 // (CouncilSpiritualDiary). It is a team record: no member's hours, signups or scores appear.
 // Every member reads it and records testimonials; the council's history keepers - its Active officers and Admins, any
 // Super Admin (CouncilLegacyMatrix.canKeepAnnals) - write each year's annals and the founding facts.
+// Sprint 6L Extension 5: each member records at most one Oral History Testimonial (the recorder gives way to a note once
+// it is on file), and the In Memoriam card deck (InMemoriamParts) honors the council's deceased brothers.
 import { useState } from 'react';
 import {
   describeError,
@@ -20,6 +22,7 @@ import {
 } from '@kofc/shared';
 import { RequireArea } from '@/components/CouncilScope';
 import { SummaryCard } from '@/components/DuesParts';
+import { InMemoriamDeck } from '@/components/InMemoriamParts';
 import { OralHistoryRecorder } from '@/components/OralHistoryRecorder';
 import { Button, Field, Input, Notice, PageTitle, Panel, Textarea } from '@/components/ui';
 import { useUser } from '@/lib/session';
@@ -278,6 +281,7 @@ function WrittenEntry({ matrix, reload }: { matrix: CouncilLegacyMatrix; reload:
 function CouncilHistory() {
   const user = useUser();
   const matrix = useLoad(() => db.history.getLegacyMatrix(user.memberId, user.councilId), [user.memberId, user.councilId]);
+  const roll = useLoad(() => db.history.getInMemoriamRoll(user.memberId, user.councilId), [user.memberId, user.councilId]);
   const m = matrix.data;
   return (
     <>
@@ -289,10 +293,19 @@ function CouncilHistory() {
             <Founding matrix={m} />
             <Panel title="Spiritual diary and oral history">
               <div className="flex flex-col gap-6">
-                <OralHistoryRecorder years={m.years.map((y) => y.fraternalYear)} defaultYear={m.currentFraternalYear} todaysEntry={m.myEntryToday} onSaved={matrix.reload} />
+                {m.myTestimonial ? (
+                  <Notice tone="info">
+                    Your Oral History Testimonial is on file ({longDate(m.myTestimonial.entry_date)}, filed under {m.myTestimonial.fraternal_year}). Each member
+                    records one.
+                  </Notice>
+                ) : (
+                  <OralHistoryRecorder years={m.years.map((y) => y.fraternalYear)} defaultYear={m.currentFraternalYear} todaysEntry={m.myEntryToday} onSaved={matrix.reload} />
+                )}
                 <WrittenEntry matrix={m} reload={matrix.reload} />
               </div>
             </Panel>
+            {roll.error ? <Notice tone="error">{roll.error}</Notice> : null}
+            {roll.data ? <InMemoriamDeck roll={roll.data} reload={roll.reload} /> : null}
             {m.years.map((y) => (
               <YearCard key={y.fraternalYear} year={y} matrix={m} reload={matrix.reload} />
             ))}

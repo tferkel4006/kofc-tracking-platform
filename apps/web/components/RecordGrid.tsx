@@ -19,8 +19,8 @@ export interface FormField {
   options?: readonly { value: string; label: string }[];
   /** Spans the whole form row. */
   wide?: boolean;
-  /** A custom control (e.g. a member picker) that reads and writes this field's text. */
-  render?: (value: string, set: (value: string) => void, disabled: boolean) => ReactNode;
+  /** A custom control (e.g. a member picker) that reads and writes this field's text; `id` is the label's target. */
+  render?: (value: string, set: (value: string) => void, disabled: boolean, id: string) => ReactNode;
 }
 
 export interface GridColumn<T> {
@@ -231,7 +231,7 @@ function RecordForm<T>({
             <Field key={f.key} label={f.optional ? `${f.label} (optional)` : f.label} className={f.wide ? 'col-span-2' : undefined}>
               {(id) =>
                 f.render ? (
-                  f.render(draft[f.key] ?? '', set(f.key), !canEdit)
+                  f.render(draft[f.key] ?? '', set(f.key), !canEdit, id)
                 ) : f.options ? (
                   <Select id={id} value={draft[f.key] ?? ''} disabled={!canEdit} required={!f.optional} onChange={(e) => set(f.key)(e.target.value)}>
                     {f.optional ? <option value="">–</option> : null}

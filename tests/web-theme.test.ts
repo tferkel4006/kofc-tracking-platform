@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { BRAND, contrastRatio, FONT_BODY, FONT_HEADING, HIGH_CONTRAST, LITURGICAL_COLORS } from '@kofc/shared';
+import { BRAND, contrastRatio, FONT_BODY, FONT_HEADING, HIGH_CONTRAST, LITURGICAL_COLORS, MEMORIAL_COLORS } from '@kofc/shared';
 
 const webRoot = fileURLToPath(new URL('../apps/web/', import.meta.url));
 const css = readFileSync(join(webRoot, 'app/globals.css'), 'utf8');
@@ -37,6 +37,7 @@ describe('web theme matches the shared brand tokens', () => {
     ['color-green', BRAND.green],
     ['color-crimson', LITURGICAL_COLORS.crimson],
     ['color-birthday', LITURGICAL_COLORS.birthdayFlare],
+    ['color-memorial', MEMORIAL_COLORS.ink],
   ])('--%s is %s', (name, expected) => {
     expect(token(name)?.toUpperCase()).toBe(expected.toUpperCase());
   });

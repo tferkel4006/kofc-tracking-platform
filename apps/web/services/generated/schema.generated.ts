@@ -789,13 +789,6 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
-      },
-      {
-        "name": "CategoryID",
-        "kind": "int",
-        "notNull": false,
-        "identity": false,
-        "default": null
       }
     ],
     "foreignKeys": [
@@ -822,11 +815,6 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "MissionAreaID",
         "refTable": "CouncilMissionArea",
-        "refColumn": "id"
-      },
-      {
-        "column": "CategoryID",
-        "refTable": "Category",
         "refColumn": "id"
       }
     ],
@@ -4178,13 +4166,6 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
-      },
-      {
-        "name": "CategoryID",
-        "kind": "int",
-        "notNull": false,
-        "identity": false,
-        "default": null
       }
     ],
     "foreignKeys": [
@@ -4231,11 +4212,6 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "TargetBudgetLineID",
         "refTable": "CouncilBudgetForecast",
-        "refColumn": "id"
-      },
-      {
-        "column": "CategoryID",
-        "refTable": "Category",
         "refColumn": "id"
       }
     ],
@@ -5846,6 +5822,115 @@ export const TABLES: Record<string, TableMeta> = {
         "prayed_on"
       ]
     ]
+  },
+  "CouncilInMemoriam": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "council_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "member_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "photo_url",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "biography",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "past_councils",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "officer_seats_held",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "leadership_summary",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "compiled_at",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "updated_by_member_id",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "updated_at",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "council_id",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "member_id",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "updated_by_member_id",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "council_id",
+        "member_id"
+      ]
+    ]
   }
 };
 
@@ -5883,6 +5968,11 @@ export const SEED_DATA: readonly SeedTable[] = [
         "Category": "Evangelization",
         "CategoryDescription": "Promoting Catholic faith to non-Catholics",
         "SupremeMissionArea": "Faith"
+      },
+      {
+        "Category": "Life",
+        "CategoryDescription": "Events that protect and honor human life from conception to natural death",
+        "SupremeMissionArea": "Life"
       }
     ]
   },

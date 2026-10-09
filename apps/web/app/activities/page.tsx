@@ -5,9 +5,12 @@
 // where choosing it lists every entry with the member, hours and notes and a running total. Admins work on their
 // own council, Super Admins pick any. The drivers enforce the same rules (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED),
 // and an activity with logged time cannot be deleted (RECORD_IN_USE), so its hours stay on record.
+// Sprint 6L Extension 5: the activity form's Local Category picker shows the category's fixed Supreme Mission Area as a
+// read-only badge (MissionCategoryParts).
 import { useEffect, useState } from 'react';
 import { canMaintainCouncilRecords, formatHours, type Activities, type ActivitySummary } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
+import { LocalCategoryPicker } from '@/components/MissionCategoryParts';
 import { RecordGrid, type Draft, type Selection } from '@/components/RecordGrid';
 import { cx, Empty, Field, Notice, PageTitle, Panel, Pill, Select, Table, Tabs, Td } from '@/components/ui';
 import { formatDecimalHours, formatFullDate, formatPersonName } from '@/lib/format';
@@ -173,8 +176,17 @@ function ActivityCatalog() {
               { key: 'ActivityName', label: 'Activity name', maxLength: 100, wide: true },
               {
                 key: 'CategoryID',
-                label: 'Category',
-                options: (categories.data ?? []).map((c) => ({ value: String(c.id), label: c.Category })),
+                label: 'Local Category',
+                render: (value, setValue, disabled, id) => (
+                  <LocalCategoryPicker
+                    id={id}
+                    categories={categories.data ?? []}
+                    value={value === '' ? null : Number(value)}
+                    onChange={(categoryId) => setValue(categoryId === null ? '' : String(categoryId))}
+                    required
+                    disabled={disabled}
+                  />
+                ),
                 wide: true,
               },
               { key: 'ActivityDescription', label: 'Description', maxLength: 255, wide: true },
