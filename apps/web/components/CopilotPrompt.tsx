@@ -2,9 +2,11 @@
 // The Microsoft Co-Pilot prompt box (Sprint 6L Extension 2) on the Marketing Factory: an officer types what they need - a
 // flyer headline, a bulletin notice, a social post - and the council's Microsoft Copilot Studio agent writes it from the
 // chosen event's facts (/api/marketing/copilot). The answer is checked with the same jargon scan as the flyer copy and
-// can be copied. Without a saved key the box says so and links Admins to the Credentials Vault.
+// can be copied.
+// Sprint 6R: without a Direct Line secret in the Credentials Vault the Design Advanced Collateral button is disabled, and
+// hovering or focusing it opens a tooltip box that says what the co-pilot does and links straight to the vault page.
 import Link from 'next/link';
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import { COPILOT_PROMPT_LABEL, COPILOT_PROMPT_MAX_LENGTH, describeError, isAdmin, marketingJargonHits, type Event as CouncilEvent } from '@kofc/shared';
 import { Button, Field, Notice, Panel, Textarea } from '@/components/ui';
 import { useUser } from '@/lib/session';
@@ -16,6 +18,49 @@ async function copilotStatus(): Promise<boolean> {
   const res = await fetch(COPILOT_ROUTE, { credentials: 'same-origin' });
   const answer = (await res.json().catch(() => null)) as { connected?: boolean } | null;
   return res.ok && answer?.connected === true;
+}
+
+/** What the co-pilot is for, listed in the not-connected tooltip. */
+const COPILOT_UTILITIES = [
+  'Writes bulletin notices, social media posts and email invitations in the council voice',
+  "Uses the chosen event's name, dates, place and description",
+  'Checks the draft for marketing jargon before you copy it',
+] as const;
+
+/**
+ * The disabled Design Advanced Collateral button while no key is saved (Sprint 6R), wrapped so the tooltip opens on hover
+ * and on keyboard focus and stays open while the pointer or focus moves into it, so its link can be used.
+ */
+function NotConnectedButton({ admin }: { admin: boolean }) {
+  const tipId = useId();
+  return (
+    <span className="group relative inline-block" tabIndex={0} aria-describedby={tipId}>
+      <Button type="button" disabled aria-disabled="true">
+        Design Advanced Collateral
+      </Button>
+      <span
+        id={tipId}
+        role="tooltip"
+        className="invisible absolute bottom-full left-0 z-20 w-80 pb-2 opacity-0 transition-opacity group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100"
+      >
+        <span className="block rounded border-2 border-navy border-t-8 border-t-gold bg-white p-3 text-left text-sm font-normal text-navy shadow-lg">
+          <span className="block font-bold">The Microsoft Co-Pilot is not connected yet</span>
+          <span className="mt-1 block">Once its Direct Line secret is saved in the Credentials Vault, the co-pilot:</span>
+          <span className="mt-1 block">
+            {COPILOT_UTILITIES.map((u) => (
+              <span key={u} className="block">
+                • {u}
+              </span>
+            ))}
+          </span>
+          <Link href="/credentials-vault" className="mt-2 block font-bold underline">
+            Open the Credentials Vault setup page →
+          </Link>
+          {admin ? null : <span className="mt-1 block text-xs text-muted">A council Admin saves the key there.</span>}
+        </span>
+      </span>
+    </span>
+  );
 }
 
 export function CopilotPrompt({ event, councilName }: { event: CouncilEvent | undefined; councilName: string }) {
@@ -71,18 +116,6 @@ export function CopilotPrompt({ event, councilName }: { event: CouncilEvent | un
   return (
     <Panel title="Microsoft Co-Pilot">
       <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-3">
-        {status.data === false ? (
-          <Notice tone="info">
-            The Microsoft Co-Pilot is not connected for this council yet.{' '}
-            {isAdmin(user) ? (
-              <Link href="/credentials-vault" className="font-bold underline">
-                Save its key on the Credentials Vault page.
-              </Link>
-            ) : (
-              'Ask a council Admin to connect it on the Credentials Vault page.'
-            )}
-          </Notice>
-        ) : null}
         <Field label={COPILOT_PROMPT_LABEL} hint={event ? `The co-pilot also gets the facts of ${event.EventName}.` : undefined}>
           {(id) => (
             <Textarea
@@ -97,12 +130,17 @@ export function CopilotPrompt({ event, councilName }: { event: CouncilEvent | un
           )}
         </Field>
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" disabled={busy || !connected || !request.trim()}>
-            {busy ? 'The co-pilot is writing…' : 'Ask the co-pilot'}
-          </Button>
+          {status.data === false ? (
+            <NotConnectedButton admin={isAdmin(user)} />
+          ) : (
+            <Button type="submit" disabled={busy || !connected || !request.trim()}>
+              {busy ? 'The co-pilot is writing…' : 'Design Advanced Collateral'}
+            </Button>
+          )}
           <span className="text-sm text-muted">
             {request.length} / {COPILOT_PROMPT_MAX_LENGTH}
           </span>
+          {status.data === false ? <span className="text-sm text-muted">Not connected: point at the button to see how to set it up.</span> : null}
         </div>
         {error ? (
           <Notice tone="error" onDismiss={() => setError(null)}>

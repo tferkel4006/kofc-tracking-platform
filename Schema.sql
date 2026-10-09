@@ -2775,3 +2775,36 @@ ADD FOREIGN KEY([LinkedActivityID])
 REFERENCES [Activities]([id])
 ON UPDATE NO ACTION ON DELETE NO ACTION;
 GO
+
+-- =========================================================================
+-- Sprint 6R: PRE-PILOT SYSTEM ALIGNMENT (schema version 57)
+--
+-- Council.ein_number is the council's IRS Employer Identification Number on its registration profile (the Councils
+-- page). Optional; stored as 'NN-NNNNNNN' (maintenance.ts cleanEinNumber).
+--
+-- Six more feature flags join the five Sprint 6A switches, with the same meaning: at 0 the module's sidebar links and
+-- pages are hidden for every member of the council (features.ts); the data stays and returns at 1.
+--   feature_expense_reporting       member expense reports, the FS / Treasurer / GK desks, check disbursements and the
+--                                   phone's expense screen
+--   feature_faith_center            the web Faith Center and the phone's feast-day banner and Daily Bible Quote
+--   feature_constitutional_advisor  the Constitutional Advisor
+--   feature_council_bylaws          the council bylaws page
+--   feature_council_history         the Team Legacy history page
+--   feature_live_meeting_console    the Live Meeting Console
+-- Only a Super Admin changes them, from the Feature Flags Control Center (/feature-flags). Every existing council keeps
+-- every module (DEFAULT 1).
+-- =========================================================================
+ALTER TABLE [Council] ADD [ein_number] VARCHAR(20) NULL;
+GO
+ALTER TABLE [Council] ADD [feature_expense_reporting] BIT NOT NULL DEFAULT 1;
+GO
+ALTER TABLE [Council] ADD [feature_faith_center] BIT NOT NULL DEFAULT 1;
+GO
+ALTER TABLE [Council] ADD [feature_constitutional_advisor] BIT NOT NULL DEFAULT 1;
+GO
+ALTER TABLE [Council] ADD [feature_council_bylaws] BIT NOT NULL DEFAULT 1;
+GO
+ALTER TABLE [Council] ADD [feature_council_history] BIT NOT NULL DEFAULT 1;
+GO
+ALTER TABLE [Council] ADD [feature_live_meeting_console] BIT NOT NULL DEFAULT 1;
+GO

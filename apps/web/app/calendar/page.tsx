@@ -17,6 +17,7 @@ import {
   calendarDays,
   calendarLayers,
   calendarTone,
+  canRecordLedger,
   describeError,
   entriesOn,
   formatTimeRange,
@@ -293,6 +294,16 @@ function DayDetails({
     const lists = await Promise.all(eventIds.map((id) => db.events.listTurnout(id)));
     return new Map(eventIds.map((id, i) => [id, lists[i]]));
   }, [date, eventIds.join(',')]);
+  // Sprint 6R: the post-event ledger link shows only to those who may update the event's results (canRecordLedger).
+  const recordable = useLoad(async () => {
+    const allowed = await Promise.all(
+      eventIds.map(async (id) => {
+        const [event, councilIds] = await Promise.all([db.events.get(id), db.events.listCouncilIds(id)]);
+        return event !== null && canRecordLedger(user, event, councilIds);
+      }),
+    );
+    return new Set(eventIds.filter((_, i) => allowed[i]));
+  }, [eventIds.join(','), user.memberId]);
   const [busyShift, setBusyShift] = useState<number | null>(null);
   const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
 
@@ -415,9 +426,11 @@ function DayDetails({
                 <Link href="/member-actions" className="font-bold underline">
                   All open shifts
                 </Link>
-                <Link href="/ledger" className="font-bold underline">
-                  Post-event ledger
-                </Link>
+                {recordable.data?.has(e.id) ? (
+                  <Link href="/ledger" className="font-bold underline">
+                    Post-event ledger
+                  </Link>
+                ) : null}
               </div>
             </section>
           );

@@ -1,7 +1,8 @@
 'use client';
 // Post-event ledger: after an event has started, record what it really cost and raised, how many people
 // came, the highlights, and the lessons learned. Admins do this for their councils' events; the event's
-// owner may too (canRecordLedger), which is why every role sees this section. Events still waiting for
+// owner may too, and since Sprint 6R the elected officers of its councils (canRecordLedger); the owner can be any member,
+// which is why every role sees this section, though each sees only the events they may update. Events still waiting for
 // results sit in the active queue; once anything is recorded (hasLedgerResults) they move to the archive.
 // While an event has cash or electronic donations its funds raised are synced from them (donations.record/update/
 // remove), so those two fields are shown read-only here and are corrected on the Donations page instead.

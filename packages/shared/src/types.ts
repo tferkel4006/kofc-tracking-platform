@@ -65,6 +65,15 @@ export interface Council {
   flag_charity_proposals?: number;
   flag_complex_shifts?: number;
   flag_meeting_management?: number;
+  /** BIT feature flags added in Sprint 6R (Schema 57), the same as the five above. Default 1. */
+  feature_expense_reporting?: number;
+  feature_faith_center?: number;
+  feature_constitutional_advisor?: number;
+  feature_council_bylaws?: number;
+  feature_council_history?: number;
+  feature_live_meeting_console?: number;
+  /** Sprint 6R (Schema 57): the council's IRS Employer Identification Number, stored as 'NN-NNNNNNN'. NULL until entered. */
+  ein_number?: string | null;
   /** Sprint 6Z (Schema 35): the council's bylaws as light markdown (bylaws.ts); written only by councils.setBylaws. */
   BylawsMarkdown?: string | null;
   /** When councils.setBylaws last saved BylawsMarkdown (ISO date-time). */

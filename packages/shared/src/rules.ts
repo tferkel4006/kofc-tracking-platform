@@ -728,10 +728,12 @@ function lessonChangeDenial(
   action: string,
 ): SecurityPrivilegeError | null {
   if (actor.active && event.OwnerID === actor.memberId) return null;
+  // Sprint 6R: an Active elected officer of a council the event is linked to records its results, lessons included.
+  if (actor.active && actor.officer && eventCouncilIds.includes(actor.councilId)) return null;
   if (!hasAdminRights(actor)) {
     return new SecurityPrivilegeError(
       'ADMIN_REQUIRED',
-      `Member ${actor.memberId} cannot ${action}: only the event's owner or an active Admin can; member ${actor.memberId} is ${describeActor(actor)}.`,
+      `Member ${actor.memberId} cannot ${action}: only the event's owner, an elected officer of its council or an active Admin can; member ${actor.memberId} is ${describeActor(actor)}.`,
       { actorId: actor.memberId, actorType: actor.memberType ?? null, eventId: event.id },
     );
   }
@@ -744,8 +746,8 @@ function lessonChangeDenial(
 }
 
 /**
- * lessonsLearned.add/remove: the event's Active owner, an Active Admin of a council the event is linked to, and
- * any Active Super Admin (the same people who record the event's ledger, permissions.canRecordLedger).
+ * lessonsLearned.add/remove: the event's Active owner, an Active Admin or elected officer (Sprint 6R) of a council the
+ * event is linked to, and any Active Super Admin (the same people who record the event's ledger, permissions.canRecordLedger).
  */
 export function assertMayChangeLesson(
   actor: MemberWriteActor,

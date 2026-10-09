@@ -2065,8 +2065,15 @@ export interface MediaLibrary {
 export interface MediaVaultUploadInput {
   eventId?: number | null;
   meetingId?: number | null;
+  /**
+   * Sprint 6R: standalone photos, tied to no event or meeting, name their council here instead. Ignored (and must be
+   * left out) when an event or meeting is given.
+   */
+  councilId?: number | null;
+  /** Sprint 6R: a standalone photo's calendar year (1900-2999); defaults to the year of the upload. */
+  calendarYear?: number | null;
   fileUrls: readonly string[];
-  /** Defaults to the event's or meeting's Location. */
+  /** Defaults to the event's or meeting's Location; a standalone photo has none unless given. */
   locationTag?: string | null;
 }
 
@@ -3825,7 +3832,10 @@ export interface DataService {
      * the photos are also appended to its PhotoGalleryURL, and one vault row is written per photo for each council the event
      * is linked to. For a meeting: the writers of meetings.linkGoogleDrive (assertMayLinkMeetingDrive), one row per photo
      * in the meeting's council. calendar_year is the year of the event's StartDate or meeting's Date, and the location tag
-     * defaults to its Location. A photo already in the vault for that event or meeting and council is skipped. Rejects
+     * defaults to its Location. Sprint 6R: standalone photos (no event or meeting, `councilId` given) may be added by any
+     * Active member of that council or an Active Super Admin (COUNCIL_ACCESS_DENIED); they are stored with event_id and
+     * meeting_id NULL, in `calendarYear` or the upload's year. A photo already in the vault for that event or meeting (or
+     * standalone) and council is skipped. Rejects
      * MEMBER_NOT_FOUND, EVENT_NOT_FOUND, MEETING_NOT_FOUND and INVALID_INPUT. Resolves to the rows written.
      */
     uploadToVault(actorId: number, input: MediaVaultUploadInput): Promise<CouncilMediaVault[]>;

@@ -14,7 +14,9 @@ import {
 import { drivers, expectRule, MEMBER } from './helpers';
 
 const superAdmin = { memberId: 1, councilId: 1, memberType: 'Super Admin' as const, isOfficer: true, roles: ['Grand Knight'] };
+// The five Sprint 6A modules off; the Sprint 6R switches (tests/pre-pilot-alignment.test.ts) stay on.
 const allOff: FeatureFlags = {
+  ...ALL_FEATURES_ON,
   flag_mobile_elections: false,
   flag_fundraising_inflow: false,
   flag_charity_proposals: false,

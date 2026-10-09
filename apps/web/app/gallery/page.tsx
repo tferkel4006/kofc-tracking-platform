@@ -9,11 +9,16 @@
 //     (no fade for viewers who ask for reduced motion), and loops back to the first photo after the last one;
 //   * tagged uploads to an event or a meeting (media.uploadToVault) for those who may attach its media
 //     (canAttachEventMedia, canLinkMeetingDrive).
+// Sprint 6R: the upload block asks first what the photos belong to - a past calendar event, a past council meeting (a
+// Christmas party, a campout) or nothing at all. Only events and meetings that have already started are offered.
+// Standalone photos are open to every member of the council (canUploadStandaloneMedia) and carry a year and an
+// optional location tag of their own.
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   canAttachEventMedia,
   canDeleteSmartAlbum,
   canLinkMeetingDrive,
+  canUploadStandaloneMedia,
   describeError,
   EMPTY_ALBUM_CRITERIA,
   filterMediaLibrary,
@@ -22,6 +27,7 @@ import {
   MEDIA_LOCATION_MAX_LENGTH,
   SLIDESHOW_INTERVAL_MS,
   SMART_ALBUM_NAME_MAX_LENGTH,
+  toIsoDate,
   type Event as CouncilEvent,
   type MediaAlbumCriteria,
   type MediaLibrary,
@@ -42,7 +48,7 @@ const GROUPINGS = [
   { id: 'year', label: 'By year' },
 ] as const satisfies readonly { id: Grouping; label: string }[];
 
-const sourceName = (item: MediaLibraryItem) => item.eventName ?? item.meetingName ?? 'Council photos';
+const sourceName = (item: MediaLibraryItem) => item.eventName ?? item.meetingName ?? 'Standalone council photos';
 
 /** A photo, or a navy placeholder naming the file when it cannot be shown here (a phone path, a missing file). */
 function Photo({ item, className, large = false }: { item: MediaLibraryItem; className?: string; large?: boolean }) {
@@ -341,18 +347,42 @@ function AlbumsPanel({
 
 // ---- tagged upload -----------------------------------------------------------------
 
-type Target = { kind: 'event' | 'meeting'; id: number; name: string; location: string };
+type Target = { kind: 'event' | 'meeting'; id: number; name: string; location: string; date: string };
 
-function UploadPhotos({ targets, onUploaded }: { targets: Target[]; onUploaded: () => Promise<void> }) {
+/** What the photos are tagged to (Sprint 6R). */
+type UploadMode = 'event' | 'meeting' | 'standalone';
+const UPLOAD_MODES: readonly { id: UploadMode; label: string }[] = [
+  { id: 'event', label: 'Past event' },
+  { id: 'meeting', label: 'Past meeting' },
+  { id: 'standalone', label: 'Standalone' },
+];
+
+function UploadPhotos({
+  targets,
+  councilId,
+  standaloneAllowed,
+  onUploaded,
+}: {
+  targets: Target[];
+  councilId: number;
+  standaloneAllowed: boolean;
+  onUploaded: () => Promise<void>;
+}) {
   const user = useUser();
-  const [targetKey, setTargetKey] = useState(targets[0] ? `${targets[0].kind}-${targets[0].id}` : '');
+  const modes = UPLOAD_MODES.filter((m) => (m.id === 'standalone' ? standaloneAllowed : targets.some((t) => t.kind === m.id)));
+  const [mode, setMode] = useState<UploadMode>(modes[0]?.id ?? 'standalone');
+  const choices = targets.filter((t) => t.kind === mode);
+  const [targetKey, setTargetKey] = useState('');
+  const [year, setYear] = useState(String(new Date().getFullYear()));
   const [locationTag, setLocationTag] = useState('');
   const [files, setFiles] = useState<{ file: File; url: string }[]>([]);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
-  const target = targets.find((t) => `${t.kind}-${t.id}` === targetKey);
+  // A pick from another mode, or none yet, falls back to the newest record of this one.
+  const target = mode === 'standalone' ? undefined : (choices.find((t) => `${t.kind}-${t.id}` === targetKey) ?? choices[0]);
+  const destination = mode === 'standalone' ? 'the standalone council photos' : target?.name;
 
   const add = (list: FileList | null) => {
     const images = Array.from(list ?? []).filter((f) => f.type.startsWith('image/'));
@@ -368,21 +398,27 @@ function UploadPhotos({ targets, onUploaded }: { targets: Target[]; onUploaded: 
   };
 
   const upload = async () => {
-    if (!target) return;
+    if (mode !== 'standalone' && !target) return;
     setBusy(true);
     setMessage(null);
     try {
       // An Admin's photos go to the Drive vault's Media folder (Media / <event or meeting name>) and only their file ids
       // are stored. Otherwise the memory driver has no file store, so each photo is a browser blob link.
       const refs: string[] = [];
-      for (const f of files) refs.push((await archiveToDriveVault(user, 'media', f.file, target.name)) ?? f.url);
-      await db.media.uploadToVault(user.memberId, {
-        eventId: target.kind === 'event' ? target.id : null,
-        meetingId: target.kind === 'meeting' ? target.id : null,
-        fileUrls: refs,
-        locationTag: locationTag.trim() || null,
-      });
-      setMessage({ tone: 'info', text: `${files.length} photo${files.length === 1 ? '' : 's'} added to ${target.name}.` });
+      // Standalone photos go to Media / Standalone.
+      for (const f of files) refs.push((await archiveToDriveVault(user, 'media', f.file, target?.name ?? 'Standalone')) ?? f.url);
+      await db.media.uploadToVault(
+        user.memberId,
+        target
+          ? {
+              eventId: target.kind === 'event' ? target.id : null,
+              meetingId: target.kind === 'meeting' ? target.id : null,
+              fileUrls: refs,
+              locationTag: locationTag.trim() || null,
+            }
+          : { councilId, calendarYear: Number(year), fileUrls: refs, locationTag: locationTag.trim() || null },
+      );
+      setMessage({ tone: 'info', text: `${files.length} photo${files.length === 1 ? '' : 's'} added to ${destination}.` });
       setFiles([]);
       await onUploaded();
     } catch (err) {
@@ -400,25 +436,46 @@ function UploadPhotos({ targets, onUploaded }: { targets: Target[]; onUploaded: 
             {message.text}
           </Notice>
         ) : null}
-        <Field label="Event or meeting">
-          {(id) => (
-            <Select id={id} value={targetKey} onChange={(e) => setTargetKey(e.target.value)}>
-              {(['event', 'meeting'] as const).map((kind) => {
-                const group = targets.filter((t) => t.kind === kind);
-                return group.length > 0 ? (
-                  <optgroup key={kind} label={kind === 'event' ? 'Events' : 'Meetings'}>
-                    {group.map((t) => (
-                      <option key={`${t.kind}-${t.id}`} value={`${t.kind}-${t.id}`}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                ) : null;
-              })}
-            </Select>
-          )}
-        </Field>
-        <Field label="Location tag" hint="Left blank, the event's or meeting's location is used.">
+        <div className="flex flex-col gap-1">
+          <span id="upload-mode-label" className="text-sm font-bold">
+            Tag these photos to
+          </span>
+          <div role="radiogroup" aria-labelledby="upload-mode-label" className="flex flex-wrap gap-2">
+            {modes.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                role="radio"
+                aria-checked={mode === m.id}
+                onClick={() => setMode(m.id)}
+                className={cx('rounded border-2 border-navy px-3 py-1 text-sm font-bold', mode === m.id ? 'bg-navy text-white' : 'bg-white text-navy')}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {mode === 'standalone' ? (
+          <>
+            <p className="text-xs text-muted">Standalone photos belong to the council alone, not to any event, meeting or ledger record.</p>
+            <Field label="Year taken">
+              {(id) => <Input id={id} inputMode="numeric" maxLength={4} value={year} onChange={(e) => setYear(e.target.value)} />}
+            </Field>
+          </>
+        ) : (
+          <Field label={mode === 'event' ? 'Past calendar event' : 'Past council meeting'}>
+            {(id) => (
+              <Select id={id} value={target ? `${target.kind}-${target.id}` : ''} onChange={(e) => setTargetKey(e.target.value)}>
+                {choices.map((t) => (
+                  <option key={`${t.kind}-${t.id}`} value={`${t.kind}-${t.id}`}>
+                    {t.name} · {formatDate(t.date)}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        )}
+        <Field label="Location tag" hint={mode === 'standalone' ? 'Optional: where the photos were taken.' : "Left blank, the event's or meeting's location is used."}>
           {(id) => <Input id={id} value={locationTag} maxLength={MEDIA_LOCATION_MAX_LENGTH} placeholder={target?.location ?? ''} onChange={(e) => setLocationTag(e.target.value)} />}
         </Field>
         <div
@@ -467,7 +524,7 @@ function UploadPhotos({ targets, onUploaded }: { targets: Target[]; onUploaded: 
                 </li>
               ))}
             </ul>
-            <Button onClick={() => void upload()} disabled={busy || !target}>
+            <Button onClick={() => void upload()} disabled={busy || (mode !== 'standalone' && !target)}>
               {busy ? 'Uploading…' : `Upload ${files.length} photo${files.length === 1 ? '' : 's'}`}
             </Button>
           </>
@@ -510,15 +567,17 @@ function PhotoGallery() {
   const library = useLoad(() => db.media.getLibrary(user.memberId, councilId), [councilId, user.memberId]);
   const albums = useLoad(() => db.media.listSmartAlbums(user.memberId, councilId), [councilId, user.memberId]);
   const targets = useLoad(async (): Promise<Target[]> => {
-    const events = await db.events.listByCouncil(councilId);
+    // Sprint 6R: only past records - events that have started and meetings on or before today - newest first.
+    const today = toIsoDate(new Date());
+    const events = (await db.events.listByCouncil(councilId)).filter((e) => e.StartDate <= today).sort((a, b) => b.StartDate.localeCompare(a.StartDate));
     const links = await Promise.all(events.map((e) => db.events.listCouncilIds(e.id)));
     const lib = await db.media.getLibrary(user.memberId, councilId);
     const eventTargets = events
       .filter((e: CouncilEvent, i) => canAttachEventMedia(user, e, links[i]))
-      .map((e) => ({ kind: 'event' as const, id: e.id, name: e.EventName, location: e.Location }));
+      .map((e) => ({ kind: 'event' as const, id: e.id, name: e.EventName, location: e.Location, date: e.StartDate }));
     const meetingTargets = lib.meetings
-      .filter((m) => canLinkMeetingDrive(user, { CouncilID: councilId, OwnerID: m.ownerId }))
-      .map((m) => ({ kind: 'meeting' as const, id: m.id, name: m.name, location: '' }));
+      .filter((m) => m.date <= today && canLinkMeetingDrive(user, { CouncilID: councilId, OwnerID: m.ownerId }))
+      .map((m) => ({ kind: 'meeting' as const, id: m.id, name: m.name, location: '', date: m.date }));
     return [...eventTargets, ...meetingTargets];
   }, [councilId, user.memberId]);
 
@@ -542,6 +601,7 @@ function PhotoGallery() {
     await Promise.all([library.reload(), albums.reload()]);
   };
   const total = library.data?.items.length ?? 0;
+  const standaloneAllowed = canUploadStandaloneMedia(user, councilId);
   const activeAlbum = albums.data?.find((a) => a.id === albumId) ?? null;
 
   return (
@@ -565,7 +625,7 @@ function PhotoGallery() {
           <div id="gallery-panel" role="tabpanel" aria-labelledby={`gallery-tab-${grouping}`} className="flex flex-col gap-6">
             {library.loading && !library.data ? <p className="text-sm text-muted">Loading photos…</p> : null}
             {library.data && total === 0 ? (
-              <Empty>No photos yet. {(targets.data?.length ?? 0) > 0 ? 'Add some with the Upload Photos block.' : 'Event owners and council officers add them.'}</Empty>
+              <Empty>No photos yet. {(targets.data?.length ?? 0) > 0 || standaloneAllowed ? 'Add some with the Upload Photos block.' : 'Event owners and council officers add them.'}</Empty>
             ) : null}
             {library.data && total > 0 && shown.length === 0 ? <Empty>No photos match these filters.</Empty> : null}
             {groups.map((group) => (
@@ -615,7 +675,9 @@ function PhotoGallery() {
             />
           ) : null}
           {library.data ? <FiltersPanel library={library.data} criteria={criteria} onChange={changeCriteria} /> : null}
-          {targets.data && targets.data.length > 0 ? <UploadPhotos key={`upload-${councilId}`} targets={targets.data} onUploaded={reloadAll} /> : null}
+          {targets.data && (targets.data.length > 0 || standaloneAllowed) ? (
+            <UploadPhotos key={`upload-${councilId}`} targets={targets.data} councilId={councilId} standaloneAllowed={standaloneAllowed} onUploaded={reloadAll} />
+          ) : null}
         </aside>
       </div>
       {viewer && ordered[viewer.index] ? <Slideshow items={ordered} index={viewer.index} onIndex={setIndex} autoplay={viewer.autoplay} onClose={closeViewer} /> : null}

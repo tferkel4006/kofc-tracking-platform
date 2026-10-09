@@ -10,6 +10,7 @@
 // new photos that match are added.
 // =========================================================================
 import type { MediaAlbumCriteria, MediaLibrary, MediaLibraryItem, MediaVaultUploadInput, SmartAlbum } from './contract';
+import { assertMayReadCouncilHistory } from './history';
 import { parsePhotoGallery } from './media';
 import { assertInteger, assertText, BusinessRuleError, hasAdminRights, hasSuperAdminRights, SecurityPrivilegeError, type MemberWriteActor } from './rules';
 import type { CouncilMediaVault, Event, Meeting, MediaSmartAlbums } from './types';
@@ -99,15 +100,41 @@ export function matchesAlbumCriteria(item: MediaLibraryItem, c: MediaAlbumCriter
 export const filterMediaLibrary = (items: readonly MediaLibraryItem[], c: MediaAlbumCriteria): MediaLibraryItem[] =>
   items.filter((item) => matchesAlbumCriteria(item, c));
 
+/** What cleanVaultUpload hands the drivers: `councilId` and `calendarYear` are set only for standalone photos. */
+export interface CleanVaultUpload {
+  eventId: number | null;
+  meetingId: number | null;
+  councilId: number | null;
+  calendarYear: number | null;
+  fileUrls: string[];
+  locationTag: string | null;
+}
+
 /**
- * Validates a vault upload: exactly one of an event or a meeting (INVALID_INPUT), 1 to MEDIA_UPLOAD_MAX_FILES file
- * references, each trimmed, not blank, at most MEDIA_FILE_URL_MAX_LENGTH and without a comma (event photos are also
- * appended to the comma-separated PhotoGalleryURL), repeats dropped; and an optional location tag.
+ * Validates a vault upload: one event, one meeting, or (Sprint 6R) neither for standalone photos, which then name their
+ * council (INVALID_INPUT otherwise; a council given with an event or meeting is refused too, since theirs decides it);
+ * 1 to MEDIA_UPLOAD_MAX_FILES file references, each trimmed, not blank, at most MEDIA_FILE_URL_MAX_LENGTH and without a
+ * comma (event photos are also appended to the comma-separated PhotoGalleryURL), repeats dropped; an optional location
+ * tag; and for standalone photos an optional calendar year of 1900-2999.
  */
-export function cleanVaultUpload(input: MediaVaultUploadInput): { eventId: number | null; meetingId: number | null; fileUrls: string[]; locationTag: string | null } {
+export function cleanVaultUpload(input: MediaVaultUploadInput): CleanVaultUpload {
   const eventId = input?.eventId == null ? null : assertInteger(input.eventId, 'Event id', 1);
   const meetingId = input?.meetingId == null ? null : assertInteger(input.meetingId, 'Meeting id', 1);
-  if ((eventId === null) === (meetingId === null)) throw invalid('Tag the photos with one event or one meeting.', { eventId, meetingId });
+  const councilId = input?.councilId == null ? null : assertInteger(input.councilId, 'Council id', 1);
+  if (eventId !== null && meetingId !== null) throw invalid('Tag the photos with one event or one meeting, not both.', { eventId, meetingId });
+  const standalone = eventId === null && meetingId === null;
+  if (standalone && councilId === null) {
+    throw invalid('Tag the photos with one event or one meeting, or name the council for standalone photos.', { eventId, meetingId });
+  }
+  if (!standalone && councilId !== null) {
+    throw invalid("Photos of an event or meeting take that record's council; leave the council out.", { eventId, meetingId, councilId });
+  }
+  let calendarYear: number | null = null;
+  if (input?.calendarYear != null) {
+    if (!standalone) throw invalid("Photos of an event or meeting take that record's year; leave the year out.", { eventId, meetingId });
+    calendarYear = assertInteger(input.calendarYear, 'Calendar year', 1900);
+    if (calendarYear > 2999) throw invalid(`Calendar year ${calendarYear} is outside 1900-2999.`, { year: calendarYear });
+  }
   if (!Array.isArray(input.fileUrls) || input.fileUrls.length === 0) throw invalid('Choose at least one photo to add.', {});
   if (input.fileUrls.length > MEDIA_UPLOAD_MAX_FILES) {
     throw invalid(`Add at most ${MEDIA_UPLOAD_MAX_FILES} photos at a time; received ${input.fileUrls.length}.`, { count: input.fileUrls.length });
@@ -119,8 +146,20 @@ export function cleanVaultUpload(input: MediaVaultUploadInput): { eventId: numbe
     if (!fileUrls.includes(url)) fileUrls.push(url);
   }
   const tag = input.locationTag == null ? '' : assertText(input.locationTag, 'Location tag', MEDIA_LOCATION_MAX_LENGTH, false);
-  return { eventId, meetingId, fileUrls, locationTag: tag === '' ? null : tag };
+  return { eventId, meetingId, councilId, calendarYear, fileUrls, locationTag: tag === '' ? null : tag };
 }
+
+/**
+ * media.uploadToVault for standalone photos (Sprint 6R): any Active member of the council, or an Active Super Admin -
+ * the gallery's own readers (COUNCIL_ACCESS_DENIED).
+ */
+export function assertMayUploadStandaloneMedia(actor: MemberWriteActor, councilId: number): void {
+  assertMayReadCouncilHistory(actor, councilId, `add standalone photos to council ${councilId}`);
+}
+
+/** The gallery's standalone upload choice for a signed-in member, mirroring assertMayUploadStandaloneMedia. */
+export const canUploadStandaloneMedia = (u: { councilId: number; memberType?: string }, councilId: number): boolean =>
+  u.memberType === 'Super Admin' || u.councilId === councilId;
 
 /** The calendar year of a YYYY-MM-DD date. */
 export const calendarYearOf = (isoDate: string): number => Number(isoDate.slice(0, 4));

@@ -453,6 +453,7 @@ import {
   cleanAssetRecordChanges,
   cleanPlanningTimeInput,
   cleanSmartAlbumName,
+  assertMayUploadStandaloneMedia,
   cleanVaultUpload,
   planLeadershipSnapshots,
   planTransferGuard,
@@ -5459,12 +5460,19 @@ export class MemoryDataService implements DataService {
           (event as Row).PhotoGalleryURL = appendPhotoPaths(event.PhotoGalleryURL as string | null, clean.fileUrls);
           year = calendarYearOf(event.StartDate as string);
           location = event.Location as string;
-        } else {
-          const meeting = this.requireMeetingRow(s, clean.meetingId!);
+        } else if (clean.meetingId !== null) {
+          const meeting = this.requireMeetingRow(s, clean.meetingId);
           assertMayLinkMeetingDrive(actor, meeting as unknown as Meeting, `add photos to meeting ${clean.meetingId}`);
           councilIds = [meeting.CouncilID as number];
           year = calendarYearOf(meeting.Date as string);
           location = meeting.Location as string;
+        } else {
+          // Sprint 6R: standalone photos, tied to no ledger record.
+          assertMayUploadStandaloneMedia(actor, clean.councilId!);
+          this.assertCouncilsExist(s, [clean.councilId!]);
+          councilIds = [clean.councilId!];
+          year = clean.calendarYear ?? this.now().getFullYear();
+          location = '';
         }
         const written: CouncilMediaVault[] = [];
         for (const councilId of councilIds) {

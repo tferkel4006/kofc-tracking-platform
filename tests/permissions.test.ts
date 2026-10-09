@@ -104,6 +104,7 @@ describe('portal permissions', () => {
       'gallery',
       'lookups',
       'councils',
+      'feature-flags',
       'council-lookups',
       'elections/appointments',
       'parishes',

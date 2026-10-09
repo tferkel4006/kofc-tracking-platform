@@ -380,8 +380,15 @@ describe('media vault rules', () => {
     expect(() => cleanAlbumCriteria({ colour: 'red' })).toThrow(/no part "colour"/);
   });
 
-  it('needs exactly one event or meeting for an upload', () => {
-    expect(cleanVaultUpload({ eventId: 1, fileUrls: [' a.jpg ', 'a.jpg', 'b.jpg'], locationTag: ' ' })).toEqual({ eventId: 1, meetingId: null, fileUrls: ['a.jpg', 'b.jpg'], locationTag: null });
+  it('needs one event or meeting for an upload, or a council for standalone photos (Sprint 6R)', () => {
+    expect(cleanVaultUpload({ eventId: 1, fileUrls: [' a.jpg ', 'a.jpg', 'b.jpg'], locationTag: ' ' })).toEqual({
+      eventId: 1,
+      meetingId: null,
+      councilId: null,
+      calendarYear: null,
+      fileUrls: ['a.jpg', 'b.jpg'],
+      locationTag: null,
+    });
     expect(() => cleanVaultUpload({ fileUrls: ['a.jpg'] })).toThrow(/one event or one meeting/);
     expect(() => cleanVaultUpload({ eventId: 1, meetingId: 2, fileUrls: ['a.jpg'] })).toThrow(/one event or one meeting/);
     expect(() => cleanVaultUpload({ eventId: 1, fileUrls: ['a,b.jpg'] })).toThrow(/comma/);

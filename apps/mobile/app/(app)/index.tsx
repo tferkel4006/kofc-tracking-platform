@@ -24,6 +24,9 @@ export default function DashboardScreen() {
   const user = useUser();
   const { features, refreshFeatures } = useApp();
   const shiftsOn = features.flag_complex_shifts;
+  // Sprint 6R: the expense card and the Faith Center pieces follow their own council feature flags.
+  const expensesOn = features.feature_expense_reporting;
+  const faithOn = features.feature_faith_center;
   const router = useRouter();
   const [prayerVersion, setPrayerVersion] = useState(0);
   const state = useLoad(async () => {
@@ -48,13 +51,13 @@ export default function DashboardScreen() {
         setPrayerVersion((v) => v + 1);
         void Promise.all([state.reload(), refreshFeatures()]);
       }}>
-      <LiturgicalBanner />
+      {faithOn ? <LiturgicalBanner /> : null}
       <View>
         <AppText variant="heading" accessibilityRole="header">
           Hello, {user.firstName}
         </AppText>
       </View>
-      <PrayerIntentions version={prayerVersion} />
+      {faithOn ? <PrayerIntentions version={prayerVersion} /> : null}
 
       {state.error ? <Notice tone="error" message={state.error} /> : null}
       {!data && state.loading ? <Loading /> : null}
@@ -74,22 +77,24 @@ export default function DashboardScreen() {
             </Section>
           ) : null}
 
-          <Section title="Expense reports">
-            <Card accent={data.expenseSummary.returned > 0 ? color.red : color.navy}>
-              {data.expenseSummary.returned > 0 ? (
-                <Notice
-                  tone="error"
-                  message={`${data.expenseSummary.returned} of your expense reports ${data.expenseSummary.returned === 1 ? 'was' : 'were'} returned for changes.`}
-                />
-              ) : null}
-              <AppText>
-                {data.expenseSummary.open === 0
-                  ? 'Bought something for the council? Scan the receipt and claim a reimbursement.'
-                  : `${data.expenseSummary.open} report${data.expenseSummary.open === 1 ? '' : 's'} not yet reimbursed.`}
-              </AppText>
-              <Button title="My expense reports" variant="secondary" onPress={() => router.push('/expenses')} />
-            </Card>
-          </Section>
+          {expensesOn ? (
+            <Section title="Expense reports">
+              <Card accent={data.expenseSummary.returned > 0 ? color.red : color.navy}>
+                {data.expenseSummary.returned > 0 ? (
+                  <Notice
+                    tone="error"
+                    message={`${data.expenseSummary.returned} of your expense reports ${data.expenseSummary.returned === 1 ? 'was' : 'were'} returned for changes.`}
+                  />
+                ) : null}
+                <AppText>
+                  {data.expenseSummary.open === 0
+                    ? 'Bought something for the council? Scan the receipt and claim a reimbursement.'
+                    : `${data.expenseSummary.open} report${data.expenseSummary.open === 1 ? '' : 's'} not yet reimbursed.`}
+                </AppText>
+                <Button title="My expense reports" variant="secondary" onPress={() => router.push('/expenses')} />
+              </Card>
+            </Section>
+          ) : null}
         </>
       ) : null}
       <View style={{ height: space.lg }} />

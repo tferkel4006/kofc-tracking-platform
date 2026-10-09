@@ -128,7 +128,7 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
 };
 
 /** Columns each maintained table's create/update writes, besides its id. */
-export const COUNCIL_COLUMNS = ['CouncilNumber', 'CouncilName', 'State', 'Phone', 'Email'] as const satisfies readonly (keyof NewCouncil)[];
+export const COUNCIL_COLUMNS = ['CouncilNumber', 'CouncilName', 'State', 'Phone', 'Email', 'ein_number'] as const satisfies readonly (keyof NewCouncil)[];
 export const PARISH_COLUMNS = [
   'Name',
   'StreetAddress1',
@@ -156,6 +156,21 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Lengths follow Schema.sql. Optional text comes back undefined when blank; drivers store it as NULL.
 
+/** Longest Council.ein_number (VARCHAR(20), Sprint 6R). */
+export const EIN_NUMBER_MAX_LENGTH = 20;
+
+/**
+ * A council's Employer Identification Number (Sprint 6R): nine digits, typed with or without the hyphen or spaces, stored
+ * as 'NN-NNNNNNN'. Blank reads as none (null). Anything else is INVALID_INPUT.
+ */
+export function cleanEinNumber(value: unknown): string | null {
+  const text = optionalText(value, 'EIN', EIN_NUMBER_MAX_LENGTH);
+  if (text === null) return null;
+  const digits = text.replace(/[\s-]/g, '');
+  if (!/^\d{9}$/.test(digits)) throw invalid(`EIN "${text}" must be nine digits, written as 12-3456789.`, { ein: text });
+  return `${digits.slice(0, 2)}-${digits.slice(2)}`;
+}
+
 export function cleanCouncil(input: NewCouncil): NewCouncil {
   assertKnownFields(input, COUNCIL_COLUMNS, 'Council');
   const email = optionalText(input.Email, 'Email', 100);
@@ -166,6 +181,7 @@ export function cleanCouncil(input: NewCouncil): NewCouncil {
     State: assertText(input.State ?? '', 'State', 50),
     Phone: optionalText(input.Phone, 'Phone', 50) ?? undefined,
     Email: email ?? undefined,
+    ein_number: cleanEinNumber(input.ein_number),
   };
 }
 

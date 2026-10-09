@@ -456,6 +456,7 @@ import {
   cleanAssetRecordChanges,
   cleanPlanningTimeInput,
   cleanSmartAlbumName,
+  assertMayUploadStandaloneMedia,
   cleanVaultUpload,
   planLeadershipSnapshots,
   planTransferGuard,
@@ -694,7 +695,7 @@ const DB_NAME = 'kofc.db';
  * 56: ExpenseReport.TreasurerMemberID, TreasurerReviewedAt, general_ledger_account_id and LinkedActivityID - the Treasurer
  *     Ledger Audit Desk and activity-linked expenses; JournalEntry.LinkedActivityID - post-event revenue (Sprint 6Q).
  */
-const SCHEMA_VERSION = 56;
+const SCHEMA_VERSION = 57;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -6505,12 +6506,19 @@ export class SqliteDataService implements DataService {
           await db.runAsync('UPDATE [Event] SET [PhotoGalleryURL] = ? WHERE [id] = ?', [appendPhotoPaths(event.PhotoGalleryURL, clean.fileUrls), clean.eventId]);
           year = calendarYearOf(event.StartDate);
           location = event.Location;
-        } else {
-          const meeting = await this.requireMeetingRow(db, clean.meetingId!);
+        } else if (clean.meetingId !== null) {
+          const meeting = await this.requireMeetingRow(db, clean.meetingId);
           assertMayLinkMeetingDrive(actor, meeting, `add photos to meeting ${clean.meetingId}`);
           councilIds = [meeting.CouncilID];
           year = calendarYearOf(meeting.Date);
           location = meeting.Location;
+        } else {
+          // Sprint 6R: standalone photos, tied to no ledger record.
+          assertMayUploadStandaloneMedia(actor, clean.councilId!);
+          await this.assertCouncilsExist(db, [clean.councilId!]);
+          councilIds = [clean.councilId!];
+          year = clean.calendarYear ?? this.now().getFullYear();
+          location = '';
         }
         for (const councilId of councilIds) {
           for (const url of clean.fileUrls) {

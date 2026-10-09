@@ -42,6 +42,7 @@ import {
   type ExpenseReportDetail,
 } from '@kofc/shared';
 import { Dropdown } from '@/components/Dropdown';
+import { FeatureGate } from '@/components/FeatureGate';
 import { NavStrip } from '@/components/NavStrip';
 import { ReceiptScanTile, SCAN_RECEIPT_TITLE } from '@/components/ReceiptScanTile';
 import { AppInput, AppText, choiceStyle, Button, Card, EmptyState, Field, Loading, Notice, Pill, Screen, Section, ToggleSwitch } from '@/components/ui';
@@ -341,7 +342,16 @@ function ExpenseReportCard({ detail, refs, today, onEdit }: { detail: ExpenseRep
 
 // ---- the screen ------------------------------------------------------------------------
 
+/** Sprint 6R: the screen closes, back to Home, while the council's feature_expense_reporting flag is off. */
 export default function ExpensesScreen() {
+  return (
+    <FeatureGate flag="feature_expense_reporting">
+      <ExpensesDesk />
+    </FeatureGate>
+  );
+}
+
+function ExpensesDesk() {
   const { color, space } = useTheme();
   const user = useUser();
   const today = toIsoDate(new Date());

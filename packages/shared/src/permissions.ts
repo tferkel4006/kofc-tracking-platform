@@ -32,6 +32,7 @@ export type PortalArea =
   | 'gallery'
   | 'lookups'
   | 'councils'
+  | 'feature-flags'
   | 'council-lookups'
   | 'parishes'
   | 'members'
@@ -154,6 +155,12 @@ export const canBrowseLessonsRegistry = (u: Actor): boolean => isAdmin(u);
 /** Only Super Admins add, change or delete councils (drivers: SUPER_ADMIN_REQUIRED). */
 export const canMaintainCouncils = (u: Actor): boolean => isSuperAdmin(u);
 
+/**
+ * The Feature Flags Control Center (/feature-flags, Sprint 6R; the panel used to sit on the Councils page): Super Admins
+ * only, the same tier councils.setFeatureFlags enforces (SUPER_ADMIN_REQUIRED).
+ */
+export const canOpenFeatureFlagsControlCenter = (u: Actor): boolean => isSuperAdmin(u);
+
 /** Super Admins act on any council; Admins only on their own. */
 export const canAdministerCouncil = (u: Actor, councilId: number): boolean =>
   isSuperAdmin(u) || (u.memberType === 'Admin' && u.councilId === councilId);
@@ -225,9 +232,13 @@ export const canOpenOfficerTools = (u: Actor): boolean => isSuperAdmin(u) || u.i
 export const canOpenConstitutionalAdvisor = (u: Actor): boolean => canOpenOfficerTools(u);
 export const canOpenCredentialsVault = (u: Actor): boolean => canOpenOfficerTools(u);
 
-/** Admins record post-event results for their councils' events, and the event's owner may too. */
+/**
+ * Updating an event's results on the post-event ledger (Sprint 6R): strictly the event's owner, an elected officer
+ * (isOfficer: a Role with Officer = 1) of a council the event is linked to, an Admin of such a council, and any Super
+ * Admin. Every other member sees neither the event on the ledger nor a link to update it.
+ */
 export const canRecordLedger = (u: Actor, event: Pick<Event, 'OwnerID'>, eventCouncilIds: readonly number[]): boolean =>
-  event.OwnerID === u.memberId || eventCouncilIds.some((id) => canAdministerCouncil(u, id));
+  event.OwnerID === u.memberId || eventCouncilIds.some((id) => canAdministerCouncil(u, id) || (u.isOfficer && u.councilId === id));
 
 /** "Add member" / "Create profile" controls for a council: its Admins and Super Admins (drivers: ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). */
 export const canCreateMembers = (u: Actor, councilId: number): boolean => canAdministerCouncil(u, councilId);
@@ -562,6 +573,7 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, ten
   const areas: PortalArea[] = ['member-actions', 'calendar', 'gallery'];
   if (canMaintainLookups(u)) areas.push('lookups');
   if (canMaintainCouncils(u)) areas.push('councils');
+  if (canOpenFeatureFlagsControlCenter(u)) areas.push('feature-flags');
   if (canOpenCouncilLookups(u)) areas.push('council-lookups');
   if (canAppointOfficers(u)) areas.push('elections/appointments');
   if (isAdmin(u)) areas.push('parishes', 'members', 'activities');
@@ -666,7 +678,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
   {
     id: 'setup',
     label: 'Setup',
-    items: ['councils', 'members', 'supreme-sync', 'council-lookups', 'credentials-vault', 'charities/registry', 'lookups', 'parishes'],
+    items: ['councils', 'feature-flags', 'members', 'supreme-sync', 'council-lookups', 'credentials-vault', 'charities/registry', 'lookups', 'parishes'],
   },
 ];
 

@@ -24,7 +24,7 @@ import {
   toIsoDate,
 } from '@kofc/shared';
 import { AppText, Button } from '@/components/ui';
-import { useTenantType } from '@/lib/app-context';
+import { useFeatureFlags, useTenantType } from '@/lib/app-context';
 import { useTheme } from '@/lib/layout-mode';
 import { readDailyFlag, writeDailyFlag } from '@/services/daily-flags';
 
@@ -122,7 +122,8 @@ function DailyQuoteModal({ visible, onClose }: { visible: boolean; onClose: () =
 
 /** Mount once round the signed-in tabs. Opens the Daily Bible Quote on the first launch of each calendar day. */
 export function FaithCenterProvider({ children }: { children: ReactNode }) {
-  const fraternal = isFraternalTenant(useTenantType());
+  // Sprint 6R: a council that switches feature_faith_center off loses the quote and the praying hands as well.
+  const fraternal = isFraternalTenant(useTenantType()) && useFeatureFlags().feature_faith_center;
   const [visible, setVisible] = useState(false);
   useEffect(() => {
     if (!fraternal) return;

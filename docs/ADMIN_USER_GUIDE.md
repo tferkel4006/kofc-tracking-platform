@@ -113,15 +113,21 @@ Three pages open from the header, not from the sidebar.
 
 ### 3.1 Concept: backend logic of the flags
 
-Each council row has five on/off columns. Each column is a module feature flag. A new council has every flag on.
+Each council row has eleven on/off columns. Each column is a module feature flag. A new council has every flag on.
 
-| Flag column | Label on the Councils page | Web pages hidden when off | Phone tab hidden when off |
+| Flag column | Label in the Feature Flags Control Center | Web pages hidden when off | Phone items hidden when off |
 | --- | --- | --- | --- |
 | `flag_mobile_elections` | **Officer elections** | Council Officer Nominations, Appointed Leadership Matrix | None |
 | `flag_fundraising_inflow` | **Fundraising inflow** | Donations History | **Donate** |
 | `flag_charity_proposals` | **Charity proposals** | Propose Charity Grant, Charity Vetting Queue | None |
 | `flag_complex_shifts` | **Event shifts** | Event Planner, the shift tabs of Member Actions Hub | **Signup**, and the shift mode of **Report** |
 | `flag_meeting_management` | **Meeting management** | Meeting Center, Annual Cadence Manager, Live Meeting Console | **Mtgs** |
+| `feature_expense_reporting` | **Expense reporting** | My Expense Reports, Leadership Auditing Queue, FS Expense Audit, Treasurer Ledger Audit Desk, GK Expense Authorize, Bulk Check Disbursements | The expense screen and the **Expense reports** card on **Home** |
+| `feature_faith_center` | **Faith Center** | Faith Center | The feast-day banner, the Daily Bible Quote, the praying hands and the prayer intentions |
+| `feature_constitutional_advisor` | **Constitutional Advisor** | Constitutional Advisor | None |
+| `feature_council_bylaws` | **Council bylaws** | Constitutional Bylaws | None |
+| `feature_council_history` | **Council history** | Council history (Team Legacy) | None |
+| `feature_live_meeting_console` | **Live meeting console** | Live Meeting Console | None |
 
 The flags follow four rules.
 
@@ -130,21 +136,21 @@ The flags follow four rules.
 3. A hidden page refuses a typed web address. The phone sends a member on a hidden screen back to **Home**.
 4. A flag never deletes data. A flag that is switched back on restores the module with all records.
 
-The financial engine and the activity hour log have no flag. Both stay on for every council.
+The general ledger, the budget and the activity hour log have no flag. They stay on for every council.
 
 ### 3.2 Switch a module on or off
 
-> **Prerequisite (who can do this):** You must have Super Admin privileges. Council Admins do not see the panel.
+> **Prerequisite (who can do this):** You must have Super Admin privileges. Council Admins do not see the Feature Flags Control Center.
 > **Warning:** a switched-off module disappears at once for every member of the council, on the web and on the phone.
 
 **Goal:** Turn one optional module on or off for one council.
 
-**Start point:** Sidebar → Setup → **Councils** → **Module feature flags** panel.
+**Start point:** Sidebar → Setup → **Feature Flags Control Center**.
 
 **Steps:**
-1. Choose the council in the panel.
-2. Find the module by its label.
-3. Turn the switch off to hide the module. Turn the switch on to show the module.
+1. Find the row of the module. Each row shows the label, the flag column and the pages the flag hides.
+2. Find the column of the council. Each column shows the council number and how many modules are on.
+3. Clear the box to hide the module. Select the box to show the module.
 
 **Expected result:** The platform saves each switch at once. Members of the council see the change the next time each page loads.
 
@@ -152,7 +158,7 @@ The financial engine and the activity hour log have no flag. Both stay on for ev
 | Problem | Cause | Fix |
 | --- | --- | --- |
 | A member still sees a phone tab. | The phone read the flags before the change. | Ask the member to sign out and sign in again. |
-| *"… is not a feature flag"* | The request named an unknown flag. | Use one of the five flags in 3.1. |
+| *"… is not a feature flag"* | The request named an unknown flag. | Use one of the eleven flags in 3.1. |
 
 ---
 
@@ -905,7 +911,7 @@ A budget gauge turns gold at 85% of the cap. The gauge turns red past 100%.
 
 ### 7.3 Record an event's results
 
-> **Prerequisite (who can do this):** You must be an Admin of a council linked to the event, the event owner or a Super Admin.
+> **Prerequisite (who can do this):** You must be the event owner, an elected officer or Admin of a council linked to the event, or a Super Admin. Other members do not see the event on the ledger.
 
 **Goal:** Close out an event with attendance, funds and lessons.
 
@@ -1088,7 +1094,7 @@ A council can use its own Drive private key instead of the server key. A council
 **Steps:**
 1. Choose the **Event**.
 2. In **🤖 Ask Microsoft Co-Pilot to Design Advanced Collateral**, type what you need. The limit is 2,000 characters.
-3. Select **Ask the co-pilot**. The answer can take up to 30 seconds.
+3. Select **Design Advanced Collateral**. The answer can take up to 30 seconds.
 4. Read **The co-pilot's draft**. Check every fact, date and name.
 5. Select **Copy the draft**.
 
@@ -1097,7 +1103,7 @@ A council can use its own Drive private key instead of the server key. A council
 **Common problems:**
 | Problem | Cause | Fix |
 | --- | --- | --- |
-| *"The Microsoft Co-Pilot is not connected for this council yet."* | The council has no Co-Pilot key. | Ask a council Admin to save the key (10.8). |
+| **Design Advanced Collateral** is grey. Its tooltip says *"The Microsoft Co-Pilot is not connected yet"*. | The council has no Co-Pilot key in the Credentials Vault. | Select the tooltip's link to the Credentials Vault. A council Admin saves the key there (10.8). |
 | *"Microsoft refused the saved Co-Pilot key."* | The key was changed or removed in Copilot Studio. | Ask a council Admin to save the new key (10.8). |
 | *"The Microsoft Co-Pilot did not answer in time."* | The agent took more than 30 seconds. | Type a shorter request. Try again. |
 | **Rewrite in plain, warm words** shows. | The draft uses business jargon. | Edit the words before you use the draft. |

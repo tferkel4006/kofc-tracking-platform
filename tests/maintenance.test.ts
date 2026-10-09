@@ -97,6 +97,7 @@ describe('maintenance rules', () => {
       CouncilName: 'Holy Family',
       State: 'OR',
       Phone: undefined,
+      ein_number: null,
     });
     expect(() => cleanCouncil({ CouncilNumber: 0, CouncilName: 'x', State: 'OR' })).toThrow(/whole number/);
     expect(() => cleanCouncil({ CouncilNumber: 1, CouncilName: 'x', State: 'OR', Motto: 'x' } as never)).toThrow(/no field "Motto"/);

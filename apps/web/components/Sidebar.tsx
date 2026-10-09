@@ -105,7 +105,13 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
   'supreme-sync': { href: '/supreme-sync', label: 'Supreme Council Sync', hint: 'Audit and file Forms 1728 and 1295' },
   lookups: { href: '/lookups', label: 'Global Governance Matrices', hint: 'Maintain the global lookup tables' },
   parishes: { href: '/parishes', label: 'Parish & Pastors Linkage', hint: 'Parishes and their pastors' },
-  councils: { href: '/councils', label: 'Councils', hint: "Add, edit and delete councils; switch a council's modules on and off" },
+  councils: { href: '/councils', label: 'Councils', hint: 'Add, edit and delete councils and their registration profiles' },
+  'feature-flags': {
+    href: '/feature-flags',
+    label: 'Feature Flags Control Center',
+    hint: "Switch each council's optional modules on and off",
+    restrictedTo: 'Super Admins',
+  },
   help: { href: '/help', label: 'Online Help Center', hint: 'Searchable answers from the user manuals, and feedback' },
   'governance/bylaws': { href: '/governance/bylaws', label: 'Constitutional Bylaws', hint: "The council's own bylaws, article by article" },
   'governance/advisor': {
@@ -116,7 +122,7 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
   },
   'answers/help': { href: '/answers/help', label: 'Interactive Help Desk', hint: 'Type what you need to do and see the steps from the member guide' },
   'answers/sop': { href: '/answers/sop', label: 'SOP Center', hint: 'Standard operating procedures, kept as markdown files' },
-  'resources/bulletins': { href: '/resources/bulletins', label: 'Council Artifacts', hint: 'Flyers, minutes and photo albums filed in Google Drive' },
+  'resources/bulletins': { href: '/resources/bulletins', label: 'Council Artifacts', hint: 'Google Drive files and the compliance reports the portal compiles' },
   'resources/marketing': {
     href: '/resources/marketing',
     label: 'Marketing Factory',
