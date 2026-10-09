@@ -35,8 +35,6 @@ describe('web theme matches the shared brand tokens', () => {
     ['color-muted', BRAND.muted],
     ['color-line', BRAND.line],
     ['color-green', BRAND.green],
-    ['color-black', HIGH_CONTRAST.navy],
-    ['color-hc-gold', HIGH_CONTRAST.edge],
     ['color-crimson', LITURGICAL_COLORS.crimson],
     ['color-birthday', LITURGICAL_COLORS.birthdayFlare],
   ])('--%s is %s', (name, expected) => {
@@ -48,6 +46,12 @@ describe('web theme matches the shared brand tokens', () => {
     expect(token('font-sans')).toBe(FONT_BODY);
     expect(token('font-serif')).toBe(FONT_HEADING);
     expect(css).toMatch(/html\s*\{[^}]*font-family:\s*Arial, sans-serif/);
+  });
+
+  it('keeps the high-contrast Visually Impaired tokens off the web (phone only, Sprint 6L Extension)', () => {
+    expect(token('color-black')).toBeUndefined();
+    expect(token('color-hc-gold')).toBeUndefined();
+    expect(css).not.toContain('data-surface="black"');
   });
 
   it('switches off the default Tailwind palette so an off-brand colour cannot compile', () => {

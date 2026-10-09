@@ -18,18 +18,13 @@
 // council's own meeting types (CouncilMeetingType) and write its default agenda outline (meetings.saveAgendaTemplate,
 // CouncilAgendaTemplate). The Meeting center's schedule form pre-fills its agenda from it.
 //
-// Outbound Email Gateway (Sprint 6Z-Admin-Email-Perms, moved here from the Super Admin Councils page): the council's
-// Admins and Super Admins point its portal email at the council's own SMTP server (components/EmailGatewayPanel).
-//
-// Base Dues Rate (Sprint 6B): everyone who opens this page for the council sees Council.base_dues_rate; only its Grand
-// Knight or Financial Secretary saves a new one (components/DuesRatePanel, councils.setDuesRate).
+// Sprint 6L Extension: the Outbound Email Gateway tab moved to the Credentials Vault page (/credentials-vault), and the
+// Base Dues Rate tab is gone - Council.base_dues_rate is set only on the Global Parameters Dashboard (/lookups).
 import { useEffect, useState } from 'react';
 import {
   AGENDA_TEMPLATE_MAX_LENGTH,
-  canAdministerCouncil,
   canConfigureBallot,
   canManageAgendaTemplates,
-  canOpenCouncilLookups,
   councilLookupTablesFor,
   describeError,
   formatTimestamp,
@@ -37,8 +32,6 @@ import {
   type CouncilLookupTableName,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { DuesRatePanel } from '@/components/DuesRatePanel';
-import { EmailGatewayPanel } from '@/components/EmailGatewayPanel';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Pill, Select, Table, Tabs, Td, Textarea } from '@/components/ui';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -419,7 +412,7 @@ function AgendaTemplates({ councilId }: { councilId: number }) {
   );
 }
 
-type LookupTab = CouncilLookupTableName | 'elections' | 'agenda' | 'email' | 'dues';
+type LookupTab = CouncilLookupTableName | 'elections' | 'agenda';
 
 function CouncilLookups() {
   const user = useUser();
@@ -429,10 +422,6 @@ function CouncilLookups() {
     ...tables.map((t) => ({ id: t, label: TAB_LABELS[t] })),
     ...(canConfigureBallot(user, scope.councilId) ? [{ id: 'elections' as const, label: 'Officer Election Parameters' }] : []),
     ...(canManageAgendaTemplates(user, scope.councilId) ? [{ id: 'agenda' as const, label: 'Meeting Agenda Templates' }] : []),
-    ...(canAdministerCouncil(user, scope.councilId) ? [{ id: 'email' as const, label: 'Outbound Email Gateway' }] : []),
-    ...(canAdministerCouncil(user, scope.councilId) || (canOpenCouncilLookups(user) && user.councilId === scope.councilId)
-      ? [{ id: 'dues' as const, label: 'Base Dues Rate' }]
-      : []),
   ];
   const [chosen, setChosen] = useState<LookupTab | null>(null);
   const table = chosen && tabs.some((t) => t.id === chosen) ? chosen : tabs[0]?.id;
@@ -451,10 +440,6 @@ function CouncilLookups() {
               <ElectionParameters key={scope.councilId} councilId={scope.councilId} />
             ) : table === 'agenda' ? (
               <AgendaTemplates key={scope.councilId} councilId={scope.councilId} />
-            ) : table === 'email' ? (
-              <EmailGatewayPanel key={scope.councilId} councilId={scope.councilId} />
-            ) : table === 'dues' ? (
-              <DuesRatePanel key={scope.councilId} councilId={scope.councilId} />
             ) : (
               <LookupEditor key={`${scope.councilId}-${table}`} councilId={scope.councilId} table={table} />
             )}

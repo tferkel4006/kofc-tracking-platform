@@ -65,7 +65,7 @@ export function cleanEmailGatewaySettings(input: unknown): EmailGatewaySettings 
   // eslint-disable-next-line no-control-regex
   if (!username || username.length > 255 || /[\x00-\x1f\x7f]/.test(username)) throw fail('The SMTP username is missing, too long or not plain text.', 'SmtpUsername');
   if (v.EmailPasswordEncrypted != null || v.password != null) {
-    throw fail('The SMTP password is kept in the credentials vault, not on the council; enter it in the Outbound Email Gateway tab.', 'password');
+    throw fail('The SMTP password is kept in the credentials vault, not on the council; enter it on the Credentials Vault page.', 'password');
   }
   return { EmailProvider: v.EmailProvider, SmtpHost: host, SmtpPort: port, SmtpUsername: username };
 }

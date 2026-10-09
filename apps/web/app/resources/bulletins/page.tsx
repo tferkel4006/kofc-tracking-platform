@@ -1,5 +1,5 @@
 'use client';
-// Bulletins (Sprint 6Z): a card wall of the council's files already filed in Google Drive - meeting flyers and minutes
+// Council Artifacts (Sprint 6Z as "Bulletins", renamed in the Sprint 6L Extension): a card wall of the council's files already filed in Google Drive - meeting flyers and minutes
 // (Meeting.GoogleDriveFlyerURL, GoogleDriveMinutesURL, or a Drive vault id in MinutesURL) and event photo albums
 // (Event.PhotoGalleryURL) - newest first (bulletinCards). Each card opens the file in Google Drive in a new tab;
 // Drive's own sharing settings still decide who can open it. Open to every member of the council.
@@ -31,7 +31,7 @@ function BulletinsBoard() {
 
   return (
     <>
-      <PageTitle>Bulletins</PageTitle>
+      <PageTitle>Council Artifacts</PageTitle>
       <div className="flex flex-col gap-4">
         <p className="text-sm text-muted">Flyers, minutes and photo albums the council has filed in Google Drive. Each card opens the file in a new tab.</p>
         <div role="group" aria-label="Show" className="flex flex-wrap gap-2">

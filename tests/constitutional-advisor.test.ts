@@ -119,8 +119,10 @@ describe('compliance warnings', () => {
 });
 
 describe('advisor terminal page', () => {
-  it('is open to every member and sits under Governance after the bylaws', () => {
-    expect(portalAreas({ memberId: 9, councilId: 1, isOfficer: false, memberType: 'Member' })).toContain('governance/advisor');
+  it('is an officer tool (Sprint 6L Extension) and sits under Governance after the bylaws', () => {
+    expect(portalAreas({ memberId: 9, councilId: 1, isOfficer: false, memberType: 'Member' })).not.toContain('governance/advisor');
+    expect(portalAreas({ memberId: 9, councilId: 1, isOfficer: true, memberType: 'Member' })).toContain('governance/advisor');
+    expect(portalAreas({ memberId: 9, councilId: 1, isOfficer: false, memberType: 'Super Admin' })).toContain('governance/advisor');
     const governance = PORTAL_NAV_GROUPS.find((g) => g.id === 'governance')!.items;
     expect(governance.indexOf('governance/advisor')).toBe(governance.indexOf('governance/bylaws') + 1);
     expect(read('apps/web/components/Sidebar.tsx')).toContain("href: '/governance/advisor'");

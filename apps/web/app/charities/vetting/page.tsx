@@ -10,7 +10,7 @@
 //     padlocked "Sponsor Restriction" (isSponsorRestricted; the data service refuses it too, SELF_VETTING_BLOCKED).
 //   - Sprint 5Z-6: an advanced request still awaiting its vote carries "Place on next agenda"
 //     (charities.routeRequestToNextEligibleAgenda): a Proposed Motion on the soonest Monthly meeting at least 10 days out.
-//   - Sprint 6H: each row carries the high-contrast thread buttons (RequestThreads.tsx). "Request More Info" opens the
+//   - Sprint 6H: each row carries the thread buttons (RequestThreads.tsx). "Request More Info" opens the
 //     vetting officer's private thread with the Knight Shepherd; "Request Officer Input" opens the officers' advisory
 //     forum on the request, which every officer and Admin of the council can read and join.
 import { useState } from 'react';

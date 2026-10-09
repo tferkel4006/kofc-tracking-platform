@@ -1,5 +1,5 @@
 'use client';
-// Council History - the Team Legacy dashboard (Sprint 6K). One high-contrast card per fraternal year, newest first: the
+// Council History - the Team Legacy dashboard (Sprint 6K). One summary card per fraternal year, newest first: the
 // year's seated officer core (CouncilLeadershipHistory) as a single roster grid beside the officers' collective
 // accomplishments and team metrics (CouncilHistoryAnnals), then the year's diary entries and Oral History Testimonials
 // (CouncilSpiritualDiary). It is a team record: no member's hours, signups or scores appear.
@@ -19,7 +19,7 @@ import {
   type LegacyYear,
 } from '@kofc/shared';
 import { RequireArea } from '@/components/CouncilScope';
-import { HighContrastCard } from '@/components/DuesParts';
+import { SummaryCard } from '@/components/DuesParts';
 import { OralHistoryRecorder } from '@/components/OralHistoryRecorder';
 import { Button, Field, Input, Notice, PageTitle, Panel, Textarea } from '@/components/ui';
 import { useUser } from '@/lib/session';
@@ -36,21 +36,21 @@ function Founding({ matrix }: { matrix: CouncilLegacyMatrix }) {
   const f = matrix.founding;
   const nothing = !f.establishmentDate && !f.originalChaplain && !f.charterPhotoUrl;
   return (
-    <HighContrastCard id="history-founding" title="Our founding" subtitle="The council's charter, as the annals record it.">
+    <SummaryCard id="history-founding" title="Our founding" subtitle="The council's charter, as the annals record it.">
       {nothing ? (
         <p>{matrix.canKeepAnnals ? 'No founding facts yet. Add them with Edit year on the earliest year you know.' : 'No founding facts recorded yet.'}</p>
       ) : (
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
-            <dt className="text-sm uppercase tracking-wide text-hc-gold">Chartered</dt>
+            <dt className="text-sm uppercase tracking-wide text-muted">Chartered</dt>
             <dd className="text-xl">{longDate(f.establishmentDate) ?? 'Not recorded'}</dd>
           </div>
           <div>
-            <dt className="text-sm uppercase tracking-wide text-hc-gold">Original chaplain</dt>
+            <dt className="text-sm uppercase tracking-wide text-muted">Original chaplain</dt>
             <dd className="text-xl">{f.originalChaplain ?? 'Not recorded'}</dd>
           </div>
           <div>
-            <dt className="text-sm uppercase tracking-wide text-hc-gold">Charter photo</dt>
+            <dt className="text-sm uppercase tracking-wide text-muted">Charter photo</dt>
             <dd className="text-xl">
               {f.charterPhotoUrl ? (
                 <a href={assetHref(f.charterPhotoUrl)} target="_blank" rel="noreferrer" className="underline">
@@ -63,7 +63,7 @@ function Founding({ matrix }: { matrix: CouncilLegacyMatrix }) {
           </div>
         </dl>
       )}
-    </HighContrastCard>
+    </SummaryCard>
   );
 }
 
@@ -73,7 +73,7 @@ function OfficerCore({ year }: { year: LegacyYear }) {
     <table className="w-full border-collapse text-left">
       <caption className="sr-only">Seated officer core, {year.fraternalYear}</caption>
       <thead>
-        <tr className="border-b-2 border-hc-gold text-sm uppercase tracking-wide text-hc-gold">
+        <tr className="border-b-2 border-gold text-sm uppercase tracking-wide text-muted">
           <th scope="col" className="py-1 pr-3">
             Office
           </th>
@@ -84,11 +84,11 @@ function OfficerCore({ year }: { year: LegacyYear }) {
       </thead>
       <tbody>
         {year.officers.map((o) => (
-          <tr key={`${o.roleName}-${o.memberId}`} className="border-b border-white/40">
+          <tr key={`${o.roleName}-${o.memberId}`} className="border-b border-line">
             <td className="py-1.5 pr-3">{o.roleName}</td>
             <td className="py-1.5">
               {o.firstName} {o.lastName}
-              {o.steppedDown ? <span className="ml-2 text-sm text-hc-gold">(stepped down mid-term)</span> : null}
+              {o.steppedDown ? <span className="ml-2 text-sm text-navy">(stepped down mid-term)</span> : null}
             </td>
           </tr>
         ))}
@@ -100,7 +100,7 @@ function OfficerCore({ year }: { year: LegacyYear }) {
 function Prose({ label, text }: { label: string; text: string | null | undefined }) {
   return (
     <div>
-      <h3 className="text-sm uppercase tracking-wide text-hc-gold">{label}</h3>
+      <h3 className="text-sm uppercase tracking-wide text-muted">{label}</h3>
       <p className="mt-1 whitespace-pre-wrap text-lg leading-relaxed">{text || 'Not written yet.'}</p>
     </div>
   );
@@ -109,8 +109,8 @@ function Prose({ label, text }: { label: string; text: string | null | undefined
 function DiaryEntry({ d }: { d: DiaryEntryDetail }) {
   const audio = d.entry.audio_asset_url;
   return (
-    <li className="rounded border-2 border-white/60 p-3">
-      <p className="text-sm text-hc-gold">
+    <li className="rounded border-2 border-line p-3">
+      <p className="text-sm text-navy">
         {longDate(d.entry.entry_date)} · {d.authorFirstName} {d.authorLastName}
       </p>
       <p className="mt-1 whitespace-pre-wrap">{d.entry.diary_text}</p>
@@ -157,7 +157,7 @@ function AnnalsEditor({ year, councilId, onDone }: { year: LegacyYear; councilId
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded border-2 border-hc-gold bg-white p-4 font-normal text-navy">
+    <div className="flex flex-col gap-3 rounded border-2 border-gold bg-white p-4 font-normal text-navy">
       {error ? <Notice tone="error">{error}</Notice> : null}
       <Field label="Collective accomplishments" hint={`What the officer core achieved together. At most ${HISTORY_TEXT_MAX_LENGTH.toLocaleString('en-US')} characters.`}>
         {(id) => <Textarea id={id} value={form.collective_accomplishments} maxLength={HISTORY_TEXT_MAX_LENGTH} onChange={set('collective_accomplishments')} className="min-h-32" />}
@@ -194,7 +194,7 @@ function YearCard({ year, matrix, reload }: { year: LegacyYear; matrix: CouncilL
   const id = `history-year-${year.fraternalYear}`;
   const current = year.fraternalYear === matrix.currentFraternalYear;
   return (
-    <HighContrastCard id={id} title={`Fraternal Year ${year.fraternalYear}${current ? ' (current)' : ''}`}>
+    <SummaryCard id={id} title={`Fraternal Year ${year.fraternalYear}${current ? ' (current)' : ''}`}>
       {editing ? (
         <AnnalsEditor
           year={year}
@@ -207,7 +207,7 @@ function YearCard({ year, matrix, reload }: { year: LegacyYear; matrix: CouncilL
       ) : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(16rem,22rem)_1fr]">
           <section aria-label={`Officer core, ${year.fraternalYear}`}>
-            <h3 className="mb-2 text-sm uppercase tracking-wide text-hc-gold">Seated officer core</h3>
+            <h3 className="mb-2 text-sm uppercase tracking-wide text-muted">Seated officer core</h3>
             <OfficerCore year={year} />
           </section>
           <section aria-label={`Team record, ${year.fraternalYear}`} className="flex flex-col gap-4">
@@ -225,7 +225,7 @@ function YearCard({ year, matrix, reload }: { year: LegacyYear; matrix: CouncilL
       )}
       {year.diary.length > 0 ? (
         <section aria-label={`Diary and oral histories, ${year.fraternalYear}`} className="mt-6">
-          <h3 className="mb-2 text-sm uppercase tracking-wide text-hc-gold">Diary and oral histories</h3>
+          <h3 className="mb-2 text-sm uppercase tracking-wide text-muted">Diary and oral histories</h3>
           <ul className="flex flex-col gap-2">
             {year.diary.map((d) => (
               <DiaryEntry key={d.entry.id} d={d} />
@@ -233,7 +233,7 @@ function YearCard({ year, matrix, reload }: { year: LegacyYear; matrix: CouncilL
           </ul>
         </section>
       ) : null}
-    </HighContrastCard>
+    </SummaryCard>
   );
 }
 

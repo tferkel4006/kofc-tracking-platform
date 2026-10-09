@@ -87,7 +87,7 @@ describe('web admin card', () => {
     const card = read('apps/web/components/GlobalParametersCard.tsx');
     expect(card).toContain('Global Council Parameters Dashboard');
     expect(card).toContain('db.councils.setGlobalParameters(');
-    expect(card).toMatch(/border-hc-gold bg-black/);
+    expect(card).toMatch(/border-navy bg-white/);
     expect(read('apps/web/app/lookups/page.tsx')).toContain('<GlobalParametersCard />');
   });
 });

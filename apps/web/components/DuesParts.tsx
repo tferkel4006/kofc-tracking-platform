@@ -1,7 +1,7 @@
 'use client';
 // Membership Dues & Budget Performance Tracker (Sprint 6A, Phase 5) on the Financial Management Center. Both cards use
-// the Visually Impaired display tokens the SOP Center reader uses: bold white text on pitch black inside thick hc-gold
-// borders (white on black is 21:1, hc-gold on black 13:1). Status is carried by words and symbols, never colour alone.
+// the standard portal palette: navy text on white inside a navy frame, warnings in brand red (Sprint 6L Extension
+// moved the high-contrast layout to the phone alone). Status is carried by words and symbols, never colour alone.
 //   - DuesForecastCard: Active and Inactive members times Council.base_dues_rate (buildDuesForecast).
 //   - ConcludedPerformanceGrid: budget.getConcludedPerformance - each concluded event and the year's held meetings,
 //     budget against actual, with annual events' Historical Benchmark lines shown apart from every total.
@@ -21,14 +21,14 @@ const STATUS_LABEL: Record<BudgetAlert, string> = {
   Unbudgeted: '○ No budget set',
 };
 
-/** The black high-contrast card frame shared by both panels (and, since Sprint 6G Extension 2, the Budget Analyzer). */
-export function HighContrastCard({ id, title, subtitle, children }: { id: string; title: string; subtitle?: string; children: ReactNode }) {
+/** The navy-on-white summary card frame shared by both panels (and, since Sprint 6G Extension 2, the Budget Analyzer). */
+export function SummaryCard({ id, title, subtitle, children }: { id: string; title: string; subtitle?: string; children: ReactNode }) {
   return (
-    <section aria-labelledby={id} data-surface="black" className="rounded border-4 border-hc-gold bg-black p-4 font-bold text-white sm:p-6">
+    <section aria-labelledby={id} className="rounded border-2 border-navy bg-white p-4 text-navy sm:p-6">
       <h2 id={id} className="font-serif text-2xl">
         {title}
       </h2>
-      {subtitle ? <p className="mt-1 text-base text-white">{subtitle}</p> : null}
+      {subtitle ? <p className="mt-1 text-base text-navy">{subtitle}</p> : null}
       <div className="mt-4">{children}</div>
     </section>
   );
@@ -37,15 +37,15 @@ export function HighContrastCard({ id, title, subtitle, children }: { id: string
 function StatusTag({ alert }: { alert: BudgetAlert }) {
   const strong = alert === 'Over Budget' || alert === 'Warning';
   return (
-    <span className={cx('inline-block whitespace-nowrap rounded border-2 px-2 py-0.5 text-sm uppercase tracking-wide', strong ? 'border-hc-gold text-hc-gold' : 'border-white text-white')}>
+    <span className={cx('inline-block whitespace-nowrap rounded border-2 px-2 py-0.5 text-sm uppercase tracking-wide', strong ? 'border-brand-red text-brand-red' : 'border-line text-navy')}>
       {STATUS_LABEL[alert]}
     </span>
   );
 }
 
-/** The performance-to-budget ratio in large type; hc-gold once spend reaches the warning threshold. */
+/** The performance-to-budget ratio in large type; brand red once spend reaches the warning threshold. */
 function Ratio({ percent, alert }: { percent: number | null; alert: BudgetAlert }) {
-  return <span className={cx('text-xl tabular-nums', alert === 'Over Budget' || alert === 'Warning' ? 'text-hc-gold' : 'text-white')}>{formatPercent(percent)}</span>;
+  return <span className={cx('text-xl tabular-nums', alert === 'Over Budget' || alert === 'Warning' ? 'text-brand-red' : 'text-navy')}>{formatPercent(percent)}</span>;
 }
 
 export function DuesForecastCard({ forecast }: { forecast: DuesForecast }) {
@@ -54,10 +54,10 @@ export function DuesForecastCard({ forecast }: { forecast: DuesForecast }) {
     ['Inactive members', forecast.inactiveCount, forecast.inactiveIncome],
   ];
   return (
-    <HighContrastCard id="dues-forecast-title" title="Membership Dues Revenue Forecast" subtitle={`${formatMoney(forecast.rate)} dues per member each year`}>
+    <SummaryCard id="dues-forecast-title" title="Membership Dues Revenue Forecast" subtitle={`${formatMoney(forecast.rate)} dues per member each year`}>
       <dl className="grid grid-cols-1 gap-3 text-lg sm:grid-cols-2">
         {rows.map(([label, count, income]) => (
-          <div key={label} className="rounded border-2 border-white p-3">
+          <div key={label} className="rounded border-2 border-line p-3">
             <dt className="text-base">{label}</dt>
             <dd className="text-2xl tabular-nums">
               {count} × {formatMoney(forecast.rate)} = {formatMoney(income)}
@@ -65,21 +65,21 @@ export function DuesForecastCard({ forecast }: { forecast: DuesForecast }) {
           </div>
         ))}
       </dl>
-      <div className="mt-4 rounded border-4 border-hc-gold p-4" role="status" aria-label={`Projected dues income ${formatMoney(forecast.projectedIncome)}`}>
+      <div className="mt-4 rounded border-4 border-gold p-4" role="status" aria-label={`Projected dues income ${formatMoney(forecast.projectedIncome)}`}>
         <p className="text-base">Projected dues income · budget line item</p>
         <p className="text-4xl tabular-nums">{formatMoney(forecast.projectedIncome)}</p>
         <p className="mt-1 text-base">
           {forecast.billableCount} billable members (Active and Inactive). Former and deceased members are not counted.
         </p>
       </div>
-    </HighContrastCard>
+    </SummaryCard>
   );
 }
 
 function EventRows({ e }: { e: ConcludedEventPerformance }) {
   return (
     <>
-      <tr className="border-t-2 border-white">
+      <tr className="border-t-2 border-line">
         <th scope="row" className="px-3 py-2 text-left">
           {e.eventName}
           <span className="block text-sm">
@@ -99,9 +99,9 @@ function EventRows({ e }: { e: ConcludedEventPerformance }) {
         </td>
       </tr>
       {e.isAnnual ? (
-        <tr className="border-t border-dashed border-hc-gold">
+        <tr className="border-t border-dashed border-gold">
           <td colSpan={5} className="px-3 py-2 pl-8 text-base">
-            <span className="mr-2 rounded border-2 border-hc-gold px-2 py-0.5 text-sm uppercase tracking-wide text-hc-gold">Historical Benchmark</span>
+            <span className="mr-2 rounded border-2 border-gold px-2 py-0.5 text-sm uppercase tracking-wide text-muted">Historical Benchmark</span>
             {e.benchmark ? (
               <>
                 {e.benchmark.eventName} ({formatFullDate(e.benchmark.startDate)}): budget {formatMoney(e.benchmark.budget)}, actual {formatMoney(e.benchmark.actual)},{' '}
@@ -120,7 +120,7 @@ function EventRows({ e }: { e: ConcludedEventPerformance }) {
 export function ConcludedPerformanceGrid({ performance }: { performance: ConcludedBudgetPerformance }) {
   const { events, meetings, totals } = performance;
   return (
-    <HighContrastCard
+    <SummaryCard
       id="concluded-performance-title"
       title="Budgeted vs. Current Actual Spend"
       subtitle={`Concluded events and meetings, fraternal year ${performance.fraternalYear} (${formatFullDate(performance.fromDate)} – ${formatFullDate(performance.throughDate)})`}
@@ -129,7 +129,7 @@ export function ConcludedPerformanceGrid({ performance }: { performance: Conclud
         <table className="w-full min-w-[40rem] border-collapse text-lg">
           <caption className="sr-only">Budget against actual spend for each concluded event and the council&apos;s meetings</caption>
           <thead>
-            <tr className="border-b-4 border-hc-gold text-left text-sm uppercase tracking-wide">
+            <tr className="border-b-4 border-gold text-left text-sm uppercase tracking-wide">
               <th scope="col" className="px-3 py-2">
                 Event or meeting
               </th>
@@ -157,7 +157,7 @@ export function ConcludedPerformanceGrid({ performance }: { performance: Conclud
             ) : (
               events.map((e) => <EventRows key={e.eventId} e={e} />)
             )}
-            <tr className="border-t-2 border-white">
+            <tr className="border-t-2 border-line">
               <th scope="row" className="px-3 py-2 text-left">
                 {meetings.lineName}
                 <span className="block text-sm">
@@ -176,7 +176,7 @@ export function ConcludedPerformanceGrid({ performance }: { performance: Conclud
             </tr>
           </tbody>
           <tfoot>
-            <tr className="border-t-4 border-hc-gold text-xl">
+            <tr className="border-t-4 border-gold text-xl">
               <th scope="row" className="px-3 py-3 text-left">
                 Total
               </th>
@@ -196,6 +196,6 @@ export function ConcludedPerformanceGrid({ performance }: { performance: Conclud
         Actual spend is each event&apos;s recorded spend plus its approved and reimbursed expenses. Historical Benchmark lines are for comparison only: they are not part of
         the totals or of cash on hand.
       </p>
-    </HighContrastCard>
+    </SummaryCard>
   );
 }

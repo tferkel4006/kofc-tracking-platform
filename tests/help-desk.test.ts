@@ -180,11 +180,11 @@ describe('help desk and SOP Center pages', () => {
     expect(read('apps/web/app/answers/help/HelpDesk.tsx')).toContain('Interactive Help Desk');
   });
 
-  it('publishes every markdown file of docs/sop/ in the high-contrast reader', () => {
+  it('publishes every markdown file of docs/sop/ in the standard reader (no web high-contrast, Sprint 6L Extension)', () => {
     expect(read('apps/web/app/answers/sop/page.tsx')).toContain("readDocsFolder('sop')");
     const reader = read('apps/web/app/answers/sop/SopCenter.tsx');
-    expect(reader).toContain('tone="contrast"');
-    expect(reader).toMatch(/bg-black/);
+    expect(reader).not.toContain('tone="contrast"');
+    expect(reader).not.toMatch(/bg-black|hc-gold/);
     expect(readdirSync(join(root, 'docs/sop')).filter((n) => n.endsWith('.md')).length).toBeGreaterThan(0);
   });
 });

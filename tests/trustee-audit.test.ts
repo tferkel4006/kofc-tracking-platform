@@ -219,7 +219,7 @@ describe('oral history recording ceiling', () => {
     const recorder = read('apps/web/components/OralHistoryRecorder.tsx');
     expect(recorder).toContain('oralHistoryCountdown(elapsed)');
     expect(recorder).toContain('role="timer"');
-    expect(recorder).toContain('border-4 border-hc-gold bg-black');
+    expect(recorder).toContain('border-2 border-navy bg-white');
     expect(recorder).toContain('Time left before automatic stop');
   });
 });

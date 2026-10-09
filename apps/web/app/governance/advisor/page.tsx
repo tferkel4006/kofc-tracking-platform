@@ -25,7 +25,7 @@ interface Exchange {
 
 function WarningBox({ text, authority }: { text: string; authority: string }) {
   return (
-    <div role="alert" className="rounded border-4 border-hc-gold bg-brand-red p-4 text-white">
+    <div role="alert" className="rounded border-4 border-gold bg-brand-red p-4 text-white">
       <p className="font-serif text-xl font-bold tracking-wide">⚠ PARLIAMENTARY COMPLIANCE WARNING</p>
       <p className="mt-2 text-lg font-bold">{text}</p>
       <p className="mt-2 text-base">Source Authority: {authority}</p>
@@ -36,15 +36,15 @@ function WarningBox({ text, authority }: { text: string; authority: string }) {
 function Reply({ exchange }: { exchange: Exchange }) {
   const { reply } = exchange;
   return (
-    <li className="flex flex-col gap-3 border-b-4 border-hc-gold pb-4 last:border-b-0">
+    <li className="flex flex-col gap-3 border-b-4 border-gold pb-4 last:border-b-0">
       <p className="text-lg">
-        <span className="text-hc-gold">Officer ›</span> {exchange.question}
+        <span className="text-navy">Officer ›</span> {exchange.question}
       </p>
       {reply.warnings.map((w) => (
         <WarningBox key={w.text} text={w.text} authority={w.authority} />
       ))}
       <div className="flex flex-col gap-2">
-        <p className="text-sm uppercase tracking-wide text-hc-gold">
+        <p className="text-sm uppercase tracking-wide text-muted">
           {reply.tier === 'bylaws'
             ? 'Tier 1 - Council bylaws'
             : reply.fallbackReason === 'no-match'
@@ -52,8 +52,8 @@ function Reply({ exchange }: { exchange: Exchange }) {
               : 'Tier 2 - Baseline rules (the bylaws vault is empty)'}
         </p>
         <p className="whitespace-pre-line text-lg leading-relaxed">{reply.answer}</p>
-        <p className="border-l-8 border-hc-gold pl-3 text-base">
-          <span className="text-hc-gold">Source Authority:</span> {reply.authority}
+        <p className="border-l-8 border-gold pl-3 text-base">
+          <span className="text-navy">Source Authority:</span> {reply.authority}
         </p>
         {reply.clauseIds.length > 1 ? <p className="text-sm">Also see clauses {reply.clauseIds.slice(1).join(', ')}.</p> : null}
       </div>
@@ -82,15 +82,15 @@ function AdvisorTerminal() {
       <div className="flex flex-col gap-4">
         {council.error ? <Notice tone="error">{council.error}</Notice> : null}
         {row && feed ? (
-          <section aria-labelledby="advisor-title" data-surface="black" className="rounded border-4 border-hc-gold bg-black p-4 font-bold text-white sm:p-6">
-            <h2 id="advisor-title" className="mb-1 border-b-4 border-hc-gold pb-1 font-serif text-xl">
+          <section aria-labelledby="advisor-title" className="rounded border-2 border-navy bg-white p-4 text-navy sm:p-6">
+            <h2 id="advisor-title" className="mb-1 border-b-4 border-gold pb-1 font-serif text-xl">
               Parliamentary terminal - {councilLabel(row)}
             </h2>
             <p className="mb-4 text-base">
               {feed.clauseCount > 0
                 ? `Tier 1 active: ${feed.clauseCount} bylaws clauses loaded. Cite a clause by id (for example A2.S1) or ask in plain words.`
                 : 'Tier 2 active: the council bylaws vault is empty, so answers come from the baseline parliamentary rules.'}{' '}
-              <Link href="/governance/bylaws" className="text-hc-gold underline">
+              <Link href="/governance/bylaws" className="text-navy underline">
                 Open the bylaws
               </Link>
             </p>
@@ -112,7 +112,7 @@ function AdvisorTerminal() {
                 autoComplete="off"
                 placeholder="Ask a parliamentary question…"
                 onChange={(e) => setQuery(e.target.value)}
-                className="min-w-0 flex-1 rounded border-4 border-hc-gold bg-black px-3 py-2 text-lg text-white placeholder:text-white/70"
+                className="min-w-0 flex-1 rounded border-2 border-navy bg-white px-3 py-2 text-lg text-navy placeholder:text-muted"
               />
               <Button type="submit" variant="gold" disabled={query.trim() === ''}>
                 Ask
@@ -121,7 +121,7 @@ function AdvisorTerminal() {
             <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
               <span>Try:</span>
               {SUGGESTIONS.map((s) => (
-                <button key={s} type="button" onClick={() => ask(s)} className="rounded-full border-2 border-hc-gold px-3 py-1 hover:underline">
+                <button key={s} type="button" onClick={() => ask(s)} className="rounded-full border-2 border-gold px-3 py-1 hover:underline">
                   {s}
                 </button>
               ))}

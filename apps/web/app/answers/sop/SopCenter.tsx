@@ -1,8 +1,8 @@
 'use client';
 // The SOP Center's reader (Sprint 6Z): a searchable list of the procedures on the left and the chosen one, drawn by
 // Markdown, on the right. The documents arrive from the server page, read from docs/sop/.
-// Sprint 6A (Phase 4): both panels use the phone's Visually Impaired palette (HIGH_CONTRAST) - pitch-black panels, bold
-// white text, thick hc-gold borders - so a procedure reads the same for a member in large text mode on either device.
+// Sprint 6L Extension: both panels use the standard navy-on-white portal palette. The high-contrast Visually Impaired
+// layout belongs to the phone app alone (theme.ts HIGH_CONTRAST, switched on per member).
 import { useState } from 'react';
 import type { DocFile } from '@kofc/shared';
 import { Markdown } from '@/components/Markdown';
@@ -22,8 +22,8 @@ export function SopCenter({ docs }: { docs: DocFile[] }) {
         <Empty>No standard operating procedures are published yet. Add a markdown file to docs/sop/ and rebuild the portal.</Empty>
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[20rem_1fr]">
-          <section aria-labelledby="sop-list-title" data-surface="black" className="rounded border-4 border-hc-gold bg-black p-4 font-bold text-white">
-            <h2 id="sop-list-title" className="mb-3 border-b-4 border-hc-gold pb-1 font-serif text-xl">
+          <section aria-labelledby="sop-list-title" className="rounded border-2 border-navy bg-white p-4 text-navy">
+            <h2 id="sop-list-title" className="mb-3 border-b-4 border-gold pb-1 font-serif text-xl">
               Procedures
             </h2>
             <label htmlFor="sop-search" className="mb-1 block text-base">
@@ -35,7 +35,7 @@ export function SopCenter({ docs }: { docs: DocFile[] }) {
               value={query}
               placeholder="e.g. bylaws"
               onChange={(e) => setQuery(e.target.value)}
-              className="mb-3 w-full rounded border-4 border-hc-gold bg-black px-3 py-2 text-lg text-white placeholder:text-white/70"
+              className="mb-3 w-full rounded border-2 border-navy bg-white px-3 py-2 text-lg text-navy placeholder:text-muted"
             />
             {shown.length === 0 ? (
               <p className="text-lg">No procedure matches “{query}”.</p>
@@ -49,7 +49,7 @@ export function SopCenter({ docs }: { docs: DocFile[] }) {
                       onClick={() => setChosen(d.slug)}
                       className={cx(
                         'w-full rounded border-4 px-3 py-3 text-left text-lg',
-                        d.slug === doc?.slug ? 'border-hc-gold underline' : 'border-transparent hover:border-white',
+                        d.slug === doc?.slug ? 'border-gold underline' : 'border-transparent hover:border-navy',
                       )}
                     >
                       {d.title}
@@ -63,8 +63,8 @@ export function SopCenter({ docs }: { docs: DocFile[] }) {
             </p>
           </section>
           {doc ? (
-            <article aria-label={doc.title} data-surface="black" className="rounded border-4 border-hc-gold bg-black p-6">
-              <Markdown source={doc.markdown} idPrefix={doc.slug} tone="contrast" />
+            <article aria-label={doc.title} className="rounded border-2 border-navy bg-white p-6">
+              <Markdown source={doc.markdown} idPrefix={doc.slug} />
             </article>
           ) : null}
         </div>

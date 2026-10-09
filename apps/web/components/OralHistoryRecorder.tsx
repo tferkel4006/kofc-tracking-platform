@@ -5,8 +5,8 @@
 // id is written to the member's diary entry for today, filed under the chosen fraternal year (history.addDiaryEntry).
 // While the vault is switched off the entry keeps a browser blob link, which plays only in this browser session.
 // One diary entry per member per day: once today's entry exists the button is disabled.
-// Sprint 6M: every session is capped at ORAL_HISTORY_MAX_SECONDS (15 minutes). While recording, a high-contrast countdown
-// meter (bold white on black inside a thick gold border) shows the minutes and seconds left before the recorder stops and
+// Sprint 6M: every session is capped at ORAL_HISTORY_MAX_SECONDS (15 minutes). While recording, a countdown
+// meter (navy on white, brand red near the end) shows the minutes and seconds left before the recorder stops and
 // saves on its own; in the last minute it turns gold and says so. Screen readers hear it each minute, and every second of
 // the final ten.
 import { useEffect, useRef, useState } from 'react';
@@ -197,7 +197,7 @@ export function OralHistoryRecorder({
 }
 
 /**
- * The live countdown to the automatic timeout: bold white on black inside a thick hc-gold border, the time left in large
+ * The live countdown to the automatic timeout: navy on white inside a navy frame, the time left in large
  * MM:SS figures over a bar that empties as the session runs. In the final minute the figures turn gold and a warning is
  * spelled out, so the state never rests on colour alone. The visible clock updates every second; the polite live region
  * speaks only on each whole minute and every second of the last ten, so a screen reader is not flooded.
@@ -206,15 +206,15 @@ function CountdownMeter({ countdown }: { countdown: ReturnType<typeof oralHistor
   const { remainingSeconds, remainingLabel, remainingSpoken, percentRemaining, warning } = countdown;
   const announce = remainingSeconds % 60 === 0 || remainingSeconds <= 10;
   return (
-    <div data-surface="black" className="rounded border-4 border-hc-gold bg-black p-4 font-bold text-white" role="timer" aria-label={`Time left before the recording stops: ${remainingSpoken}`}>
+    <div className="rounded border-2 border-navy bg-white p-4 text-navy" role="timer" aria-label={`Time left before the recording stops: ${remainingSpoken}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="text-base uppercase tracking-wide">⏱ Time left before automatic stop</span>
-        <span className={cx('text-5xl tabular-nums', warning ? 'text-hc-gold' : 'text-white')}>{remainingLabel}</span>
+        <span className={cx('text-5xl tabular-nums', warning ? 'text-brand-red' : 'text-navy')}>{remainingLabel}</span>
       </div>
-      <div className="mt-3 h-4 w-full overflow-hidden rounded border-2 border-white bg-black" aria-hidden="true">
-        <div className={cx('h-full', warning ? 'bg-hc-gold' : 'bg-white')} style={{ width: `${percentRemaining}%` }} />
+      <div className="mt-3 h-4 w-full overflow-hidden rounded border-2 border-line bg-white" aria-hidden="true">
+        <div className={cx('h-full', warning ? 'bg-brand-red' : 'bg-navy')} style={{ width: `${percentRemaining}%` }} />
       </div>
-      <p className={cx('mt-2 text-base', warning && 'text-hc-gold')}>
+      <p className={cx('mt-2 text-base', warning && 'text-brand-red')}>
         {warning ? `⚠ Under one minute left: the recording stops and saves at 00:00.` : `The recording stops and saves on its own at 00:00 (${ORAL_HISTORY_MAX_SECONDS / 60}-minute limit).`}
       </p>
       <span className="sr-only" aria-live="polite">

@@ -5,7 +5,7 @@
 // and Treasurer, and any Super Admin (canManageFinances). A donation can be corrected or deleted by those people,
 // by the member who recorded it and by its event's owner; the drivers enforce the same rule, and every write
 // re-totals the event's FundsRaised columns, so the post-event ledger always matches the donations.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   canChangeDonation,
   canManageFinances,
@@ -20,6 +20,7 @@ import {
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { Drawer } from '@/components/Drawer';
+import { FaithCenterMirror } from '@/components/FaithCenterMirror';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Td, Textarea } from '@/components/ui';
 import { formatFullDate, formatMoney, parseNumberField } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -294,6 +295,15 @@ function DonationsWorkspace() {
   const [editing, setEditing] = useState<Donation | null>(null);
   const [message, setMessage] = useState<Message | null>(null);
   useEffect(() => setEventId(null), [councilId]);
+  // Sprint 6L Extension: once the chosen event's donations load, bring its drill-down into view and move focus to its
+  // heading, smoothly unless the viewer asked the system for reduced motion.
+  const drillDown = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (eventId === null || !eventHistory.data || !drillDown.current) return;
+    const reduced = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    drillDown.current.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    drillDown.current.querySelector<HTMLElement>('h3')?.focus({ preventScroll: true });
+  }, [eventId, eventHistory.data]);
   // Stable drafts: DonationForm resets itself whenever `initial` changes identity.
   const blank = useMemo(() => (setup.data ? blankDraft(setup.data.methods, setup.data.types, today) : null), [setup.data, today]);
   const editDraft = useMemo(() => (editing ? draftFrom(editing) : null), [editing]);
@@ -348,7 +358,7 @@ function DonationsWorkspace() {
                         type="button"
                         aria-pressed={chosen}
                         onClick={() => setEventId(chosen ? null : event.id)}
-                        className={cx('w-full rounded border-2 bg-white p-3 text-left', chosen ? 'border-gold' : 'border-line hover:border-navy')}
+                        className={cx('w-full rounded bg-white text-left', chosen ? 'border-[6px] border-gold p-[calc(0.75rem-4px)] shadow-md' : 'border-2 border-line p-3 hover:border-navy')}
                       >
                         <span className="flex items-start justify-between gap-2">
                           <span>
@@ -375,7 +385,7 @@ function DonationsWorkspace() {
                         </span>
                         {fundsManaged ? (
                           <span className="mt-2 block">
-                            <Pill tone="gold">Ledger synced from donations</Pill>
+                            <Pill tone="gold">✓ Automatically Logged to Treasury Ledger</Pill>
                           </span>
                         ) : null}
                       </button>
@@ -385,8 +395,15 @@ function DonationsWorkspace() {
               </ul>
             )}
             {eventId !== null && eventHistory.data ? (
-              <div className="mt-4 flex flex-col gap-2">
-                <h3 className="font-serif text-base font-bold">{eventName(eventId)}: your council&apos;s donations</h3>
+              <div
+                ref={drillDown}
+                id="donation-drill-down"
+                aria-live="polite"
+                className="mt-4 flex scroll-mt-4 flex-col gap-2 rounded border-[6px] border-gold bg-white p-3"
+              >
+                <h3 tabIndex={-1} className="font-serif text-base font-bold">
+                  {eventName(eventId)}: your council&apos;s donations
+                </h3>
                 {eventHistory.data.entries.length === 0 ? (
                   <Empty>Your council has not recorded donations for this event.</Empty>
                 ) : (
@@ -421,26 +438,29 @@ function DonationsWorkspace() {
           </Panel>
         </div>
 
-        <Panel title="Record a donation">
-          {!canManage ? (
-            <Notice tone="info">Only this council&apos;s Admins, Financial Secretary and Treasurer record donations here.</Notice>
-          ) : setup.data ? (
-            <DonationForm
-              key={councilId}
-              initial={blank!}
-              methods={setup.data.methods}
-              types={setup.data.types}
-              events={events}
-              today={today}
-              submitLabel="Record donation"
-              onSubmit={async (draft) => {
-                const saved = await db.donations.record(user.memberId, { ...toFields(draft), CouncilID: councilId });
-                await reloadAll();
-                return `Recorded ${formatMoney(saved.DonationAmount)}${saved.EventID != null ? ` for ${eventName(saved.EventID)}` : ' as a standalone donation'}.`;
-              }}
-            />
-          ) : null}
-        </Panel>
+        <div className="flex flex-col gap-4">
+          <Panel title="Record a donation">
+            {!canManage ? (
+              <Notice tone="info">Only this council&apos;s Admins, Financial Secretary and Treasurer record donations here.</Notice>
+            ) : setup.data ? (
+              <DonationForm
+                key={councilId}
+                initial={blank!}
+                methods={setup.data.methods}
+                types={setup.data.types}
+                events={events}
+                today={today}
+                submitLabel="Record donation"
+                onSubmit={async (draft) => {
+                  const saved = await db.donations.record(user.memberId, { ...toFields(draft), CouncilID: councilId });
+                  await reloadAll();
+                  return `Recorded ${formatMoney(saved.DonationAmount)}${saved.EventID != null ? ` for ${eventName(saved.EventID)}` : ' as a standalone donation'}.`;
+                }}
+              />
+            ) : null}
+          </Panel>
+          <FaithCenterMirror />
+        </div>
       </div>
 
       {editing && setup.data ? (

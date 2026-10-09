@@ -26,8 +26,8 @@ import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
-/** High contrast: bold white on black inside an hc-gold border. */
-const THREAD_BUTTON_CLASS = 'whitespace-nowrap border-hc-gold bg-black text-white';
+/** Navy on white inside a gold border. */
+const THREAD_BUTTON_CLASS = 'whitespace-nowrap border-gold bg-white text-navy';
 
 /** The thread buttons the viewer may use on one request, in CHARITABLE_THREAD_TYPES order. */
 export function RequestThreadButtons({

@@ -2,7 +2,7 @@
 // revenue forecast (buildDuesForecast) and budgeted vs. actual spend for concluded events and meetings
 // (buildConcludedBudgetPerformance, budget.getConcludedPerformance) with isolated Historical Benchmark lines.
 // Sprint 6C: event budgets come only from the approved 'Event' rows of CouncilBudgetForecast, never Event.Budget.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -333,7 +333,7 @@ describe.each(drivers)('budget.getConcludedPerformance ($name)', (d) => {
 });
 
 describe('Financial Management Center wiring', () => {
-  it('shows both high-contrast cards on the finance dashboard', () => {
+  it('shows both summary cards on the finance dashboard', () => {
     const page = read('apps/web/app/finance/dashboard/page.tsx');
     expect(page).toContain('buildDuesForecast');
     expect(page).toContain('db.budget.getConcludedPerformance');
@@ -341,7 +341,8 @@ describe('Financial Management Center wiring', () => {
     expect(parts).toContain('Membership Dues Revenue Forecast');
     expect(parts).toContain('Budgeted vs. Current Actual Spend');
     expect(parts).toContain('Historical Benchmark');
-    expect(parts).toContain('border-hc-gold bg-black');
+    expect(parts).toContain('border-navy bg-white');
+    expect(parts).not.toMatch(/hc-gold|bg-black/);
   });
 });
 
@@ -426,14 +427,12 @@ describe.each(drivers)('councils.setDuesRate ($name)', (d) => {
   });
 });
 
-describe('Base Dues Rate panel wiring', () => {
-  it('adds the editor to Council Lookups, saving through councils.setDuesRate behind canEditDuesRate', () => {
+describe('Base Dues Rate editing (Sprint 6L Extension)', () => {
+  it('leaves the rate to the Global Parameters Dashboard: Council Lookups has no dues tab or panel', () => {
     const page = read('apps/web/app/council-lookups/page.tsx');
-    expect(page).toContain("label: 'Base Dues Rate'");
-    expect(page).toContain('<DuesRatePanel');
-    const panel = read('apps/web/components/DuesRatePanel.tsx');
-    expect(panel).toContain('label="Base Dues Rate ($)"');
-    expect(panel).toContain('db.councils.setDuesRate');
-    expect(panel).toContain('canEditDuesRate(user, councilId)');
+    expect(page).not.toContain("label: 'Base Dues Rate'");
+    expect(page).not.toContain('DuesRatePanel');
+    expect(existsSync(join(__dirname, '..', 'apps/web/components/DuesRatePanel.tsx'))).toBe(false);
+    expect(read('apps/web/components/GlobalParametersCard.tsx')).toContain('base_dues_rate: baseDuesRate');
   });
 });

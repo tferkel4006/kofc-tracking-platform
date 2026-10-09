@@ -1,7 +1,7 @@
 'use client';
 // Council Bylaws Data Vault (Sprint 6Z): the signed-in member's council bylaws (Council.BylawsMarkdown), read by every
 // member. The council's meeting keepers - its Admins and Grand Knight, and any Super Admin (canEditBylaws) - edit them
-// in a high-contrast markdown panel with a live preview, saved by councils.setBylaws.
+// in a markdown panel with a live preview, saved by councils.setBylaws.
 // Under the text, the Parliamentary Engine Feed lists the clauses exactly as bylawsTokenFeed hands them to the Phase 4
 // parliamentary engines: one id per article and section ('A2.S3'), so a motion or ruling can cite a clause.
 import { useState } from 'react';
@@ -55,10 +55,6 @@ function EngineFeed({ council }: { council: Council }) {
             ))}
           </Table>
         )}
-        <details className="rounded border-2 border-navy">
-          <summary className="cursor-pointer px-3 py-2 text-sm font-bold">Show the engine feed as JSON</summary>
-          <pre className="max-h-96 overflow-auto border-t border-line p-3 text-xs">{JSON.stringify(feed, null, 2)}</pre>
-        </details>
       </div>
     </Panel>
   );

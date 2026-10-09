@@ -11,12 +11,12 @@
 //   5. Print       the Form 1295-layout PDF, compiled on the server with ReportLab (/api/finance/form-1295) and saved as
 //                  generated/Form_1295_Audit_Report.pdf.
 // Every reader of the books sees the desk (canReadGeneralLedger); checkmarks and signatures are the Trustees' and Super
-// Admins' (canVerifyCouncilAudit). The desk is a high-contrast card: bold white on black inside thick hc-gold borders.
+// Admins' (canVerifyCouncilAudit). The desk is a standard navy-on-white summary card.
 import Link from 'next/link';
 import { useState } from 'react';
 import { auditPeriodOptions, canVerifyCouncilAudit, describeError, type AuditPeriod, type TrusteeAuditLine, type TrusteeAuditWorkspace } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { HighContrastCard } from '@/components/DuesParts';
+import { SummaryCard } from '@/components/DuesParts';
 import { Button, cx, Notice, PageTitle, Select } from '@/components/ui';
 import { formatMoney } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -33,9 +33,9 @@ const STATUS_LABEL: Record<TrusteeAuditWorkspace['status'], string> = {
 /** One step heading of the wizard: its number, title and whether it is done. */
 function Step({ n, title, done, children }: { n: number; title: string; done: boolean; children: React.ReactNode }) {
   return (
-    <li className="rounded border-2 border-white p-3 sm:p-4">
+    <li className="rounded border-2 border-line p-3 sm:p-4">
       <h3 className="flex flex-wrap items-center gap-3 font-serif text-xl">
-        <span aria-hidden="true" className={cx('inline-flex h-9 w-9 items-center justify-center rounded-full border-4 text-lg', done ? 'border-hc-gold text-hc-gold' : 'border-white')}>
+        <span aria-hidden="true" className={cx('inline-flex h-9 w-9 items-center justify-center rounded-full border-4 text-lg', done ? 'border-green text-green' : 'border-line')}>
           {done ? '✓' : n}
         </span>
         <span>
@@ -52,11 +52,11 @@ function LineRow({ line, editable, busy, onToggle }: { line: TrusteeAuditLine; e
   const e = line.entry;
   const label = `${e.DateLogged.slice(0, 10)} ${line.accountName}: ${e.Description}, ${e.DebitAmount > 0 ? `receipt ${formatMoney(e.DebitAmount)}` : `disbursement ${formatMoney(e.CreditAmount)}`}`;
   return (
-    <tr className="border-t-2 border-white align-top">
+    <tr className="border-t-2 border-line align-top">
       <td className="p-2">
         <input
           type="checkbox"
-          className="h-7 w-7 cursor-pointer accent-[var(--color-hc-gold)] disabled:cursor-not-allowed"
+          className="h-7 w-7 cursor-pointer accent-[var(--color-navy)] disabled:cursor-not-allowed"
           checked={line.verified}
           disabled={!editable || busy}
           aria-label={`Verified against the bank statement: ${label}`}
@@ -67,12 +67,12 @@ function LineRow({ line, editable, busy, onToggle }: { line: TrusteeAuditLine; e
       <td className="p-2">{line.accountName}</td>
       <td className="p-2">
         {e.Description}
-        {line.transfer ? <span className="ml-2 inline-block rounded border-2 border-white px-1.5 text-sm uppercase">⇄ Transfer</span> : null}
+        {line.transfer ? <span className="ml-2 inline-block rounded border-2 border-line px-1.5 text-sm uppercase">⇄ Transfer</span> : null}
         {e.CheckNumber ? <span className="block text-sm">Check #{e.CheckNumber}</span> : null}
       </td>
       <td className="p-2 text-right tabular-nums">{e.DebitAmount > 0 ? formatMoney(e.DebitAmount) : ''}</td>
       <td className="p-2 text-right tabular-nums">{e.CreditAmount > 0 ? formatMoney(e.CreditAmount) : ''}</td>
-      <td className="p-2 text-sm">{line.verified ? `✓ ${line.verifiedByName ?? ''}` : <span className="text-hc-gold">Not verified</span>}</td>
+      <td className="p-2 text-sm">{line.verified ? `✓ ${line.verifiedByName ?? ''}` : <span className="text-navy">Not verified</span>}</td>
     </tr>
   );
 }
@@ -163,7 +163,7 @@ function AuditDesk() {
         </Notice>
       ) : null}
 
-      <HighContrastCard
+      <SummaryCard
         id="trustee-audit-title"
         title="🔎 Semiannual Trustee Audit Desk (Form 1295)"
         subtitle="Check every cash line against the bank statements, then sign to lock the period."
@@ -171,10 +171,10 @@ function AuditDesk() {
         <ol className="flex flex-col gap-4">
           <Step n={1} title="Choose the audit period" done={!!ws}>
             <div className="flex flex-col gap-1 sm:max-w-sm">
-              <label htmlFor="audit-period" className="text-sm uppercase tracking-wide text-hc-gold">
+              <label htmlFor="audit-period" className="text-sm uppercase tracking-wide text-muted">
                 Audit period
               </label>
-              <Select id="audit-period" value={choice} onChange={(e) => setChoice(e.target.value)} className="!border-2 !border-hc-gold !text-lg !font-bold">
+              <Select id="audit-period" value={choice} onChange={(e) => setChoice(e.target.value)} className="!border-2 !border-gold !text-lg !font-bold">
                 {options.map((o) => (
                   <option key={`${o.fiscalYear}|${o.period}`} value={`${o.fiscalYear}|${o.period}`}>
                     {o.label} (fraternal year {o.fiscalYear})
@@ -198,8 +198,8 @@ function AuditDesk() {
                 <p className="text-lg" aria-live="polite">
                   {ws.verifiedCount} of {ws.lineCount} line{ws.lineCount === 1 ? '' : 's'} verified
                 </p>
-                <div className="mt-2 h-4 w-full overflow-hidden rounded border-2 border-white bg-black" role="img" aria-label={`${ws.verifiedCount} of ${ws.lineCount} lines verified`}>
-                  <div className="h-full bg-hc-gold" style={{ width: `${ws.lineCount ? (ws.verifiedCount / ws.lineCount) * 100 : 0}%` }} />
+                <div className="mt-2 h-4 w-full overflow-hidden rounded border-2 border-line bg-white" role="img" aria-label={`${ws.verifiedCount} of ${ws.lineCount} lines verified`}>
+                  <div className="h-full bg-gold" style={{ width: `${ws.lineCount ? (ws.verifiedCount / ws.lineCount) * 100 : 0}%` }} />
                 </div>
                 {!canVerify ? <p className="mt-2 text-base">Only the council&apos;s Trustees (and Super Admins) tick lines. You can read every line.</p> : null}
                 {locked ? <p className="mt-2 text-base">🔒 The audit is locked: its checkmarks can no longer change.</p> : null}
@@ -210,7 +210,7 @@ function AuditDesk() {
                     <table className="w-full min-w-[44rem] border-collapse text-base">
                       <caption className="sr-only">Cash ledger lines for {ws.periodLabel}</caption>
                       <thead>
-                        <tr className="text-left text-sm uppercase tracking-wide text-hc-gold">
+                        <tr className="text-left text-sm uppercase tracking-wide text-muted">
                           <th scope="col" className="p-2">
                             ✓
                           </th>
@@ -260,13 +260,13 @@ function AuditDesk() {
                       ['= Cash at end', ws.cashBalanceEnding],
                     ] as const
                   ).map(([label, value]) => (
-                    <div key={label} className="rounded border-2 border-white p-3">
-                      <dt className="text-sm uppercase tracking-wide text-hc-gold">{label}</dt>
+                    <div key={label} className="rounded border-2 border-line p-3">
+                      <dt className="text-sm uppercase tracking-wide text-muted">{label}</dt>
                       <dd className="text-2xl tabular-nums">{formatMoney(value)}</dd>
                     </div>
                   ))}
                 </dl>
-                <p className={cx('mt-2 text-lg', ws.difference !== 0 && 'text-hc-gold')}>
+                <p className={cx('mt-2 text-lg', ws.difference !== 0 && 'text-brand-red')}>
                   {ws.difference === 0 ? '✓ The period ties out to the penny.' : `✖ Off by ${formatMoney(ws.difference)}: check the ledger before signing.`}
                 </p>
                 <p className="mt-1 text-sm">
@@ -316,7 +316,7 @@ function AuditDesk() {
             </>
           ) : null}
         </ol>
-      </HighContrastCard>
+      </SummaryCard>
     </div>
   );
 }

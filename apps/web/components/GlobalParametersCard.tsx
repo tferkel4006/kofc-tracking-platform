@@ -1,5 +1,5 @@
 'use client';
-// Global Council Parameters Dashboard (Sprint 6I): the Super Admin's black-and-gold card on System Lookups. For any
+// Global Council Parameters Dashboard (Sprint 6I): the Super Admin's navy-on-white card on System Lookups. For any
 // council it sets the tenant type (KOFC, or GENERIC for a white-labelled community organization; tenant.ts) and the base
 // dues rate (dues.ts), through councils.setGlobalParameters, which only an Active Super Admin may call. Saving the
 // signed-in council reloads its gates at once (featuresChanged), so the sidebar and labels switch tenant live.
@@ -52,7 +52,7 @@ function ParametersForm({ council, onSaved }: { council: Council; onSaved: (save
     >
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <label className="flex flex-col gap-1">
-          <span className="text-sm uppercase tracking-wide text-hc-gold">Tenant type (tenant_type)</span>
+          <span className="text-sm uppercase tracking-wide text-muted">Tenant type (tenant_type)</span>
           <Select value={tenant} onChange={(e) => setTenant(e.target.value as TenantType)}>
             {TENANT_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -63,7 +63,7 @@ function ParametersForm({ council, onSaved }: { council: Council; onSaved: (save
           <span className="text-sm font-normal">{TENANT_HINT[tenant]}</span>
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-sm uppercase tracking-wide text-hc-gold">Base dues rate (base_dues_rate, $)</span>
+          <span className="text-sm uppercase tracking-wide text-muted">Base dues rate (base_dues_rate, $)</span>
           <Input inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="40.00" />
           <span className="text-sm font-normal">Yearly dues per Active or Inactive member, in whole cents.</span>
         </label>
@@ -91,7 +91,7 @@ export function GlobalParametersCard() {
   const council = list.find((c) => c.id === councilId) ?? list[0];
 
   return (
-    <section aria-labelledby="global-parameters" data-surface="black" className="mb-6 rounded border-4 border-hc-gold bg-black p-4 font-bold text-white sm:p-6">
+    <section aria-labelledby="global-parameters" className="mb-6 rounded border-2 border-navy bg-white p-4 text-navy sm:p-6">
       <h2 id="global-parameters" className="font-serif text-2xl">
         Global Council Parameters Dashboard
       </h2>
@@ -103,7 +103,7 @@ export function GlobalParametersCard() {
         ) : council ? (
           <>
             <label className="flex max-w-xl flex-col gap-1">
-              <span className="text-sm uppercase tracking-wide text-hc-gold">Council</span>
+              <span className="text-sm uppercase tracking-wide text-muted">Council</span>
               <Select value={council.id} onChange={(e) => setCouncilId(Number(e.target.value))}>
                 {list.map((c) => (
                   <option key={c.id} value={c.id}>

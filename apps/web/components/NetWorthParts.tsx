@@ -1,28 +1,28 @@
 'use client';
-// Council Balance Sheet & Equity Ledger (Sprint 6M): the council's true net worth on one high-contrast statement card
-// (HighContrastCard: bold white on black inside thick hc-gold borders) over finance.getCouncilNetWorth -
+// Council Balance Sheet & Equity Ledger (Sprint 6M): the council's true net worth on one statement card
+// (SummaryCard: navy on white inside a navy frame) over finance.getCouncilNetWorth -
 //   liquid cash        every ledger cash account, the virtual goals inside a bank account rolled into it
 // + equipment          ACTIVE CouncilAssetsInventory rows at cost basis
 // - unpaid approvals   expense sheets the Grand Knight approved that are not yet paid
 // = net worth
 // Read-only. Shown on the Financial Management Center and the full balance sheet.
 import type { CouncilNetWorth } from '@kofc/shared';
-import { HighContrastCard } from '@/components/DuesParts';
+import { SummaryCard } from '@/components/DuesParts';
 import { cx } from '@/components/ui';
 import { formatMoney } from '@/lib/format';
 
 /** One statement row: an operator, the label and the amount, with an optional breakdown underneath. */
 function StatementRow({ op, label, amount, total, children }: { op: '' | '+' | '−' | '='; label: string; amount: number; total?: boolean; children?: React.ReactNode }) {
   return (
-    <div className={cx('rounded border-white p-3', total ? 'border-4 border-hc-gold' : 'border-2')}>
+    <div className={cx('rounded border-line p-3', total ? 'border-4 border-gold' : 'border-2')}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <dt className={cx(total ? 'text-xl uppercase tracking-wide' : 'text-lg')}>
-          <span aria-hidden="true" className="mr-2 inline-block w-5 text-center text-hc-gold">
+          <span aria-hidden="true" className="mr-2 inline-block w-5 text-center text-navy">
             {op}
           </span>
           {label}
         </dt>
-        <dd className={cx('tabular-nums', total ? 'text-4xl' : 'text-2xl', amount < 0 && 'text-hc-gold')}>{formatMoney(amount)}</dd>
+        <dd className={cx('tabular-nums', total ? 'text-4xl' : 'text-2xl', amount < 0 && 'text-brand-red')}>{formatMoney(amount)}</dd>
       </div>
       {children ? <div className="mt-2 pl-7 text-base">{children}</div> : null}
     </div>
@@ -31,7 +31,7 @@ function StatementRow({ op, label, amount, total, children }: { op: '' | '+' | '
 
 export function NetWorthCard({ worth }: { worth: CouncilNetWorth }) {
   return (
-    <HighContrastCard id="net-worth-title" title="🏛️ Council Balance Sheet & Equity Ledger" subtitle="Liquid cash plus equipment, less approved expenses not yet paid: the council's true net worth">
+    <SummaryCard id="net-worth-title" title="🏛️ Council Balance Sheet & Equity Ledger" subtitle="Liquid cash plus equipment, less approved expenses not yet paid: the council's true net worth">
       <dl className="flex flex-col gap-3" aria-label="Net worth statement">
         <StatementRow op="" label="Liquid cash balances" amount={worth.liquidCash}>
           {worth.cashAccounts.length === 0 ? (
@@ -86,6 +86,6 @@ export function NetWorthCard({ worth }: { worth: CouncilNetWorth }) {
         As of {worth.asOf.slice(0, 16)} UTC. Ledger accounts for physical property are left out of cash, so equipment is counted once, from the assets inventory.
         {worth.netWorth < 0 ? ' The figure is negative: approved bills exceed cash and equipment.' : ''}
       </p>
-    </HighContrastCard>
+    </SummaryCard>
   );
 }

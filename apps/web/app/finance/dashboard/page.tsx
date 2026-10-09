@@ -10,7 +10,7 @@
 //     and Treasurer and any Super Admin (canPostGeneralLedger); other readers see why they are locked.
 //   - Sprint 6A (Phase 5): the Membership Dues Revenue Forecast (Active and Inactive members times the council's
 //     base_dues_rate, buildDuesForecast) and the Budgeted vs. Current Actual Spend grid (budget.getConcludedPerformance),
-//     both high-contrast cards (DuesParts). Read-only: neither posts to the books nor changes cash on hand.
+//     both summary cards (DuesParts). Read-only: neither posts to the books nor changes cash on hand.
 //   - Sprint 6G Extension 2: the Budget Allocation & YOY Variance Analyzer (budget.getBudgetAnalysis, BudgetAnalyzerParts)
 //     for the current fraternal year, with a what-if Target Spending Ceiling for the budget's editors. Read-only too.
 //   - Sprint 6M: the Target Spending Ceiling is saved with the year's budget (budget.setTargetSpendingCeiling), and the

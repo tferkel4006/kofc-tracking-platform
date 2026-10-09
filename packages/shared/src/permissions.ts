@@ -69,6 +69,7 @@ export type PortalArea =
   | 'answers/sop'
   | 'resources/bulletins'
   | 'resources/marketing'
+  | 'credentials-vault'
   | 'performance/charts'
   | 'history'
   | 'profile';
@@ -211,6 +212,15 @@ export const canOpenArchiveVault = (u: Actor): boolean => isAdmin(u) || u.isOffi
  * canAttachEventMedia (events.setFlyerFile), and only an Admin's flyer reaches the Drive vault.
  */
 export const canOpenMarketingFactory = (u: Actor): boolean => canOpenArchiveVault(u);
+
+/**
+ * Sprint 6L Extension: the officer tools an ordinary member's sidebar never shows - the Constitutional Advisor and the
+ * Credentials Vault. Seated officers and Super Admins open them; so do the council's Admins, who already keep its email
+ * gateway and Drive key. Saving a credential still follows assertMayMaintainCouncilRecords (council Admins, Super Admins).
+ */
+export const canOpenOfficerTools = (u: Actor): boolean => isSuperAdmin(u) || u.isOfficer || isAdmin(u);
+export const canOpenConstitutionalAdvisor = (u: Actor): boolean => canOpenOfficerTools(u);
+export const canOpenCredentialsVault = (u: Actor): boolean => canOpenOfficerTools(u);
 
 /** Admins record post-event results for their councils' events, and the event's owner may too. */
 export const canRecordLedger = (u: Actor, event: Pick<Event, 'OwnerID'>, eventCouncilIds: readonly number[]): boolean =>
@@ -536,10 +546,12 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, ten
   // Sprint 6Z: the Online Help Center is the Answers pillar's sidebar link, open to every signed-in member; so is the
   // Interactive Help Desk (Sprint 6A, Phase 4) that searches the member user guide's task workflows.
   areas.push('help', 'answers/help');
-  // Sprint 6Z: every member reads the council bylaws (canEditBylaws decides editing), the SOP center and the bulletins
-  // board; the growth and hours charts have the executive dashboard's audience. Sprint 6B (Phase 4): the Constitutional
-  // Advisor only reads the bylaws, so it has the bylaws' audience.
-  areas.push('governance/bylaws', 'governance/advisor', 'answers/sop', 'resources/bulletins');
+  // Sprint 6Z: every member reads the council bylaws (canEditBylaws decides editing), the SOP center and the council
+  // artifacts board; the growth and hours charts have the executive dashboard's audience. Sprint 6L Extension: the
+  // Constitutional Advisor and the Credentials Vault are officer tools (canOpenOfficerTools), never on a member's sidebar.
+  areas.push('governance/bylaws', 'answers/sop', 'resources/bulletins');
+  if (canOpenConstitutionalAdvisor(u)) areas.push('governance/advisor');
+  if (canOpenCredentialsVault(u)) areas.push('credentials-vault');
   if (isAdmin(u) || canViewExecutiveDashboard(u, u.councilId)) areas.push('performance/charts');
   // Sprint 6K: every member reads the council's Team Legacy history and records oral history; the annals' keepers are
   // decided inside (assertMayKeepCouncilAnnals).
@@ -594,7 +606,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
   {
     id: 'setup',
     label: 'Setup',
-    items: ['councils', 'members', 'supreme-sync', 'council-lookups', 'charities/registry', 'lookups', 'parishes'],
+    items: ['councils', 'members', 'supreme-sync', 'council-lookups', 'credentials-vault', 'charities/registry', 'lookups', 'parishes'],
   },
 ];
 

@@ -2,7 +2,7 @@
 // operating procedure. This server component reads the folder when the page is built (and on every request in
 // development), so adding, editing or deleting a .md file there and rebuilding is the whole publishing step. The files
 // are written to the technical-writer skill's rules (.claude/skills/technical-writer). Open to every signed-in member.
-// Sprint 6A (Phase 4): the reader draws in the high-contrast Visually Impaired palette.
+// Sprint 6L Extension: the reader draws in the standard portal palette.
 import { readDocsFolder } from '@/lib/docs-files';
 import { RequireArea } from '@/components/CouncilScope';
 import { SopCenter } from './SopCenter';

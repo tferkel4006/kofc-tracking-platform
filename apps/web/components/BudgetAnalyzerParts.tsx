@@ -1,6 +1,6 @@
 'use client';
-// Budget Allocation & YOY Variance Analyzer (Sprint 6G Extension 2) on the Financial Management Center. One black
-// high-contrast card (HighContrastCard: bold white on black inside thick hc-gold borders) over budget.getBudgetAnalysis:
+// Budget Allocation & YOY Variance Analyzer (Sprint 6G Extension 2) on the Financial Management Center. One
+// summary card (SummaryCard: navy on white inside a navy frame) over budget.getBudgetAnalysis:
 //   - Target ceiling: the year's approved total against a 'Target Spending Ceiling ($)' with the unallocated contingency
 //     buffer (buildBudgetCeilingTrack). Only the budget's editors type a ceiling (canManageBudgetForecast: Admins,
 //     Financial Secretary, Treasurer, Budget Director, Super Admins). Sprint 6M: the ceiling is saved with the year's
@@ -12,7 +12,7 @@
 import { useEffect, useId, useState } from 'react';
 import { buildBudgetCeilingTrack, describeError, type BudgetAnalysis, type BudgetCeilingTrack, type BudgetYearOverYearChange } from '@kofc/shared';
 import { formatPercent } from '@/components/BudgetParts';
-import { HighContrastCard } from '@/components/DuesParts';
+import { SummaryCard } from '@/components/DuesParts';
 import { Button, cx, Input } from '@/components/ui';
 import { formatMoney } from '@/lib/format';
 
@@ -34,12 +34,12 @@ const CEILING_LABEL: Record<BudgetCeilingTrack['status'], string> = {
 const formatDelta = (delta: number): string => (delta > 0 ? `+${formatMoney(delta)}` : delta < 0 ? `−${formatMoney(-delta)}` : formatMoney(0));
 const formatSignedPercent = (percent: number | null): string => (percent === null ? '—' : percent > 0 ? `+${formatPercent(percent)}` : formatPercent(percent));
 
-/** A white bar filled in hc-gold to `percent` (capped at 100), labelled for screen readers. */
+/** A white bar filled in gold to `percent` (capped at 100), labelled for screen readers. */
 function Track({ percent, label }: { percent: number | null; label: string }) {
   const width = Math.max(0, Math.min(100, percent ?? 0));
   return (
-    <div role="img" aria-label={label} className="h-4 w-full overflow-hidden rounded border-2 border-white bg-black">
-      <div className="h-full bg-hc-gold" style={{ width: `${width}%` }} />
+    <div role="img" aria-label={label} className="h-4 w-full overflow-hidden rounded border-2 border-line bg-white">
+      <div className="h-full bg-gold" style={{ width: `${width}%` }} />
     </div>
   );
 }
@@ -47,7 +47,7 @@ function Track({ percent, label }: { percent: number | null; label: string }) {
 function ChangeTag({ change }: { change: BudgetYearOverYearChange }) {
   const strong = change === 'Increased' || change === 'Decreased';
   return (
-    <span className={cx('inline-block whitespace-nowrap rounded border-2 px-2 py-0.5 text-sm uppercase tracking-wide', strong ? 'border-hc-gold text-hc-gold' : 'border-white text-white')}>
+    <span className={cx('inline-block whitespace-nowrap rounded border-2 px-2 py-0.5 text-sm uppercase tracking-wide', strong ? 'border-brand-red text-brand-red' : 'border-line text-navy')}>
       {CHANGE_LABEL[change]}
     </span>
   );
@@ -102,14 +102,14 @@ function CeilingSection({
   }
 
   return (
-    <div className="rounded border-2 border-white p-3">
+    <div className="rounded border-2 border-line p-3">
       <h3 className="font-serif text-xl">Target ceiling</h3>
       <p className="mt-1 text-base">
         Saved target for {fraternalYear}: <span className="tabular-nums">{saved === null ? 'none yet' : formatMoney(saved)}</span>
       </p>
       {canSetCeiling && onSaveCeiling ? (
         <div className="mt-2 flex flex-col gap-1 sm:max-w-md">
-          <label htmlFor={inputId} className="text-sm uppercase tracking-wide text-hc-gold">
+          <label htmlFor={inputId} className="text-sm uppercase tracking-wide text-muted">
             Target Spending Ceiling ($)
           </label>
           <Input
@@ -119,7 +119,7 @@ function CeilingSection({
             placeholder="45000.00"
             aria-describedby={hintId}
             aria-invalid={error ? true : undefined}
-            className="!border-2 !border-hc-gold !text-lg !font-bold"
+            className="!border-2 !border-gold !text-lg !font-bold"
             onChange={(e) => setRaw(e.target.value)}
           />
           <span id={hintId} className="text-sm font-normal">
@@ -128,7 +128,7 @@ function CeilingSection({
               : "Add or pre-populate this year's budget lines first; the target is saved with them."}
           </span>
           {error ? (
-            <span role="alert" className="text-base text-hc-gold">
+            <span role="alert" className="text-base text-navy">
               {error}
             </span>
           ) : null}
@@ -143,7 +143,7 @@ function CeilingSection({
             ) : null}
           </div>
           {message ? (
-            <span role={message.tone === 'error' ? 'alert' : 'status'} className={cx('text-base', message.tone === 'error' && 'text-hc-gold')}>
+            <span role={message.tone === 'error' ? 'alert' : 'status'} className={cx('text-base', message.tone === 'error' && 'text-brand-red')}>
               {message.text}
             </span>
           ) : null}
@@ -153,24 +153,24 @@ function CeilingSection({
       )}
       {track ? (
         <div className="mt-3 flex flex-col gap-2" aria-live="polite">
-          {dirty ? <p className="text-sm uppercase tracking-wide text-hc-gold">Preview: not saved yet</p> : null}
+          {dirty ? <p className="text-sm uppercase tracking-wide text-muted">Preview: not saved yet</p> : null}
           <dl className="grid grid-cols-1 gap-2 text-lg sm:grid-cols-3">
             <div>
-              <dt className="text-sm uppercase tracking-wide text-hc-gold">Allocated</dt>
+              <dt className="text-sm uppercase tracking-wide text-muted">Allocated</dt>
               <dd className="tabular-nums">{formatMoney(track.allocated)}</dd>
             </div>
             <div>
-              <dt className="text-sm uppercase tracking-wide text-hc-gold">Ceiling</dt>
+              <dt className="text-sm uppercase tracking-wide text-muted">Ceiling</dt>
               <dd className="tabular-nums">{formatMoney(track.ceiling)}</dd>
             </div>
             <div>
-              <dt className="text-sm uppercase tracking-wide text-hc-gold">{track.buffer < 0 ? 'Over the ceiling by' : 'Unallocated buffer'}</dt>
-              <dd className={cx('tabular-nums', track.buffer < 0 && 'text-hc-gold')}>{formatMoney(Math.abs(track.buffer))}</dd>
+              <dt className="text-sm uppercase tracking-wide text-muted">{track.buffer < 0 ? 'Over the ceiling by' : 'Unallocated buffer'}</dt>
+              <dd className={cx('tabular-nums', track.buffer < 0 && 'text-brand-red')}>{formatMoney(Math.abs(track.buffer))}</dd>
             </div>
           </dl>
           <Track percent={track.percentOfCeiling} label={`${formatPercent(track.percentOfCeiling)} of the ceiling allocated`} />
           <p className="text-base">
-            {formatPercent(track.percentOfCeiling)} of the ceiling allocated · <span className={cx(track.status === 'Over Ceiling' && 'text-hc-gold')}>{CEILING_LABEL[track.status]}</span>
+            {formatPercent(track.percentOfCeiling)} of the ceiling allocated · <span className={cx(track.status === 'Over Ceiling' && 'text-brand-red')}>{CEILING_LABEL[track.status]}</span>
           </p>
         </div>
       ) : null}
@@ -195,29 +195,29 @@ export function BudgetAnalyzerCard({
         ? `${analysis.priorFraternalYear} was never approved, so its caps count as $0.00.`
         : null;
   return (
-    <HighContrastCard
+    <SummaryCard
       id="budget-analyzer-title"
       title="📊 Budget Allocation & YOY Variance Analyzer"
       subtitle={`Approved caps for fraternal year ${analysis.fraternalYear} against ${analysis.priorFraternalYear}`}
     >
       <div className="flex flex-col gap-6">
         {analysis.status !== 'Approved' ? (
-          <p className="rounded border-2 border-hc-gold p-3 text-base">
+          <p className="rounded border-2 border-gold p-3 text-base">
             {analysis.fraternalYear} is {analysis.status}. Caps come from the council&apos;s approved figures, so they read $0.00 until the council votes the budget.
           </p>
         ) : null}
 
         <dl className="grid grid-cols-1 gap-3 text-lg sm:grid-cols-3">
-          <div className="rounded border-2 border-white p-3">
-            <dt className="text-sm uppercase tracking-wide text-hc-gold">{analysis.fraternalYear} approved</dt>
+          <div className="rounded border-2 border-line p-3">
+            <dt className="text-sm uppercase tracking-wide text-muted">{analysis.fraternalYear} approved</dt>
             <dd className="text-2xl tabular-nums">{formatMoney(analysis.approvedTotal)}</dd>
           </div>
-          <div className="rounded border-2 border-white p-3">
-            <dt className="text-sm uppercase tracking-wide text-hc-gold">{analysis.priorFraternalYear} approved</dt>
+          <div className="rounded border-2 border-line p-3">
+            <dt className="text-sm uppercase tracking-wide text-muted">{analysis.priorFraternalYear} approved</dt>
             <dd className="text-2xl tabular-nums">{formatMoney(analysis.priorApprovedTotal)}</dd>
           </div>
-          <div className="rounded border-2 border-white p-3">
-            <dt className="text-sm uppercase tracking-wide text-hc-gold">Year-over-year change</dt>
+          <div className="rounded border-2 border-line p-3">
+            <dt className="text-sm uppercase tracking-wide text-muted">Year-over-year change</dt>
             <dd className="text-2xl tabular-nums">
               {formatDelta(analysis.totalDelta)} <span className="text-lg">({formatSignedPercent(analysis.totalVariancePercent)})</span>
             </dd>
@@ -234,13 +234,13 @@ export function BudgetAnalyzerCard({
           ) : (
             <ul className="mt-2 flex flex-col gap-3">
               {analysis.categories.map((c) => (
-                <li key={c.key} className="rounded border-2 border-white p-3">
+                <li key={c.key} className="rounded border-2 border-line p-3">
                   <div className="flex flex-wrap items-baseline justify-between gap-2 text-lg">
                     <span>
                       {c.label} <span className="text-sm font-normal">({c.lineCount} {c.lineCount === 1 ? 'line' : 'lines'})</span>
                     </span>
                     <span className="tabular-nums">
-                      {formatMoney(c.approved)} · <span className="text-hc-gold">{formatPercent(c.allocationPercent)}</span>
+                      {formatMoney(c.approved)} · <span className="text-navy">{formatPercent(c.allocationPercent)}</span>
                     </span>
                   </div>
                   <div className="mt-2">
@@ -266,7 +266,7 @@ export function BudgetAnalyzerCard({
                 Each budget line&apos;s approved cap for {analysis.fraternalYear} against {analysis.priorFraternalYear}
               </caption>
               <thead>
-                <tr className="border-b-4 border-hc-gold text-left text-sm uppercase tracking-wide">
+                <tr className="border-b-4 border-gold text-left text-sm uppercase tracking-wide">
                   <th scope="col" className="px-3 py-2">
                     Line
                   </th>
@@ -286,7 +286,7 @@ export function BudgetAnalyzerCard({
               </thead>
               <tbody>
                 {analysis.lines.map((l) => (
-                  <tr key={l.lineId ?? `prior-${l.priorLineId}`} className="border-b-2 border-white">
+                  <tr key={l.lineId ?? `prior-${l.priorLineId}`} className="border-b-2 border-line">
                     <th scope="row" className="px-3 py-2 text-left">
                       {l.LineItemName}
                       <span className="block text-sm font-normal">{analysis.categories.find((c) => c.key === l.category)?.label}</span>
@@ -307,6 +307,6 @@ export function BudgetAnalyzerCard({
           </div>
         </div>
       </div>
-    </HighContrastCard>
+    </SummaryCard>
   );
 }
