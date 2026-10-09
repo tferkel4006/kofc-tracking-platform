@@ -1,7 +1,7 @@
 'use client';
 // Credentials Vault (Sprint 6L Extension): the one Setup page for every connection a council keeps a secret for - its
 // outbound email account (moved here from the Council Lookups tab), its Google Drive key and (Sprint 6L Extension 2) its
-// GYST Co-Pilot key, the Microsoft Copilot Studio Direct Line secret (both through /api/councils/credentials). A short status banner leads the page in plain words; no ports or technical flags.
+// Microsoft Co-Pilot key, the Microsoft Copilot Studio Direct Line secret (both through /api/councils/credentials). A short status banner leads the page in plain words; no ports or technical flags.
 // Audience: seated officers, the council's Admins and Super Admins (canOpenCredentialsVault). Only the council's Admins
 // and Super Admins change anything (canAdministerCouncil, the same rule the routes apply); everyone else sees the banner.
 import { useState, type FormEvent } from 'react';
@@ -83,15 +83,15 @@ const DRIVE_CARD: SecretCard = {
 
 const COPILOT_CARD: SecretCard = {
   credentialKey: 'COPILOT_STUDIO_DIRECT_LINE_SECRET',
-  title: 'GYST Co-Pilot (Microsoft Copilot Studio)',
+  title: 'Microsoft Co-Pilot (Copilot Studio)',
   intro:
     "Paste the Direct Line secret of the council's Copilot Studio agent (in Copilot Studio: Settings, Security, Web channel security). It is locked away once saved, and only the Marketing Factory uses it.",
   label: 'Co-Pilot key',
   placeholder: 'Direct Line secret',
   multiLine: false,
   maxLength: 500,
-  savedText: 'Saved. The Marketing Factory can now ask the GYST Co-Pilot.',
-  removedText: 'Removed. The GYST Co-Pilot is switched off for this council.',
+  savedText: 'Saved. The Marketing Factory can now ask the Microsoft Co-Pilot.',
+  removedText: 'Removed. The Microsoft Co-Pilot is switched off for this council.',
 };
 
 function SecretPanel({ card, councilId, saved, onChanged }: { card: SecretCard; councilId: number; saved: CredentialStatus | undefined; onChanged: () => Promise<void> }) {
@@ -191,7 +191,7 @@ function CredentialsVault() {
     ...(mayEdit
       ? [
           { name: 'Google Drive', connected: Boolean(drive), on: 'Connected to the council Drive', off: 'Using the portal Drive' },
-          { name: 'GYST Co-Pilot', connected: Boolean(copilot), on: 'Connected to Copilot Studio', off: 'Not connected' },
+          { name: 'Microsoft Co-Pilot', connected: Boolean(copilot), on: 'Connected to Copilot Studio', off: 'Not connected' },
         ]
       : []),
   ];

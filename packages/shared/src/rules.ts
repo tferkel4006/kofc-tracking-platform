@@ -124,7 +124,9 @@ export type BusinessRuleCode =
   | 'TRUSTEE_REQUIRED'
   | 'AUDIT_PERIOD_LOCKED'
   | 'AUDIT_PERIOD_OPEN'
-  | 'AUDIT_INCOMPLETE';
+  | 'AUDIT_INCOMPLETE'
+  | 'PRAYER_INTENTION_CLOSER_REQUIRED'
+  | 'PRAYER_INTENTION_CLOSED';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -155,7 +157,8 @@ export class SecurityPrivilegeError extends BusinessRuleError {
       | 'AGENDA_EDITOR_REQUIRED'
       | 'DUES_RATE_EDITOR_REQUIRED'
       | 'HISTORY_KEEPER_REQUIRED'
-      | 'TRUSTEE_REQUIRED',
+      | 'TRUSTEE_REQUIRED'
+      | 'PRAYER_INTENTION_CLOSER_REQUIRED',
     message: string,
     details: Record<string, unknown> = {},
   ) {

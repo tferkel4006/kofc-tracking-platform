@@ -793,3 +793,12 @@ VALUES
 - Paul Della', NULL, NULL, NULL, NULL),
 (1, 1, 'good_of_order', 2, '**Closing Prayer**', 19, NULL, 'Monsignor', NULL);
 GO
+
+-- ==============================================================================
+-- Sprint 6L Extension 3: two open Council Prayer Intentions for Council 15295, posted by Tom (Member 19). The first
+-- repeats the prayer requests on Meeting 1's agenda. No Praying Hands taps are seeded.
+-- ==============================================================================
+INSERT INTO [CouncilPrayerIntention] ([council_id], [author_member_id], [intention_text], [created_at]) VALUES
+(1, 19, 'For the brothers and friends on our prayer list: Dolores Redden, Mark Boshears, Paul Wolf and Paul Della.', '2026-10-01 15:00:00'),
+(1, 19, 'For vocations to the priesthood and religious life in our parish.', '2026-10-02 15:00:00');
+GO

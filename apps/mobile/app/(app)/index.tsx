@@ -5,10 +5,13 @@
 // Sprint 5Z-Mobile-Clean: Home holds only work still ahead. Meetings live on the Meetings tab, completed events are
 // gone, and a shift drops off the minute it ends by the device clock, for every member, officers and admins included.
 // Phase 4.5: a closable Liturgical Feast or Saint Day banner sits first, just under the header.
+// Sprint 6L Extension 3: the Council Prayer Intentions List with its Praying Hands counters follows the greeting.
+import { useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { isUrgent, toIsoDate, withoutEndedShifts } from '@kofc/shared';
 import { LiturgicalBanner } from '@/components/FaithCenter';
+import { PrayerIntentions } from '@/components/PrayerIntentions';
 import { ShiftCard, UrgentTag } from '@/components/ShiftCard';
 import { AppText, Button, Card, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
 import { useApp, useUser } from '@/lib/app-context';
@@ -22,6 +25,7 @@ export default function DashboardScreen() {
   const { features, refreshFeatures } = useApp();
   const shiftsOn = features.flag_complex_shifts;
   const router = useRouter();
+  const [prayerVersion, setPrayerVersion] = useState(0);
   const state = useLoad(async () => {
     const today = new Date();
     const todayIso = toIsoDate(today);
@@ -40,13 +44,17 @@ export default function DashboardScreen() {
   // A shift that has finished by the device clock, even earlier today, is gone for everyone, as is one marked a no-show.
   const myShifts = data ? withoutEndedShifts(data.shifts, new Date()).filter(({ signup }) => signup.NoShow !== 1) : [];
   return (
-    <Screen refreshing={state.refreshing} onRefresh={() => void Promise.all([state.reload(), refreshFeatures()])}>
+    <Screen refreshing={state.refreshing} onRefresh={() => {
+        setPrayerVersion((v) => v + 1);
+        void Promise.all([state.reload(), refreshFeatures()]);
+      }}>
       <LiturgicalBanner />
       <View>
         <AppText variant="heading" accessibilityRole="header">
           Hello, {user.firstName}
         </AppText>
       </View>
+      <PrayerIntentions version={prayerVersion} />
 
       {state.error ? <Notice tone="error" message={state.error} /> : null}
       {!data && state.loading ? <Loading /> : null}

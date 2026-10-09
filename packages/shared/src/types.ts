@@ -1049,3 +1049,24 @@ export interface AuditVerifiedLine {
   verified_by_member_id: number;
   verified_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
 }
+
+// 16. THE COUNCIL PRAYER INTENTIONS LIST (Sprint 6L Extension 3)
+/** An intention a member asks the council to pray for. Closed intentions leave the list but keep their rows. */
+export interface CouncilPrayerIntention {
+  id: number;
+  council_id: number;
+  author_member_id: number; // Member
+  intention_text: string; // VARCHAR(500), at most PRAYER_INTENTION_MAX_LENGTH characters
+  created_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+  closed_at?: string | null; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+  closed_by_member_id?: number | null; // Member
+}
+
+/** One tap of the Praying Hands counter: at most one per intention, member and day. */
+export interface CouncilPrayerIntentionPrayer {
+  id: number;
+  intention_id: number;
+  member_id: number;
+  prayed_on: string; // DATE, YYYY-MM-DD (the member's local date)
+  created_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}

@@ -258,6 +258,13 @@ import {
   assertMayKeepCouncilAnnals,
   assertMayReadCouncilHistory,
   buildCouncilLegacyMatrix,
+  buildPrayerIntentionBoard,
+  cleanPrayerIntentionText,
+  assertMayJoinCouncilPrayers,
+  assertMayClosePrayerIntention,
+  assertPrayerIntentionOpen,
+  requirePrayerIntention,
+  prayerTally,
   buildYearClosingMetrics,
   composeYearClosingSummary,
   cleanCouncilAnnals,
@@ -453,6 +460,8 @@ import type {
   FraternalYearClosingMetrics,
   YearClosingRows,
   CouncilSpiritualDiary,
+  CouncilPrayerIntention,
+  CouncilPrayerIntentionPrayer,
   OfficerNominations,
   Activities,
   AlchemerRequest,
@@ -5192,6 +5201,69 @@ export class MemoryDataService implements DataService {
         assertDiaryDayFree(s.rows('CouncilSpiritualDiary') as unknown as CouncilSpiritualDiary[], actorId, clean.entry_date);
         const row = s.insert('CouncilSpiritualDiary', { council_id: councilId, user_id: actorId, ...clean, created_at: toTimestamp(this.now()) });
         return { ...row } as unknown as CouncilSpiritualDiary;
+      });
+    },
+  };
+
+  prayers: DataService['prayers'] = {
+    getBoard: async (actorId, councilId) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      assertMayJoinCouncilPrayers(actor, councilId, `read the prayer intentions of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      this.assertFraternalCouncil(s, councilId, 'read the Council Prayer Intentions List');
+      const intentions = this.copyRows<CouncilPrayerIntention>(s, 'CouncilPrayerIntention', (r) => r.council_id === councilId);
+      const ids = new Set(intentions.map((i) => i.id));
+      return buildPrayerIntentionBoard({
+        councilId,
+        intentions,
+        prayers: this.copyRows<CouncilPrayerIntentionPrayer>(s, 'CouncilPrayerIntentionPrayer', (r) => ids.has(r.intention_id as number)),
+        members: s.rows('Member') as unknown as Member[],
+        actor,
+        today: toIsoDate(this.now()),
+      });
+    },
+
+    addIntention: async (actorId, councilId, text) => {
+      const clean = cleanPrayerIntentionText(text);
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayJoinCouncilPrayers(this.memberWriteActor(s, actorId), councilId, `post a prayer intention for council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        this.assertFraternalCouncil(s, councilId, 'post to the Council Prayer Intentions List');
+        const row = s.insert('CouncilPrayerIntention', { council_id: councilId, author_member_id: actorId, intention_text: clean, created_at: toTimestamp(this.now()) });
+        return { ...row } as unknown as CouncilPrayerIntention;
+      });
+    },
+
+    pray: async (actorId, intentionId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const intention = requirePrayerIntention(
+          s.rows('CouncilPrayerIntention').find((r) => r.id === intentionId) as unknown as CouncilPrayerIntention | undefined,
+          intentionId,
+        );
+        assertMayJoinCouncilPrayers(this.memberWriteActor(s, actorId), intention.council_id, `pray for intention ${intentionId}`);
+        this.assertFraternalCouncil(s, intention.council_id, 'pray with the Council Prayer Intentions List');
+        assertPrayerIntentionOpen(intention);
+        const today = toIsoDate(this.now());
+        const prayers = () => s.rows('CouncilPrayerIntentionPrayer') as unknown as CouncilPrayerIntentionPrayer[];
+        if (!prayerTally(intentionId, prayers(), actorId, today).prayedByMeToday) {
+          s.insert('CouncilPrayerIntentionPrayer', { intention_id: intentionId, member_id: actorId, prayed_on: today, created_at: toTimestamp(this.now()) });
+        }
+        return prayerTally(intentionId, prayers(), actorId, today);
+      });
+    },
+
+    closeIntention: async (actorId, intentionId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const row = s.rows('CouncilPrayerIntention').find((r) => r.id === intentionId);
+        const intention = requirePrayerIntention(row as unknown as CouncilPrayerIntention | undefined, intentionId);
+        assertMayClosePrayerIntention(this.memberWriteActor(s, actorId), intention);
+        assertPrayerIntentionOpen(intention);
+        Object.assign(row!, { closed_at: toTimestamp(this.now()), closed_by_member_id: actorId });
+        return { ...row } as unknown as CouncilPrayerIntention;
       });
     },
   };

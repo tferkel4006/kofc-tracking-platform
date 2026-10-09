@@ -1,4 +1,4 @@
-// The GYST Co-Pilot gateway (Sprint 6L Extension 2). SERVER ONLY, like services/server/credentials-vault.ts.
+// The Microsoft Co-Pilot gateway (Sprint 6L Extension 2). SERVER ONLY, like services/server/credentials-vault.ts.
 //
 // Connects the Marketing Factory to the council's own Microsoft Copilot Studio agent through the Bot Framework Direct
 // Line 3.0 API, which the agent's web channel exposes:
@@ -55,7 +55,7 @@ export async function askCopilotStudio(councilId: number, userId: string, prompt
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
   const secret = credentialsVault().reveal(councilId, COPILOT_SECRET_KEY);
-  if (!secret) throw new CopilotGatewayError('The GYST Co-Pilot is not connected for this council. An Admin saves its key on the Credentials Vault page.', 503);
+  if (!secret) throw new CopilotGatewayError('The Microsoft Co-Pilot is not connected for this council. An Admin saves its key on the Credentials Vault page.', 503);
   let endpoint: string;
   try {
     endpoint = resolveDirectLineEndpoint(env.COPILOT_DIRECT_LINE_ENDPOINT);
@@ -111,5 +111,5 @@ export async function askCopilotStudio(councilId: number, userId: string, prompt
     const reply = copilotReplyText(seen, userId, sent.id);
     if (reply) return reply;
   }
-  throw new CopilotGatewayError('The GYST Co-Pilot did not answer in time. Try a shorter request.', 504);
+  throw new CopilotGatewayError('The Microsoft Co-Pilot did not answer in time. Try a shorter request.', 504);
 }

@@ -35,6 +35,7 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
   'member-actions': { href: '/member-actions', label: 'Member Actions Hub', hint: 'My shifts, sign-ups, roster, hours' },
   messages: { href: '/messages', label: 'Council Messages & Alerts', hint: 'Message threads, trade-team messages and alerts' },
   calendar: { href: '/calendar', label: 'Visual Master Calendar', hint: 'Events, shifts and meetings by date' },
+  'faith-center': { href: '/faith-center', label: 'Faith Center', hint: "Today's feast day, the daily Bible verse and the Council Prayer Intentions List" },
   activities: { href: '/activities', label: 'Standalone Activities', hint: 'Standing council activities' },
   members: { href: '/members', label: 'Affiliated Roster', hint: 'Members, types and skills' },
   events: { href: '/events', label: 'Event Planner', hint: 'Events, shifts and councils' },

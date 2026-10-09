@@ -8,7 +8,7 @@
 // Filing: an Admin's flyer goes to the vault's Flyers folder and its file id is recorded in Event.GoogleDriveFlyerFileID
 // (events.setFlyerFile, the event media rule). Everyone may print it or download the HTML file.
 // Audience: Admins, Super Admins and seated officers (canOpenMarketingFactory).
-// Sprint 6L Extension 2: the GYST Co-Pilot box (components/CopilotPrompt) asks the council's Microsoft Copilot Studio agent
+// Sprint 6L Extension 2: the Microsoft Co-Pilot box (components/CopilotPrompt) asks the council's Microsoft Copilot Studio agent
 // for advanced collateral in plain language, alongside the template flyer below.
 import { useMemo, useRef, useState } from 'react';
 import {

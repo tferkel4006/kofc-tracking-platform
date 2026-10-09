@@ -72,6 +72,7 @@ export type PortalArea =
   | 'credentials-vault'
   | 'performance/charts'
   | 'history'
+  | 'faith-center'
   | 'profile';
 
 /** Areas served from a route other than `/${area}`: the budget center lives at /budget (Sprint 5Y-2). */
@@ -556,6 +557,9 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, ten
   // Sprint 6K: every member reads the council's Team Legacy history and records oral history; the annals' keepers are
   // decided inside (assertMayKeepCouncilAnnals).
   areas.push('history');
+  // Sprint 6L Extension 3: every member opens the web Faith Center - the feast day, the daily verse and the Council Prayer
+  // Intentions List. A Knights of Columbus extension, so a white-label tenant loses it (FRATERNAL_AREAS).
+  areas.push('faith-center');
   if (canOpenMarketingFactory(u)) areas.push('resources/marketing');
   return withTenantGate(withFeatureFlags(areas, flags), tenant);
 }
@@ -579,7 +583,7 @@ export interface PortalNavGroup {
  */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
   { id: 'governance', label: 'Governance', items: ['meetings/live', 'meetings/cadence', 'meetings', 'elections', 'elections/appointments', 'governance/bylaws', 'governance/advisor'] },
-  { id: 'faith', label: 'Faith In Action', items: ['activities', 'member-actions', 'events', 'calendar'] },
+  { id: 'faith', label: 'Faith In Action', items: ['activities', 'member-actions', 'events', 'calendar', 'faith-center'] },
   {
     id: 'finances',
     label: 'Finances',

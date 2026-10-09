@@ -1,4 +1,4 @@
-// /api/marketing/copilot - the GYST Co-Pilot (Sprint 6L Extension 2).
+// /api/marketing/copilot - the Microsoft Co-Pilot (Sprint 6L Extension 2).
 //
 //   GET                                              { connected } - whether the council has saved its agent's key
 //   POST { request, councilName, event? }            { reply } - the agent's answer
@@ -55,6 +55,6 @@ export async function POST(req: Request) {
   } catch (err) {
     if (err instanceof CopilotGatewayError) return NextResponse.json({ message: err.message }, { status: err.status });
     console.error('[copilot] request failed:', describeError(err));
-    return NextResponse.json({ message: 'The GYST Co-Pilot failed. Try again later.' }, { status: 502 });
+    return NextResponse.json({ message: 'The Microsoft Co-Pilot failed. Try again later.' }, { status: 502 });
   }
 }

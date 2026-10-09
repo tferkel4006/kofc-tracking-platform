@@ -775,3 +775,22 @@ One journal line a Trustee ticked as matching the bank statement; one row per au
 •	verified_by_member_id (INT, NOT NULL) — Foreign Key references Member(id). The Trustee (or Super Admin) who ticked it.
 •	verified_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was ticked (UTC).
 ________________________________________
+# 23. The Council Prayer Intentions List (Sprint 6L Extension 3)
+Schema version 52. Members ask their brothers to pray for an intention, and each brother taps '[ 🙏 Praying Hands ]' to say he prayed. The list is on the web Faith Center page (/faith-center, the Faith In Action pillar's 'Faith Center' link, beside the feast day banner and the Daily Bible Verse) and on the phone's Home screen under the feast day banner. Any Active member of the council, or an Active Super Admin, reads the list, posts and prays (prayers.getBoard, addIntention, pray; else COUNCIL_ACCESS_DENIED). A Knights of Columbus extension: a white-label council rejects FRATERNAL_EXTENSION_REQUIRED and its members do not see the page or the Home section. Rules: prayers.ts. The CouncilPrayerIntention table blocks deleting its council (RECORD_IN_USE).
+[CouncilPrayerIntention]
+One intention on a council's list. Open while closed_at is NULL; the list shows open intentions, newest first.
+•	id (INT, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	council_id (INT, NOT NULL) — Foreign Key references Council(id). An index on council_id, closed_at.
+•	author_member_id (INT, NOT NULL) — Foreign Key references Member(id). The member who posted it; their name shows with it.
+•	intention_text (VARCHAR(500), NOT NULL) — The intention, trimmed; 1 to 500 characters (PRAYER_INTENTION_MAX_LENGTH, else INVALID_INPUT). Checked by the diary content guard (DIARY_CONTENT_BLOCKED).
+•	created_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was posted (UTC).
+•	closed_at (DATETIME, NULL) — When it was taken off the list (UTC). prayers.closeIntention: the author, an Active officer or Admin of the council, or an Active Super Admin (else PRAYER_INTENTION_CLOSER_REQUIRED). A closed intention keeps its rows; praying for it or closing it again rejects PRAYER_INTENTION_CLOSED.
+•	closed_by_member_id (INT, NULL) — Foreign Key references Member(id). Who closed it.
+[CouncilPrayerIntentionPrayer]
+One tap of the Praying Hands counter. One row per intention, member and day (a unique index on intention_id, member_id, prayed_on): a second tap the same day counts nothing more. The counter shows the intention's row count ('Prayed for 3 times').
+•	id (INT, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	intention_id (INT, NOT NULL) — Foreign Key references CouncilPrayerIntention(id).
+•	member_id (INT, NOT NULL) — Foreign Key references Member(id). The member who prayed.
+•	prayed_on (DATE, NOT NULL) — The driver's local date of the tap.
+•	created_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was tapped (UTC).
+________________________________________

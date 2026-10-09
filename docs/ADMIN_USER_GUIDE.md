@@ -1076,10 +1076,10 @@ A council can use its own Drive private key instead of the server key. A council
 | --- | --- | --- |
 | A council artifact card is missing. | The meeting or the event has no Drive link. | Add the link on the meeting or the event. |
 
-### 8.5 Ask the GYST Co-Pilot for collateral
+### 8.5 Ask the Microsoft Co-Pilot for collateral
 
 > **Prerequisite (who can do this):** You must be a seated officer, a council Admin or a Super Admin. Other members do not see the **Marketing Factory**.
-> **Warning:** the GYST Co-Pilot is an AI service from Microsoft (Copilot Studio). The portal sends your request and the facts of the chosen event to Microsoft.
+> **Warning:** the Microsoft Co-Pilot is an AI service from Microsoft (Copilot Studio). The portal sends your request and the facts of the chosen event to Microsoft.
 
 **Goal:** Get a draft of a notice, a post or other collateral for a council event.
 
@@ -1087,7 +1087,7 @@ A council can use its own Drive private key instead of the server key. A council
 
 **Steps:**
 1. Choose the **Event**.
-2. In **Ask GYST Co-Pilot to Design Advanced Collateral**, type what you need. The limit is 2,000 characters.
+2. In **🤖 Ask Microsoft Co-Pilot to Design Advanced Collateral**, type what you need. The limit is 2,000 characters.
 3. Select **Ask the co-pilot**. The answer can take up to 30 seconds.
 4. Read **The co-pilot's draft**. Check every fact, date and name.
 5. Select **Copy the draft**.
@@ -1097,9 +1097,9 @@ A council can use its own Drive private key instead of the server key. A council
 **Common problems:**
 | Problem | Cause | Fix |
 | --- | --- | --- |
-| *"The GYST Co-Pilot is not connected for this council yet."* | The council has no Co-Pilot key. | Ask a council Admin to save the key (10.8). |
+| *"The Microsoft Co-Pilot is not connected for this council yet."* | The council has no Co-Pilot key. | Ask a council Admin to save the key (10.8). |
 | *"Microsoft refused the saved Co-Pilot key."* | The key was changed or removed in Copilot Studio. | Ask a council Admin to save the new key (10.8). |
-| *"The GYST Co-Pilot did not answer in time."* | The agent took more than 30 seconds. | Type a shorter request. Try again. |
+| *"The Microsoft Co-Pilot did not answer in time."* | The agent took more than 30 seconds. | Type a shorter request. Try again. |
 | **Rewrite in plain, warm words** shows. | The draft uses business jargon. | Edit the words before you use the draft. |
 
 ---
@@ -1330,7 +1330,7 @@ The outbound email settings are not on this page. Set them on the **Credentials 
 | *"Your role cannot maintain this council's lookups."* | You are on another council, or you have no finance role. | Ask a council Admin. |
 | A budget category will not delete. | Budget lines use the category. | Move the lines to another category. |
 
-### 10.8 Connect the council email, Google Drive and GYST Co-Pilot
+### 10.8 Connect the council email, Google Drive and Microsoft Co-Pilot
 
 > **Prerequisite (who can do this):** You must be a council Admin or a Super Admin to save or remove a connection. Seated officers see the status lines only. Other members do not see the **Credentials Vault**.
 > **Warning:** **Remove** deletes the saved password or key at once. The council goes back to the portal default.
@@ -1346,7 +1346,7 @@ The outbound email settings are not on this page. Set them on the **Credentials 
 4. Enter the **Sign-in email** and the **Password**. Use an app password if the service asks for one.
 5. Select **Save**.
 6. For Google Drive, paste the key in **Drive key** in the **Google Drive** panel. Select **Save**.
-7. For the GYST Co-Pilot, paste the Direct Line secret in **Co-Pilot key**. Select **Save**. Copilot Studio shows the secret under Settings → Security → Web channel security.
+7. For the Microsoft Co-Pilot, paste the Direct Line secret in **Co-Pilot key**. Select **Save**. Copilot Studio shows the secret under Settings → Security → Web channel security.
 
 **Expected result:** The status line of each saved connection shows ✓. The page never shows a saved password or key again.
 

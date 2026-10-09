@@ -275,6 +275,12 @@ export function createRemoteDataService(): DataService {
       saveYearAnnals: notImplemented('history.saveYearAnnals'),
       addDiaryEntry: notImplemented('history.addDiaryEntry'),
     },
+    prayers: {
+      getBoard: notImplemented('prayers.getBoard'),
+      addIntention: notImplemented('prayers.addIntention'),
+      pray: notImplemented('prayers.pray'),
+      closeIntention: notImplemented('prayers.closeIntention'),
+    },
     feedback: {
       submit: notImplemented('feedback.submit'),
       listInbox: notImplemented('feedback.listInbox'),

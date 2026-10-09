@@ -262,6 +262,13 @@ import {
   assertMayKeepCouncilAnnals,
   assertMayReadCouncilHistory,
   buildCouncilLegacyMatrix,
+  buildPrayerIntentionBoard,
+  cleanPrayerIntentionText,
+  assertMayJoinCouncilPrayers,
+  assertMayClosePrayerIntention,
+  assertPrayerIntentionOpen,
+  requirePrayerIntention,
+  prayerTally,
   buildYearClosingMetrics,
   composeYearClosingSummary,
   cleanCouncilAnnals,
@@ -541,6 +548,8 @@ import type {
   FraternalYearClosingMetrics,
   YearClosingRows,
   CouncilSpiritualDiary,
+  CouncilPrayerIntention,
+  CouncilPrayerIntentionPrayer,
   OfficerNominations,
   SessionUser,
   Shift,
@@ -628,8 +637,12 @@ const DB_NAME = 'kofc.db';
  * 48: CouncilHistoryAnnals and CouncilSpiritualDiary - the Team Legacy year annals and the one-entry-a-day diary that
  *     carries Oral History Testimonials (Sprint 6K).
  * 49: the Council Historian role seeded - the appointed seat that keeps the history annals (Sprint 6L).
+ * 50: CouncilBudgetForecast.target_spending_ceiling - the saved Target Spending Ceiling (Sprint 6M).
+ * 51: CouncilAudits and AuditVerifiedLines - the Semiannual Trustee Audit Desk (Sprint 6N).
+ * 52: CouncilPrayerIntention and CouncilPrayerIntentionPrayer - the Council Prayer Intentions List and its Praying Hands
+ *     counter (Sprint 6L Extension 3).
  */
-const SCHEMA_VERSION = 51;
+const SCHEMA_VERSION = 52;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -6132,6 +6145,90 @@ export class SqliteDataService implements DataService {
         ).lastInsertRowId;
       });
       return (await db.getFirstAsync<CouncilSpiritualDiary>('SELECT * FROM [CouncilSpiritualDiary] WHERE [id] = ?', [entryId]))!;
+    },
+  };
+
+  prayers: DataService['prayers'] = {
+    getBoard: async (actorId, councilId) => {
+      const db = await this.ready();
+      const actor = await this.memberWriteActor(db, actorId);
+      assertMayJoinCouncilPrayers(actor, councilId, `read the prayer intentions of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      await this.assertFraternalCouncil(db, councilId, 'read the Council Prayer Intentions List');
+      const [intentions, prayers, members] = await Promise.all([
+        db.getAllAsync<CouncilPrayerIntention>('SELECT * FROM [CouncilPrayerIntention] WHERE [council_id] = ? AND [closed_at] IS NULL', [councilId]),
+        db.getAllAsync<CouncilPrayerIntentionPrayer>(
+          `SELECT p.[intention_id], p.[member_id], p.[prayed_on] FROM [CouncilPrayerIntentionPrayer] p
+             JOIN [CouncilPrayerIntention] i ON i.[id] = p.[intention_id]
+            WHERE i.[council_id] = ? AND i.[closed_at] IS NULL`,
+          [councilId],
+        ),
+        db.getAllAsync<Member>(
+          'SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member] WHERE [id] IN (SELECT [author_member_id] FROM [CouncilPrayerIntention] WHERE [council_id] = ?)',
+          [councilId],
+        ),
+      ]);
+      return buildPrayerIntentionBoard({ councilId, intentions, prayers, members, actor, today: toIsoDate(this.now()) });
+    },
+
+    addIntention: async (actorId, councilId, text) => {
+      const clean = cleanPrayerIntentionText(text);
+      const db = await this.ready();
+      let intentionId = 0;
+      await db.withTransactionAsync(async () => {
+        assertMayJoinCouncilPrayers(await this.memberWriteActor(db, actorId), councilId, `post a prayer intention for council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        await this.assertFraternalCouncil(db, councilId, 'post to the Council Prayer Intentions List');
+        intentionId = (
+          await db.runAsync('INSERT INTO [CouncilPrayerIntention] ([council_id], [author_member_id], [intention_text], [created_at]) VALUES (?, ?, ?, ?)', [
+            councilId,
+            actorId,
+            clean,
+            toTimestamp(this.now()),
+          ])
+        ).lastInsertRowId;
+      });
+      return (await db.getFirstAsync<CouncilPrayerIntention>('SELECT * FROM [CouncilPrayerIntention] WHERE [id] = ?', [intentionId]))!;
+    },
+
+    pray: async (actorId, intentionId) => {
+      const db = await this.ready();
+      const today = toIsoDate(this.now());
+      await db.withTransactionAsync(async () => {
+        const intention = requirePrayerIntention(
+          await db.getFirstAsync<CouncilPrayerIntention>('SELECT * FROM [CouncilPrayerIntention] WHERE [id] = ?', [intentionId]),
+          intentionId,
+        );
+        assertMayJoinCouncilPrayers(await this.memberWriteActor(db, actorId), intention.council_id, `pray for intention ${intentionId}`);
+        await this.assertFraternalCouncil(db, intention.council_id, 'pray with the Council Prayer Intentions List');
+        assertPrayerIntentionOpen(intention);
+        // The unique (intention, member, day) index makes a second tap the same day a no-op.
+        await db.runAsync('INSERT OR IGNORE INTO [CouncilPrayerIntentionPrayer] ([intention_id], [member_id], [prayed_on], [created_at]) VALUES (?, ?, ?, ?)', [
+          intentionId,
+          actorId,
+          today,
+          toTimestamp(this.now()),
+        ]);
+      });
+      const prayers = await db.getAllAsync<CouncilPrayerIntentionPrayer>(
+        'SELECT [intention_id], [member_id], [prayed_on] FROM [CouncilPrayerIntentionPrayer] WHERE [intention_id] = ?',
+        [intentionId],
+      );
+      return prayerTally(intentionId, prayers, actorId, today);
+    },
+
+    closeIntention: async (actorId, intentionId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const intention = requirePrayerIntention(
+          await db.getFirstAsync<CouncilPrayerIntention>('SELECT * FROM [CouncilPrayerIntention] WHERE [id] = ?', [intentionId]),
+          intentionId,
+        );
+        assertMayClosePrayerIntention(await this.memberWriteActor(db, actorId), intention);
+        assertPrayerIntentionOpen(intention);
+        await db.runAsync('UPDATE [CouncilPrayerIntention] SET [closed_at] = ?, [closed_by_member_id] = ? WHERE [id] = ?', [toTimestamp(this.now()), actorId, intentionId]);
+      });
+      return (await db.getFirstAsync<CouncilPrayerIntention>('SELECT * FROM [CouncilPrayerIntention] WHERE [id] = ?', [intentionId]))!;
     },
   };
 

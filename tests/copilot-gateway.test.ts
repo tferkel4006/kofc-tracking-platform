@@ -1,4 +1,4 @@
-// Sprint 6L Extension 2: the GYST Co-Pilot - the council's Microsoft Copilot Studio agent reached over Direct Line 3.0,
+// Sprint 6L Extension 2: the Microsoft Co-Pilot - the council's Microsoft Copilot Studio agent reached over Direct Line 3.0,
 // its secret kept in the credentials vault. Microsoft is replaced here by a recorded fake fetch.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -59,7 +59,7 @@ const fast = { sleep: async () => {}, pollMs: 0, timeoutMs: 1000, env: {} };
 describe('co-pilot prompt rules', () => {
   it('keeps the vault key and the prompt box label', () => {
     expect(CREDENTIAL_KEYS).toContain('COPILOT_STUDIO_DIRECT_LINE_SECRET');
-    expect(COPILOT_PROMPT_LABEL).toBe('Ask GYST Co-Pilot to Design Advanced Collateral');
+    expect(COPILOT_PROMPT_LABEL).toBe('🤖 Ask Microsoft Co-Pilot to Design Advanced Collateral');
   });
 
   it('trims the request and refuses an empty or oversized one', () => {

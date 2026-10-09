@@ -2453,3 +2453,66 @@ CREATE UNIQUE INDEX [CouncilAudits_Period_Idx] ON [CouncilAudits] ([council_id],
 GO
 CREATE UNIQUE INDEX [AuditVerifiedLines_Line_Idx] ON [AuditVerifiedLines] ([audit_id], [journal_entry_id]);
 GO
+
+-- =========================================================================
+-- Sprint 6L Extension 3: THE COUNCIL PRAYER INTENTIONS LIST (schema version 52)
+-- CouncilPrayerIntention holds the intentions a council's members ask their brothers to pray for, shown in the Faith
+-- Center on the web portal (/faith-center) and on the phone's Home screen. Any Active member of a Knights of Columbus
+-- council posts one (at most PRAYER_INTENTION_MAX_LENGTH characters, through the diary content guard). closed_at and
+-- closed_by_member_id are set when the author, an officer, an Admin or a Super Admin closes it; a closed intention leaves
+-- the list but keeps its rows. CouncilPrayerIntentionPrayer is one tap of the Praying Hands solidarity counter: one row
+-- per intention, member and day (prayed_on, the member's local date), so a second tap the same day counts nothing more.
+-- The counter shows the intention's total rows. Rules: prayers.ts.
+-- =========================================================================
+CREATE TABLE [CouncilPrayerIntention] (
+	[id] INT NOT NULL IDENTITY,
+	[council_id] INT NOT NULL,
+	[author_member_id] INT NOT NULL,
+	[intention_text] VARCHAR(500) NOT NULL,
+	[created_at] DATETIME NOT NULL DEFAULT getdate(),
+	[closed_at] DATETIME NULL,
+	[closed_by_member_id] INT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [CouncilPrayerIntentionPrayer] (
+	[id] INT NOT NULL IDENTITY,
+	[intention_id] INT NOT NULL,
+	[member_id] INT NOT NULL,
+	[prayed_on] DATE NOT NULL,
+	[created_at] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CouncilPrayerIntention]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilPrayerIntention]
+ADD FOREIGN KEY([author_member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilPrayerIntention]
+ADD FOREIGN KEY([closed_by_member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilPrayerIntentionPrayer]
+ADD FOREIGN KEY([intention_id])
+REFERENCES [CouncilPrayerIntention]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilPrayerIntentionPrayer]
+ADD FOREIGN KEY([member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE INDEX [CouncilPrayerIntention_Council_Idx] ON [CouncilPrayerIntention] ([council_id], [closed_at]);
+GO
+CREATE UNIQUE INDEX [CouncilPrayerIntentionPrayer_Day_Idx] ON [CouncilPrayerIntentionPrayer] ([intention_id], [member_id], [prayed_on]);
+GO

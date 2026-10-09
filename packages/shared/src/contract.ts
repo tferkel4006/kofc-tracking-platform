@@ -94,6 +94,7 @@ import type {
   AuditPeriod,
   AuditTrusteeSignature,
   CouncilAudit,
+  CouncilPrayerIntention,
 } from './types';
 import type { BudgetAlert, BudgetWindowState } from './budget';
 import type { ConcludedBudgetPerformance } from './dues';
@@ -1947,6 +1948,36 @@ export interface CouncilLegacyMatrix {
   currentFraternalYear: string;
 }
 
+// 20c. THE COUNCIL PRAYER INTENTIONS LIST (Sprint 6L Extension 3)
+/** One open intention on the list, as the caller sees it. */
+export interface PrayerIntentionDetail {
+  intention: CouncilPrayerIntention;
+  authorFirstName: string;
+  authorLastName: string;
+  /** Every Praying Hands tap the intention has had: one per member per day. */
+  prayerCount: number;
+  /** The caller already prayed for it today, so another tap counts nothing more. */
+  prayedByMeToday: boolean;
+  /** The caller may close it: its author, an officer or Admin of the council, or a Super Admin. */
+  mayClose: boolean;
+}
+
+/** prayers.getBoard (Sprint 6L Extension 3). */
+export interface PrayerIntentionBoard {
+  councilId: number;
+  /** The council's open intentions, newest first. */
+  intentions: PrayerIntentionDetail[];
+  /** The caller's local date the Praying Hands taps are counted on, YYYY-MM-DD. */
+  today: string;
+}
+
+/** prayers.pray: the intention's counter after the tap. */
+export interface PrayerTally {
+  intentionId: number;
+  prayerCount: number;
+  prayedByMeToday: boolean;
+}
+
 // 21. THE SERVICE
 // 20. SEMIANNUAL TRUSTEE AUDITS AND THE BALANCE SHEET CARD (Sprints 6M / 6N)
 /** One cash line on the Semiannual Trustee Audit Desk. */
@@ -3513,5 +3544,32 @@ export interface DataService {
      * unknown council.
      */
     addDiaryEntry(actorId: number, councilId: number, input: NewDiaryEntryInput): Promise<CouncilSpiritualDiary>;
+  };
+
+  prayers: {
+    /**
+     * The Council Prayer Intentions List (Sprint 6L Extension 3): the council's open intentions, newest first, each with
+     * its author, its Praying Hands count and whether the caller prayed for it today. Any Active member of the council,
+     * or an Active Super Admin (COUNCIL_ACCESS_DENIED). A white-label council rejects FRATERNAL_EXTENSION_REQUIRED.
+     * Rejects INVALID_INPUT for an unknown council.
+     */
+    getBoard(actorId: number, councilId: number): Promise<PrayerIntentionBoard>;
+    /**
+     * Posts an intention under the caller's name. Access as getBoard. Rejects INVALID_INPUT for blank text or text over
+     * PRAYER_INTENTION_MAX_LENGTH characters, and DIARY_CONTENT_BLOCKED for words the diary content guard refuses.
+     */
+    addIntention(actorId: number, councilId: number, text: string): Promise<CouncilPrayerIntention>;
+    /**
+     * One tap of the Praying Hands counter for today. A second tap the same day changes nothing and resolves to the same
+     * tally. Access as getBoard, on the intention's council. Rejects RECORD_NOT_FOUND for an unknown intention and
+     * PRAYER_INTENTION_CLOSED for a closed one.
+     */
+    pray(actorId: number, intentionId: number): Promise<PrayerTally>;
+    /**
+     * Takes an intention off the list (closed_at now). Its author, an Active officer or Admin of its council, or an
+     * Active Super Admin (PRAYER_INTENTION_CLOSER_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects RECORD_NOT_FOUND for an
+     * unknown intention and PRAYER_INTENTION_CLOSED when it is already closed.
+     */
+    closeIntention(actorId: number, intentionId: number): Promise<CouncilPrayerIntention>;
   };
 }

@@ -5676,6 +5676,145 @@ export const TABLES: Record<string, TableMeta> = {
         "journal_entry_id"
       ]
     ]
+  },
+  "CouncilPrayerIntention": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "council_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "author_member_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "intention_text",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "created_at",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      },
+      {
+        "name": "closed_at",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "closed_by_member_id",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "council_id",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "author_member_id",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "closed_by_member_id",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": []
+  },
+  "CouncilPrayerIntentionPrayer": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "intention_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "member_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "prayed_on",
+        "kind": "date",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "created_at",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "now"
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "intention_id",
+        "refTable": "CouncilPrayerIntention",
+        "refColumn": "id"
+      },
+      {
+        "column": "member_id",
+        "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": [
+      [
+        "intention_id",
+        "member_id",
+        "prayed_on"
+      ]
+    ]
   }
 };
 
@@ -9835,6 +9974,23 @@ export const PRESENTATION_SEED_DATA: readonly SeedTable[] = [
         "SpeakerMemberID": null,
         "SpeakerLabel": "Monsignor",
         "ProposedMotionID": null
+      }
+    ]
+  },
+  {
+    "table": "CouncilPrayerIntention",
+    "rows": [
+      {
+        "council_id": 1,
+        "author_member_id": 19,
+        "intention_text": "For the brothers and friends on our prayer list: Dolores Redden, Mark Boshears, Paul Wolf and Paul Della.",
+        "created_at": "2026-10-01 15:00:00"
+      },
+      {
+        "council_id": 1,
+        "author_member_id": 19,
+        "intention_text": "For vocations to the priesthood and religious life in our parish.",
+        "created_at": "2026-10-02 15:00:00"
       }
     ]
   }

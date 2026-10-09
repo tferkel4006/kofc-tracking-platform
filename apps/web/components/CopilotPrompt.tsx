@@ -1,5 +1,5 @@
 'use client';
-// The GYST Co-Pilot prompt box (Sprint 6L Extension 2) on the Marketing Factory: an officer types what they need - a
+// The Microsoft Co-Pilot prompt box (Sprint 6L Extension 2) on the Marketing Factory: an officer types what they need - a
 // flyer headline, a bulletin notice, a social post - and the council's Microsoft Copilot Studio agent writes it from the
 // chosen event's facts (/api/marketing/copilot). The answer is checked with the same jargon scan as the flyer copy and
 // can be copied. Without a saved key the box says so and links Admins to the Credentials Vault.
@@ -69,11 +69,11 @@ export function CopilotPrompt({ event, councilName }: { event: CouncilEvent | un
   const connected = status.data === true;
 
   return (
-    <Panel title="GYST Co-Pilot">
+    <Panel title="Microsoft Co-Pilot">
       <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-3">
         {status.data === false ? (
           <Notice tone="info">
-            The GYST Co-Pilot is not connected for this council yet.{' '}
+            The Microsoft Co-Pilot is not connected for this council yet.{' '}
             {isAdmin(user) ? (
               <Link href="/credentials-vault" className="font-bold underline">
                 Save its key on the Credentials Vault page.

@@ -20,7 +20,6 @@ import {
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { Drawer } from '@/components/Drawer';
-import { FaithCenterMirror } from '@/components/FaithCenterMirror';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Td, Textarea } from '@/components/ui';
 import { formatFullDate, formatMoney, parseNumberField } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -459,7 +458,6 @@ function DonationsWorkspace() {
               />
             ) : null}
           </Panel>
-          <FaithCenterMirror />
         </div>
       </div>
 

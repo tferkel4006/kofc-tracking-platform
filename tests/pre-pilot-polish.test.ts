@@ -99,8 +99,8 @@ describe('donations history and debug buttons', () => {
     expect(page).toContain("'border-[6px] border-gold");
     expect(page).toContain('scrollIntoView(');
     expect(page).toContain('prefers-reduced-motion: reduce');
-    expect(page).toContain('<FaithCenterMirror />');
-    expect(read('apps/web/components/FaithCenterMirror.tsx')).toContain('isFraternalTenant(tenant)');
+    // Sprint 6L Extension 3: the feast day widget moved off the finance screens to the web Faith Center page.
+    expect(page).not.toContain('FaithCenterMirror');
   });
 
   it('shows no engine-feed JSON button anywhere in the portal', () => {

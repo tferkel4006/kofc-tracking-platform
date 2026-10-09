@@ -1,4 +1,4 @@
-// Sprint 6L Extension 2: the GYST Co-Pilot - the Marketing Factory's link to a council's own Microsoft Copilot Studio
+// Sprint 6L Extension 2: the Microsoft Co-Pilot - the Marketing Factory's link to a council's own Microsoft Copilot Studio
 // agent. This file holds the browser-safe half: the prompt rules, the collateral prompt the portal sends, the allowed
 // Direct Line hosts and the reading of the agent's answer. The connection itself is server only
 // (apps/web/services/marketing/copilot-gateway.ts), and the agent's Direct Line secret lives in the credentials vault
@@ -7,7 +7,7 @@ import { BusinessRuleError } from './rules';
 import type { Event } from './types';
 
 /** The prompt box's label on the Marketing Factory. */
-export const COPILOT_PROMPT_LABEL = 'Ask GYST Co-Pilot to Design Advanced Collateral';
+export const COPILOT_PROMPT_LABEL = '🤖 Ask Microsoft Co-Pilot to Design Advanced Collateral';
 
 /** The longest request a member may type (the event facts the portal adds come on top). */
 export const COPILOT_PROMPT_MAX_LENGTH = 2000;
