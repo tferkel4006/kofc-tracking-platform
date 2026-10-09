@@ -47,11 +47,8 @@ describe.each(drivers)('$name driver: lookup maintenance', (d) => {
 
   it('refuses to rename a row to another row’s key', async () => {
     const db = await d.make();
-    const cats = await db.lookups.list('Category');
-    await expectRule(
-      db.lookups.update(MEMBER.superAdmin, 'Category', cats[0].id, { Category: 'service', CategoryDescription: 'dup' }),
-      'INVALID_INPUT',
-    );
+    const degrees = await db.lookups.list('Degree');
+    await expectRule(db.lookups.update(MEMBER.superAdmin, 'Degree', degrees[0].id, { Degree: 'second' }), 'INVALID_INPUT');
   });
 
   it('deletes an unused row, and refuses one still referenced or protected, naming where it is used', async () => {
@@ -60,10 +57,14 @@ describe.each(drivers)('$name driver: lookup maintenance', (d) => {
     await db.lookups.remove(MEMBER.superAdmin, 'Category', fresh.id);
     expect((await db.lookups.list('Category')).some((c) => c.id === fresh.id)).toBe(false);
 
+    const third = (await db.lookups.list('Degree')).find((g) => g.Degree === 'Third')!;
+    const inUse = await expectRule(db.lookups.remove(MEMBER.superAdmin, 'Degree', third.id), 'LOOKUP_IN_USE');
+    expect(inUse.message).toMatch(/Member\.DegreeID/);
+    expect((await db.lookups.list('Degree')).some((g) => g.id === third.id)).toBe(true);
+
+    // Sprint 6L Extension 4: the six fixed categories carry Supreme couplings, so they are protected outright.
     const service = (await db.lookups.list('Category')).find((c) => c.Category === 'Service')!;
-    const inUse = await expectRule(db.lookups.remove(MEMBER.superAdmin, 'Category', service.id), 'LOOKUP_IN_USE');
-    expect(inUse.message).toMatch(/Event\.CategoryID/);
-    expect((await db.lookups.list('Category')).some((c) => c.id === service.id)).toBe(true);
+    await expectRule(db.lookups.remove(MEMBER.superAdmin, 'Category', service.id), 'LOOKUP_PROTECTED');
 
     const active = (await db.lookups.list('MemberStatus')).find((s) => s.Status === 'Active')!;
     await expectRule(db.lookups.remove(MEMBER.superAdmin, 'MemberStatus', active.id), 'LOOKUP_PROTECTED');

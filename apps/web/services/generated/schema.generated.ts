@@ -224,6 +224,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": true,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "SupremeMissionArea",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [],
@@ -782,6 +789,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "CategoryID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -808,6 +822,11 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "MissionAreaID",
         "refTable": "CouncilMissionArea",
+        "refColumn": "id"
+      },
+      {
+        "column": "CategoryID",
+        "refTable": "Category",
         "refColumn": "id"
       }
     ],
@@ -4159,6 +4178,13 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "CategoryID",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -4205,6 +4231,11 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "TargetBudgetLineID",
         "refTable": "CouncilBudgetForecast",
+        "refColumn": "id"
+      },
+      {
+        "column": "CategoryID",
+        "refTable": "Category",
         "refColumn": "id"
       }
     ],
@@ -5825,27 +5856,33 @@ export const SEED_DATA: readonly SeedTable[] = [
     "rows": [
       {
         "Category": "Fellowship",
-        "CategoryDescription": "Social Knights events"
+        "CategoryDescription": "Social Knights events",
+        "SupremeMissionArea": "Family"
       },
       {
         "Category": "Service",
-        "CategoryDescription": "Providing help to parish, parishioners or community"
+        "CategoryDescription": "Providing help to parish, parishioners or community",
+        "SupremeMissionArea": "Community"
       },
       {
         "Category": "Faith Building",
-        "CategoryDescription": "Events focussed on increasing the faith or Knights and/or parishioners"
+        "CategoryDescription": "Events focussed on increasing the faith or Knights and/or parishioners",
+        "SupremeMissionArea": "Faith"
       },
       {
         "Category": "Parish Community",
-        "CategoryDescription": "Events that involve parishioners in getting to know each other better or contributing to the parish"
+        "CategoryDescription": "Events that involve parishioners in getting to know each other better or contributing to the parish",
+        "SupremeMissionArea": "Community"
       },
       {
         "Category": "Fundraising",
-        "CategoryDescription": "Generating income/donations for Knights council or parish"
+        "CategoryDescription": "Generating income/donations for Knights council or parish",
+        "SupremeMissionArea": "Community"
       },
       {
         "Category": "Evangelization",
-        "CategoryDescription": "Promoting Catholic faith to non-Catholics"
+        "CategoryDescription": "Promoting Catholic faith to non-Catholics",
+        "SupremeMissionArea": "Faith"
       }
     ]
   },

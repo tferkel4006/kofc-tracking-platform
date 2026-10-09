@@ -1061,7 +1061,8 @@ export interface CharityDisbursementResult {
  * Shepherd is the caller, RequestStatus starts 'Submitted' and VoteStatus 'Pending'. Blank optional text is stored as
  * NULL. RelationshipTypeID must be one of the council's CouncilRelationshipType rows and MissionAreaID (Sprint 5Z-2) one
  * of its CouncilMissionArea rows; EIN is folded to 'NN-NNNNNNN'; FundsNeededBy is a YYYY-MM-DD date; RequestTier is 1
- * to CHARITABLE_REQUEST_MAX_TIER (default 1).
+ * to CHARITABLE_REQUEST_MAX_TIER (default 1). Sprint 6L Extension 4: CategoryID names a local Category; when given, the
+ * stored MissionAreaID is the council's area coupled to it (councilMissionAreaForCategory), whatever MissionAreaID says.
  */
 export interface NewCharitableRequest {
   OrganizationName: string;
@@ -1072,6 +1073,7 @@ export interface NewCharitableRequest {
   MailingAddress?: string | null;
   RelationshipTypeID?: number | null;
   MissionAreaID?: number | null;
+  CategoryID?: number | null;
   Is501c3?: boolean | null;
   EIN?: string | null;
   Website?: string | null;
@@ -2692,7 +2694,8 @@ export interface DataService {
     /**
      * OwnerID, when given, must name a member, and MeetingTypeID one of the council's own CouncilMeetingType rows
      * (INVALID_INPUT). A multi-day meeting (IsMultiDay 1) needs an EndDate after its Date and is stored with no clock
-     * times (cleanMeetingSpan); a one-day meeting may not carry an EndDate (INVALID_INPUT).
+     * times (cleanMeetingSpan); a one-day meeting may not carry an EndDate (INVALID_INPUT). CategoryID (Sprint 6L
+     * Extension 4), when given, must name a Category (INVALID_INPUT).
      */
     create(meeting: NewMeeting, invite?: MeetingInviteMode): Promise<Meeting>;
     listInvites(meetingId: number): Promise<MeetingInvites[]>;
@@ -3145,8 +3148,8 @@ export interface DataService {
      * A Knight Shepherd files a completed intake form into the shared queue of their own council: RequestStatus
      * 'Submitted', ShepherdMemberID = actorId, VoteStatus 'Pending', AmountApproved 0.00, SubmittedAt now. Any Active
      * member (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for a missing organization name, an amount of 0 or with
-     * fractions of a cent, a bad EIN, email or tier, an unknown field or a RelationshipTypeID or MissionAreaID outside
-     * the council;
+     * fractions of a cent, a bad EIN, email or tier, an unknown field, a RelationshipTypeID or MissionAreaID outside
+     * the council, or a CategoryID that names no Category (Sprint 6L Extension 4: a CategoryID sets MissionAreaID);
      * INVALID_DATE for a malformed FundsNeededBy.
      */
     submitCharitableRequest(actorId: number, requestData: NewCharitableRequest): Promise<CharitableRequestDetail>;

@@ -12,6 +12,9 @@
 // Sprint 5Z-6: a meeting's detail shows its Proposed Motions (ProposedMotionsSection) and, for a cadence meeting whose
 // invitations are still held back by the drip release, the day they reach members' feeds. Cadences live at
 // /meetings/cadence (Cadence Engine).
+//
+// Sprint 6L Extension 4: the schedule form files the meeting under a Local Category (Meeting.CategoryID) and shows that
+// category's fixed Supreme Mission Area as a read-only badge.
 import { useEffect, useRef, useState } from 'react';
 import {
   canLinkMeetingDrive,
@@ -35,6 +38,7 @@ import {
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { DriveButtons, DriveLinkEditor } from '@/components/DriveLinks';
+import { LocalCategoryField } from '@/components/MissionCategoryParts';
 import { ProposedMotionsSection } from '@/components/MotionParts';
 import { Button, cx, Empty, Field, Input, NewMemberBadge, Notice, PageTitle, Panel, Pill, Select, Table, Td, Textarea } from '@/components/ui';
 import { minutesFileName } from '@/lib/format';
@@ -92,6 +96,8 @@ function NewMeetingForm({
   const user = useUser();
   const { message, setMessage, run } = useAction();
   const members = useLoad(() => db.members.listByCouncil(councilId, { activeOnly: true }), [councilId]);
+  const categories = useLoad(() => db.lookups.list('Category'), []);
+  const [categoryId, setCategoryId] = useState<number | null>(null);
   const [name, setName] = useState('');
   // A council with its own meeting types files the meeting under one (MeetingTypeID); otherwise the global types.
   const useCouncilTypes = councilTypes.length > 0;
@@ -167,6 +173,7 @@ function NewMeetingForm({
         MeetingType: globalType,
         MeetingTypeID: councilType?.id ?? null,
         OwnerID: ownerId,
+        CategoryID: categoryId,
       };
       if (description.trim() !== '') meeting['Meeting Description'] = description.trim();
       if (agenda.trim() !== '') meeting.Agenda = agenda.trim();
@@ -210,6 +217,7 @@ function NewMeetingForm({
             )
           }
         </Field>
+        <LocalCategoryField className="col-span-2" categories={categories.data ?? []} value={categoryId} onChange={setCategoryId} />
         <Field label="Location">{(id) => <Input id={id} value={location} maxLength={255} onChange={(e) => setLocation(e.target.value)} required />}</Field>
         <Field label={multiDay ? 'Start date' : 'Date'}>{(id) => <Input id={id} type="date" value={date} onChange={(e) => setDate(e.target.value)} required />}</Field>
         <label className="flex items-center gap-2 self-end pb-2 text-sm">

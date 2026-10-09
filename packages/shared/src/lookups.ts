@@ -8,6 +8,7 @@
 import type { CouncilLookupTableName, LookupTableName, LookupValues } from './contract';
 import { OFFICE_ROLE_NAMES } from './elections';
 import { cleanBudgetCategory } from './budget';
+import { FIXED_CATEGORY_NAMES } from './mission-categories';
 import { cleanActivity, cleanCouncilDonationMethod, cleanDonationType, RECORD_LABELS } from './maintenance';
 import { assertInteger, assertText, BusinessRuleError } from './rules';
 
@@ -93,8 +94,10 @@ export const LOOKUP_META: Record<LookupTableName, LookupTableMeta> = {
     references: [
       { table: 'Event', column: 'CategoryID' },
       { table: 'Activities', column: 'CategoryID' },
+      { table: 'Meeting', column: 'CategoryID' },
+      { table: 'CharitableRequest', column: 'CategoryID' },
     ],
-    protectedValues: [],
+    protectedValues: FIXED_CATEGORY_NAMES, // Sprint 6L Extension 4: the six fixed categories carry Supreme couplings
   },
   NoShowReason: {
     label: 'No-Show Reason',

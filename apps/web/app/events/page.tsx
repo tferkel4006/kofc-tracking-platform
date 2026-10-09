@@ -4,6 +4,7 @@
 // action. Admins plan for their own council, Super Admins pick any council.
 // Sprint 6I: the manual Budget field is gone with Event.Budget (schema 47); an event's budget is its line in the
 // council's annual budget (/budget).
+// Sprint 6L Extension 4: the Local Category picker shows the category's fixed Supreme Mission Area as a read-only badge.
 import { useState } from 'react';
 import {
   describeError,
@@ -22,6 +23,7 @@ import {
   type Shift,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
+import { LocalCategoryField } from '@/components/MissionCategoryParts';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Table, Td, Textarea } from '@/components/ui';
 import { parseNumberField, toField } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -172,17 +174,7 @@ function EventForm({
         <Field label="Location" className="col-span-2">
           {(id) => <Input id={id} value={location} maxLength={255} onChange={(e) => setLocation(e.target.value)} required />}
         </Field>
-        <Field label="Category">
-          {(id) => (
-            <Select id={id} value={categoryId} onChange={(e) => setCategoryId(Number(e.target.value))}>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.Category}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
+        <LocalCategoryField className="col-span-2" categories={categories} value={categoryId} required onChange={(id) => setCategoryId(id ?? 0)} />
         <Field label="Owner" hint="The owner may also record the post-event results.">
           {(id) => (
             <Select id={id} value={ownerId} onChange={(e) => setOwnerId(Number(e.target.value))}>

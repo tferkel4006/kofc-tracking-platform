@@ -106,7 +106,7 @@ describe('schema 52 and the screens', () => {
   it('declares both tables, the one-tap-a-day index and the council delete guard', () => {
     expect(Object.keys(TABLES)).toEqual(expect.arrayContaining(['CouncilPrayerIntention', 'CouncilPrayerIntentionPrayer']));
     expect(read('Schema.sql')).toContain('CREATE UNIQUE INDEX [CouncilPrayerIntentionPrayer_Day_Idx] ON [CouncilPrayerIntentionPrayer] ([intention_id], [member_id], [prayed_on]);');
-    expect(read('apps/mobile/services/drivers/sqlite.ts')).toContain('const SCHEMA_VERSION = 52;');
+    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = (5[2-9]|[6-9]\d);/);
     expect(RECORD_REFERENCES.Council).toContainEqual({ table: 'CouncilPrayerIntention', column: 'council_id', noun: ['prayer intention', 'prayer intentions'] });
   });
 

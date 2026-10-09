@@ -200,6 +200,8 @@ import {
   assertIndependentVetter,
   assertCouncilRelationshipType,
   assertCouncilMissionArea,
+  assertCategoryExists,
+  councilMissionAreaForCategory,
   assertCouncilBudgetLine,
   buildMissionAreaFootprint,
   buildCharitableRequestDetails,
@@ -3585,7 +3587,10 @@ export class MemoryDataService implements DataService {
     const span = cleanMeetingSpan(m);
     const meetingTypeId = m.MeetingTypeID ?? null;
     if (meetingTypeId !== null) this.requireCouncilMeetingType(this.store, m.CouncilID, meetingTypeId);
+    const categoryId = m.CategoryID ?? null;
+    assertCategoryExists(categoryId, this.store.rows('Category') as unknown as Category[]);
     const row = this.store.insert('Meeting', {
+      CategoryID: categoryId,
       OwnerID: ownerId,
       CouncilID: m.CouncilID,
       'Meeting Name': m['Meeting Name'],
@@ -4344,7 +4349,12 @@ export class MemoryDataService implements DataService {
         const actor = this.memberWriteActor(s, actorId);
         assertMayProposeCharityGift(actor, actor.councilId, 'submit a charitable request');
         assertCouncilRelationshipType(clean.RelationshipTypeID, this.relationshipTypes(s, actor.councilId), actor.councilId);
-        assertCouncilMissionArea(clean.MissionAreaID, s.rows('CouncilMissionArea') as unknown as CouncilMissionArea[], actor.councilId);
+        const areas = s.rows('CouncilMissionArea') as unknown as CouncilMissionArea[];
+        assertCouncilMissionArea(clean.MissionAreaID, areas, actor.councilId);
+        const categories = s.rows('Category') as unknown as Category[];
+        assertCategoryExists(clean.CategoryID, categories);
+        // Sprint 6L Extension 4: a local category fixes the mission area; the caller cannot override it.
+        if (clean.CategoryID != null) clean.MissionAreaID = councilMissionAreaForCategory(clean.CategoryID, categories, areas, actor.councilId);
         return s.insert('CharitableRequest', {
           ...rowValues(CHARITABLE_REQUEST_FORM_COLUMNS, clean),
           CouncilID: actor.councilId,

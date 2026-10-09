@@ -202,6 +202,8 @@ import {
   assertIndependentVetter,
   assertCouncilRelationshipType,
   assertCouncilMissionArea,
+  assertCategoryExists,
+  councilMissionAreaForCategory,
   assertCouncilBudgetLine,
   buildMissionAreaFootprint,
   buildCharitableRequestDetails,
@@ -641,8 +643,10 @@ const DB_NAME = 'kofc.db';
  * 51: CouncilAudits and AuditVerifiedLines - the Semiannual Trustee Audit Desk (Sprint 6N).
  * 52: CouncilPrayerIntention and CouncilPrayerIntentionPrayer - the Council Prayer Intentions List and its Praying Hands
  *     counter (Sprint 6L Extension 3).
+ * 53: Category.SupremeMissionArea seeded for the six fixed categories, plus Meeting.CategoryID and
+ *     CharitableRequest.CategoryID - the read-only Supreme Mission Area badge on the entry forms (Sprint 6L Extension 4).
  */
-const SCHEMA_VERSION = 52;
+const SCHEMA_VERSION = 53;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -4166,11 +4170,13 @@ export class SqliteDataService implements DataService {
     const span = cleanMeetingSpan(m);
     const meetingTypeId = m.MeetingTypeID ?? null;
     if (meetingTypeId !== null) await this.requireCouncilMeetingType(db, m.CouncilID, meetingTypeId);
+    const categoryId = m.CategoryID ?? null;
+    if (categoryId !== null) assertCategoryExists(categoryId, await db.getAllAsync<Category>('SELECT [id] FROM [Category] WHERE [id] = ?', [categoryId]));
     const res = await db.runAsync(
       `INSERT INTO [Meeting] ([CouncilID], [Meeting Name], [Meeting Description], [Date],
                               [Time Start], [Time End], [Location], [Agenda], [MinutesURL], [MeetingType], [OwnerID],
-                              [IsMultiDay], [EndDate], [MeetingTypeID], [InviteReleaseDate])
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                              [IsMultiDay], [EndDate], [MeetingTypeID], [InviteReleaseDate], [CategoryID])
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         m.CouncilID,
         m['Meeting Name'],
@@ -4187,6 +4193,7 @@ export class SqliteDataService implements DataService {
         span.EndDate,
         meetingTypeId,
         m.InviteReleaseDate == null ? null : assertIsoDate(m.InviteReleaseDate, 'Invitation release date'),
+        categoryId,
       ],
     );
     const meetingId = res.lastInsertRowId;
@@ -5048,11 +5055,12 @@ export class SqliteDataService implements DataService {
         const actor = await this.memberWriteActor(db, actorId);
         assertMayProposeCharityGift(actor, actor.councilId, 'submit a charitable request');
         assertCouncilRelationshipType(clean.RelationshipTypeID, await this.relationshipTypes(db, actor.councilId), actor.councilId);
-        assertCouncilMissionArea(
-          clean.MissionAreaID,
-          await db.getAllAsync<CouncilMissionArea>('SELECT * FROM [CouncilMissionArea] WHERE [CouncilID] = ?', [actor.councilId]),
-          actor.councilId,
-        );
+        const areas = await db.getAllAsync<CouncilMissionArea>('SELECT * FROM [CouncilMissionArea] WHERE [CouncilID] = ?', [actor.councilId]);
+        assertCouncilMissionArea(clean.MissionAreaID, areas, actor.councilId);
+        const categories = await db.getAllAsync<Category>('SELECT * FROM [Category]');
+        assertCategoryExists(clean.CategoryID, categories);
+        // Sprint 6L Extension 4: a local category fixes the mission area; the caller cannot override it.
+        if (clean.CategoryID != null) clean.MissionAreaID = councilMissionAreaForCategory(clean.CategoryID, categories, areas, actor.councilId);
         const columns = [...CHARITABLE_REQUEST_FORM_COLUMNS, 'CouncilID', 'ShepherdMemberID', 'RequestStatus', 'SubmittedAt', 'VoteStatus', 'AmountApproved'];
         const result = await db.runAsync(
           `INSERT INTO [CharitableRequest] (${columns.map((c) => `[${c}]`).join(', ')}) VALUES (${marks(columns.length)})`,

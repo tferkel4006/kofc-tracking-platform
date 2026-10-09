@@ -2516,3 +2516,30 @@ CREATE INDEX [CouncilPrayerIntention_Council_Idx] ON [CouncilPrayerIntention] ([
 GO
 CREATE UNIQUE INDEX [CouncilPrayerIntentionPrayer_Day_Idx] ON [CouncilPrayerIntentionPrayer] ([intention_id], [member_id], [prayed_on]);
 GO
+
+-- =========================================================================
+-- Sprint 6L Extension 4: FIXED CATEGORY TO SUPREME MISSION AREA COUPLING (schema version 53)
+-- Category.SupremeMissionArea is the Supreme Faith in Action mission area (Faith, Family, Community or Life) each of the
+-- six fixed local categories counts toward. It is seed data only: no form, lookup grid or driver method writes it, and
+-- the entry forms show it as a read-only badge beside the Local Category picker, with no way to override it. A category
+-- a Super Admin adds later carries NULL (no coupling). Meeting.CategoryID and CharitableRequest.CategoryID file a
+-- meeting or a grant request under one local category (NULL while unfiled); a grant request's MissionAreaID follows
+-- its category's coupling to the council's CouncilMissionArea of the same name. Rules: mission-categories.ts.
+-- =========================================================================
+ALTER TABLE [Category] ADD [SupremeMissionArea] VARCHAR(20) NULL;
+GO
+ALTER TABLE [Meeting] ADD [CategoryID] INTEGER NULL;
+GO
+ALTER TABLE [CharitableRequest] ADD [CategoryID] INTEGER NULL;
+GO
+
+ALTER TABLE [Meeting]
+ADD FOREIGN KEY([CategoryID])
+REFERENCES [Category]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CharitableRequest]
+ADD FOREIGN KEY([CategoryID])
+REFERENCES [Category]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO

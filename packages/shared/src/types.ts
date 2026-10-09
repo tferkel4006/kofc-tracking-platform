@@ -41,6 +41,8 @@ export interface Category {
   id: number;
   Category: string;
   CategoryDescription: string;
+  /** VARCHAR(20) (Sprint 6L Extension 4): the fixed Supreme mission area the category counts toward; seed data only. */
+  SupremeMissionArea?: string | null;
 }
 
 export interface LessonsLearnedCategory {
@@ -337,6 +339,8 @@ export interface Meeting {
   EndDate?: string | null;
   /** The council mission area (CouncilMissionArea, Sprint 5Z-1) the meeting is filed under; null while unfiled. */
   MissionAreaID?: number | null;
+  /** The local Category (Sprint 6L Extension 4) the meeting is filed under; null while unfiled. */
+  CategoryID?: number | null;
   /**
    * DATE (Sprint 5Z-6): the day the meeting's invitations reach members' own feeds (drip release); null when released
    * at once. populateAnnualCadence sets it CADENCE_INVITE_LEAD_DAYS before Date.
@@ -916,7 +920,8 @@ export interface CharitableRequest {
   VoteStatus: CharitableRequestVoteStatus;
   AmountApproved: number; // DECIMAL(18,2); 0.00 until the council votes
   PaymentOrderId?: number | null; // the CharitableDisbursementLedger check that paid it
-  MissionAreaID?: number | null; // Sprint 5Z-2: CouncilMissionArea of the same council, chosen on the intake form
+  MissionAreaID?: number | null; // Sprint 5Z-2: CouncilMissionArea of the same council; since Sprint 6L Ext 4 it follows CategoryID's coupling
+  CategoryID?: number | null; // Sprint 6L Extension 4: the local Category the request is filed under
   TargetBudgetLineID?: number | null; // Sprint 5Z-2: the CouncilBudgetForecast line the vetter would pay it from
 }
 

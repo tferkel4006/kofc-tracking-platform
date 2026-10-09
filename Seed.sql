@@ -4,14 +4,15 @@
 -- =========================================================================
 
 -- 1. Category Data Load 
-INSERT INTO [Category] ([Category], [CategoryDescription])
+-- Sprint 6L Extension 4: SupremeMissionArea is each category's fixed Supreme mission area (FIXED_CATEGORY_MISSION_AREAS).
+INSERT INTO [Category] ([Category], [CategoryDescription], [SupremeMissionArea])
 VALUES
-('Fellowship', 'Social Knights events'),
-('Service', 'Providing help to parish, parishioners or community'),
-('Faith Building', 'Events focussed on increasing the faith or Knights and/or parishioners'),
-('Parish Community', 'Events that involve parishioners in getting to know each other better or contributing to the parish'),
-('Fundraising', 'Generating income/donations for Knights council or parish'),
-('Evangelization', 'Promoting Catholic faith to non-Catholics');
+('Fellowship', 'Social Knights events', 'Family'),
+('Service', 'Providing help to parish, parishioners or community', 'Community'),
+('Faith Building', 'Events focussed on increasing the faith or Knights and/or parishioners', 'Faith'),
+('Parish Community', 'Events that involve parishioners in getting to know each other better or contributing to the parish', 'Community'),
+('Fundraising', 'Generating income/donations for Knights council or parish', 'Community'),
+('Evangelization', 'Promoting Catholic faith to non-Catholics', 'Faith');
 GO
 
 -- 2. Degree Data Load 

@@ -794,3 +794,12 @@ One tap of the Praying Hands counter. One row per intention, member and day (a u
 •	prayed_on (DATE, NOT NULL) — The driver's local date of the tap.
 •	created_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was tapped (UTC).
 ________________________________________
+# 24. Fixed Categories and Supreme Mission Area Couplings (Sprint 6L Extension 4)
+Schema version 53. The six fixed local categories each count toward one Supreme Faith in Action mission area. The web event, meeting and Propose Charity Grant forms show a 'Local Category' dropdown; choosing a category shows its Supreme Mission Area as a bold read-only badge (MissionCategoryParts.tsx). No form, lookup grid field or driver method writes the coupling, and no form offers a way to override it. The six fixed categories are protected in the System Lookup grid (LOOKUP_PROTECTED on rename or delete). Rules: mission-categories.ts.
+[Category] (added column)
+•	SupremeMissionArea (VARCHAR(20), NULL) — Seed data only: Fellowship → Family, Service → Community, Faith Building → Faith, Parish Community → Community, Fundraising → Community, Evangelization → Faith. A category a Super Admin adds later is NULL (badge: 'No Supreme coupling').
+[Meeting] (added column)
+•	CategoryID (INT, NULL) — Foreign Key references Category(id). The meeting's local category; NULL while unfiled. An unknown id rejects INVALID_INPUT.
+[CharitableRequest] (added column)
+•	CategoryID (INT, NULL) — Foreign Key references Category(id). The request's local category; NULL while unfiled. When given, MissionAreaID is set to the council's CouncilMissionArea whose name matches the category's coupling (NULL when none matches), whatever MissionAreaID the caller sent. The form's manual Mission area dropdown is gone.
+________________________________________
