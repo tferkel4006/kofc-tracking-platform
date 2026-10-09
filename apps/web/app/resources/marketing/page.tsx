@@ -8,6 +8,8 @@
 // Filing: an Admin's flyer goes to the vault's Flyers folder and its file id is recorded in Event.GoogleDriveFlyerFileID
 // (events.setFlyerFile, the event media rule). Everyone may print it or download the HTML file.
 // Audience: Admins, Super Admins and seated officers (canOpenMarketingFactory).
+// Sprint 6L Extension 2: the GYST Co-Pilot box (components/CopilotPrompt) asks the council's Microsoft Copilot Studio agent
+// for advanced collateral in plain language, alongside the template flyer below.
 import { useMemo, useRef, useState } from 'react';
 import {
   buildFlyerHtml,
@@ -36,6 +38,7 @@ import {
   type FlyerCopy,
   type FlyerFacts,
 } from '@kofc/shared';
+import { CopilotPrompt } from '@/components/CopilotPrompt';
 import { RequireArea } from '@/components/CouncilScope';
 import { Button, cx, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Select, Textarea } from '@/components/ui';
 import { photoSrc } from '@/lib/media';
@@ -319,6 +322,7 @@ function MarketingFactory() {
             </div>
           ) : null}
         </section>
+        {data.data ? <CopilotPrompt event={event} councilName={data.data.council ? data.data.council.CouncilName : ''} /> : null}
         {data.data && events.length === 0 ? <Empty>The council has no events yet. Plan one on the Events page first.</Empty> : null}
         {event && data.data ? (
           <Studio

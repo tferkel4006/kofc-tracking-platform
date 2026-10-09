@@ -6,7 +6,8 @@
 //
 // Every answer is { credentials: CredentialStatus[] }: the key, when it was saved and REDACTED_SECRET. A value goes in
 // once and never comes back out, plain or sealed. SMTP_OUTBOUND_PASSWORD is saved with its host and username through
-// /api/councils/email-gateway instead, so it is refused here; GOOGLE_DRIVE_PRIVATE_KEY is the key this route writes.
+// /api/councils/email-gateway instead, so it is refused here; GOOGLE_DRIVE_PRIVATE_KEY and (Sprint 6L Extension 2)
+// COPILOT_STUDIO_DIRECT_LINE_SECRET are the keys this route writes.
 //
 // Only the portal session of an Active Admin of that council or an Active Super Admin may (401 without a session, 403
 // otherwise) - the assertMayMaintainCouncilRecords rule of the email gateway.

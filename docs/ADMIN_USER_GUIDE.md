@@ -93,13 +93,13 @@ The rule includes the five officer desks: **Live Meeting Console**, **Annual Cad
 
 | Pillar | Links, in sidebar order | Main audience |
 | --- | --- | --- |
-| **Governance** | Live Meeting Console, Annual Cadence Manager, Meeting Center, Council Officer Nominations, Appointed Leadership Matrix, Constitutional Bylaws | Officers, the GK, Admins |
+| **Governance** | Live Meeting Console, Annual Cadence Manager, Meeting Center, Council Officer Nominations, Appointed Leadership Matrix, Constitutional Bylaws, Constitutional Advisor | Officers, the GK, Admins. The Constitutional Advisor shows to officers, Admins and Super Admins only. |
 | **Faith In Action** | Standalone Activities, Member Actions Hub, Event Planner, Visual Master Calendar | Admins plan. Members volunteer. |
-| **Finances** | General Ledger Spreadsheet, Balance Sheet, Financial Dashboard, My Expense Reports, Leadership Auditing Queue, Bulk Check Disbursements, FS Expense Audit, GK Expense Authorize, Charity Vetting Queue, Propose Charity Grant, Charitable Disbursements Ledger, Recorded Donations History, Annual Budget Projections | Finance officers, the GK, Admins |
+| **Finances** | General Ledger Spreadsheet, Balance Sheet, Financial Dashboard, My Expense Reports, Leadership Auditing Queue, Bulk Check Disbursements, FS Expense Audit, GK Expense Authorize, Charity Vetting Queue, Propose Charity Grant, Charitable Disbursements Ledger, Donations History, Annual Budget Projections | Finance officers, the GK, Admins |
 | **Performance** | Executive Dashboard, Growth & Hours Charts, Post-event Ledger, Lessons Registry | Seated officers, Admins |
-| **Resources** | Fraternal Photo Gallery, Bulletins, 📂 Council Archive Vault | Every member. The vault link shows to officers and Admins only. |
+| **Resources** | Fraternal Photo Gallery, Council Artifacts, Marketing Factory, 📂 Council Archive Vault | Every member. The Marketing Factory and the vault link show to officers and Admins only. |
 | **Answers** | Online Help Center, SOP Center | Every member |
-| **Setup** | Councils, Affiliated Roster, Supreme Council Sync, Council Lookup Tables, Global Charities Registry, Global Governance Matrices, Parish & Pastors Linkage | Admins, finance officers, Super Admins |
+| **Setup** | Councils, Affiliated Roster, Supreme Council Sync, Council Lookup Tables, Credentials Vault, Global Charities Registry, Global Governance Matrices, Parish & Pastors Linkage | Admins, finance officers, Super Admins. The Credentials Vault shows to officers, Admins and Super Admins only. |
 
 Three pages open from the header, not from the sidebar.
 
@@ -118,7 +118,7 @@ Each council row has five on/off columns. Each column is a module feature flag. 
 | Flag column | Label on the Councils page | Web pages hidden when off | Phone tab hidden when off |
 | --- | --- | --- | --- |
 | `flag_mobile_elections` | **Officer elections** | Council Officer Nominations, Appointed Leadership Matrix | None |
-| `flag_fundraising_inflow` | **Fundraising inflow** | Recorded Donations History | **Donate** |
+| `flag_fundraising_inflow` | **Fundraising inflow** | Donations History | **Donate** |
 | `flag_charity_proposals` | **Charity proposals** | Propose Charity Grant, Charity Vetting Queue | None |
 | `flag_complex_shifts` | **Event shifts** | Event Planner, the shift tabs of Member Actions Hub | **Signup**, and the shift mode of **Report** |
 | `flag_meeting_management` | **Meeting management** | Meeting Center, Annual Cadence Manager, Live Meeting Console | **Mtgs** |
@@ -350,8 +350,8 @@ The vault holds one bylaws document per council. Every member of the council rea
 - The vault also stores the save time in `BylawsUpdatedAt`.
 - A line that starts with `# ` starts an article. A line that starts with `## ` starts a section.
 - The vault splits the text into clauses. The clause id `A2.S3` means article 2, section 3. The id `A0` holds text before the first article.
-- The **Parliamentary engine feed** panel lists every clause. **Show the engine feed as JSON** shows the same feed as JSON data in format `kofc.bylaws/v1`.
-- The parliamentary engines read the JSON feed. A motion or a ruling cites a clause by the clause id.
+- The **Parliamentary engine feed** panel lists every clause with its id, heading and word count.
+- The parliamentary engines read the same clauses. A motion or a ruling cites a clause by the clause id.
 
 ### 4.9 Edit the council bylaws
 
@@ -747,7 +747,7 @@ Seated officers and Admins read the three pages. Only the FS, the Treasurer and 
 
 **Goal:** Keep the council's donation records complete.
 
-**Start point:** Sidebar → Finances → **Recorded Donations History**.
+**Start point:** Sidebar → Finances → **Donations History**.
 
 **Steps:**
 1. Choose the **Method**, the **Type** and the **Amount**. For items, enter **Estimated value ($)**.
@@ -756,10 +756,12 @@ Seated officers and Admins read the three pages. Only the FS, the Treasurer and 
 4. Save.
 
 <!-- KEEP_IMAGE: recorded donations history capture -->
-![Recorded Donations History (/donations)](../generated/dashboard_visual_catalog/donations.png)
+![Donations History (/donations)](../generated/dashboard_visual_catalog/donations.png)
 <!-- /KEEP_IMAGE -->
 
-**Expected result:** The donation shows under **Event donations** or **Standalone donations**.
+**Expected result:** The donation shows under **Event donations** or **Standalone donations**. An event card with cash or electronic donations shows **✓ Automatically Logged to Treasury Ledger**.
+
+To see the donations of one event, select its card. The card gets a thick gold border. The page scrolls down to the list of donations for that event.
 
 **Common problems:**
 | Problem | Cause | Fix |
@@ -1024,6 +1026,8 @@ The vault follows five rules.
 
 **Expected result:** A new Admin upload creates a file under `Fraternal Enterprise Suite`.
 
+A council can use its own Drive private key instead of the server key. A council Admin saves the key on the **Credentials Vault** page (10.8).
+
 **Common problems:**
 | Problem | Cause | Fix |
 | --- | --- | --- |
@@ -1048,29 +1052,55 @@ The vault follows five rules.
 | --- | --- | --- |
 | Google Drive refuses access. | Drive sharing settings decide who opens the folder. | Ask the folder owner to share the folder with you. |
 
-### 8.4 Share photos and bulletins
+### 8.4 Share photos and council artifacts
 
 > **Prerequisite (who can do this):** You must be a signed-in member to read both pages. You must be an Admin or a Super Admin to upload to the gallery vault.
 
 **Goal:** Publish event photos, flyers and minutes for the council.
 
-**Start point:** Sidebar → Resources → **Fraternal Photo Gallery** or **Bulletins**.
+**Start point:** Sidebar → Resources → **Fraternal Photo Gallery** or **Council Artifacts**.
 
 **Steps:**
 1. In the gallery, choose the **Event**.
 2. Drag photos onto **Drag and drop photos here**.
-3. In **Bulletins**, filter the cards with **Show**.
+3. In **Council Artifacts**, filter the cards with **Show**.
 
 <!-- KEEP_IMAGE: photo gallery capture -->
 ![Photo gallery (/gallery)](../generated/dashboard_visual_catalog/gallery.png)
 <!-- /KEEP_IMAGE -->
 
-**Expected result:** The photos show in the slideshow. **Bulletins** shows a card for each meeting flyer, set of minutes and event photo album.
+**Expected result:** The photos show in the slideshow. **Council Artifacts** shows a card for each meeting flyer, set of minutes, event flyer and event photo album.
 
 **Common problems:**
 | Problem | Cause | Fix |
 | --- | --- | --- |
-| A bulletin card is missing. | The meeting or the event has no Drive link. | Add the link on the meeting or the event. |
+| A council artifact card is missing. | The meeting or the event has no Drive link. | Add the link on the meeting or the event. |
+
+### 8.5 Ask the GYST Co-Pilot for collateral
+
+> **Prerequisite (who can do this):** You must be a seated officer, a council Admin or a Super Admin. Other members do not see the **Marketing Factory**.
+> **Warning:** the GYST Co-Pilot is an AI service from Microsoft (Copilot Studio). The portal sends your request and the facts of the chosen event to Microsoft.
+
+**Goal:** Get a draft of a notice, a post or other collateral for a council event.
+
+**Start point:** Sidebar → Resources → **Marketing Factory**.
+
+**Steps:**
+1. Choose the **Event**.
+2. In **Ask GYST Co-Pilot to Design Advanced Collateral**, type what you need. The limit is 2,000 characters.
+3. Select **Ask the co-pilot**. The answer can take up to 30 seconds.
+4. Read **The co-pilot's draft**. Check every fact, date and name.
+5. Select **Copy the draft**.
+
+**Expected result:** The draft shows under the prompt box.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| *"The GYST Co-Pilot is not connected for this council yet."* | The council has no Co-Pilot key. | Ask a council Admin to save the key (10.8). |
+| *"Microsoft refused the saved Co-Pilot key."* | The key was changed or removed in Copilot Studio. | Ask a council Admin to save the new key (10.8). |
+| *"The GYST Co-Pilot did not answer in time."* | The agent took more than 30 seconds. | Type a shorter request. Try again. |
+| **Rewrite in plain, warm words** shows. | The draft uses business jargon. | Edit the words before you use the draft. |
 
 ---
 
@@ -1292,13 +1322,42 @@ The platform has no background scheduler. An Admin runs the sync by hand.
 
 **Expected result:** The changes save. Phones show the new values on the next load.
 
+The outbound email settings are not on this page. Set them on the **Credentials Vault** page (10.8). The base dues rate is not on this page either. A Super Admin sets the rate on **Global Governance Matrices** (10.9).
+
 **Common problems:**
 | Problem | Cause | Fix |
 | --- | --- | --- |
 | *"Your role cannot maintain this council's lookups."* | You are on another council, or you have no finance role. | Ask a council Admin. |
 | A budget category will not delete. | Budget lines use the category. | Move the lines to another category. |
 
-### 10.8 Keep the global lists, councils, parishes and charities
+### 10.8 Connect the council email, Google Drive and GYST Co-Pilot
+
+> **Prerequisite (who can do this):** You must be a council Admin or a Super Admin to save or remove a connection. Seated officers see the status lines only. Other members do not see the **Credentials Vault**.
+> **Warning:** **Remove** deletes the saved password or key at once. The council goes back to the portal default.
+
+**Goal:** Connect the council's own mail account, Google Drive and Copilot Studio agent.
+
+**Start point:** Sidebar → Setup → **Credentials Vault**.
+
+**Steps:**
+1. Read the status lines at the top. A line with ✓ is a connection that is on.
+2. For email, go to the **Outbound email** panel.
+3. Choose the **Email service**. Google Workspace and Microsoft 365 fill in the **Mail server**.
+4. Enter the **Sign-in email** and the **Password**. Use an app password if the service asks for one.
+5. Select **Save**.
+6. For Google Drive, paste the key in **Drive key** in the **Google Drive** panel. Select **Save**.
+7. For the GYST Co-Pilot, paste the Direct Line secret in **Co-Pilot key**. Select **Save**. Copilot Studio shows the secret under Settings → Security → Web channel security.
+
+**Expected result:** The status line of each saved connection shows ✓. The page never shows a saved password or key again.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The panels are missing. | You are an officer but not an Admin. | Ask a council Admin. |
+| A message about the mail server or the sign-in email shows. | The mail server name or the email is not valid. | Copy both values from your mail service. |
+| Saved keys stop working after a server restart. | The server has no fixed vault secret. | Ask the server operator to set `CREDENTIALS_VAULT_SECRET`. Save the keys again. |
+
+### 10.9 Keep the global lists, councils, parishes and charities
 
 > **Prerequisite (who can do this):** You must be a Super Admin for **Global Governance Matrices** and **Councils**. You must be a council Admin or a Super Admin for **Parish & Pastors Linkage**. You must be a charity registry keeper for **Global Charities Registry**.
 > **Warning:** a value marked **Built in** cannot be renamed or deleted.
@@ -1327,6 +1386,8 @@ The platform has no background scheduler. An Admin runs the sync by hand.
 <!-- KEEP_IMAGE: global charities registry capture -->
 ![Global Charities Registry (/charities/registry)](../generated/dashboard_visual_catalog/charities_registry.png)
 <!-- /KEEP_IMAGE -->
+
+A Super Admin also sets each council's base dues rate and tenant type in the **Global Council Parameters Dashboard**, at the top of **Global Governance Matrices**.
 
 **Expected result:** Every council sees the new value.
 

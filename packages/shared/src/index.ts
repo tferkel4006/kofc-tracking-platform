@@ -28,6 +28,7 @@ export * from './tenant';
 export * from './agenda';
 export * from './onboarding';
 export * from './drive-vault';
+export * from './copilot';
 export * from './bylaws';
 export * from './advisor';
 export * from './docs';

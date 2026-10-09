@@ -1,14 +1,14 @@
 'use client';
 // Credentials Vault (Sprint 6L Extension): the one Setup page for every connection a council keeps a secret for - its
-// outbound email account (moved here from the Council Lookups tab) and its Google Drive key (/api/councils/credentials,
-// which had no page before). A short status banner leads the page in plain words; no ports or technical flags.
+// outbound email account (moved here from the Council Lookups tab), its Google Drive key and (Sprint 6L Extension 2) its
+// GYST Co-Pilot key, the Microsoft Copilot Studio Direct Line secret (both through /api/councils/credentials). A short status banner leads the page in plain words; no ports or technical flags.
 // Audience: seated officers, the council's Admins and Super Admins (canOpenCredentialsVault). Only the council's Admins
 // and Super Admins change anything (canAdministerCouncil, the same rule the routes apply); everyone else sees the banner.
 import { useState, type FormEvent } from 'react';
-import { canAdministerCouncil, councilEmailGateway, councilLabel, describeError, REDACTED_SECRET, type CredentialStatus } from '@kofc/shared';
+import { canAdministerCouncil, councilEmailGateway, councilLabel, describeError, REDACTED_SECRET, type CredentialKey, type CredentialStatus } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { EmailGatewayPanel, gatewayOnServer } from '@/components/EmailGatewayPanel';
-import { Button, Field, Notice, PageTitle, Panel, Textarea } from '@/components/ui';
+import { Button, Field, Input, Notice, PageTitle, Panel, Textarea } from '@/components/ui';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
@@ -57,7 +57,44 @@ function StatusBanner({ connections, unknown }: { connections: Connection[]; unk
   );
 }
 
-function DriveKeyPanel({ councilId, saved, onChanged }: { councilId: number; saved: CredentialStatus | undefined; onChanged: () => Promise<void> }) {
+interface SecretCard {
+  credentialKey: Exclude<CredentialKey, 'SMTP_OUTBOUND_PASSWORD'>;
+  title: string;
+  intro: string;
+  label: string;
+  placeholder: string;
+  multiLine: boolean;
+  maxLength: number;
+  savedText: string;
+  removedText: string;
+}
+
+const DRIVE_CARD: SecretCard = {
+  credentialKey: 'GOOGLE_DRIVE_PRIVATE_KEY',
+  title: 'Google Drive',
+  intro: 'Paste the private key your Google Drive administrator gave the council. It is locked away once saved.',
+  label: 'Drive key',
+  placeholder: '-----BEGIN PRIVATE KEY-----',
+  multiLine: true,
+  maxLength: 8000,
+  savedText: 'Saved. The council files now go to its own Google Drive.',
+  removedText: 'Removed. Council files use the portal Drive again.',
+};
+
+const COPILOT_CARD: SecretCard = {
+  credentialKey: 'COPILOT_STUDIO_DIRECT_LINE_SECRET',
+  title: 'GYST Co-Pilot (Microsoft Copilot Studio)',
+  intro:
+    "Paste the Direct Line secret of the council's Copilot Studio agent (in Copilot Studio: Settings, Security, Web channel security). It is locked away once saved, and only the Marketing Factory uses it.",
+  label: 'Co-Pilot key',
+  placeholder: 'Direct Line secret',
+  multiLine: false,
+  maxLength: 500,
+  savedText: 'Saved. The Marketing Factory can now ask the GYST Co-Pilot.',
+  removedText: 'Removed. The GYST Co-Pilot is switched off for this council.',
+};
+
+function SecretPanel({ card, councilId, saved, onChanged }: { card: SecretCard; councilId: number; saved: CredentialStatus | undefined; onChanged: () => Promise<void> }) {
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
@@ -66,7 +103,7 @@ function DriveKeyPanel({ councilId, saved, onChanged }: { councilId: number; sav
     setBusy(true);
     setMessage(null);
     try {
-      await credentialsOnServer(councilId, { credentialKey: 'GOOGLE_DRIVE_PRIVATE_KEY', ...body });
+      await credentialsOnServer(councilId, { credentialKey: card.credentialKey, ...body });
       await onChanged();
       setMessage({ tone: 'info', text: done });
     } catch (err) {
@@ -79,38 +116,52 @@ function DriveKeyPanel({ councilId, saved, onChanged }: { councilId: number; sav
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    void run({ value }, 'Saved. The council files now go to its own Google Drive.');
+    void run({ value }, card.savedText);
   };
 
   return (
-    <Panel title="Google Drive">
+    <Panel title={card.title}>
       <form onSubmit={submit} className="flex max-w-2xl flex-col gap-3" autoComplete="off">
-        <p className="text-sm">Paste the private key your Google Drive administrator gave the council. It is locked away once saved.</p>
+        <p className="text-sm">{card.intro}</p>
         {message ? (
           <Notice tone={message.tone} onDismiss={() => setMessage(null)}>
             {message.text}
           </Notice>
         ) : null}
-        <Field label="Drive key" hint={saved ? 'Saved. Paste a new key only to replace it.' : undefined}>
-          {(id) => (
-            <Textarea
-              id={id}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder={saved ? REDACTED_SECRET : '-----BEGIN PRIVATE KEY-----'}
-              spellCheck={false}
-              maxLength={8000}
-              rows={4}
-              disabled={busy}
-            />
-          )}
+        <Field label={card.label} hint={saved ? 'Saved. Paste a new key only to replace it.' : undefined}>
+          {(id) =>
+            card.multiLine ? (
+              <Textarea
+                id={id}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder={saved ? REDACTED_SECRET : card.placeholder}
+                spellCheck={false}
+                maxLength={card.maxLength}
+                rows={4}
+                disabled={busy}
+              />
+            ) : (
+              <Input
+                id={id}
+                type="password"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder={saved ? REDACTED_SECRET : card.placeholder}
+                autoComplete="new-password"
+                spellCheck={false}
+                maxLength={card.maxLength}
+                disabled={busy}
+              />
+            )
+          }
         </Field>
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={busy || !value.trim()}>
             {busy ? 'Saving…' : 'Save'}
           </Button>
           {saved ? (
-            <Button variant="danger" disabled={busy} onClick={() => void run({ clear: true }, 'Removed. Council files use the portal Drive again.')}>
+            <Button variant="danger" disabled={busy} onClick={() => void run({ clear: true }, card.removedText)}>
               Remove
             </Button>
           ) : null}
@@ -133,10 +184,16 @@ function CredentialsVault() {
   };
 
   const drive = vault.data?.credentials.find((c) => c.credential_key === 'GOOGLE_DRIVE_PRIVATE_KEY');
+  const copilot = vault.data?.credentials.find((c) => c.credential_key === 'COPILOT_STUDIO_DIRECT_LINE_SECRET');
   const emailOn = councilEmailGateway(council.data) !== null && (vault.data ? Boolean(vault.data.gateway.password) : true);
   const connections: Connection[] = [
     { name: 'Outbound email', connected: emailOn, on: 'Connected to the council mail account', off: 'Using the portal default' },
-    ...(mayEdit ? [{ name: 'Google Drive', connected: Boolean(drive), on: 'Connected to the council Drive', off: 'Using the portal Drive' }] : []),
+    ...(mayEdit
+      ? [
+          { name: 'Google Drive', connected: Boolean(drive), on: 'Connected to the council Drive', off: 'Using the portal Drive' },
+          { name: 'GYST Co-Pilot', connected: Boolean(copilot), on: 'Connected to Copilot Studio', off: 'Not connected' },
+        ]
+      : []),
   ];
 
   return (
@@ -147,7 +204,8 @@ function CredentialsVault() {
       {mayEdit ? (
         <div className="flex flex-col gap-4">
           <EmailGatewayPanel key={`email-${councilId}`} councilId={councilId} onChanged={reload} />
-          <DriveKeyPanel key={`drive-${councilId}`} councilId={councilId} saved={drive} onChanged={reload} />
+          <SecretPanel key={`drive-${councilId}`} card={DRIVE_CARD} councilId={councilId} saved={drive} onChanged={reload} />
+          <SecretPanel key={`copilot-${councilId}`} card={COPILOT_CARD} councilId={councilId} saved={copilot} onChanged={reload} />
         </div>
       ) : (
         <p className="text-sm">
