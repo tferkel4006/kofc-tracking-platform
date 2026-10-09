@@ -95,6 +95,11 @@ import type {
   AuditTrusteeSignature,
   CouncilAudit,
   CouncilPrayerIntention,
+  CouncilAssetStatus,
+  CouncilLeadershipSnapshot,
+  CouncilMediaVault,
+  EventPlanningTime,
+  MediaSmartAlbums,
 } from './types';
 import type { BudgetAlert, BudgetWindowState } from './budget';
 import type { ConcludedBudgetPerformance } from './dues';
@@ -1950,6 +1955,87 @@ export interface CouncilLegacyMatrix {
   currentFraternalYear: string;
 }
 
+// 20b1. ASSET DETAILS, PLANNING HOURS AND THE MEDIA VAULT (Sprint 6P)
+/** The fields of an asset record its form may change. cost_basis, purchase_date and the expense link are fixed. */
+export interface AssetRecordChanges {
+  asset_name?: string;
+  current_status?: CouncilAssetStatus;
+  serial_number?: string | null;
+  storage_location?: string | null;
+  notes?: string | null;
+}
+
+/** One Planning Hours entry to log: the logger's own time on a day before the event. */
+export interface PlanningTimeInput {
+  planningDate: string; // YYYY-MM-DD
+  hours: number; // a multiple of 0.25 in (0, 24]
+  notes?: string | null;
+}
+
+/** A Planning Hours entry with the name of the member who logged it. */
+export interface PlanningTimeEntry extends EventPlanningTime {
+  memberName: string;
+}
+
+/** An event's Planning Hours: entries newest planning date first, and their total. */
+export interface EventPlanningLog {
+  eventId: number;
+  entries: PlanningTimeEntry[];
+  totalHours: number;
+}
+
+/** A gallery filter, saved as a Smart Album's album_criteria_json. An empty part matches every photo. */
+export interface MediaAlbumCriteria {
+  /** Photos from any of these events or (with meetingIds) meetings. */
+  eventIds: number[];
+  meetingIds: number[];
+  /** Text found anywhere in the photo's location tag, ignoring case. */
+  location: string;
+  /** Calendar years (January to December). */
+  years: number[];
+}
+
+/** One photo of the council's library: a vault row, or an older event photo from Event.PhotoGalleryURL. */
+export interface MediaLibraryItem {
+  key: string;
+  /** The CouncilMediaVault row; null for an older event photo. */
+  vaultId: number | null;
+  fileUrl: string;
+  eventId: number | null;
+  eventName: string | null;
+  meetingId: number | null;
+  meetingName: string | null;
+  locationTag: string | null;
+  calendarYear: number;
+  /** YYYY-MM-DD: the event's StartDate, the meeting's Date, or the upload day. */
+  date: string;
+}
+
+/** The council's photo library and what its filters offer. */
+export interface MediaLibrary {
+  councilId: number;
+  items: MediaLibraryItem[];
+  events: { id: number; name: string; date: string }[];
+  /** ownerId lets the gallery offer the meeting to its owner for uploads (canLinkMeetingDrive). */
+  meetings: { id: number; name: string; date: string; ownerId: number | null }[];
+  locations: string[];
+  years: number[];
+}
+
+/** Photos to add to the vault, tagged with exactly one event or meeting. */
+export interface MediaVaultUploadInput {
+  eventId?: number | null;
+  meetingId?: number | null;
+  fileUrls: readonly string[];
+  /** Defaults to the event's or meeting's Location. */
+  locationTag?: string | null;
+}
+
+/** A saved Smart Album with its filter read back. */
+export interface SmartAlbum extends MediaSmartAlbums {
+  criteria: MediaAlbumCriteria;
+}
+
 // 20b2. THE IN MEMORIAM ROLL (Sprint 6L Extension 5)
 /** What the history keepers write on a remembrance; omitted fields keep their stored value, '' or null clears one. */
 export interface InMemoriamInput {
@@ -2546,6 +2632,25 @@ export interface DataService {
      * leadership, as listCouncilQueue (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED); INVALID_INPUT for an unknown council.
      */
     listAssetsInventory(actorId: number, councilId: number): Promise<CouncilAssetsInventory[]>;
+    /**
+     * One asset record (Sprint 6P), for the asset form. Read by the expense leadership or the council's Active Grand Knight
+     * (assertMayManageCouncilAssets: ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Rejects RECORD_NOT_FOUND for an unknown id.
+     * Since Sprint 6P listAssetsInventory admits the same readers.
+     */
+    getAssetRecord(actorId: number, assetId: number): Promise<CouncilAssetsInventory>;
+    /**
+     * The asset record an approved long-term asset sheet created, or null when it created none. The web authorization desk
+     * calls it right after grandKnightAuthorizeOrder to open the asset form. Access as getAssetRecord on the sheet's
+     * council; RECORD_NOT_FOUND for an unknown sheet.
+     */
+    getAssetRecordForExpense(actorId: number, reportId: number): Promise<CouncilAssetsInventory | null>;
+    /**
+     * Saves the asset form (Sprint 6P): the name, status, serial number, storage location and notes. cost_basis,
+     * purchase_date and original_expense_id keep the values the conversion wrote. Access as getAssetRecord. Rejects
+     * RECORD_NOT_FOUND for an unknown id and INVALID_INPUT for an unknown field, a blank name, an unknown status or an
+     * over-long text (cleanAssetRecordChanges).
+     */
+    updateAssetRecord(actorId: number, assetId: number, changes: AssetRecordChanges): Promise<CouncilAssetsInventory>;
   };
 
   events: {
@@ -2649,6 +2754,23 @@ export interface DataService {
      * MEMBER_NOT_FOUND, EVENT_NOT_FOUND and INVALID_INPUT for another status. Resolves to the event.
      */
     setIntakeSessionStatus(actorId: number, eventId: number, status: EventIntakeSessionStatus): Promise<Event>;
+    /**
+     * The event's Planning Hours (Sprint 6P): every entry with the logger's name, newest planning date first, and the
+     * total. Rejects EVENT_NOT_FOUND for an unknown event.
+     */
+    listPlanningTime(eventId: number): Promise<EventPlanningLog>;
+    /**
+     * Logs the actor's own Planning Hours against the event: the event's Active owner, an Active officer or Admin of a
+     * linked council, or any Active Super Admin (assertMayLogPlanningTime: ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). Each call
+     * adds an entry. Rejects MEMBER_NOT_FOUND, EVENT_NOT_FOUND, INVALID_DATE for a malformed date, INVALID_INPUT for a date
+     * on or after the event's StartDate or after today or over-long notes, and the hours codes of assertValidHours.
+     */
+    logPlanningTime(actorId: number, eventId: number, input: PlanningTimeInput): Promise<EventPlanningTime>;
+    /**
+     * Deletes a Planning Hours entry: its author (while still allowed to log for the event), an Active Admin of a linked
+     * council, or any Active Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). RECORD_NOT_FOUND for an unknown entry.
+     */
+    deletePlanningTime(actorId: number, entryId: number): Promise<void>;
   };
 
   lessonsLearned: {
@@ -3622,6 +3744,41 @@ export interface DataService {
     saveInMemoriamEntry(actorId: number, councilId: number, memberId: number, input: InMemoriamInput): Promise<InMemoriamCard>;
     /** Stores a fresh compiled snapshot for every card of the roll, creating missing rows. History keepers only. */
     compileInMemoriam(actorId: number, councilId: number): Promise<InMemoriamRoll>;
+    /**
+     * The council's locked leadership snapshots (Sprint 6P): one per member and fraternal year, written when a year is
+     * concluded or a member transfers out, newest year first. Access as getLegacyMatrix.
+     */
+    listLeadershipSnapshots(actorId: number, councilId: number): Promise<CouncilLeadershipSnapshot[]>;
+  };
+
+  media: {
+    /**
+     * The council's photo library (Sprint 6P): its CouncilMediaVault rows plus the older event photos in
+     * Event.PhotoGalleryURL of events linked to it (buildMediaLibrary). Any Active member of the council, or an Active
+     * Super Admin (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for an unknown council.
+     */
+    getLibrary(actorId: number, councilId: number): Promise<MediaLibrary>;
+    /**
+     * Adds tagged photos (cleanVaultUpload). For an event: the writers of events.uploadPhotos (assertMayAttachEventMedia);
+     * the photos are also appended to its PhotoGalleryURL, and one vault row is written per photo for each council the event
+     * is linked to. For a meeting: the writers of meetings.linkGoogleDrive (assertMayLinkMeetingDrive), one row per photo
+     * in the meeting's council. calendar_year is the year of the event's StartDate or meeting's Date, and the location tag
+     * defaults to its Location. A photo already in the vault for that event or meeting and council is skipped. Rejects
+     * MEMBER_NOT_FOUND, EVENT_NOT_FOUND, MEETING_NOT_FOUND and INVALID_INPUT. Resolves to the rows written.
+     */
+    uploadToVault(actorId: number, input: MediaVaultUploadInput): Promise<CouncilMediaVault[]>;
+    /** The council's Smart Albums by name. Access as getLibrary. */
+    listSmartAlbums(actorId: number, councilId: number): Promise<SmartAlbum[]>;
+    /**
+     * Saves a gallery filter as a Smart Album of the council. Access as getLibrary. Rejects INVALID_INPUT for a blank or
+     * over-long name or a bad filter (cleanAlbumCriteria), or an unknown council.
+     */
+    saveSmartAlbum(actorId: number, councilId: number, name: string, criteria: MediaAlbumCriteria): Promise<SmartAlbum>;
+    /**
+     * Deletes a Smart Album: the member who saved it, an Active Admin of its council, or an Active Super Admin
+     * (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). RECORD_NOT_FOUND for an unknown album. The photos are not touched.
+     */
+    deleteSmartAlbum(actorId: number, albumId: number): Promise<void>;
   };
 
   prayers: {

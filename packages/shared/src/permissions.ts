@@ -347,6 +347,24 @@ export const canLinkMeetingDrive = (u: Actor, meeting: Pick<Meeting, 'CouncilID'
   meeting.OwnerID === u.memberId || canManageFinances(u, meeting.CouncilID);
 
 /**
+ * The asset form and the assets inventory (Sprint 6P), mirroring assertMayManageCouncilAssets (activity status is checked
+ * there): the council's expense leadership and its Grand Knight, who lands on the form after approving an asset sheet.
+ */
+export const canManageCouncilAssets = (u: Actor, councilId: number): boolean =>
+  canAuditCouncilExpenses(u, councilId) || (isGrandKnight(u) && u.councilId === councilId);
+
+/**
+ * The Planning Hours form on an event (Sprint 6P), mirroring assertMayLogPlanningTime: the event's owner, an officer or
+ * Admin of a council the event is linked to, and any Super Admin.
+ */
+export const canLogPlanningTime = (u: Actor, event: Pick<Event, 'OwnerID'>, eventCouncilIds: readonly number[]): boolean =>
+  isSuperAdmin(u) || event.OwnerID === u.memberId || ((u.memberType === 'Admin' || u.isOfficer) && eventCouncilIds.includes(u.councilId));
+
+/** A Smart Album's Delete button (Sprint 6P), mirroring assertMayDeleteSmartAlbum: who saved it, its council's Admins, Super Admins. */
+export const canDeleteSmartAlbum = (u: Actor, album: { council_id: number; created_by_member_id: number }): boolean =>
+  isSuperAdmin(u) || album.created_by_member_id === u.memberId || (u.memberType === 'Admin' && u.councilId === album.council_id);
+
+/**
  * The Communications Hub's alert dispatch tile, mirroring assertMayDispatchCouncilAlerts (Sprint 5T; activity status is
  * checked there): the council's Admins, Financial Secretary and Treasurer, and any Super Admin.
  */

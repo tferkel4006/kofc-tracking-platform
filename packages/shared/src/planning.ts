@@ -143,11 +143,26 @@ export function cleanShiftFields(input: ShiftChanges & { EventID?: number }): Sh
   if (input.ShiftDate !== undefined) out.ShiftDate = assertIsoDate(input.ShiftDate, 'Shift date');
   if (input.StartTime !== undefined) out.StartTime = assertTimeOfDay(input.StartTime, 'Shift start time');
   if (input.EndTime !== undefined) out.EndTime = assertTimeOfDay(input.EndTime, 'Shift end time');
-  if (input.MinNumberVolunteers !== undefined) {
+  if (input.IsAllHands !== undefined) out.IsAllHands = bitFlag(input.IsAllHands, 'IsAllHands');
+  // Sprint 6P: an All-Hands shift has no numeric target at all. Whatever target came with it is dropped and 0 is stored.
+  if (out.IsAllHands === 1) out.MinNumberVolunteers = 0;
+  else if (input.MinNumberVolunteers !== undefined) {
     out.MinNumberVolunteers = assertInteger(input.MinNumberVolunteers, 'Volunteers needed', 1);
   }
-  if (input.IsAllHands !== undefined) out.IsAllHands = bitFlag(input.IsAllHands, 'IsAllHands');
   return out;
+}
+
+/**
+ * Sprint 6P: a shift that is not All-Hands needs a volunteer target of at least 1. Checked on the shift as it will be
+ * stored, so turning off All-Hands (target 0) without giving a target is refused (INVALID_INPUT).
+ */
+export function assertShiftHasTarget(shift: { ShiftName?: string; MinNumberVolunteers: number; IsAllHands?: number | null }): void {
+  if (shift.IsAllHands === 1 || shift.MinNumberVolunteers >= 1) return;
+  throw new BusinessRuleError(
+    'INVALID_INPUT',
+    `Shift "${shift.ShiftName ?? ''}" is not All-Hands, so it needs at least 1 volunteer as its target.`,
+    { minNumberVolunteers: shift.MinNumberVolunteers },
+  );
 }
 
 /** A shift must fall on one of its event's days. */
@@ -210,7 +225,9 @@ export function planEventCopy(
 /** A complete new shift: every field present and valid. NumberVolunteersSignedUp is not accepted. */
 export function cleanNewShift(input: NewShift): NewShift {
   const required = ['ShiftName', 'ShiftDate', 'StartTime', 'EndTime', 'EventID', 'MinNumberVolunteers'] as const;
-  const missing = required.filter((k) => input[k] === undefined || input[k] === null);
+  // Sprint 6P: an All-Hands shift needs no volunteer target.
+  const allHands = input.IsAllHands === 1 || (input.IsAllHands as unknown) === true;
+  const missing = required.filter((k) => (input[k] === undefined || input[k] === null) && !(allHands && k === 'MinNumberVolunteers'));
   if (missing.length > 0) throw new BusinessRuleError('INVALID_INPUT', `A shift needs ${missing.join(', ')}.`, { missing });
   return cleanShiftFields(input) as NewShift;
 }

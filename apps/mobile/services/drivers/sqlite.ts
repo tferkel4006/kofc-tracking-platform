@@ -443,6 +443,29 @@ import {
   type MeetingAgendaItem,
   type MeetingAgendaView,
   type MotionHandTally,
+  assertMayDeletePlanningTime,
+  assertMayDeleteSmartAlbum,
+  assertMayLogPlanningTime,
+  assertMayManageCouncilAssets,
+  assertShiftHasTarget,
+  buildMediaLibrary,
+  buildPlanningLog,
+  calendarYearOf,
+  cleanAlbumCriteria,
+  concludedTermRows,
+  cleanAssetRecordChanges,
+  cleanPlanningTimeInput,
+  cleanSmartAlbumName,
+  cleanVaultUpload,
+  planLeadershipSnapshots,
+  planTransferGuard,
+  requireAssetRecord,
+  requirePlanningTime,
+  requireSmartAlbum,
+  serializeAlbumCriteria,
+  sortLeadershipSnapshots,
+  sortSmartAlbums,
+  toSmartAlbum,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -563,6 +586,10 @@ import type {
   Shift,
   ShiftChanges,
   ShiftFeedItem,
+  CouncilLeadershipSnapshot,
+  CouncilMediaVault,
+  EventPlanningTime,
+  MediaSmartAlbums,
 } from '@kofc/shared';
 import { PRESENTATION_SEED_STATEMENTS, SCHEMA_STATEMENTS, SEED_STATEMENTS } from '../generated/schema.sqlite';
 import { sha256Hex } from '../password';
@@ -653,8 +680,11 @@ const DB_NAME = 'kofc.db';
  *     entry forms (Sprint 6L Extension 4).
  * 54: the seventh fixed category, Life; CouncilInMemoriam, the In Memoriam roll; Meeting.CategoryID and
  *     CharitableRequest.CategoryID withdrawn (Sprint 6L Extension 5).
+ * 55: CouncilLeadershipSnapshot (the locked officer records), CouncilAssetsInventory.serial_number and storage_location,
+ *     EventPlanningTime (Planning Hours), CouncilMediaVault and MediaSmartAlbums; All-Hands shifts store a target of 0
+ *     (Sprint 6P).
  */
-const SCHEMA_VERSION = 54;
+const SCHEMA_VERSION = 55;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -1887,6 +1917,8 @@ export class SqliteDataService implements DataService {
           });
         }
         await db.runAsync('UPDATE [Credentials] SET [Username] = ? WHERE [id] = ?', [clean.Email, existing.CredentialID]);
+        // Sprint 6P: a transfer locks the member's officer record in the council they leave.
+        if (clean.CouncilID !== existing.CouncilID) await this.applyTransferGuard(db, id, existing.CouncilID);
         await db.runAsync(`UPDATE [Member] SET ${MEMBER_COLUMNS.map((c) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [
           ...MEMBER_COLUMNS.map((c) => (clean[c] ?? null) as Bind),
           id,
@@ -1895,6 +1927,63 @@ export class SqliteDataService implements DataService {
       return withoutPushToken((await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [id]))!);
     },
   };
+
+  /** Inserts snapshots; the compound primary key and OR IGNORE keep an existing (locked) snapshot as it is. */
+  private async insertSnapshots(db: SQLite.SQLiteDatabase, snapshots: readonly CouncilLeadershipSnapshot[]): Promise<void> {
+    for (const s of snapshots) {
+      await db.runAsync(
+        'INSERT OR IGNORE INTO [CouncilLeadershipSnapshot] ([user_id], [council_id], [fraternal_year], [roles_held], [lock_reason], [locked_at]) VALUES (?, ?, ?, ?, ?, ?)',
+        [s.user_id, s.council_id, s.fraternal_year, s.roles_held, s.lock_reason, s.locked_at],
+      );
+    }
+  }
+
+  /**
+   * Sprint 6P transfer guard (planTransferGuard): locks a snapshot for every year the member held a seat in the council
+   * they leave, closes their open terms there 'Transferred' and vacates their office seats.
+   */
+  private async applyTransferGuard(db: SQLite.SQLiteDatabase, memberId: number, oldCouncilId: number): Promise<void> {
+    const [history, roles, held, existing] = await Promise.all([
+      db.getAllAsync<CouncilLeadershipHistory>('SELECT * FROM [CouncilLeadershipHistory] WHERE [CouncilID] = ? AND [MemberID] = ?', [oldCouncilId, memberId]),
+      this.allRoles(db),
+      db.getAllAsync<{ RoleID: number }>('SELECT [RoleID] FROM [MemberRoles] WHERE [MemberID] = ?', [memberId]),
+      db.getAllAsync<CouncilLeadershipSnapshot>('SELECT [user_id], [council_id], [fraternal_year] FROM [CouncilLeadershipSnapshot] WHERE [user_id] = ?', [memberId]),
+    ]);
+    const plan = planTransferGuard({
+      memberId,
+      oldCouncilId,
+      history,
+      roles,
+      heldRoleIds: held.map((h) => h.RoleID),
+      existing,
+      now: this.now(),
+      lockedAt: toTimestamp(this.now()),
+    });
+    await this.insertSnapshots(db, plan.snapshots);
+    for (const termId of plan.closeTermIds) {
+      await db.runAsync("UPDATE [CouncilLeadershipHistory] SET [EndDate] = ?, [ExitReason] = 'Transferred' WHERE [id] = ?", [plan.endDate, termId]);
+    }
+    for (const roleId of plan.removeRoleIds) {
+      await db.runAsync('DELETE FROM [MemberRoles] WHERE [MemberID] = ? AND [RoleID] = ?', [memberId, roleId]);
+    }
+  }
+
+  /**
+   * Sprint 6P: locks a 'YearConcluded' snapshot of every term the conclusion just closed and of every year before the new
+   * term (concludedTermRows), for each member and year not yet locked.
+   */
+  private async lockConcludedSnapshots(db: SQLite.SQLiteDatabase, councilId: number, newTermYear: string, today: string): Promise<void> {
+    const [all, roles, existing] = await Promise.all([
+      db.getAllAsync<CouncilLeadershipHistory>('SELECT * FROM [CouncilLeadershipHistory] WHERE [CouncilID] = ?', [councilId]),
+      this.allRoles(db),
+      db.getAllAsync<CouncilLeadershipSnapshot>('SELECT [user_id], [council_id], [fraternal_year] FROM [CouncilLeadershipSnapshot] WHERE [council_id] = ?', [councilId]),
+    ]);
+    const history = concludedTermRows(all, newTermYear, today);
+    await this.insertSnapshots(
+      db,
+      planLeadershipSnapshots({ councilId, history, roles, existing, reason: 'YearConcluded', lockedAt: toTimestamp(this.now()) }),
+    );
+  }
 
   /** The caller of a member write, read from the database so the client cannot claim a type it does not hold. */
   private async memberWriteActor(db: SQLite.SQLiteDatabase, actorId: number): Promise<MemberWriteActor> {
@@ -2408,12 +2497,44 @@ export class SqliteDataService implements DataService {
 
     listAssetsInventory: async (actorId, councilId) => {
       const db = await this.ready();
-      assertMayAuditCouncilExpenses(await this.memberWriteActor(db, actorId), councilId, `read the assets inventory of council ${councilId}`);
+      assertMayManageCouncilAssets(await this.memberWriteActor(db, actorId), councilId, `read the assets inventory of council ${councilId}`);
       await this.assertCouncilsExist(db, [councilId]);
       return db.getAllAsync<CouncilAssetsInventory>(
         'SELECT * FROM [CouncilAssetsInventory] WHERE [council_id] = ? ORDER BY [purchase_date] DESC, [id] DESC',
         [councilId],
       );
+    },
+
+    getAssetRecord: async (actorId, assetId) => {
+      const db = await this.ready();
+      const asset = requireAssetRecord(await db.getFirstAsync<CouncilAssetsInventory>('SELECT * FROM [CouncilAssetsInventory] WHERE [id] = ?', [assetId]), assetId);
+      assertMayManageCouncilAssets(await this.memberWriteActor(db, actorId), asset.council_id, `read asset record ${assetId}`);
+      return asset;
+    },
+
+    getAssetRecordForExpense: async (actorId, reportId) => {
+      const db = await this.ready();
+      const report = await db.getFirstAsync<{ CouncilID: number }>('SELECT [CouncilID] FROM [ExpenseReport] WHERE [id] = ?', [reportId]);
+      if (!report) throw new BusinessRuleError('RECORD_NOT_FOUND', `No expense report with id ${reportId}.`, { reportId });
+      assertMayManageCouncilAssets(await this.memberWriteActor(db, actorId), report.CouncilID, `read the asset record of expense report ${reportId}`);
+      return db.getFirstAsync<CouncilAssetsInventory>('SELECT * FROM [CouncilAssetsInventory] WHERE [original_expense_id] = ?', [reportId]);
+    },
+
+    updateAssetRecord: async (actorId, assetId, changes) => {
+      const clean = cleanAssetRecordChanges(changes);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const asset = requireAssetRecord(await db.getFirstAsync<CouncilAssetsInventory>('SELECT * FROM [CouncilAssetsInventory] WHERE [id] = ?', [assetId]), assetId);
+        assertMayManageCouncilAssets(await this.memberWriteActor(db, actorId), asset.council_id, `update asset record ${assetId}`);
+        const cols = Object.keys(clean) as (keyof typeof clean)[];
+        if (cols.length > 0) {
+          await db.runAsync(`UPDATE [CouncilAssetsInventory] SET ${cols.map((c) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [
+            ...cols.map((c) => (clean[c] ?? null) as Bind),
+            assetId,
+          ]);
+        }
+      });
+      return (await db.getFirstAsync<CouncilAssetsInventory>('SELECT * FROM [CouncilAssetsInventory] WHERE [id] = ?', [assetId]))!;
     },
 
     listAuthorizationQueue: async (actorId, councilId) => {
@@ -2826,6 +2947,51 @@ export class SqliteDataService implements DataService {
       return buildCalendarEntries(range, events, meetings);
     },
 
+    listPlanningTime: async (eventId) => {
+      const db = await this.ready();
+      await this.requireEvent(db, eventId);
+      const [rows, members] = await Promise.all([
+        db.getAllAsync<EventPlanningTime>('SELECT * FROM [EventPlanningTime] WHERE [event_id] = ?', [eventId]),
+        db.getAllAsync<Member>(
+          'SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member] WHERE [id] IN (SELECT [member_id] FROM [EventPlanningTime] WHERE [event_id] = ?)',
+          [eventId],
+        ),
+      ]);
+      return buildPlanningLog(eventId, rows, members);
+    },
+
+    logPlanningTime: async (actorId, eventId, input) => {
+      const db = await this.ready();
+      let id = 0;
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        const event = await this.requireEvent(db, eventId);
+        assertMayLogPlanningTime(actor, event, await this.councilIdsOf(db, eventId), `log Planning Hours for event ${eventId}`);
+        const clean = cleanPlanningTimeInput(input, event, toIsoDate(this.now()));
+        id = (
+          await db.runAsync('INSERT INTO [EventPlanningTime] ([event_id], [member_id], [planning_date], [hours], [notes], [logged_at]) VALUES (?, ?, ?, ?, ?, ?)', [
+            eventId,
+            actorId,
+            clean.planning_date,
+            clean.hours,
+            clean.notes,
+            toTimestamp(this.now()),
+          ])
+        ).lastInsertRowId;
+      });
+      return (await db.getFirstAsync<EventPlanningTime>('SELECT * FROM [EventPlanningTime] WHERE [id] = ?', [id]))!;
+    },
+
+    deletePlanningTime: async (actorId, entryId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const entry = requirePlanningTime(await db.getFirstAsync<EventPlanningTime>('SELECT * FROM [EventPlanningTime] WHERE [id] = ?', [entryId]), entryId);
+        const event = await this.requireEvent(db, entry.event_id);
+        assertMayDeletePlanningTime(await this.memberWriteActor(db, actorId), entry, event, await this.councilIdsOf(db, entry.event_id));
+        await db.runAsync('DELETE FROM [EventPlanningTime] WHERE [id] = ?', [entryId]);
+      });
+    },
+
     uploadPhotos: async (actorId, eventId, photoPaths) => {
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
@@ -3003,6 +3169,7 @@ export class SqliteDataService implements DataService {
           );
         }
         if (clean.ShiftDate !== undefined) assertShiftInsideEvent(clean.ShiftDate, await this.requireEvent(db, row.EventID));
+        assertShiftHasTarget({ ...row, ...clean });
         const cols = SHIFT_COLUMNS.filter((c) => clean[c] !== undefined);
         if (cols.length > 0) {
           await db.runAsync(`UPDATE [Shift] SET ${cols.map((c) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [
@@ -4656,6 +4823,7 @@ export class SqliteDataService implements DataService {
         // Sprint 6L: the concluded year's totals, read before any term closes, go into its annals.
         const closingMetrics = buildYearClosingMetrics(councilId, previousFraternalYear(fraternalYear), await this.yearClosingRows(db, councilId), now);
         await this.applySeatTransitions(db, councilId, rows, plan.transitions, fraternalYear, toIsoDate(now));
+        await this.lockConcludedSnapshots(db, councilId, fraternalYear, toIsoDate(now));
         const reset = await db.runAsync('DELETE FROM [CouncilElectionBallot] WHERE [CouncilID] = ?', [councilId]);
         await this.bakeClosingMetrics(db, councilId, actorId, closingMetrics);
         result = { ...conclusionResult(plan, rows.roles, fraternalYear, reset.changes), closingMetrics };
@@ -6232,6 +6400,104 @@ export class SqliteDataService implements DataService {
         }
       });
       return this.inMemoriamRoll(db, councilId, true);
+    },
+
+    listLeadershipSnapshots: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayReadCouncilHistory(await this.memberWriteActor(db, actorId), councilId, `read the leadership snapshots of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return sortLeadershipSnapshots(await db.getAllAsync<CouncilLeadershipSnapshot>('SELECT * FROM [CouncilLeadershipSnapshot] WHERE [council_id] = ?', [councilId]));
+    },
+  };
+
+  media: DataService['media'] = {
+    getLibrary: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayReadCouncilHistory(await this.memberWriteActor(db, actorId), councilId, `browse the photo library of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const [vault, events, meetings] = await Promise.all([
+        db.getAllAsync<CouncilMediaVault>('SELECT * FROM [CouncilMediaVault] WHERE [council_id] = ? ORDER BY [id]', [councilId]),
+        db.getAllAsync<CouncilEvent>('SELECT * FROM [Event] WHERE [id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?)', [councilId]),
+        db.getAllAsync<Meeting>('SELECT * FROM [Meeting] WHERE [CouncilID] = ?', [councilId]),
+      ]);
+      return buildMediaLibrary({ councilId, vault, events, meetings });
+    },
+
+    uploadToVault: async (actorId, input) => {
+      const clean = cleanVaultUpload(input);
+      const db = await this.ready();
+      const ids: number[] = [];
+      await db.withTransactionAsync(async () => {
+        const actor = await this.memberWriteActor(db, actorId);
+        let councilIds: number[];
+        let year: number;
+        let location: string;
+        if (clean.eventId !== null) {
+          const event = await this.requireEvent(db, clean.eventId);
+          councilIds = await this.councilIdsOf(db, clean.eventId);
+          assertMayAttachEventMedia(actor, event, councilIds, `add photos to event ${clean.eventId}`);
+          await db.runAsync('UPDATE [Event] SET [PhotoGalleryURL] = ? WHERE [id] = ?', [appendPhotoPaths(event.PhotoGalleryURL, clean.fileUrls), clean.eventId]);
+          year = calendarYearOf(event.StartDate);
+          location = event.Location;
+        } else {
+          const meeting = await this.requireMeetingRow(db, clean.meetingId!);
+          assertMayLinkMeetingDrive(actor, meeting, `add photos to meeting ${clean.meetingId}`);
+          councilIds = [meeting.CouncilID];
+          year = calendarYearOf(meeting.Date);
+          location = meeting.Location;
+        }
+        for (const councilId of councilIds) {
+          for (const url of clean.fileUrls) {
+            const exists = await db.getFirstAsync(
+              'SELECT [id] FROM [CouncilMediaVault] WHERE [council_id] = ? AND [file_url] = ? AND [event_id] IS ? AND [meeting_id] IS ?',
+              [councilId, url, clean.eventId, clean.meetingId],
+            );
+            if (exists) continue;
+            const res = await db.runAsync(
+              `INSERT INTO [CouncilMediaVault] ([council_id], [file_url], [event_id], [meeting_id], [location_tag], [calendar_year], [uploaded_by_member_id], [uploaded_at])
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              [councilId, url, clean.eventId, clean.meetingId, clean.locationTag ?? (location || null), year, actorId, toTimestamp(this.now())],
+            );
+            ids.push(res.lastInsertRowId);
+          }
+        }
+      });
+      if (ids.length === 0) return [];
+      return db.getAllAsync<CouncilMediaVault>(`SELECT * FROM [CouncilMediaVault] WHERE [id] IN (${ids.map(() => '?').join(', ')}) ORDER BY [id]`, ids);
+    },
+
+    listSmartAlbums: async (actorId, councilId) => {
+      const db = await this.ready();
+      assertMayReadCouncilHistory(await this.memberWriteActor(db, actorId), councilId, `read the Smart Albums of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      return sortSmartAlbums(await db.getAllAsync<MediaSmartAlbums>('SELECT * FROM [MediaSmartAlbums] WHERE [council_id] = ?', [councilId]));
+    },
+
+    saveSmartAlbum: async (actorId, councilId, name, criteria) => {
+      const albumName = cleanSmartAlbumName(name);
+      const filter = cleanAlbumCriteria(criteria);
+      const db = await this.ready();
+      let id = 0;
+      await db.withTransactionAsync(async () => {
+        assertMayReadCouncilHistory(await this.memberWriteActor(db, actorId), councilId, `save a Smart Album for council ${councilId}`);
+        await this.assertCouncilsExist(db, [councilId]);
+        id = (
+          await db.runAsync(
+            'INSERT INTO [MediaSmartAlbums] ([council_id], [album_name], [album_criteria_json], [created_by_member_id], [created_at]) VALUES (?, ?, ?, ?, ?)',
+            [councilId, albumName, serializeAlbumCriteria(filter), actorId, toTimestamp(this.now())],
+          )
+        ).lastInsertRowId;
+      });
+      return toSmartAlbum((await db.getFirstAsync<MediaSmartAlbums>('SELECT * FROM [MediaSmartAlbums] WHERE [id] = ?', [id]))!);
+    },
+
+    deleteSmartAlbum: async (actorId, albumId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const album = requireSmartAlbum(await db.getFirstAsync<MediaSmartAlbums>('SELECT * FROM [MediaSmartAlbums] WHERE [id] = ?', [albumId]), albumId);
+        assertMayDeleteSmartAlbum(await this.memberWriteActor(db, actorId), album);
+        await db.runAsync('DELETE FROM [MediaSmartAlbums] WHERE [id] = ?', [albumId]);
+      });
     },
   };
 

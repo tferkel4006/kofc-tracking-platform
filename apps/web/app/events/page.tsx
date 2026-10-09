@@ -5,12 +5,17 @@
 // Sprint 6I: the manual Budget field is gone with Event.Budget (schema 47); an event's budget is its line in the
 // council's annual budget (/budget).
 // Sprint 6L Extension 4: the Local Category picker shows the category's fixed Supreme Mission Area as a read-only badge.
+// Sprint 6P: an All-Hands shift has no volunteer target at all (stored as 0) and shows an open-ended count, and the
+// Planning Hours panel logs preparation time before the event's first day (events.logPlanningTime).
 import { useState } from 'react';
 import {
+  canLogPlanningTime,
   describeError,
   formatDate,
+  formatHours,
   formatTimeRange,
   isAllHandsShift,
+  PLANNING_NOTES_MAX_LENGTH,
   isUrgent,
   shiftStatus,
   withNewMemberBadge,
@@ -237,7 +242,8 @@ const draftOf = (s: Shift): ShiftDraft => ({
   date: s.ShiftDate,
   start: s.StartTime.slice(0, 5),
   end: s.EndTime.slice(0, 5),
-  needed: String(s.MinNumberVolunteers),
+  // Sprint 6P: an All-Hands shift stores no target (0), so turning All-Hands off starts from the usual 4.
+  needed: s.MinNumberVolunteers > 0 ? String(s.MinNumberVolunteers) : '4',
   allHands: isAllHandsShift(s),
 });
 
@@ -289,8 +295,8 @@ function ShiftsPanel({ event }: { event: Event }) {
     ShiftDate: d.date,
     StartTime: d.start,
     EndTime: d.end,
-    // An All-Hands shift keeps a placeholder target of at least 1 (the column is NOT NULL); nothing reads it.
-    MinNumberVolunteers: d.allHands ? Math.max(1, Number.parseInt(d.needed, 10) || 1) : (parseNumberField(d.needed, 'Volunteers needed') as number),
+    // Sprint 6P: an All-Hands shift has no numeric target; the drivers store 0 whatever is sent.
+    MinNumberVolunteers: d.allHands ? 0 : (parseNumberField(d.needed, 'Volunteers needed') as number),
     IsAllHands: d.allHands ? 1 : 0,
   });
 
@@ -341,7 +347,7 @@ function ShiftsPanel({ event }: { event: Event }) {
                     <Td>{isAllHandsShift(s) ? 'All hands' : s.MinNumberVolunteers}</Td>
                   </>
                 )}
-                <Td>{s.NumberVolunteersSignedUp}</Td>
+                <Td>{isAllHandsShift(s) ? `${s.NumberVolunteersSignedUp} joined · open-ended` : s.NumberVolunteersSignedUp}</Td>
                 <Td>
                   {isAllHandsShift(s) ? (
                     <Pill tone="outline">All hands · no cap</Pill>
@@ -399,6 +405,82 @@ function ShiftsPanel({ event }: { event: Event }) {
           })}
         </Table>
         {shifts.data?.length === 0 ? <Empty>No shifts yet. Add the first one above; its date must fall inside the event.</Empty> : null}
+      </div>
+    </Panel>
+  );
+}
+
+// ---- planning hours (Sprint 6P) ----------------------------------------------
+
+function PlanningHoursPanel({ event, councilIds }: { event: Event; councilIds: number[] }) {
+  const user = useUser();
+  const log = useLoad(() => db.events.listPlanningTime(event.id), [event.id]);
+  const { message, setMessage, run } = useAction();
+  const [date, setDate] = useState('');
+  const [hours, setHours] = useState('1');
+  const [notes, setNotes] = useState('');
+  const mayLog = canLogPlanningTime(user, event, councilIds);
+
+  const add = async () => {
+    const ok = await run(async () => {
+      await db.events.logPlanningTime(user.memberId, event.id, { planningDate: date, hours: Number(hours), notes });
+    }, 'Planning Hours logged.');
+    if (ok) {
+      setNotes('');
+      await log.reload();
+    }
+  };
+  const remove = async (id: number) => {
+    if (await run(() => db.events.deletePlanningTime(user.memberId, id), 'Entry deleted.')) await log.reload();
+  };
+
+  return (
+    <Panel title="Planning Hours" actions={log.data ? <Pill tone="outline">{formatHours(log.data.totalHours)} total</Pill> : undefined}>
+      <div className="flex flex-col gap-3">
+        <p className="text-sm text-muted">
+          Time spent preparing this event before {formatDate(event.StartDate)}: meetings, buying supplies, making flyers. These hours are kept apart
+          from shift hours.
+        </p>
+        <Banner message={message} onDismiss={() => setMessage(null)} />
+        {log.error ? <Notice tone="error">{log.error}</Notice> : null}
+        {mayLog ? (
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label="Planning date">{(id) => <Input id={id} type="date" value={date} max={event.StartDate} onChange={(e) => setDate(e.target.value)} />}</Field>
+            <Field label="Hours">
+              {(id) => <Input id={id} className="w-24" type="number" min={0.25} max={24} step={0.25} value={hours} onChange={(e) => setHours(e.target.value)} />}
+            </Field>
+            <Field label="What you did" className="min-w-64 flex-1">
+              {(id) => <Input id={id} value={notes} maxLength={PLANNING_NOTES_MAX_LENGTH} onChange={(e) => setNotes(e.target.value)} />}
+            </Field>
+            <Button onClick={() => void add()} disabled={!date}>
+              Log hours
+            </Button>
+          </div>
+        ) : null}
+        {log.data && log.data.entries.length > 0 ? (
+          <Table caption={`Planning Hours for ${event.EventName}`} head={['Date', 'Member', 'Hours', 'Notes', '']}>
+            {log.data.entries.map((e) => (
+              <tr key={e.id}>
+                <Td>{formatDate(e.planning_date)}</Td>
+                <Td>{e.memberName}</Td>
+                <Td>{formatHours(e.hours)}</Td>
+                <Td>{e.notes ?? ''}</Td>
+                <Td>
+                  {/* assertMayDeletePlanningTime: the author, an Admin of a linked council, or a Super Admin. */}
+                  {(e.member_id === user.memberId && mayLog) ||
+                  user.memberType === 'Super Admin' ||
+                  (user.memberType === 'Admin' && councilIds.includes(user.councilId)) ? (
+                    <Button size="sm" variant="secondary" onClick={() => void remove(e.id)}>
+                      Delete
+                    </Button>
+                  ) : null}
+                </Td>
+              </tr>
+            ))}
+          </Table>
+        ) : log.data ? (
+          <Empty>No Planning Hours logged yet.</Empty>
+        ) : null}
       </div>
     </Panel>
   );
@@ -484,6 +566,7 @@ function EventEditor({
       {event.data ? (
         <>
           <ShiftsPanel event={event.data} />
+          <PlanningHoursPanel event={event.data} councilIds={linked.data} />
           <CopyPanel event={event.data} onCopied={onSaved} />
         </>
       ) : null}

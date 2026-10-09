@@ -1012,7 +1012,7 @@ GO
 -- June 30) is the term the election fills, so the same nominee may be put up again in a later year.
 -- IsEligible = 0 marks a Grand Knight nominee who has never served as Deputy Grand Knight or Grand Knight.
 -- CouncilLeadershipHistory holds one row per member per seat per term; a NULL EndDate is the sitting holder.
--- ExitReason is TermConcluded or Abdicated, enforced by the shared rules layer as elsewhere (no CHECK).
+-- ExitReason is TermConcluded, Abdicated or (Sprint 6P) Transferred, enforced by the shared rules layer as elsewhere (no CHECK).
 -- Roles are matched by name there (Grand Knight, Trustee 1-3, the appointed offices), never by id.
 -- =========================================================================
 CREATE TABLE [CouncilElectionBallot] (
@@ -2575,4 +2575,149 @@ ON UPDATE NO ACTION ON DELETE NO ACTION;
 GO
 
 CREATE UNIQUE INDEX [CouncilInMemoriam_Member_Idx] ON [CouncilInMemoriam] ([council_id], [member_id]);
+GO
+
+-- =========================================================================
+-- Sprint 6P: ROSTER SNAPSHOT GUARDS, ASSET DETAILS, PRE-EVENT PLANNING HOURS AND THE MEDIA VAULT (schema version 55)
+--
+-- CouncilLeadershipSnapshot is the locked copy of a member's officer record for one council and fraternal year. Its
+-- compound primary key (user_id, council_id, fraternal_year) allows one snapshot per member, council and year. Rows are
+-- only inserted, never updated or deleted, so a past record cannot be changed. user_id is the Member id (the requested
+-- name). CouncilLeadershipHistory keeps one row per seat per term, because one member can hold two seats in a year (a
+-- seat and an appointed office, or a seat taken after an abdication). The snapshot holds those seats together in
+-- roles_held. The engine writes snapshots at two times:
+--   * elections.concludeFraternalYear: one per member who held a seat in the concluded year (lock_reason
+--     'YearConcluded').
+--   * members.update, when CouncilID changes (a transfer): one per fraternal year in which the member held a seat in
+--     the old council (lock_reason 'Transfer'). The member's open terms there close with ExitReason 'Transferred', and
+--     the member loses those office roles. The rows stay with the old council.
+-- A snapshot that already exists is kept as it is. Rules: roster-snapshots.ts.
+--
+-- CouncilAssetsInventory gains serial_number and storage_location. After the Grand Knight approves a long-term asset
+-- sheet, the web desk opens the asset form with the name and cost basis already filled in, for these details.
+-- cost_basis and original_expense_id stay as the conversion wrote them.
+--
+-- EventPlanningTime holds 'Planning Hours': time a member spent preparing an event before its first day. Each row is
+-- one entry: planning_date is before the event's StartDate and not in the future, and hours is a multiple of 0.25 in
+-- (0, 24]. Entries are logged by the event's owner, an officer or Admin of a linked council, or a Super Admin, for
+-- their own time. Volunteer hour totals do not count these hours. Rules: planning-time.ts.
+--
+-- CouncilMediaVault holds one tagged photo per row: file_url (a Drive file id, an https link or a local path), the
+-- council, an optional event or meeting, location_tag (defaults to the event or meeting Location) and calendar_year.
+-- MediaSmartAlbums holds a saved gallery filter as album_criteria_json: the event ids, meeting ids, location text and
+-- calendar years. The gallery (/gallery) also lists the older event photos in Event.PhotoGalleryURL. Rules:
+-- media-vault.ts.
+-- =========================================================================
+CREATE TABLE [CouncilLeadershipSnapshot] (
+	[user_id] INT NOT NULL,
+	[council_id] INT NOT NULL,
+	[fraternal_year] VARCHAR(9) NOT NULL,
+	[roles_held] VARCHAR(1000) NOT NULL,
+	[lock_reason] VARCHAR(20) NOT NULL,
+	[locked_at] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([user_id], [council_id], [fraternal_year])
+);
+GO
+
+ALTER TABLE [CouncilLeadershipSnapshot]
+ADD FOREIGN KEY([user_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilLeadershipSnapshot]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+ALTER TABLE [CouncilAssetsInventory] ADD [serial_number] VARCHAR(100) NULL;
+GO
+ALTER TABLE [CouncilAssetsInventory] ADD [storage_location] VARCHAR(255) NULL;
+GO
+
+CREATE TABLE [EventPlanningTime] (
+	[id] INT NOT NULL IDENTITY,
+	[event_id] INT NOT NULL,
+	[member_id] INT NOT NULL,
+	[planning_date] DATE NOT NULL,
+	[hours] DECIMAL(5,2) NOT NULL,
+	[notes] VARCHAR(255) NULL,
+	[logged_at] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [EventPlanningTime]
+ADD FOREIGN KEY([event_id])
+REFERENCES [Event]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [EventPlanningTime]
+ADD FOREIGN KEY([member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE INDEX [EventPlanningTime_Event_Idx] ON [EventPlanningTime] ([event_id], [planning_date]);
+GO
+
+CREATE TABLE [CouncilMediaVault] (
+	[id] INT NOT NULL IDENTITY,
+	[council_id] INT NOT NULL,
+	[file_url] VARCHAR(2000) NOT NULL,
+	[event_id] INT NULL,
+	[meeting_id] INT NULL,
+	[location_tag] VARCHAR(255) NULL,
+	[calendar_year] INT NOT NULL,
+	[uploaded_by_member_id] INT NULL,
+	[uploaded_at] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([id])
+);
+GO
+
+CREATE TABLE [MediaSmartAlbums] (
+	[id] INT NOT NULL IDENTITY,
+	[council_id] INT NOT NULL,
+	[album_name] VARCHAR(100) NOT NULL,
+	[album_criteria_json] TEXT NOT NULL,
+	[created_by_member_id] INT NOT NULL,
+	[created_at] DATETIME NOT NULL DEFAULT getdate(),
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [CouncilMediaVault]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilMediaVault]
+ADD FOREIGN KEY([event_id])
+REFERENCES [Event]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilMediaVault]
+ADD FOREIGN KEY([meeting_id])
+REFERENCES [Meeting]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [CouncilMediaVault]
+ADD FOREIGN KEY([uploaded_by_member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MediaSmartAlbums]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MediaSmartAlbums]
+ADD FOREIGN KEY([created_by_member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE INDEX [CouncilMediaVault_Council_Idx] ON [CouncilMediaVault] ([council_id], [calendar_year]);
+GO
+CREATE INDEX [MediaSmartAlbums_Council_Idx] ON [MediaSmartAlbums] ([council_id]);
 GO

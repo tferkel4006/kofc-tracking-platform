@@ -114,6 +114,9 @@ describe('schema 43: ExpenseReport.is_long_term_asset and CouncilAssetsInventory
       'original_expense_id',
       'current_status',
       'notes',
+      // Sprint 6P: the asset form's extra details.
+      'serial_number',
+      'storage_location',
     ]);
     expect(TABLES.CouncilAssetsInventory.columns.find((c) => c.name === 'current_status')).toMatchObject({ default: { kind: 'literal', value: 'ACTIVE' } });
     expect(TABLES.ExpenseReport.columns.find((c) => c.name === 'is_long_term_asset')).toMatchObject({ notNull: true, default: { kind: 'literal', value: 0 } });

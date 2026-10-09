@@ -253,7 +253,7 @@ Granular operational work blocks under an overarching parent event.
 •	EventID (INTEGER, NOT NULL) — Foreign Key references Event(id).
 •	MinNumberVolunteers (INTEGER, NOT NULL) — Required recruitment target ceiling.
 •	NumberVolunteersSignedUp (INTEGER, NOT NULL) — Running aggregate enrollment counter.
-•	IsAllHands (BIT, NOT NULL, DEFAULT 0) — Phase 4.5 All-Hands shift (schema version 38): at 1 the shift has no volunteer cap. Any number of members may sign up, the apps hide MinNumberVolunteers and never show the shift as full or short of volunteers (isAllHandsShift), and lowering MinNumberVolunteers below the signups is allowed. Written by events.createShift and updateShift; an event copy carries it. Appended by ALTER TABLE.
+•	IsAllHands (BIT, NOT NULL, DEFAULT 0) — Phase 4.5 All-Hands shift (schema version 38): at 1 the shift has no volunteer cap. Any number of members may sign up, the apps hide MinNumberVolunteers and never show the shift as full or short of volunteers (isAllHandsShift), and lowering MinNumberVolunteers below the signups is allowed. Written by events.createShift and updateShift; an event copy carries it. Appended by ALTER TABLE. Sprint 6P: an All-Hands shift stores MinNumberVolunteers = 0 (no numeric target).
 [EventSignup]
 Tracks shift schedules, user availability, and attendance logs.
 •	id (INTEGER, NOT NULL) — Primary Key. Auto-incrementing identifier.
@@ -439,7 +439,7 @@ One member's time in one seat. A NULL EndDate marks the sitting holder.
 •	FraternalYear (VARCHAR(9), NOT NULL) — The term, e.g. '2026-2027'.
 •	StartDate (DATE, NOT NULL) — When the member took the seat.
 •	EndDate (DATE, NULL) — When the member left it; NULL while they hold it.
-•	ExitReason (VARCHAR(50), NULL) — TermConcluded or Abdicated.
+•	ExitReason (VARCHAR(50), NULL) — TermConcluded, Abdicated or (Sprint 6P) Transferred.
 •	AppointedByID (INTEGER, NULL) — Foreign Key references Member(id). The Grand Knight or Super Admin who appointed the member; NULL when elected or backfilled.
 ________________________________________
 
@@ -815,4 +815,52 @@ One remembrance per council and deceased member (a unique index on council_id, m
 •	compiled_at (DATETIME, NULL) — When the snapshot was last compiled (UTC).
 •	updated_by_member_id (INT, NULL) — Foreign Key references Member(id). The keeper who last wrote it.
 •	updated_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was last written (UTC).
+________________________________________
+# 26. Roster Snapshot Guards, Asset Details, Planning Hours and the Media Vault (Sprint 6P)
+Schema version 55. Rules: roster-snapshots.ts, asset-records.ts, planning-time.ts and media-vault.ts.
+Roster snapshots. A snapshot is the locked copy of one member's officer record for one council and fraternal year. The compound primary key (user_id, council_id, fraternal_year) allows one snapshot for each. Rows are only inserted and never updated or deleted, and a snapshot that exists is never written again. CouncilLeadershipHistory still keeps one row per seat per term, because one member can hold two seats in the same year. The engine locks snapshots at two times:
+•	elections.concludeFraternalYear locks every term that the conclusion closes ('TermConcluded'), and every earlier year (lock_reason 'YearConcluded').
+•	members.update locks a snapshot for each year in which the member held a seat in the old council, when CouncilID changes (a transfer; lock_reason 'Transfer'). It also closes the member's open terms there with ExitReason 'Transferred' and removes the member's office seats (officeKind), so the seats stay in the old council. Read: history.listLeadershipSnapshots (any member of the council).
+Asset form. After the Grand Knight counter-signs a sheet marked as a long-term Council Asset on the Authorization Desk, the desk opens /expenses/assets?asset=<id>&from=approval. The form shows the name, cost basis and purchase date from the sheet, and the approver adds the serial number, storage location, status and notes (expenses.getAssetRecordForExpense, getAssetRecord, updateAssetRecord). The council's Grand Knight, Admins, Financial Secretary and Treasurer, and any Super Admin can open the form and the inventory list (assertMayManageCouncilAssets). These readers also apply to listAssetsInventory.
+All-Hands shifts. When IsAllHands is 1, the shift stores MinNumberVolunteers = 0 (cleanShiftFields drops any target that is sent). The planner shows '<n> joined · open-ended'. If All-Hands is turned off, a target of at least 1 must be given (assertShiftHasTarget, INVALID_INPUT).
+[CouncilLeadershipSnapshot]
+One locked officer record. The primary key is (user_id, council_id, fraternal_year).
+•	user_id (INT, NOT NULL) — Foreign Key references Member(id). The column is named user_id, as the sprint asked.
+•	council_id (INT, NOT NULL) — Foreign Key references Council(id). The council in which the seats were held. Blocks deleting the council (RECORD_IN_USE).
+•	fraternal_year (VARCHAR(9), NOT NULL) — For example '2025-2026'.
+•	roles_held (VARCHAR(1000), NOT NULL) — The seats held that year, in Role id order, for example 'Grand Knight, Lecturer'.
+•	lock_reason (VARCHAR(20), NOT NULL) — YearConcluded or Transfer.
+•	locked_at (DATETIME, NOT NULL, DEFAULT getdate()) — When the snapshot was locked (UTC).
+[CouncilAssetsInventory] (added columns)
+•	serial_number (VARCHAR(100), NULL) — From the asset form.
+•	storage_location (VARCHAR(255), NULL) — Where the item is kept, from the asset form.
+[EventPlanningTime]
+Planning Hours: the time a member spent to prepare an event before its first day. These hours are not included in shift hours or volunteer hour totals. The event's owner, an officer or Admin of a linked council, or a Super Admin logs their own time (events.logPlanningTime; else ADMIN_REQUIRED or COUNCIL_ACCESS_DENIED). The author or an Admin deletes an entry (events.deletePlanningTime).
+•	id (INT, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	event_id (INT, NOT NULL) — Foreign Key references Event(id). An index on event_id, planning_date.
+•	member_id (INT, NOT NULL) — Foreign Key references Member(id). The member who did the work and logged it.
+•	planning_date (DATE, NOT NULL) — Must be before the event's StartDate and not after today (else INVALID_INPUT).
+•	hours (DECIMAL(5,2), NOT NULL) — A multiple of 0.25 in (0, 24] (assertValidHours).
+•	notes (VARCHAR(255), NULL) — What the member did.
+•	logged_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was logged (UTC).
+[CouncilMediaVault]
+One tagged photo. The gallery (/gallery, media.getLibrary) lists these rows and the older event photos in Event.PhotoGalleryURL. It does not list a photo twice. Filters: several events and meetings, location text and calendar years.
+•	id (INT, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	council_id (INT, NOT NULL) — Foreign Key references Council(id). An event photo gets one row for each council the event is linked to. Blocks deleting the council (RECORD_IN_USE).
+•	file_url (VARCHAR(2000), NOT NULL) — A Drive file id, an https or blob link, or a local path. It must not contain a comma, because event photos are also added to PhotoGalleryURL.
+•	event_id (INT, NULL) — Foreign Key references Event(id). The writers of events.uploadPhotos can upload.
+•	meeting_id (INT, NULL) — Foreign Key references Meeting(id). The writers of meetings.linkGoogleDrive can upload. Each row has an event or a meeting, not both (cleanVaultUpload).
+•	location_tag (VARCHAR(255), NULL) — If blank, the event's or meeting's Location.
+•	calendar_year (INT, NOT NULL) — The year of the event's StartDate or the meeting's Date.
+•	uploaded_by_member_id (INT, NULL) — Foreign Key references Member(id).
+•	uploaded_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was uploaded (UTC).
+[MediaSmartAlbums]
+A saved gallery filter. When the album opens, the photos are matched again, so a new photo that matches is added. Any member of the council can save an album (media.saveSmartAlbum). The member who saved it, an Admin of the council or a Super Admin can delete it.
+•	id (INT, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	council_id (INT, NOT NULL) — Foreign Key references Council(id). Blocks deleting the council (RECORD_IN_USE).
+•	album_name (VARCHAR(100), NOT NULL) — Trimmed and required.
+•	album_criteria_json (TEXT, NOT NULL) — {"eventIds":[...],"meetingIds":[...],"location":"...","years":[...]} (cleanAlbumCriteria).
+•	created_by_member_id (INT, NOT NULL) — Foreign Key references Member(id).
+•	created_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was saved (UTC).
+Slideshow. On the gallery, 'Play slideshow' opens the viewer in full screen. The viewer shows the next photo every 5 seconds (SLIDESHOW_INTERVAL_MS) with a 0.7-second fade and a gold progress bar. After the last photo, it goes back to the first. The space bar pauses the slideshow. If the viewer asks for reduced motion, there is no fade.
 ________________________________________

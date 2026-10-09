@@ -656,6 +656,8 @@ export interface CouncilAssetsInventory {
   original_expense_id?: number | null;
   current_status: CouncilAssetStatus;
   notes?: string | null;
+  serial_number?: string | null; // VARCHAR(100), Sprint 6P
+  storage_location?: string | null; // VARCHAR(255), Sprint 6P: where the item is kept
 }
 
 /** One receipt on an expense sheet. */
@@ -701,8 +703,11 @@ export interface SupremeReportingSync {
 }
 
 // 10. OFFICER ELECTIONS AND LEADERSHIP HISTORY (Sprint 5U)
-/** Why a member left a seat: the fraternal year ended, or they stepped down mid-term. */
-export type LeadershipExitReason = 'TermConcluded' | 'Abdicated';
+/**
+ * Why a member left a seat: the fraternal year ended, they stepped down mid-term, or (Sprint 6P) they transferred to
+ * another council.
+ */
+export type LeadershipExitReason = 'TermConcluded' | 'Abdicated' | 'Transferred';
 
 /** Whether one of a council's elected seats is open for nomination; one row per council and role. */
 export interface CouncilElectionBallot {
@@ -1089,5 +1094,56 @@ export interface CouncilPrayerIntentionPrayer {
   intention_id: number;
   member_id: number;
   prayed_on: string; // DATE, YYYY-MM-DD (the member's local date)
+  created_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+// 17. ROSTER SNAPSHOTS, PLANNING HOURS AND THE MEDIA VAULT (Sprint 6P)
+/** Why a leadership snapshot was locked: the fraternal year was concluded, or the member transferred councils. */
+export type LeadershipSnapshotReason = 'YearConcluded' | 'Transfer';
+
+/**
+ * The locked copy of one member's officer record in one council and fraternal year. Insert-only: the compound key
+ * (user_id, council_id, fraternal_year) allows one row, and nothing updates or deletes it.
+ */
+export interface CouncilLeadershipSnapshot {
+  user_id: number; // Member
+  council_id: number;
+  fraternal_year: string; // e.g. '2026-2027'
+  roles_held: string; // VARCHAR(1000): the seats held that year, comma-separated in role order
+  lock_reason: LeadershipSnapshotReason;
+  locked_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+/** Planning Hours: time one member spent preparing an event before its first day. */
+export interface EventPlanningTime {
+  id: number;
+  event_id: number;
+  member_id: number;
+  planning_date: string; // DATE, YYYY-MM-DD, before the event's StartDate
+  hours: number; // DECIMAL(5,2), a multiple of 0.25 in (0, 24]
+  notes?: string | null; // VARCHAR(255)
+  logged_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+/** One tagged photo in the council's media vault. */
+export interface CouncilMediaVault {
+  id: number;
+  council_id: number;
+  file_url: string; // VARCHAR(2000): a Drive file id, https link, blob link or local path
+  event_id?: number | null;
+  meeting_id?: number | null;
+  location_tag?: string | null; // VARCHAR(255)
+  calendar_year: number;
+  uploaded_by_member_id?: number | null;
+  uploaded_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+/** A saved gallery filter. album_criteria_json is a MediaAlbumCriteria as JSON. */
+export interface MediaSmartAlbums {
+  id: number;
+  council_id: number;
+  album_name: string; // VARCHAR(100)
+  album_criteria_json: string; // TEXT
+  created_by_member_id: number;
   created_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
 }

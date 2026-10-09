@@ -7,15 +7,21 @@
 // Admin counter-signs, never on their own sheet, and never the officer who issued the order (expenseCounterSignBlock;
 // the drivers: GRAND_KNIGHT_REQUIRED, SELF_APPROVAL_BLOCKED, DUAL_SIGNATURE_CONFLICT). A row the viewer may not sign
 // shows no picker and no button, only the reason (the Collusion Guard badge for the order's own issuer).
+// Sprint 6P: counter-signing a sheet marked as a long-term Council Asset goes straight on to that asset's form
+// (/expenses/assets), with the name and cost basis the approval just recorded already filled in.
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
+  assetFormPath,
   canAuditCouncilExpenses,
+  canManageCouncilAssets,
   canDisburseCouncilExpenses,
   canOpenExpenseAuthorizeDesk,
   describeError,
   expenseCounterSignBlock,
   listExpenseReferences,
+  opensAssetForm,
   sumAmounts,
   type ExpenseReferenceOptions,
   type ExpenseReportDetail,
@@ -42,6 +48,7 @@ const NO_REFS: ExpenseReferenceOptions = { events: [], meetings: [] };
 
 function AuthorizationDesk() {
   const user = useUser();
+  const router = useRouter();
   const scope = useCouncilScope();
   const councilId = scope.councilId;
   const canOpen = canOpenExpenseAuthorizeDesk(user, councilId);
@@ -71,6 +78,13 @@ function AuthorizationDesk() {
     setMessage(null);
     try {
       const signed = await db.expenses.grandKnightAuthorizeOrder(user.memberId, d.report.id, budgetLines.lineIdOf(d));
+      if (opensAssetForm(signed.report)) {
+        const asset = await db.expenses.getAssetRecordForExpense(user.memberId, signed.report.id);
+        if (asset) {
+          router.push(`${assetFormPath(asset.id)}&from=approval`);
+          return;
+        }
+      }
       setReleased((now) => new Map(now).set(signed.report.id, signed));
       setMessage({
         tone: 'info',
@@ -123,7 +137,20 @@ function AuthorizationDesk() {
 
   return (
     <>
-      <PageTitle actions={<CouncilSelect scope={scope} />}>Grand Knight Authorization Desk</PageTitle>
+      <PageTitle
+        actions={
+          <div className="flex items-center gap-4">
+            {canManageCouncilAssets(user, councilId) ? (
+              <Link href="/expenses/assets" className="text-sm font-bold underline">
+                Council assets
+              </Link>
+            ) : null}
+            <CouncilSelect scope={scope} />
+          </div>
+        }
+      >
+        Grand Knight Authorization Desk
+      </PageTitle>
       {!canOpen ? (
         <Notice tone="error">Only this council&apos;s Grand Knight and Admins, or a Super Admin, open its authorization desk.</Notice>
       ) : (

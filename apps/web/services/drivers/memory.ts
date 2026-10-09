@@ -440,6 +440,29 @@ import {
   type MeetingAgendaItem,
   type MeetingAgendaView,
   type MotionHandTally,
+  assertMayDeletePlanningTime,
+  assertMayDeleteSmartAlbum,
+  assertMayLogPlanningTime,
+  assertMayManageCouncilAssets,
+  assertShiftHasTarget,
+  buildMediaLibrary,
+  buildPlanningLog,
+  calendarYearOf,
+  cleanAlbumCriteria,
+  concludedTermRows,
+  cleanAssetRecordChanges,
+  cleanPlanningTimeInput,
+  cleanSmartAlbumName,
+  cleanVaultUpload,
+  planLeadershipSnapshots,
+  planTransferGuard,
+  requireAssetRecord,
+  requirePlanningTime,
+  requireSmartAlbum,
+  serializeAlbumCriteria,
+  sortLeadershipSnapshots,
+  sortSmartAlbums,
+  toSmartAlbum,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -556,6 +579,10 @@ import type {
   Shift,
   ShiftChanges,
   ShiftFeedItem,
+  CouncilLeadershipSnapshot,
+  CouncilMediaVault,
+  EventPlanningTime,
+  MediaSmartAlbums,
 } from '@kofc/shared';
 import { PRESENTATION_SEED_DATA, SEED_DATA, TABLES, type SeedValue } from '../generated/schema.generated';
 import { sha256Hex } from '../password';
@@ -1660,12 +1687,53 @@ export class MemoryDataService implements DataService {
         }
         const credential = s.rows('Credentials').find((c) => c.id === existing.CredentialID);
         if (credential) credential.Username = clean.Email;
+        // Sprint 6P: a transfer locks the member's officer record in the council they leave.
+        if (clean.CouncilID !== existing.CouncilID) this.applyTransferGuard(s, id, existing.CouncilID as number);
         for (const c of MEMBER_COLUMNS) existing[c] = clean[c] ?? null;
         return existing;
       });
       return withoutPushToken({ ...row }) as unknown as Member;
     },
   };
+
+  /**
+   * Sprint 6P transfer guard (planTransferGuard): locks a snapshot for every year the member held a seat in the council
+   * they leave, closes their open terms there 'Transferred' and vacates their office seats.
+   */
+  private applyTransferGuard(s: MemoryStore, memberId: number, oldCouncilId: number): void {
+    const plan = planTransferGuard({
+      memberId,
+      oldCouncilId,
+      history: this.copyRows<CouncilLeadershipHistory>(s, 'CouncilLeadershipHistory', (h) => h.CouncilID === oldCouncilId),
+      roles: s.rows('Role') as unknown as Role[],
+      heldRoleIds: s.rows('MemberRoles').filter((mr) => mr.MemberID === memberId).map((mr) => mr.RoleID as number),
+      existing: s.rows('CouncilLeadershipSnapshot') as unknown as CouncilLeadershipSnapshot[],
+      now: this.now(),
+      lockedAt: toTimestamp(this.now()),
+    });
+    for (const snapshot of plan.snapshots) s.insert('CouncilLeadershipSnapshot', { ...snapshot });
+    for (const term of s.rows('CouncilLeadershipHistory')) {
+      if (plan.closeTermIds.includes(term.id as number)) Object.assign(term, { EndDate: plan.endDate, ExitReason: 'Transferred' });
+    }
+    s.remove('MemberRoles', (mr) => mr.MemberID === memberId && plan.removeRoleIds.includes(mr.RoleID as number));
+  }
+
+  /**
+   * Sprint 6P: locks a 'YearConcluded' snapshot of every term the conclusion just closed and of every year before the new
+   * term (concludedTermRows), for each member and year not yet locked.
+   */
+  private lockConcludedSnapshots(s: MemoryStore, councilId: number, newTermYear: string, today: string): void {
+    const history = this.copyRows<CouncilLeadershipHistory>(s, 'CouncilLeadershipHistory', (h) => h.CouncilID === councilId);
+    const snapshots = planLeadershipSnapshots({
+      councilId,
+      history: concludedTermRows(history, newTermYear, today),
+      roles: s.rows('Role') as unknown as Role[],
+      existing: s.rows('CouncilLeadershipSnapshot') as unknown as CouncilLeadershipSnapshot[],
+      reason: 'YearConcluded',
+      lockedAt: toTimestamp(this.now()),
+    });
+    for (const snapshot of snapshots) s.insert('CouncilLeadershipSnapshot', { ...snapshot });
+  }
 
   /** The caller of a member write, read from the store so the client cannot claim a type it does not hold. */
   private memberWriteActor(s: MemoryStore, actorId: number): MemberWriteActor {
@@ -2086,11 +2154,39 @@ export class MemoryDataService implements DataService {
 
     listAssetsInventory: async (actorId, councilId) => {
       const s = await this.ready();
-      assertMayAuditCouncilExpenses(this.memberWriteActor(s, actorId), councilId, `read the assets inventory of council ${councilId}`);
+      assertMayManageCouncilAssets(this.memberWriteActor(s, actorId), councilId, `read the assets inventory of council ${councilId}`);
       this.assertCouncilsExist(s, [councilId]);
       return (s.rows('CouncilAssetsInventory').filter((a) => a.council_id === councilId).map((a) => ({ ...a })) as unknown as CouncilAssetsInventory[]).sort(
         (a, b) => b.purchase_date.localeCompare(a.purchase_date) || b.id - a.id,
       );
+    },
+
+    getAssetRecord: async (actorId, assetId) => {
+      const s = await this.ready();
+      const asset = requireAssetRecord(s.rows('CouncilAssetsInventory').find((a) => a.id === assetId) as unknown as CouncilAssetsInventory | undefined, assetId);
+      assertMayManageCouncilAssets(this.memberWriteActor(s, actorId), asset.council_id, `read asset record ${assetId}`);
+      return { ...asset };
+    },
+
+    getAssetRecordForExpense: async (actorId, reportId) => {
+      const s = await this.ready();
+      const report = s.rows('ExpenseReport').find((r) => r.id === reportId);
+      if (!report) throw new BusinessRuleError('RECORD_NOT_FOUND', `No expense report with id ${reportId}.`, { reportId });
+      assertMayManageCouncilAssets(this.memberWriteActor(s, actorId), report.CouncilID as number, `read the asset record of expense report ${reportId}`);
+      const asset = s.rows('CouncilAssetsInventory').find((a) => a.original_expense_id === reportId);
+      return asset ? ({ ...asset } as unknown as CouncilAssetsInventory) : null;
+    },
+
+    updateAssetRecord: async (actorId, assetId, changes) => {
+      const clean = cleanAssetRecordChanges(changes);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const row = s.rows('CouncilAssetsInventory').find((a) => a.id === assetId) as Row | undefined;
+        const asset = requireAssetRecord(row as unknown as CouncilAssetsInventory | undefined, assetId);
+        assertMayManageCouncilAssets(this.memberWriteActor(s, actorId), asset.council_id, `update asset record ${assetId}`);
+        Object.assign(row!, clean);
+        return { ...row } as unknown as CouncilAssetsInventory;
+      });
     },
 
     listAuthorizationQueue: async (actorId, councilId) => {
@@ -2453,6 +2549,36 @@ export class MemoryDataService implements DataService {
       return buildCalendarEntries(range, events, meetings);
     },
 
+    listPlanningTime: async (eventId) => {
+      const s = await this.ready();
+      this.requireEvent(s, eventId);
+      const rows = this.copyRows<EventPlanningTime>(s, 'EventPlanningTime', (r) => r.event_id === eventId);
+      const ids = new Set(rows.map((r) => r.member_id));
+      return buildPlanningLog(eventId, rows, this.copyRows<Member>(s, 'Member', (m) => ids.has(m.id as number)));
+    },
+
+    logPlanningTime: async (actorId, eventId, input) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        const event = this.requireEvent(s, eventId) as unknown as CouncilEvent;
+        assertMayLogPlanningTime(actor, event, this.councilIdsOf(s, eventId), `log Planning Hours for event ${eventId}`);
+        const clean = cleanPlanningTimeInput(input, event, toIsoDate(this.now()));
+        const row = s.insert('EventPlanningTime', { event_id: eventId, member_id: actorId, ...clean, logged_at: toTimestamp(this.now()) });
+        return { ...row } as unknown as EventPlanningTime;
+      });
+    },
+
+    deletePlanningTime: async (actorId, entryId) => {
+      const s = await this.ready();
+      s.transaction(() => {
+        const entry = requirePlanningTime(s.rows('EventPlanningTime').find((r) => r.id === entryId) as unknown as EventPlanningTime | undefined, entryId);
+        const event = this.requireEvent(s, entry.event_id) as unknown as CouncilEvent;
+        assertMayDeletePlanningTime(this.memberWriteActor(s, actorId), entry, event, this.councilIdsOf(s, entry.event_id));
+        s.remove('EventPlanningTime', (r) => r.id === entryId);
+      });
+    },
+
     uploadPhotos: async (actorId, eventId, photoPaths) => {
       const s = await this.ready();
       return s.transaction(() => {
@@ -2600,6 +2726,7 @@ export class MemoryDataService implements DataService {
         if (clean.ShiftDate !== undefined) {
           assertShiftInsideEvent(clean.ShiftDate, this.requireEvent(s, row.EventID as number) as unknown as CouncilEvent);
         }
+        assertShiftHasTarget({ ...(row as unknown as Shift), ...clean });
         Object.assign(row, clean);
         return { ...row } as unknown as Shift;
       });
@@ -4020,6 +4147,7 @@ export class MemoryDataService implements DataService {
         // Sprint 6L: the concluded year's totals, read before any term closes, go into its annals.
         const closingMetrics = buildYearClosingMetrics(councilId, previousFraternalYear(fraternalYear), this.yearClosingRows(s, councilId), now);
         this.applySeatTransitions(s, councilId, rows, plan.transitions, fraternalYear, toIsoDate(now));
+        this.lockConcludedSnapshots(s, councilId, fraternalYear, toIsoDate(now));
         const ballotsReset = s.remove('CouncilElectionBallot', (b) => b.CouncilID === councilId);
         this.bakeClosingMetrics(s, councilId, actorId, closingMetrics);
         return { ...conclusionResult(plan, rows.roles, fraternalYear, ballotsReset), closingMetrics };
@@ -5252,6 +5380,108 @@ export class MemoryDataService implements DataService {
           else s.insert('CouncilInMemoriam', { council_id: councilId, member_id: card.memberId, ...compiled, updated_by_member_id: actorId, updated_at: now });
         }
         return this.inMemoriamRoll(s, councilId, true);
+      });
+    },
+
+    listLeadershipSnapshots: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReadCouncilHistory(this.memberWriteActor(s, actorId), councilId, `read the leadership snapshots of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return sortLeadershipSnapshots(this.copyRows<CouncilLeadershipSnapshot>(s, 'CouncilLeadershipSnapshot', (r) => r.council_id === councilId));
+    },
+  };
+
+  media: DataService['media'] = {
+    getLibrary: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReadCouncilHistory(this.memberWriteActor(s, actorId), councilId, `browse the photo library of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      const linked = new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+      return buildMediaLibrary({
+        councilId,
+        vault: this.copyRows<CouncilMediaVault>(s, 'CouncilMediaVault', (r) => r.council_id === councilId),
+        events: this.copyRows<CouncilEvent>(s, 'Event', (e) => linked.has(e.id)),
+        meetings: this.copyRows<Meeting>(s, 'Meeting', (m) => m.CouncilID === councilId),
+      });
+    },
+
+    uploadToVault: async (actorId, input) => {
+      const clean = cleanVaultUpload(input);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const actor = this.memberWriteActor(s, actorId);
+        let councilIds: number[];
+        let year: number;
+        let location: string;
+        if (clean.eventId !== null) {
+          const event = this.requireEvent(s, clean.eventId);
+          councilIds = this.councilIdsOf(s, clean.eventId);
+          assertMayAttachEventMedia(actor, event as unknown as CouncilEvent, councilIds, `add photos to event ${clean.eventId}`);
+          (event as Row).PhotoGalleryURL = appendPhotoPaths(event.PhotoGalleryURL as string | null, clean.fileUrls);
+          year = calendarYearOf(event.StartDate as string);
+          location = event.Location as string;
+        } else {
+          const meeting = this.requireMeetingRow(s, clean.meetingId!);
+          assertMayLinkMeetingDrive(actor, meeting as unknown as Meeting, `add photos to meeting ${clean.meetingId}`);
+          councilIds = [meeting.CouncilID as number];
+          year = calendarYearOf(meeting.Date as string);
+          location = meeting.Location as string;
+        }
+        const written: CouncilMediaVault[] = [];
+        for (const councilId of councilIds) {
+          for (const url of clean.fileUrls) {
+            const exists = s
+              .rows('CouncilMediaVault')
+              .some((r) => r.council_id === councilId && r.file_url === url && r.event_id === clean.eventId && r.meeting_id === clean.meetingId);
+            if (exists) continue;
+            const row = s.insert('CouncilMediaVault', {
+              council_id: councilId,
+              file_url: url,
+              event_id: clean.eventId,
+              meeting_id: clean.meetingId,
+              location_tag: clean.locationTag ?? (location || null),
+              calendar_year: year,
+              uploaded_by_member_id: actorId,
+              uploaded_at: toTimestamp(this.now()),
+            });
+            written.push({ ...row } as unknown as CouncilMediaVault);
+          }
+        }
+        return written;
+      });
+    },
+
+    listSmartAlbums: async (actorId, councilId) => {
+      const s = await this.ready();
+      assertMayReadCouncilHistory(this.memberWriteActor(s, actorId), councilId, `read the Smart Albums of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return sortSmartAlbums(this.copyRows<MediaSmartAlbums>(s, 'MediaSmartAlbums', (r) => r.council_id === councilId));
+    },
+
+    saveSmartAlbum: async (actorId, councilId, name, criteria) => {
+      const albumName = cleanSmartAlbumName(name);
+      const filter = cleanAlbumCriteria(criteria);
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMayReadCouncilHistory(this.memberWriteActor(s, actorId), councilId, `save a Smart Album for council ${councilId}`);
+        this.assertCouncilsExist(s, [councilId]);
+        const row = s.insert('MediaSmartAlbums', {
+          council_id: councilId,
+          album_name: albumName,
+          album_criteria_json: serializeAlbumCriteria(filter),
+          created_by_member_id: actorId,
+          created_at: toTimestamp(this.now()),
+        });
+        return toSmartAlbum({ ...row } as unknown as MediaSmartAlbums);
+      });
+    },
+
+    deleteSmartAlbum: async (actorId, albumId) => {
+      const s = await this.ready();
+      s.transaction(() => {
+        const album = requireSmartAlbum(s.rows('MediaSmartAlbums').find((r) => r.id === albumId) as unknown as MediaSmartAlbums | undefined, albumId);
+        assertMayDeleteSmartAlbum(this.memberWriteActor(s, actorId), album);
+        s.remove('MediaSmartAlbums', (r) => r.id === albumId);
       });
     },
   };

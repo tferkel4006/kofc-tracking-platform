@@ -264,7 +264,8 @@ describe('All-Hands shifts', () => {
   });
 
   it('validates the flag and carries it into a copied event', () => {
-    expect(cleanShiftFields({ IsAllHands: true as unknown as number })).toEqual({ IsAllHands: 1 });
+    // Sprint 6P: an All-Hands shift drops its numeric target (stored as 0).
+    expect(cleanShiftFields({ IsAllHands: true as unknown as number })).toEqual({ IsAllHands: 1, MinNumberVolunteers: 0 });
     expect(() => cleanShiftFields({ IsAllHands: 2 })).toThrow(/IsAllHands/);
     const event = { id: 1, EventName: 'Picnic', EventDescription: '', OwnerID: 1, StartDate: '2026-10-20', EndDate: '2026-10-20', Location: 'Hall', CategoryID: 1 } as Event;
     const copy = planEventCopy(event, [shift({ IsAllHands: 1 }), shift()], { startDate: '2027-10-20' });
@@ -297,7 +298,8 @@ describe.each(drivers)('$name driver: All-Hands shifts', (d) => {
       MinNumberVolunteers: 1,
       IsAllHands: 1,
     });
-    expect(created).toMatchObject({ IsAllHands: 1, MinNumberVolunteers: 1 });
+    // Sprint 6P: the target that came with it is dropped; an All-Hands shift stores 0.
+    expect(created).toMatchObject({ IsAllHands: 1, MinNumberVolunteers: 0 });
     for (const id of [MEMBER.superAdmin, MEMBER.admin, MEMBER.member]) await db.events.signupForShift(id, created.id);
     const after = (await db.events.getShift(created.id))!;
     expect(after.NumberVolunteersSignedUp).toBe(3);
@@ -305,6 +307,6 @@ describe.each(drivers)('$name driver: All-Hands shifts', (d) => {
 
     // A capped shift still refuses a target below its signups; an All-Hands one does not.
     await expectRule(db.events.updateShift(coats.id, { MinNumberVolunteers: 1 }), 'INVALID_INPUT');
-    expect(await db.events.updateShift(coats.id, { MinNumberVolunteers: 1, IsAllHands: 1 })).toMatchObject({ MinNumberVolunteers: 1, IsAllHands: 1 });
+    expect(await db.events.updateShift(coats.id, { MinNumberVolunteers: 1, IsAllHands: 1 })).toMatchObject({ MinNumberVolunteers: 0, IsAllHands: 1 });
   });
 });
