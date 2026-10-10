@@ -610,6 +610,7 @@ export const MEMBER_COLUMNS = [
   'IsBudgetDirector',
   'DateJoinedCouncil',
   'flag_large_text_mode',
+  'flag_charter_member',
 ] as const satisfies readonly (keyof NewMember)[];
 
 /** Longest Member.ProfilePhotoURL (VARCHAR(2000)). */
@@ -1595,6 +1596,7 @@ export function cleanNewMember(input: NewMember, now: Date): NewMember {
     IsBudgetDirector: bitFlag(input.IsBudgetDirector, 'IsBudgetDirector'),
     DateJoinedCouncil: joined,
     flag_large_text_mode: bitFlag(input.flag_large_text_mode, 'flag_large_text_mode'),
+    flag_charter_member: bitFlag(input.flag_charter_member, 'flag_charter_member'),
   };
 }
 

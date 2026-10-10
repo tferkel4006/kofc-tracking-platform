@@ -893,3 +893,22 @@ New columns:
 Honor Voucher badge. ExpenseReportDetail.honorVoucher is true when the sheet is flagged, or when it carries no receipt file at all (no ExpenseReceipts row with a file and no line with a ReceiptPhotoURL). The FS, Treasurer and GK desks and the Leadership Auditing Queue then print '⚠️ HONOR VOUCHER - NO RECEIPT ATTACHED' (HONOR_VOUCHER_BADGE) with the member's reason.
 Receipt reading. Two more CouncilCredentialsVault keys, AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY, saved on the Credentials Vault page by the council's Admins or a Super Admin. The endpoint must be https on a cognitiveservices.azure.com or api.cognitive.microsoft.com host (resolveDocumentIntelligenceEndpoint). POST /api/expenses/receipt-ocr (any portal session; the session's council) sends one JPEG, PNG, TIFF, BMP, HEIF or PDF of at most 4 MB to the prebuilt-receipt model (apps/web/services/ocr/receipt-parser.ts), polls the operation on the same host, and answers the merchant, date, total and item lines (parseAzureReceipt). Nothing is stored; the expense form pre-fills a receipt and its lines for the member to check.
 ________________________________________
+# 28. Member Lifecycle, Devotional Tracker and Canonization Shield (Sprint 7A)
+Schema version 59. Rules: member-lifecycle.ts (planMemberLifecycle, planInactivitySweep, cleanDevotionalEntry, canonizationRank, buildCouncilEngagement).
+[MemberDevotionals]
+A member's running devotional tally, logged on the phone's Home (My devotions). One row per member, created by the first devotionals.record. Only the member reads it; no council screen shows it.
+•	user_id (INT, NOT NULL) — Primary Key. Foreign Key references Member(id).
+•	rosaries_said (INT, NOT NULL, DEFAULT 0) — Rosaries said.
+•	adorations_count (INT, NOT NULL, DEFAULT 0) — Hours of Eucharistic adoration.
+•	confessions_count (INT, NOT NULL, DEFAULT 0) — Confessions made.
+Each entry adds whole numbers from 0 to 100 (DEVOTIONAL_ENTRY_MAX) to each count, at least one above 0. A white-label council is refused (FRATERNAL_EXTENSION_REQUIRED).
+New columns:
+•	Member.flag_charter_member (BIT, NOT NULL, DEFAULT 0) — One of the brothers who founded the council. Set by the council's Admins on the roster form or by the roster import's Charter Member column (Yes/No); members cannot set it themselves.
+•	Council.rank_threshold_hours (INT, NOT NULL, DEFAULT 100) — Logged volunteer hours that make a 'Saint' on the canonization shield.
+•	Council.rank_threshold_events (INT, NOT NULL, DEFAULT 10) — Distinct events served (EventTime) that make a 'Saint'. Both are set by the council's Admins or a Super Admin on the dashboard (councils.setRankThresholds), whole numbers from 1 to 10,000 hours and 1 to 1,000 events.
+Canonization shield. Levels: Servant of God, Venerable (a third of both thresholds), Blessed (two thirds of both), Saint (both met). Measured only on logged service (EventTime by ShiftDate and ActivityTime, any council), never on the devotional tally.
+Lifecycle hooks, in the same transaction as the member write: members.create and supreme.syncSupremeRoster put a new member on every council-wide distribution list of the council; members.update takes a member marked Deceased or Former off every list (private and council-wide); a transfer (a new CouncilID, Super Admins only) stores the member Active, takes them off the old council's lists and puts them on the new council's council-wide lists. The Sprint 6P transfer guard still closes their old terms 'Transferred'.
+Inactivity sweep. members.sweepInactive (Run inactivity sweep on the roster, the council's Admins or a Super Admin) marks Inactive every Active member of type Member whose last logged service, or join date when none is logged, is more than 365 days ago. Admins, Super Admins and members with neither date are left alone. There is no scheduler: an Admin runs it.
+Engagement card. reports.councilEngagement lists the month's volunteers at the council's events and activities and the Top 5 Volunteers Leaderboard (the council's Active members by all hours logged there; ties share a rank). The dashboard shows it with the month's cash raised.
+Roster import template. py scripts/roster_import_template.py writes apps/web/public/templates/roster_import_template.xlsx (openpyxl): the roster import's headers, a sample row, and drop-downs for Role (OFFICE_ROLE_NAMES plus Member), Degree and Charter Member. The import does not read Role.
+________________________________________

@@ -108,6 +108,7 @@ import type { CadenceConfigInput } from './meetings';
 import type { DistributionGroup } from './messaging';
 import type { FeatureFlagChanges, FeatureFlagName } from './features';
 import type { EmailGatewayColumn, EmailGatewaySettings } from './email-gateway';
+import type { CouncilEngagement, DevotionalEntry, DevotionalProgress, RankThresholds } from './member-lifecycle';
 
 // 1. LOOKUPS
 /** The global lookup tables a Super Admin maintains (Blueprint: "System Lookup Manager"). */
@@ -1926,6 +1927,8 @@ export interface SupremeRosterRow {
   DateOfBirth: string;
   DegreeID?: number | null;
   DateJoinedCouncil: string;
+  /** Sprint 7A: the template's Charter Member column (Yes/No read as 1/0); omitted is 0. */
+  flag_charter_member?: number;
 }
 
 /** supreme.syncSupremeRoster's answer. */
@@ -2425,6 +2428,13 @@ export interface DataService {
      * council's Grand Knight and Financial Secretary keep setDuesRate for their own council.
      */
     setGlobalParameters(actorId: number, councilId: number, parameters: GlobalCouncilParameters): Promise<Council>;
+    /**
+     * Sprint 7A: saves the canonization shield's thresholds (Council.rank_threshold_hours and rank_threshold_events,
+     * member-lifecycle.ts cleanRankThresholds) and resolves to the updated council. Only an Active Admin of the council or
+     * an Active Super Admin may (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED, nothing written). RECORD_NOT_FOUND for an unknown
+     * council, INVALID_INPUT for a value that is not a whole number from 1 to the maximum.
+     */
+    setRankThresholds(actorId: number, councilId: number, thresholds: RankThresholds): Promise<Council>;
   };
 
   /**
@@ -2538,6 +2548,20 @@ export interface DataService {
      * ALREADY_REGISTERED for a member who has already chosen a password.
      */
     resendWelcome(actorId: number, memberId: number): Promise<void>;
+    /**
+     * Sprint 7A: the inactivity sweep (member-lifecycle.ts planInactivitySweep). Marks Inactive every Active plain member
+     * (MemberType 'Member') of the council whose last logged service (EventTime by ShiftDate, ActivityTime by
+     * ActivityDate), or join date when they have none, is more than INACTIVITY_SWEEP_DAYS days ago, in one transaction,
+     * and resolves to the members it changed. By an Active Admin of the council or an Active Super Admin (ADMIN_REQUIRED,
+     * COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for an unknown council.
+     *
+     * Lifecycle hooks (Sprint 7A, member-lifecycle.ts planMemberLifecycle), in the same transaction as the write:
+     * `create` and supreme.syncSupremeRoster put a new member on every council-wide distribution list of the council;
+     * `update` takes a member marked Deceased or Former off every list; and a transfer (`update` with a new CouncilID)
+     * stores the member as Active, takes them off the old council's lists and puts them on the new council's
+     * council-wide lists.
+     */
+    sweepInactive(actorId: number, councilId: number): Promise<Member[]>;
   };
 
   memberProfiles: {
@@ -2936,6 +2960,14 @@ export interface DataService {
      * ShiftDate first, then last and first name. Rejects INVALID_INPUT for an unknown council.
      */
     listShiftsAwaitingHours(councilId: number): Promise<ShiftAwaitingHours[]>;
+    /**
+     * Sprint 7A: the dashboard's monthly engagement card (member-lifecycle.ts buildCouncilEngagement) - everyone who logged
+     * service at the council's events (by ShiftDate) or activities (by ActivityDate) in the month, most hours first, and
+     * the Top 5 Volunteers Leaderboard of the council's Active members by all hours ever logged there. Any Active member
+     * of the council or an Active Super Admin (COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for an unknown council, a
+     * year before 1882 or after 9999, or a month outside 1-12.
+     */
+    councilEngagement(actorId: number, councilId: number, year: number, month: number): Promise<CouncilEngagement>;
   };
 
   meetings: {
@@ -3904,5 +3936,17 @@ export interface DataService {
      * unknown intention and PRAYER_INTENTION_CLOSED when it is already closed.
      */
     closeIntention(actorId: number, intentionId: number): Promise<CouncilPrayerIntention>;
+  };
+
+  /**
+   * The phone's devotional tracker and canonization shield (Sprint 7A, member-lifecycle.ts). Each member reads and adds to
+   * only their own tally (MemberDevotionals); nobody else, Admins included, can read it. A Knights of Columbus extension:
+   * a white-label council rejects FRATERNAL_EXTENSION_REQUIRED. MEMBER_NOT_FOUND for an unknown member.
+   */
+  devotionals: {
+    /** The caller's tally and their shield, ranked by their logged service against their council's thresholds. */
+    getProgress(actorId: number): Promise<DevotionalProgress>;
+    /** Adds the entry's counts to the caller's tally (cleanDevotionalEntry; INVALID_INPUT) and resolves to the new progress. */
+    record(actorId: number, entry: DevotionalEntry): Promise<DevotionalProgress>;
   };
 }

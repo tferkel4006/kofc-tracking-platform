@@ -5,6 +5,7 @@
 // training classes for editing. Admins work on their own council, Super Admins pick any.
 // The member type choices come from grantableMemberTypes, and the drivers enforce the same tiers
 // (ADMIN_REQUIRED, SUPER_ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED), so a refusal is reported, never hidden.
+// Sprint 7A: Admins mark charter members on the form and run the inactivity sweep from the page header.
 import { useEffect, useState } from 'react';
 import {
   canCreateMembers,
@@ -12,6 +13,7 @@ import {
   canEditMember,
   describeError,
   grantableMemberTypes,
+  INACTIVITY_SWEEP_DAYS,
   type Degree,
   type Member,
   type MemberStatus,
@@ -66,7 +68,10 @@ interface Lookups {
  * biography are the member's own (My Profile), so the roster form leaves them as stored, as it does the member's
  * Large Text Layout Mode choice (Sprint 6C).
  */
-type Draft = Record<Exclude<keyof NewMember, 'WorkingStatusID' | 'ProfilePhotoURL' | 'Biography' | 'IsBudgetDirector' | 'flag_large_text_mode'>, string>;
+type Draft = Record<
+  Exclude<keyof NewMember, 'WorkingStatusID' | 'ProfilePhotoURL' | 'Biography' | 'IsBudgetDirector' | 'flag_large_text_mode' | 'flag_charter_member'>,
+  string
+>;
 
 const TEXT_FIELDS: { key: keyof Draft; label: string; type?: string; maxLength: number; optional?: boolean; wide?: boolean }[] = [
   { key: 'MemberFirstName', label: 'First name', maxLength: 100 },
@@ -128,7 +133,7 @@ function draftFrom(member: Member | null, councilId: number, lookups: Lookups): 
   };
 }
 
-function toNewMember(d: Draft, budgetDirector: boolean): NewMember {
+function toNewMember(d: Draft, budgetDirector: boolean, charter: boolean): NewMember {
   return {
     CouncilID: Number(d.CouncilID),
     MemberNumber: Number(d.MemberNumber),
@@ -147,6 +152,7 @@ function toNewMember(d: Draft, budgetDirector: boolean): NewMember {
     DegreeID: Number(d.DegreeID),
     MemberTypeID: Number(d.MemberTypeID),
     IsBudgetDirector: budgetDirector ? 1 : 0,
+    flag_charter_member: charter ? 1 : 0,
   };
 }
 
@@ -170,6 +176,10 @@ function MemberForm({
   const [director, setDirector] = useState(member?.IsBudgetDirector === 1);
   useEffect(() => setDraft(draftFrom(member, councilId, lookups)), [member, councilId, lookups]);
   useEffect(() => setDirector(member?.IsBudgetDirector === 1), [member]);
+  // Sprint 7A: Charter Member, kept by the council's Admins and Super Admins.
+  const [charter, setCharter] = useState(member?.flag_charter_member === 1);
+  useEffect(() => setCharter(member?.flag_charter_member === 1), [member]);
+  const mayMarkCharter = canCreateMembers(user, member?.CouncilID ?? councilId);
   const mayDesignate = canDesignateBudgetDirector(user, member ?? { CouncilID: councilId });
 
   const typeName = (id: number) => lookups.types.find((t) => t.id === id)?.Type;
@@ -185,7 +195,7 @@ function MemberForm({
   const save = async () => {
     setBusy(true);
     const ok = await run(async () => {
-      const values = toNewMember(draft, director);
+      const values = toNewMember(draft, director, charter);
       if (member) {
         const saved = await db.members.update(user.memberId, member.id, values);
         onSaved(saved.id);
@@ -198,6 +208,7 @@ function MemberForm({
     if (ok && !member) {
       setDraft(draftFrom(null, councilId, lookups));
       setDirector(false);
+      setCharter(false);
     }
   };
 
@@ -275,6 +286,17 @@ function MemberForm({
             <Pill tone="gold">Designated Budget Director</Pill>
           </p>
         ) : null}
+        {mayMarkCharter ? (
+          <label className="flex items-center gap-3 text-sm">
+            <input type="checkbox" className="size-5" checked={charter} onChange={(e) => setCharter(e.target.checked)} />
+            <span className="font-bold">Charter member</span>
+            <span className="text-xs text-muted">One of the brothers who founded the council.</span>
+          </label>
+        ) : member?.flag_charter_member === 1 ? (
+          <p className="text-sm">
+            <Pill tone="gold">Charter member</Pill>
+          </p>
+        ) : null}
         {editable ? (
           <div className="flex gap-2">
             <Button type="submit" disabled={busy}>
@@ -318,6 +340,8 @@ function Roster() {
   const [statusFilter, setStatusFilter] = useState<number | 'all'>('all');
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [extensionsOpen, setExtensionsOpen] = useState(false);
+  const [sweepMessage, setSweepMessage] = useState<Message | null>(null);
+  const [sweeping, setSweeping] = useState(false);
 
   const lookups = useLoad(async (): Promise<Lookups> => {
     const [statuses, degrees, types] = await Promise.all([db.lookups.list('MemberStatus'), db.lookups.list('Degree'), db.lookups.list('MemberType')]);
@@ -344,6 +368,27 @@ function Roster() {
   const current = typeof selected === 'number' ? members.data?.find((r) => r.member.id === selected)?.member ?? null : null;
   const failure = lookups.error ?? members.error;
 
+  // Sprint 7A: the inactivity sweep (members.sweepInactive). There is no scheduler in the portal, so an Admin runs it here.
+  const sweep = async () => {
+    setSweeping(true);
+    setSweepMessage(null);
+    try {
+      const swept = await db.members.sweepInactive(user.memberId, scope.councilId);
+      setSweepMessage({
+        tone: 'info',
+        text:
+          swept.length === 0
+            ? `No active member has gone more than ${INACTIVITY_SWEEP_DAYS} days without logged service.`
+            : `Marked ${swept.length} member${swept.length === 1 ? '' : 's'} Inactive: ${swept.map((m) => `${m.MemberFirstName} ${m.MemberLastName}`).join(', ')}.`,
+      });
+      await members.reload();
+    } catch (err) {
+      setSweepMessage({ tone: 'error', text: describeError(err) });
+    } finally {
+      setSweeping(false);
+    }
+  };
+
   return (
     <>
       <PageTitle
@@ -353,6 +398,16 @@ function Roster() {
             <Button variant="secondary" onClick={() => setSkillsOpen(true)} aria-expanded={skillsOpen}>
               Skills
             </Button>
+            {canCreateMembers(user, scope.councilId) ? (
+              <Button
+                variant="secondary"
+                disabled={sweeping}
+                title={`Marks Inactive every active member with no logged service in more than ${INACTIVITY_SWEEP_DAYS} days`}
+                onClick={() => void sweep()}
+              >
+                {sweeping ? 'Sweeping…' : 'Run inactivity sweep'}
+              </Button>
+            ) : null}
             {canCreateMembers(user, scope.councilId) ? <Button onClick={() => setSelected('new')}>Add member</Button> : null}
           </div>
         }
@@ -360,6 +415,7 @@ function Roster() {
         Member roster
       </PageTitle>
       {failure ? <Notice tone="error">{failure}</Notice> : null}
+      <Banner message={sweepMessage} onDismiss={() => setSweepMessage(null)} />
 
       <div className="mt-4 grid grid-cols-[minmax(0,1fr)_34rem] items-start gap-4">
         <Panel title={`Members (${rows.length} of ${members.data?.length ?? 0})`}>

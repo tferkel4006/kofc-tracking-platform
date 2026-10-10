@@ -2859,3 +2859,39 @@ ADD FOREIGN KEY([receipt_id])
 REFERENCES [ExpenseReceipts]([id])
 ON UPDATE NO ACTION ON DELETE NO ACTION;
 GO
+
+-- =========================================================================
+-- Sprint 7A: MEMBER LIFECYCLE, DEVOTIONAL TRACKER AND CANONIZATION RANKS (schema version 59)
+--
+-- MemberDevotionals keeps one running tally per member of their own devotional life: rosaries said, hours of
+-- Eucharistic adoration and confessions. The member logs them on the phone (devotionals.record adds to the tally) and
+-- only the member reads them; they never appear on a council screen.
+--
+-- Member.flag_charter_member marks the brothers who founded the council (set by the council's Admins).
+--
+-- Council.rank_threshold_hours and rank_threshold_events set the bar of the personal canonization shield: a member
+-- reaches 'Saint' once their logged volunteer hours and the distinct events they served both meet the council's
+-- thresholds; 'Blessed' at two thirds of both and 'Venerable' at one third (member-lifecycle.ts canonizationRank).
+-- The shield counts only logged service (EventTime and ActivityTime), never the self-reported devotional tally.
+-- =========================================================================
+CREATE TABLE [MemberDevotionals] (
+	[user_id] INT NOT NULL,
+	[rosaries_said] INT NOT NULL DEFAULT 0,
+	[adorations_count] INT NOT NULL DEFAULT 0,
+	[confessions_count] INT NOT NULL DEFAULT 0,
+	PRIMARY KEY([user_id])
+);
+GO
+
+ALTER TABLE [MemberDevotionals]
+ADD FOREIGN KEY([user_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+ALTER TABLE [Member] ADD [flag_charter_member] BIT NOT NULL DEFAULT 0;
+GO
+ALTER TABLE [Council] ADD [rank_threshold_hours] INT NOT NULL DEFAULT 100;
+GO
+ALTER TABLE [Council] ADD [rank_threshold_events] INT NOT NULL DEFAULT 10;
+GO

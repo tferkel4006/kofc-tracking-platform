@@ -15,6 +15,9 @@
 //
 // Above them (Sprint 5Z-2) the same readers get the Faith-in-Action Mission Tracking card (reports.missionAreaFootprint):
 // the fraternal year's donations and volunteer service hours by mission area (Faith, Family, Community, Life).
+//
+// Under the scorecards (Sprint 7A) every reader gets the engagement row (EngagementParts): the high-contrast monthly
+// activity overview - volunteers, cash collected and who served - and the gold-bordered Top 5 Volunteers Leaderboard.
 import { useState, type ReactNode } from 'react';
 import {
   BUDGET_WARNING_THRESHOLD_PERCENT,
@@ -30,6 +33,7 @@ import {
 } from '@kofc/shared';
 import { BudgetAlertTag, BudgetGauge, formatPercent } from '@/components/BudgetParts';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
+import { EngagementCards } from '@/components/EngagementParts';
 import { MissionTracking } from '@/components/MissionTracking';
 import { cx, Empty, Field, Notice, PageTitle, Panel, Pill, Select, Table, Td } from '@/components/ui';
 import { formatDecimalHours, formatFullDate, formatMoney, formatPersonName, formatPhone } from '@/lib/format';
@@ -282,6 +286,7 @@ function Dashboard() {
       ) : (
         <div className="flex flex-col gap-4">
           <Scorecards s={s} />
+          <EngagementCards councilId={scope.councilId} year={year} month={month} monthLabel={`${MONTHS[month - 1]} ${year}`} summary={s} />
           {canReviewBudgetPerformance(user, scope.councilId) ? (
             <>
               <MissionTracking actorId={user.memberId} councilId={scope.councilId} fraternalYear={currentFraternalYear(new Date(year, month - 1, 1))} />

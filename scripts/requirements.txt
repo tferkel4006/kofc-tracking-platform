@@ -1,3 +1,5 @@
 # Python packages for the server-side report scripts (Sprint 6N: scripts/form_1295_report.py; Sprint 6S:
 # scripts/admin_guide_pdf.py, which also uses Pillow - a ReportLab dependency - to resample screen captures).
 reportlab>=4.0
+# Sprint 7A: scripts/roster_import_template.py builds apps/web/public/templates/roster_import_template.xlsx.
+openpyxl>=3.1

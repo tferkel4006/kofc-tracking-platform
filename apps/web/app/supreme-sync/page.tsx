@@ -186,8 +186,16 @@ function RosterImport({ councilId }: { councilId: number }) {
       <div className="flex flex-col gap-3">
         <p className="text-sm">
           Load Supreme Headquarters&apos; roster export (CSV: Member Number, First Name, Last Name, Email, Phone, Street, Street 2, City, State, Zip,
-          Birth Date, Degree, Date Joined). New members are added with their join date and wear the [🆕 New Member] badge for 180 days; each is sent
-          the welcome email with the Expo Go download steps and a one-time setup code the moment the roster is stored.
+          Birth Date, Degree, Date Joined, Charter Member). New members are added with their join date and wear the [🆕 New Member] badge for 180 days;
+          each is sent the welcome email with the Expo Go download steps and a one-time setup code the moment the roster is stored, and joins the
+          council-wide distribution lists.
+        </p>
+        <p className="text-sm">
+          Building the roster by hand?{' '}
+          <a className="font-bold underline" href="/templates/roster_import_template.xlsx" download>
+            Download the Excel roster template
+          </a>{' '}
+          (drop-down lists for Role, Degree and Charter Member, and a sample row), fill it in, then save the Roster sheet as CSV and load it here.
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <Field label="Roster file">

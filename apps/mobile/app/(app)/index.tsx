@@ -6,11 +6,13 @@
 // gone, and a shift drops off the minute it ends by the device clock, for every member, officers and admins included.
 // Phase 4.5: a closable Liturgical Feast or Saint Day banner sits first, just under the header.
 // Sprint 6L Extension 3: the Council Prayer Intentions List with its Praying Hands counters follows the greeting.
+// Sprint 7A: then My devotions - the member's devotional tally and canonization shield (DevotionalTracker).
 import { useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { isUrgent, toIsoDate, withoutEndedShifts } from '@kofc/shared';
 import { LiturgicalBanner } from '@/components/FaithCenter';
+import { DevotionalTracker } from '@/components/DevotionalTracker';
 import { PrayerIntentions } from '@/components/PrayerIntentions';
 import { ShiftCard, UrgentTag } from '@/components/ShiftCard';
 import { AppText, Button, Card, EmptyState, Loading, Notice, Screen, Section } from '@/components/ui';
@@ -58,6 +60,8 @@ export default function DashboardScreen() {
         </AppText>
       </View>
       {faithOn ? <PrayerIntentions version={prayerVersion} /> : null}
+      {/* Sprint 7A: the member's own devotional tally and canonization shield. */}
+      {faithOn ? <DevotionalTracker version={prayerVersion} /> : null}
 
       {state.error ? <Notice tone="error" message={state.error} /> : null}
       {!data && state.loading ? <Loading /> : null}

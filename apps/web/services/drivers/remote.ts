@@ -44,6 +44,7 @@ export function createRemoteDataService(): DataService {
       setBylaws: notImplemented('councils.setBylaws'),
       setDuesRate: notImplemented('councils.setDuesRate'),
       setGlobalParameters: notImplemented('councils.setGlobalParameters'),
+      setRankThresholds: notImplemented('councils.setRankThresholds'),
       setEmailGateway: notImplemented('councils.setEmailGateway'),
     },
     parishes: {
@@ -83,6 +84,7 @@ export function createRemoteDataService(): DataService {
       create: notImplemented('members.create'),
       update: notImplemented('members.update'),
       resendWelcome: notImplemented('members.resendWelcome'),
+      sweepInactive: notImplemented('members.sweepInactive'),
     },
     memberProfiles: {
       listOptions: notImplemented('memberProfiles.listOptions'),
@@ -165,6 +167,7 @@ export function createRemoteDataService(): DataService {
       missionAreaFootprint: notImplemented('reports.missionAreaFootprint'),
       listNoShowsAudit: notImplemented('reports.listNoShowsAudit'),
       listShiftsAwaitingHours: notImplemented('reports.listShiftsAwaitingHours'),
+      councilEngagement: notImplemented('reports.councilEngagement'),
     },
     meetings: {
       get: notImplemented('meetings.get'),
@@ -300,6 +303,10 @@ export function createRemoteDataService(): DataService {
       addIntention: notImplemented('prayers.addIntention'),
       pray: notImplemented('prayers.pray'),
       closeIntention: notImplemented('prayers.closeIntention'),
+    },
+    devotionals: {
+      getProgress: notImplemented('devotionals.getProgress'),
+      record: notImplemented('devotionals.record'),
     },
     feedback: {
       submit: notImplemented('feedback.submit'),

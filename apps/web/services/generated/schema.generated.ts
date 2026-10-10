@@ -514,6 +514,26 @@ export const TABLES: Record<string, TableMeta> = {
           "kind": "literal",
           "value": 1
         }
+      },
+      {
+        "name": "rank_threshold_hours",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 100
+        }
+      },
+      {
+        "name": "rank_threshold_events",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 10
+        }
       }
     ],
     "foreignKeys": [],
@@ -1119,6 +1139,16 @@ export const TABLES: Record<string, TableMeta> = {
       },
       {
         "name": "flag_large_text_mode",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "flag_charter_member",
         "kind": "bit",
         "notNull": true,
         "identity": false,
@@ -6448,6 +6478,58 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "expense_id",
         "refTable": "ExpenseReport",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": []
+  },
+  "MemberDevotionals": {
+    "primaryKey": [
+      "user_id"
+    ],
+    "columns": [
+      {
+        "name": "user_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "rosaries_said",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "adorations_count",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "confessions_count",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "user_id",
+        "refTable": "Member",
         "refColumn": "id"
       }
     ],

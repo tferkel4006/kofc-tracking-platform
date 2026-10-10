@@ -185,13 +185,23 @@ const ROSTER_HEADERS: Record<string, keyof SupremeRosterRow> = {
   datejoined: 'DateJoinedCouncil',
   datejoinedcouncil: 'DateJoinedCouncil',
   joined: 'DateJoinedCouncil',
+  chartermember: 'flag_charter_member',
+  charter: 'flag_charter_member',
 };
 const rosterHeaderKey = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '');
 const REQUIRED_ROSTER_COLUMNS: (keyof SupremeRosterRow)[] = ['MemberNumber', 'MemberFirstName', 'MemberLastName', 'Email', 'DateJoinedCouncil'];
 
+/** A Yes/No roster cell (Sprint 7A Charter Member column): yes, y, true or 1 is 1; blank, no, n, false or 0 is 0; else as typed. */
+function rosterYesNo(cell: string): number | string {
+  const v = cell.toLowerCase();
+  if (['yes', 'y', 'true', '1'].includes(v)) return 1;
+  if (['', 'no', 'n', 'false', '0'].includes(v)) return 0;
+  return cell;
+}
+
 /**
  * Supreme's roster export (CSV with a header row) as SupremeRosterRow values: Member Number, First Name, Last Name,
- * Email, Phone, Street, Street 2, City, State, Zip, Birth Date, Degree, Date Joined (header case and spacing ignored).
+ * Email, Phone, Street, Street 2, City, State, Zip, Birth Date, Degree, Date Joined and, from Sprint 7A, Charter Member (Yes/No) (header case and spacing ignored).
  * Numbers are read as numbers; blank cells stay ''. Rejects INVALID_INPUT for a file without the member number, names,
  * email and join date columns. Each row is checked when it is synced (cleanSupremeRosterRow).
  */
@@ -207,7 +217,7 @@ export function parseSupremeRosterCsv(csv: unknown): SupremeRosterRow[] {
     columns.forEach((col, i) => {
       if (!col) return;
       const cell = (fields[i] ?? '').trim();
-      row[col] = col === 'MemberNumber' || col === 'DegreeID' ? (cell === '' ? null : Number(cell)) : cell;
+      row[col] = col === 'MemberNumber' || col === 'DegreeID' ? (cell === '' ? null : Number(cell)) : col === 'flag_charter_member' ? rosterYesNo(cell) : cell;
     });
     return row as unknown as SupremeRosterRow;
   });
@@ -244,6 +254,7 @@ export function cleanSupremeRosterRow(
       DegreeID: degree,
       MemberTypeID: ids.memberTypeId,
       DateJoinedCouncil: joined,
+      flag_charter_member: row.flag_charter_member,
     },
     now,
   );

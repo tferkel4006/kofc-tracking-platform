@@ -50,3 +50,4 @@ export * from './asset-records';
 export * from './planning-time';
 export * from './media-vault';
 export * from './treasurer-desk';
+export * from './member-lifecycle';

@@ -269,6 +269,22 @@ import {
   cleanPrayerIntentionText,
   assertMayJoinCouncilPrayers,
   assertMayClosePrayerIntention,
+  addDevotionalEntry,
+  assertMaySetRankThresholds,
+  assertMaySweepInactiveMembers,
+  buildCouncilEngagement,
+  canonizationRank,
+  cleanDevotionalEntry,
+  cleanRankThresholds,
+  councilRankThresholds,
+  emptyDevotionals,
+  INACTIVE_STATUS,
+  memberServiceMetrics,
+  memberStatusId,
+  planInactivitySweep,
+  planMemberLifecycle,
+  type DevotionalProgress,
+  type ServiceLogRow,
   assertPrayerIntentionOpen,
   requirePrayerIntention,
   prayerTally,
@@ -505,6 +521,9 @@ import type {
   MemberStatus as MemberStatusRow,
   CouncilPrayerIntention,
   CouncilPrayerIntentionPrayer,
+  MemberDevotionals,
+  MemberStatus,
+  MemberType,
   OfficerNominations,
   Activities,
   AlchemerRequest,
@@ -1298,6 +1317,15 @@ export class MemoryDataService implements DataService {
       Object.assign(row, clean);
       return { ...row } as unknown as Council;
     },
+
+    setRankThresholds: async (actorId, councilId, thresholds) => {
+      const clean = cleanRankThresholds(thresholds);
+      const s = await this.ready();
+      assertMaySetRankThresholds(this.memberWriteActor(s, actorId), councilId);
+      const row = this.requireRecord(s, 'Council', councilId);
+      Object.assign(row, { rank_threshold_hours: clean.hours, rank_threshold_events: clean.events });
+      return { ...row } as unknown as Council;
+    },
   };
 
   // ---- council-level maintenance: parishes, pastors, activities, lists ----
@@ -1662,7 +1690,9 @@ export class MemoryDataService implements DataService {
         const cred = s.insert('Credentials', { Username: clean.Email, Password: UNREGISTERED_PASSWORD });
         const values: Record<string, SeedValue | undefined> = { CredentialID: cred.id };
         for (const c of MEMBER_COLUMNS) values[c] = clean[c] ?? null;
-        return s.insert('Member', values);
+        const inserted = s.insert('Member', values);
+        this.applyLifecycleHooks(s, inserted.id as number, null, clean);
+        return inserted;
       });
       const created = withoutPushToken({ ...row }) as unknown as Member;
       await this.sendWelcomeEmail(s, created);
@@ -1705,12 +1735,84 @@ export class MemoryDataService implements DataService {
         if (credential) credential.Username = clean.Email;
         // Sprint 6P: a transfer locks the member's officer record in the council they leave.
         if (clean.CouncilID !== existing.CouncilID) this.applyTransferGuard(s, id, existing.CouncilID as number);
+        // Sprint 7A: distribution lists follow the member, and a transfer stores them Active in the new council.
+        clean.StatusID = this.applyLifecycleHooks(s, id, existing as unknown as Member, clean);
         for (const c of MEMBER_COLUMNS) existing[c] = clean[c] ?? null;
         return existing;
       });
       return withoutPushToken({ ...row }) as unknown as Member;
     },
+
+    sweepInactive: async (actorId, councilId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        assertMaySweepInactiveMembers(this.memberWriteActor(s, actorId), councilId);
+        this.assertCouncilsExist(s, [councilId]);
+        const statuses = s.rows('MemberStatus') as unknown as MemberStatus[];
+        const members = s.rows('Member').filter((m) => m.CouncilID === councilId);
+        const ids = new Set(members.map((m) => m.id as number));
+        const swept = planInactivitySweep({
+          members: members as unknown as Member[],
+          statuses,
+          memberTypes: s.rows('MemberType') as unknown as MemberType[],
+          logs: this.serviceLogs(s).filter((l) => ids.has(l.MemberID)),
+          today: toIsoDate(this.now()),
+        });
+        const inactive = memberStatusId(statuses, INACTIVE_STATUS);
+        return members
+          .filter((m) => swept.includes(m.id as number))
+          .map((m) => {
+            m.StatusID = inactive;
+            return withoutPushToken({ ...m }) as unknown as Member;
+          });
+      });
+    },
   };
+
+  /**
+   * Sprint 7A lifecycle hooks (planMemberLifecycle) for a member just inserted (`before` null) or about to be updated:
+   * moves their distribution list entries and resolves to the StatusID to store (Active after a transfer).
+   */
+  private applyLifecycleHooks(s: MemoryStore, memberId: number, before: Member | null, after: NewMember): number {
+    const plan = planMemberLifecycle({
+      before,
+      after,
+      statuses: s.rows('MemberStatus') as unknown as MemberStatus[],
+      lists: s.rows('DistributionLists') as unknown as { id: number; CouncilID: number | null; IsCouncilWide: number | null }[],
+      memberListIds: s.rows('DistributionListMembers').filter((m) => m.MemberID === memberId).map((m) => m.ListID as number),
+    });
+    s.remove('DistributionListMembers', (m) => m.MemberID === memberId && plan.leaveListIds.includes(m.ListID as number));
+    for (const listId of plan.joinListIds) s.insert('DistributionListMembers', { ListID: listId, MemberID: memberId });
+    return plan.statusId;
+  }
+
+  /** Sprint 7A: every logged stretch of service (EventTime dated by its shift, ActivityTime by its date), or only a council's. */
+  private serviceLogs(s: MemoryStore, councilId?: number): ServiceLogRow[] {
+    const linked = councilId === undefined ? null : new Set(s.rows('EventCouncils').filter((ec) => ec.CouncilID === councilId).map((ec) => ec.EventID));
+    const shifts = new Map(s.rows('Shift').filter((sh) => linked === null || linked.has(sh.EventID)).map((sh) => [sh.id, sh]));
+    const activities = new Set(s.rows('Activities').filter((a) => councilId === undefined || a.CouncilID === councilId).map((a) => a.id));
+    const logs: ServiceLogRow[] = [];
+    for (const t of s.rows('EventTime')) {
+      const shift = shifts.get(t.ShiftID);
+      if (shift) logs.push({ MemberID: t.MemberID as number, Hours: t.Hours as number, date: shift.ShiftDate as string, eventId: shift.EventID as number });
+    }
+    for (const t of s.rows('ActivityTime')) {
+      if (activities.has(t.ActivityID)) logs.push({ MemberID: t.MemberID as number, Hours: t.Hours as number, date: t.ActivityDate as string, eventId: null });
+    }
+    return logs;
+  }
+
+  /** Sprint 7A: the member's own devotional tally and canonization shield. */
+  private devotionalProgress(s: MemoryStore, memberId: number): DevotionalProgress {
+    const member = this.requireMember(s, memberId);
+    const tally = s.rows('MemberDevotionals').find((d) => d.user_id === memberId);
+    const council = s.rows('Council').find((c) => c.id === member.CouncilID) as unknown as Council | undefined;
+    return {
+      memberId,
+      tally: tally ? ({ ...tally } as unknown as MemberDevotionals) : emptyDevotionals(memberId),
+      rank: canonizationRank(memberServiceMetrics(memberId, this.serviceLogs(s)), councilRankThresholds(council)),
+    };
+  }
 
   /**
    * Sprint 6P transfer guard (planTransferGuard): locks a snapshot for every year the member held a seat in the council
@@ -3034,6 +3136,23 @@ export class MemoryDataService implements DataService {
       });
     },
 
+    councilEngagement: async (actorId, councilId, year, month) => {
+      const { fromDate, toDate } = monthBounds(year, month);
+      const s = await this.ready();
+      assertMayReadCouncilHistory(this.memberWriteActor(s, actorId), councilId, `read the engagement card of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      return buildCouncilEngagement({
+        councilId,
+        year,
+        month,
+        fromDate,
+        toDate,
+        logs: this.serviceLogs(s, councilId),
+        members: s.rows('Member') as unknown as Member[],
+        activeStatusId: this.activeStatusId(s) as number,
+      });
+    },
+
     missionAreaFootprint: async (actorId, councilId, fraternalYear) => {
       const year = assertFraternalYear(fraternalYear);
       const s = await this.ready();
@@ -3952,7 +4071,9 @@ export class MemoryDataService implements DataService {
             const cred = s.insert('Credentials', { Username: clean.Email, Password: UNREGISTERED_PASSWORD });
             const values: Record<string, SeedValue | undefined> = { CredentialID: cred.id };
             for (const c of MEMBER_COLUMNS) values[c] = clean[c] ?? null;
-            out.created.push(withoutPushToken({ ...s.insert('Member', values) }) as unknown as Member);
+            const inserted = s.insert('Member', values);
+            this.applyLifecycleHooks(s, inserted.id as number, null, clean);
+            out.created.push(withoutPushToken({ ...inserted }) as unknown as Member);
           } catch (err) {
             if (!(err instanceof BusinessRuleError) || err instanceof SecurityPrivilegeError) throw err;
             out.skipped.push({ memberNumber, reason: describeError(err) });
@@ -5629,6 +5750,29 @@ export class MemoryDataService implements DataService {
         assertPrayerIntentionOpen(intention);
         Object.assign(row!, { closed_at: toTimestamp(this.now()), closed_by_member_id: actorId });
         return { ...row } as unknown as CouncilPrayerIntention;
+      });
+    },
+  };
+
+  devotionals: DataService['devotionals'] = {
+    getProgress: async (actorId) => {
+      const s = await this.ready();
+      const member = this.requireMember(s, actorId);
+      this.assertFraternalCouncil(s, member.CouncilID as number, 'open the devotional tracker');
+      return this.devotionalProgress(s, actorId);
+    },
+
+    record: async (actorId, entry) => {
+      const clean = cleanDevotionalEntry(entry);
+      const s = await this.ready();
+      return s.transaction(() => {
+        const member = this.requireMember(s, actorId);
+        this.assertFraternalCouncil(s, member.CouncilID as number, 'log devotions');
+        const row = s.rows('MemberDevotionals').find((d) => d.user_id === actorId);
+        const next = addDevotionalEntry(row ? (row as unknown as MemberDevotionals) : emptyDevotionals(actorId), clean);
+        if (row) Object.assign(row, next);
+        else s.insert('MemberDevotionals', { ...next });
+        return this.devotionalProgress(s, actorId);
       });
     },
   };

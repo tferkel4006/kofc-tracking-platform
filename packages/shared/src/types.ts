@@ -94,6 +94,12 @@ export interface Council {
   tenant_type?: string | null;
   /** Sprint 6A Phase 5 (Schema 41): yearly dues per member, DEFAULT 40.00 (dues.ts). A missing value reads as 40.00. */
   base_dues_rate?: number | null;
+  /**
+   * Sprint 7A (Schema 59): the canonization shield's bar (member-lifecycle.ts canonizationRank) - logged volunteer hours
+   * and distinct events served that make a 'Saint'. DEFAULT 100 and 10; a missing value reads as the default.
+   */
+  rank_threshold_hours?: number | null;
+  rank_threshold_events?: number | null;
 }
 
 export interface AffiliatedCouncils {
@@ -150,6 +156,8 @@ export interface Member {
   DateJoinedCouncil?: string | null;
   /** BIT (Sprint 6C): the member's own Large Text Layout Mode preference for the phone app (largeTextLayout). Default 0. */
   flag_large_text_mode?: number;
+  /** BIT (Sprint 7A): one of the brothers who founded the council; set by the council's Admins. Default 0. */
+  flag_charter_member?: number;
 }
 
 export interface MemberRoles {
@@ -1184,4 +1192,12 @@ export interface MediaSmartAlbums {
   album_criteria_json: string; // TEXT
   created_by_member_id: number;
   created_at: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS' UTC
+}
+
+/** Sprint 7A: a member's running devotional tally (one row per member, written only by devotionals.record). */
+export interface MemberDevotionals {
+  user_id: number; // Member
+  rosaries_said: number; // INT, DEFAULT 0
+  adorations_count: number; // INT, DEFAULT 0 - hours of Eucharistic adoration
+  confessions_count: number; // INT, DEFAULT 0
 }
