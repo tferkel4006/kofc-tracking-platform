@@ -1,7 +1,8 @@
 'use client';
 // Sprint 7C: the number forms behind the Council Wide Settings page (/setup/council-settings) and the Super Admin's
-// Platform Limits card on /lookups. Each field shows its plain-English label, its range and what it does; saving sends
-// only the fields that changed. The rules (labels, ranges, quarter-hour steps) come from council-settings.ts, which the
+// Platform Limits card on Global System Parameters (/system-settings/global-settings; on /lookups until the Sprint 7C
+// Extension). Each field shows its plain-English label, its range and what it does; saving sends only the fields that
+// changed. The rules (labels, ranges, quarter-hour steps) come from council-settings.ts, which the
 // data service applies again on save.
 import { useState } from 'react';
 import { BusinessRuleError, describeError, PLATFORM_SETTING_NAMES, PLATFORM_SETTING_RULES, type PlatformSettings } from '@kofc/shared';
@@ -114,7 +115,10 @@ export function usePlatformSettings(): PlatformSettings | undefined {
   return useLoad(() => db.councils.getPlatformSettings(), []).data;
 }
 
-/** Platform Limits on System Lookups: Super Admins only (the page is theirs; the data service enforces the tier too). */
+/**
+ * Platform Limits on Global System Parameters (System Lookups until the Sprint 7C Extension): Super Admins only (the page
+ * is theirs; the data service enforces the tier too).
+ */
 export function PlatformSettingsCard() {
   const user = useUser();
   const settings = useLoad(() => db.councils.getPlatformSettings(), []);

@@ -74,6 +74,8 @@ export type PortalArea =
   | 'resources/marketing'
   | 'credentials-vault'
   | 'setup/council-settings'
+  | 'system-settings/global-settings'
+  | 'navigation-guide'
   | 'performance/charts'
   | 'history'
   | 'faith-center'
@@ -169,6 +171,13 @@ export const canMaintainCouncils = (u: Actor): boolean => isSuperAdmin(u);
  * only, the same tier councils.setFeatureFlags enforces (SUPER_ADMIN_REQUIRED).
  */
 export const canOpenFeatureFlagsControlCenter = (u: Actor): boolean => isSuperAdmin(u);
+
+/**
+ * The Global System Parameters page (Sprint 7C Extension, /system-settings/global-settings): Super Admins only, the tier
+ * councils.setGlobalParameters and councils.setPlatformSettings enforce (SUPER_ADMIN_REQUIRED). It holds each council's
+ * tenant type and base dues rate and the universal Platform Limits, which used to sit on System Lookups.
+ */
+export const canOpenGlobalSystemParameters = (u: Actor): boolean => isSuperAdmin(u);
 
 /** Super Admins act on any council; Admins only on their own. */
 export const canAdministerCouncil = (u: Actor, councilId: number): boolean =>
@@ -589,6 +598,7 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, ten
   if (canMaintainLookups(u)) areas.push('lookups');
   if (canMaintainCouncils(u)) areas.push('councils');
   if (canOpenFeatureFlagsControlCenter(u)) areas.push('feature-flags');
+  if (canOpenGlobalSystemParameters(u)) areas.push('system-settings/global-settings');
   if (canOpenCouncilLookups(u)) areas.push('council-lookups');
   if (canAppointOfficers(u)) areas.push('elections/appointments');
   if (isAdmin(u)) areas.push('parishes', 'members', 'activities');
@@ -648,15 +658,18 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, ten
   // Sprint 7A Extension: the Shared Member Center - collective, non-financial council figures and the member's own impact
   // card - is every member's. The executive dashboard and the finance screens stay with their own audiences above.
   areas.push('member-center');
+  // Sprint 7C Extension: the Navigation Guide explains the viewer's own sidebar, so every member has it, pinned above the pillars.
+  areas.push('navigation-guide');
   return withTenantGate(withFeatureFlags(areas, flags), tenant);
 }
 
 /**
  * A sidebar link: a portal area, except the profile, which the header's member menu opens, and the Communications Hub and
  * the distribution lists, which the header's Messaging menu opens (Sprint 5X; the menu since Sprint 5Z-10.8). The help
- * center is the Answers pillar's link (Sprint 6Z) as well as the header's Help shortcut (Sprint 5W).
+ * center is the Answers pillar's link (Sprint 6Z) as well as the header's Help shortcut (Sprint 5W). The Navigation Guide
+ * (Sprint 7C Extension) is pinned above the pillars rather than filed in one.
  */
-export type PortalNavItem = Exclude<PortalArea, 'profile' | 'messages' | 'distribution-lists'>;
+export type PortalNavItem = Exclude<PortalArea, 'profile' | 'messages' | 'distribution-lists' | 'navigation-guide'>;
 
 export interface PortalNavGroup {
   id: 'governance' | 'faith' | 'finances' | 'performance' | 'resources' | 'answers' | 'setup';
@@ -666,7 +679,8 @@ export interface PortalNavGroup {
 
 /**
  * The seven sidebar pillars, every link in display order (Sprint 6Z replaced the Sprint 5Z-10 accordion directories).
- * Every pillar is always open. Each PortalArea but 'profile', 'messages' and 'distribution-lists' appears exactly once.
+ * Every pillar is always open. Each PortalArea but 'profile', 'messages', 'distribution-lists' and 'navigation-guide'
+ * appears exactly once. Sprint 7C Extension: the 'setup' pillar is labelled System Settings.
  */
 export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
   { id: 'governance', label: 'Governance', items: ['meetings/live', 'meetings/cadence', 'meetings', 'elections', 'elections/appointments', 'governance/bylaws', 'governance/advisor'] },
@@ -697,10 +711,11 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
   { id: 'answers', label: 'Answers', items: ['help', 'answers/help', 'answers/sop'] },
   {
     id: 'setup',
-    label: 'Setup',
+    label: 'System Settings',
     items: [
       'councils',
       'feature-flags',
+      'system-settings/global-settings',
       'setup/council-settings',
       'members',
       'supreme-sync',

@@ -1,8 +1,9 @@
 'use client';
-// Global Council Parameters Dashboard (Sprint 6I): the Super Admin's navy-on-white card on System Lookups. For any
-// council it sets the tenant type (KOFC, or GENERIC for a white-labelled community organization; tenant.ts) and the base
-// dues rate (dues.ts), through councils.setGlobalParameters, which only an Active Super Admin may call. Saving the
-// signed-in council reloads its gates at once (featuresChanged), so the sidebar and labels switch tenant live.
+// Global Council Parameters Dashboard (Sprint 6I): the Super Admin's navy-on-white card on Global System Parameters
+// (System Lookups until the Sprint 7C Extension). For any council it sets the tenant type (KOFC, or GENERIC for a
+// white-labelled community organization; tenant.ts) and the base dues rate (dues.ts), through
+// councils.setGlobalParameters, which only an Active Super Admin may call. Saving the signed-in council reloads its
+// gates at once (featuresChanged), so the sidebar and labels switch tenant live.
 import { useState } from 'react';
 import { BusinessRuleError, councilLabel, councilTenantType, describeError, TENANT_TYPES, TENANT_VOCABULARY, type Council, type TenantType } from '@kofc/shared';
 import { Button, Input, Notice, Select } from '@/components/ui';
@@ -82,7 +83,7 @@ function ParametersForm({ council, onSaved }: { council: Council; onSaved: (save
   );
 }
 
-/** The card itself. Rendered only on the Super-Admin-only System Lookups page; the data service enforces the tier too. */
+/** The card itself. Rendered only on the Super-Admin-only Global System Parameters page; the data service enforces the tier too. */
 export function GlobalParametersCard() {
   const user = useUser();
   const councils = useLoad(() => db.councils.list(), []);

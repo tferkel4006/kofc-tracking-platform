@@ -166,7 +166,7 @@ describe.each(drivers)('$name driver: council wide settings', (d) => {
 });
 
 describe('Council Wide Settings page and plain-English labels', () => {
-  it('puts the page in the Setup pillar for Admins and officers only', () => {
+  it('puts the page in the System Settings pillar (Setup before Sprint 7C Ext) for Admins and officers only', () => {
     const base = { memberId: 9, councilId: 1, isOfficer: false };
     expect(canEditCouncilWideSettings({ ...base, memberType: 'Member' })).toBe(false);
     expect(canEditCouncilWideSettings({ ...base, memberType: 'Member', isOfficer: true })).toBe(true);
@@ -175,7 +175,8 @@ describe('Council Wide Settings page and plain-English labels', () => {
     const page = read('apps/web/app/setup/council-settings/page.tsx');
     expect(page).toContain('Council Wide Settings');
     expect(page).toContain('db.councils.setCouncilWideSettings');
-    expect(read('apps/web/app/lookups/page.tsx')).toContain('<PlatformSettingsCard />');
+    // Sprint 7C Extension: the Platform Limits card moved to Global System Parameters.
+    expect(read('apps/web/app/system-settings/global-settings/page.tsx')).toContain('<PlatformSettingsCard />');
   });
 
   it('uses the new button text everywhere', () => {

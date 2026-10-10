@@ -83,12 +83,13 @@ describe('phone expense form parity', () => {
 });
 
 describe('web admin card', () => {
-  it('puts the Global Council Parameters Dashboard on the Super-Admin-only lookups page', () => {
+  it('puts the Global Council Parameters Dashboard on the Super-Admin-only Global System Parameters page (Sprint 7C Ext)', () => {
     const card = read('apps/web/components/GlobalParametersCard.tsx');
     expect(card).toContain('Global Council Parameters Dashboard');
     expect(card).toContain('db.councils.setGlobalParameters(');
     expect(card).toMatch(/border-navy bg-white/);
-    expect(read('apps/web/app/lookups/page.tsx')).toContain('<GlobalParametersCard />');
+    expect(read('apps/web/app/system-settings/global-settings/page.tsx')).toContain('<GlobalParametersCard />');
+    expect(read('apps/web/app/lookups/page.tsx')).not.toContain('<GlobalParametersCard />');
   });
 });
 

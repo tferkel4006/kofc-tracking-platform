@@ -754,8 +754,10 @@ const DB_NAME = 'kofc.db';
  * 61: VolunteerQuarantine - time entries held for leadership review - and Council.feature_volunteer_quarantine (Sprint 7B).
  * 62: the Council Wide Settings (Council.quarantine_max_daily_activities, quarantine_max_single_hours,
  *     max_shift_padding_hours, inactivity_threshold_days) and PlatformSettings, the universal limits (Sprint 7C).
+ * 63: no table change - the Setup pillar became System Settings and the base dues rate, tenant type and Platform Limits
+ *     moved to the Super Admin's Global System Parameters page; the bump marks the release (Sprint 7C Extension).
  */
-const SCHEMA_VERSION = 62;
+const SCHEMA_VERSION = 63;
 
 /** A time entry the Sprint 7B guards judge (volunteer-quarantine.ts). */
 interface QuarantineEntry {

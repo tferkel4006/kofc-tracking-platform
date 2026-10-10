@@ -3,7 +3,8 @@
 // volunteer time limits behind leadership review (volunteer-quarantine.ts) and the window Check for Inactive Members
 // uses (member-lifecycle.ts). The council's Admins and officers edit their own council (canEditCouncilWideSettings);
 // a Super Admin picks any council. The data service checks the same rule (assertMayEditCouncilWideSettings).
-// The universal limits every council shares (recording time, character limits) are on System Lookups, for Super Admins.
+// The universal limits every council shares (recording time, character limits) are on Global System Parameters
+// (/system-settings/global-settings, Sprint 7C Extension), for Super Admins.
 import { useState } from 'react';
 import {
   councilLabel,

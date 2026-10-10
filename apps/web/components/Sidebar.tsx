@@ -1,6 +1,7 @@
 'use client';
 // The portal's left sidebar (Sprint 6Z redesign): a navy column of the seven pillars from portalSidebar - Governance,
-// Faith In Action, Finances, Performance, Resources, Answers and Setup - every pillar always open, with no accordions.
+// Faith In Action, Finances, Performance, Resources, Answers and System Settings (named Setup before the Sprint 7C
+// Extension) - every pillar always open, with no accordions. The Navigation Guide link is pinned above the pillars.
 // Only the links the viewer may open are drawn: since the Sprint 6G Extension a desk the viewer's role cannot open is
 // removed from the sidebar, never shown locked or greyed out. The current page carries a gold marker.
 // Sprint 6A: a module the council's feature flags switch off is left out entirely too.
@@ -31,7 +32,7 @@ export interface NavEntry {
  * Every sidebar link's route, label and tooltip. 'profile' is reached from the header's member menu, and 'messages' and
  * 'distribution-lists' from the header's Messaging menu, not the sidebar.
  */
-export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-lists', NavEntry> = {
+export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-lists' | 'navigation-guide', NavEntry> = {
   'member-actions': { href: '/member-actions', label: 'Member Actions Hub', hint: 'My shifts, sign-ups, roster, hours' },
   messages: { href: '/messages', label: 'Council Messages & Alerts', hint: 'Message threads, trade-team messages and alerts' },
   calendar: { href: '/calendar', label: 'Visual Master Calendar', hint: 'Events, shifts and meetings by date' },
@@ -112,6 +113,17 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
     hint: "Switch each council's optional modules on and off",
     restrictedTo: 'Super Admins',
   },
+  'system-settings/global-settings': {
+    href: '/system-settings/global-settings',
+    label: 'Global System Parameters',
+    hint: "Each council's base dues rate and tenant type, and the recording and character limits every council shares",
+    restrictedTo: 'Super Admins',
+  },
+  'navigation-guide': {
+    href: '/navigation-guide',
+    label: 'Navigation Guide',
+    hint: 'What each link in your sidebar does, in plain English',
+  },
   'setup/council-settings': {
     href: '/setup/council-settings',
     label: 'Council Wide Settings',
@@ -186,10 +198,10 @@ function ExternalNavLink({ href, label, hint }: Omit<ExternalNavEntry, 'visible'
   );
 }
 
-const isCurrent = (pathname: string, item: PortalNavItem): boolean => pathname === NAV[item].href;
+const isCurrent = (pathname: string, item: PortalNavItem | 'navigation-guide'): boolean => pathname === NAV[item].href;
 
 /** One dense sidebar link: the label only, with its description as the tooltip; gold marker when current. */
-function NavLink({ item, current, tenant }: { item: PortalNavItem; current: boolean; tenant: TenantType }) {
+function NavLink({ item, current, tenant }: { item: PortalNavItem | 'navigation-guide'; current: boolean; tenant: TenantType }) {
   const { href, label, hint } = NAV[item];
   return (
     <li>
@@ -209,6 +221,10 @@ export function Sidebar({ user, pathname, features, tenant }: { user: SessionUse
   const groups = portalSidebar(user, features, tenant);
   return (
     <nav data-surface="navy" aria-label="Portal sections" className="w-64 shrink-0 bg-navy py-3 text-white">
+      {/* Sprint 7C Extension: every member's Navigation Guide, pinned above the pillars. */}
+      <ul aria-label="Navigation help" className="flex flex-col pb-2">
+        <NavLink item="navigation-guide" current={isCurrent(pathname, 'navigation-guide')} tenant={tenant} />
+      </ul>
       {groups.map((group) => {
         const headingId = `nav-group-${group.id}`;
         return (

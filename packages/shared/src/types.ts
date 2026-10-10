@@ -115,7 +115,7 @@ export interface Council {
 
 /**
  * Sprint 7C (Schema 62): the one-row table of universal limits every council shares (council-settings.ts), edited by
- * Super Admins on /lookups. id is always 1.
+ * Super Admins on Global System Parameters (/system-settings/global-settings). id is always 1.
  */
 export interface PlatformSettings {
   id: number;

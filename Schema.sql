@@ -3026,3 +3026,12 @@ CREATE TABLE [PlatformSettings] (
 	PRIMARY KEY([id])
 );
 GO
+
+-- =========================================================================
+-- Sprint 7C Extension: SYSTEM SETTINGS (schema version 63)
+--
+-- No table changes. The web sidebar's Setup pillar is renamed System Settings, and the Super Admin's Global System
+-- Parameters page (/system-settings/global-settings) now holds Council.tenant_type and base_dues_rate
+-- (councils.setGlobalParameters) and the PlatformSettings row (councils.setPlatformSettings), which used to sit on
+-- /lookups. The phone database version moves to 63 to mark the release.
+-- =========================================================================

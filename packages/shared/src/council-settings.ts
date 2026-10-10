@@ -12,7 +12,7 @@
 // Super Admin for any council (councils.setCouncilWideSettings).
 //
 // Platform Settings are the universal limits every council shares, kept in the one-row PlatformSettings table and
-// edited by Super Admins on /lookups (councils.setPlatformSettings): the oral history recorder's time cap and the
+// edited by Super Admins on /system-settings/global-settings (councils.setPlatformSettings; /lookups before Sprint 7C Ext): the oral history recorder's time cap and the
 // character limits of a diary entry and a prayer intention. A limit may not exceed its column's size.
 // =========================================================================
 import { DIARY_TEXT_MAX_LENGTH, ORAL_HISTORY_MAX_SECONDS } from './history';

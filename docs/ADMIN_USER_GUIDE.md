@@ -20,7 +20,7 @@
 7. [Performance](#7-performance)
 8. [Resources and the Google Drive archive vault](#8-resources-and-the-google-drive-archive-vault)
 9. [Answers](#9-answers)
-10. [Setup and the Supreme roster sync](#10-setup-and-the-supreme-roster-sync)
+10. [System Settings and the Supreme roster sync](#10-system-settings-and-the-supreme-roster-sync)
 11. [Data protection rules](#11-data-protection-rules)
 12. [Troubleshooting reference](#12-troubleshooting-reference)
 13. [Automated messages reference](#13-automated-messages-reference)
@@ -102,13 +102,55 @@ The rule includes the five officer desks: **Live Meeting Console**, **Annual Cad
 | **Performance** | Executive Dashboard, Growth & Hours Charts, Post-event Ledger, Lessons Registry | Seated officers, Admins |
 | **Resources** | Fraternal Photo Gallery, Council Artifacts, Marketing Factory, 📂 Council Archive Vault | Every member. The Marketing Factory and the vault link show to officers and Admins only. |
 | **Answers** | Online Help Center, SOP Center | Every member |
-| **Setup** | Councils, Affiliated Roster, Supreme Council Sync, Council Lookup Tables, Credentials Vault, Global Charities Registry, Global Governance Matrices, Parish & Pastors Linkage | Admins, finance officers, Super Admins. The Credentials Vault shows to officers, Admins and Super Admins only. |
+| **System Settings** | Councils, Feature Flags Control Center, Global System Parameters, Council Wide Settings, Affiliated Roster, Supreme Council Sync, Council Lookup Tables, Credentials Vault, Global Charities Registry, Global Governance Matrices, Parish & Pastors Linkage | Admins, finance officers, Super Admins. The Council Wide Settings and the Credentials Vault show to officers, Admins and Super Admins only. Global System Parameters shows to Super Admins only. |
 
 Three pages open from the header, not from the sidebar.
 
 - **Messaging** (envelope icon) → **Council Messages & Alerts** and **My Distribution Lists**.
 - **Help** (question-mark icon) → **Online Help Center**.
 - Your name → **My Profile**.
+
+The **System Settings** pillar had the name **Setup** in earlier versions of the portal. The links in the pillar did not change.
+
+### 2.2 Concept: the Navigation Guide
+
+The **Navigation Guide** link is at the top of the sidebar, above the seven pillars. Every member sees the link.
+
+The **Navigation Guide** page reads your member type and your officer roles. The page then lists only the links that your own sidebar shows.
+Each link has one plain-English sentence that tells what the page does.
+
+| You sign in as | The guide shows |
+| --- | --- |
+| Member | The member pages only. The guide shows no leadership, finance desk or settings page. |
+| Council Officer | The member pages and the desks of your office, for example **GK Expense Authorize** for the Grand Knight. |
+| Council Admin | The member pages and the leadership, finance and settings pages of your council. |
+| Super Admin | Every page, including **Global System Parameters**. |
+
+A few pages read differently for leaders. For example, a member reads that **Annual Budget Projections** shows the budget. A leader also reads that budget keepers draft and approve the budget there.
+A module that your council switched off is not in the guide, because the module is not in your sidebar.
+
+### 2.3 Read your Navigation Guide
+
+> **Prerequisite (who can do this):** Every signed-in member.
+
+**Goal:** Learn what each link in your sidebar does.
+
+**Start point:** Sidebar → **Navigation Guide** (at the top, above the pillars).
+
+**Steps:**
+1. Select **Navigation Guide**.
+2. Read the first line. The line shows how you are signed in, for example *You are signed in as: Council Officer (Grand Knight)*.
+3. Read each pillar. The pillars and links are in the same order as your sidebar.
+4. Select a link name to open that page.
+5. Read **In the top bar** for the Messaging menu and your name menu.
+
+**Expected result:** The page lists every link that your sidebar shows, with one sentence for each link.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A page that a colleague uses is not in your guide. | Your role cannot open the page. | Ask a council Admin about your role. |
+| A whole module is missing from the guide. | Your council switched the module off (section 3). | Ask a Super Admin to switch the module on. |
 
 ---
 
@@ -149,7 +191,7 @@ The general ledger, the budget and the activity hour log have no flag. They stay
 
 **Goal:** Turn one optional module on or off for one council.
 
-**Start point:** Sidebar → Setup → **Feature Flags Control Center**.
+**Start point:** Sidebar → System Settings → **Feature Flags Control Center**.
 
 **Steps:**
 1. Find the row of the module. Each row shows the label, the flag column and the pages the flag hides.
@@ -309,7 +351,7 @@ Invitations are released 5 days before each meeting.
 
 **Goal:** Set the default agenda for one meeting type.
 
-**Start point:** Sidebar → Setup → **Council Lookup Tables** → **Meeting Agenda Templates**.
+**Start point:** Sidebar → System Settings → **Council Lookup Tables** → **Meeting Agenda Templates**.
 
 **Steps:**
 1. Choose the **Meeting type**.
@@ -1186,7 +1228,7 @@ The SOP Center holds the full procedure: **Publish a standard operating procedur
 
 ---
 
-## 10. Setup and the Supreme roster sync
+## 10. System Settings and the Supreme roster sync
 
 ### 10.1 Add a member
 
@@ -1195,7 +1237,7 @@ The SOP Center holds the full procedure: **Publish a standard operating procedur
 
 **Goal:** Put a new Brother Knight on the roster.
 
-**Start point:** Sidebar → Setup → **Affiliated Roster**.
+**Start point:** Sidebar → System Settings → **Affiliated Roster**.
 
 **Steps:**
 1. Select **Add member**.
@@ -1223,7 +1265,7 @@ The SOP Center holds the full procedure: **Publish a standard operating procedur
 
 **Goal:** Help a member who lost or used up the setup code.
 
-**Start point:** Sidebar → Setup → **Affiliated Roster** → the member.
+**Start point:** Sidebar → System Settings → **Affiliated Roster** → the member.
 
 **Steps:**
 1. Open the member's record.
@@ -1262,7 +1304,7 @@ The platform has no background scheduler. An Admin runs the sync by hand.
 
 **Goal:** Bring the Supreme roster into the platform.
 
-**Start point:** Sidebar → Setup → **Supreme Council Sync** → **Supreme roster sync - new member onboarding**.
+**Start point:** Sidebar → System Settings → **Supreme Council Sync** → **Supreme roster sync - new member onboarding**.
 
 **Steps:**
 1. Save the Supreme Excel export as a CSV file.
@@ -1290,7 +1332,7 @@ The platform has no background scheduler. An Admin runs the sync by hand.
 
 **Goal:** File a Supreme report from the council's records.
 
-**Start point:** Sidebar → Setup → **Supreme Council Sync**.
+**Start point:** Sidebar → System Settings → **Supreme Council Sync**.
 
 **Steps:**
 1. Choose the **Supreme form**.
@@ -1314,7 +1356,7 @@ The platform has no background scheduler. An Admin runs the sync by hand.
 
 **Goal:** Find and message members with a skill.
 
-**Start point:** Sidebar → Setup → **Affiliated Roster** → **Skills**.
+**Start point:** Sidebar → System Settings → **Affiliated Roster** → **Skills**.
 
 **Steps:**
 1. Choose a skill in the **Council skills** drawer.
@@ -1339,7 +1381,7 @@ The platform has no background scheduler. An Admin runs the sync by hand.
 
 **Goal:** Keep the council's own lists.
 
-**Start point:** Sidebar → Setup → **Council Lookup Tables**.
+**Start point:** Sidebar → System Settings → **Council Lookup Tables**.
 
 **Steps:**
 1. Open the tab: **Activities**, **Donation types**, **Enabled donation methods**, **Budget categories** or **Meeting Agenda Templates**.
@@ -1353,7 +1395,7 @@ The platform has no background scheduler. An Admin runs the sync by hand.
 
 **Expected result:** The changes save. Phones show the new values on the next load.
 
-The outbound email settings are not on this page. Set them on the **Credentials Vault** page (10.8). The base dues rate is not on this page either. A Super Admin sets the rate on **Global Governance Matrices** (10.9).
+The outbound email settings are not on this page. Set them on the **Credentials Vault** page (10.8). The base dues rate is not on this page either. A Super Admin sets the rate on **Global System Parameters** (16.6).
 
 **Common problems:**
 | Problem | Cause | Fix |
@@ -1368,7 +1410,7 @@ The outbound email settings are not on this page. Set them on the **Credentials 
 
 **Goal:** Connect the council's own mail account, Google Drive, Copilot Studio agent and Azure receipt reader.
 
-**Start point:** Sidebar → Setup → **Credentials Vault**.
+**Start point:** Sidebar → System Settings → **Credentials Vault**.
 
 **Steps:**
 1. Read the status lines at the top. A line with ✓ is a connection that is on.
@@ -1399,7 +1441,7 @@ The outbound email settings are not on this page. Set them on the **Credentials 
 
 **Goal:** Keep the lists that every council shares.
 
-**Start point:** Sidebar → Setup.
+**Start point:** Sidebar → System Settings.
 
 **Steps:**
 1. Open the page.
@@ -1422,8 +1464,7 @@ The outbound email settings are not on this page. Set them on the **Credentials 
 ![Global Charities Registry (/charities/registry)](../generated/dashboard_visual_catalog/charities_registry.png)
 <!-- /KEEP_IMAGE -->
 
-A Super Admin also sets each council's base dues rate and tenant type in the **Global Council Parameters Dashboard**, at the top of **Global Governance Matrices**.
-The **Platform Limits** card below the dashboard holds the limits that every council shares (section 16.4).
+The base dues rate, the tenant type and the **Platform Limits** are not on **Global Governance Matrices**. A Super Admin sets them on **Global System Parameters** (sections 16.4 to 16.6).
 
 **Expected result:** Every council sees the new value.
 
@@ -1641,7 +1682,7 @@ The platform keeps a history of every council that a member belongs to. The hist
 
 **Goal:** See every council a member belonged to.
 
-**Start point:** Sidebar → Setup → **Affiliated Roster** → the member.
+**Start point:** Sidebar → System Settings → **Affiliated Roster** → the member.
 
 **Steps:**
 1. Select the member's name in the roster.
@@ -1662,7 +1703,7 @@ The platform keeps a history of every council that a member belongs to. The hist
 
 **Goal:** Build a roster file by hand in Excel and load the file.
 
-**Start point:** Sidebar → Setup → **Supreme Council Sync** → **Supreme roster sync - new member onboarding**.
+**Start point:** Sidebar → System Settings → **Supreme Council Sync** → **Supreme roster sync - new member onboarding**.
 
 **Steps:**
 1. Select **Download the Excel roster template**.
@@ -1689,7 +1730,7 @@ The platform keeps a history of every council that a member belongs to. The hist
 
 **Goal:** Mark members **Inactive** after more days without logged service than the council allows.
 
-**Start point:** Sidebar → Setup → **Affiliated Roster**.
+**Start point:** Sidebar → System Settings → **Affiliated Roster**.
 
 **Steps:**
 1. Check the number of days in **Council Wide Settings** (section 16.3). The default is 365 days.
@@ -1811,8 +1852,9 @@ Some limits belong to one council. Other limits belong to every council at once.
 
 | Kind | Who changes it | Where | What it holds |
 | --- | --- | --- | --- |
-| Council Wide Settings | The council's Admins and officers, or a Super Admin | Sidebar → Setup → **Council Wide Settings** | The volunteer time limits and the inactive-member window of one council |
-| Platform Limits | Super Admins only | Sidebar → Setup → **Global Governance Matrices** → **Platform Limits** | The recording time limit and two character limits for every council |
+| Council Wide Settings | The council's Admins and officers, or a Super Admin | Sidebar → System Settings → **Council Wide Settings** | The volunteer time limits and the inactive-member window of one council |
+| Platform Limits | Super Admins only | Sidebar → System Settings → **Global System Parameters** → **Platform Limits** | The recording time limit and two character limits for every council |
+| Base dues rate and tenant type | Super Admins only | Sidebar → System Settings → **Global System Parameters** → **Global Council Parameters Dashboard** | The dues rate and the organization type of one council |
 
 A new council starts with the default values. A change applies to the next entry that a member saves. A change never moves hours that are already logged or held.
 
@@ -1833,7 +1875,7 @@ A value of 0 for **Extra hours allowed past a scheduled shift** sends every repo
 
 **Goal:** Set your council's volunteer time limits and its inactive-member window.
 
-**Start point:** Sidebar → Setup → **Council Wide Settings**.
+**Start point:** Sidebar → System Settings → **Council Wide Settings**.
 
 **Steps:**
 1. Super Admins only: choose the council in **Council** at the top of the page.
@@ -1856,14 +1898,25 @@ A value of 0 for **Extra hours allowed past a scheduled shift** sends every repo
 | The message says the value must be "from" one number "to" another. | The value is outside the allowed range (section 16.2). | Enter a value inside the range. |
 | The message says "Nothing changed." | Every number is the same as the saved value. | Change a number, then save. |
 
-### 16.4 Change the platform limits
+### 16.4 Concept: the Global System Parameters page
+
+The **Global System Parameters** page holds the numbers that sit above the settings of one council. Only Super Admins see the page.
+
+| Card | What the card holds | Applies to |
+| --- | --- | --- |
+| **Global Council Parameters Dashboard** | The base dues rate and the tenant type (Knights of Columbus council or a white-labelled organization) | One council at a time |
+| **Platform Limits** | The oral history recording time limit (15 minutes by default), the diary entry character limit and the prayer intention character limit | Every council at once |
+
+The two cards were on **Global Governance Matrices** in earlier versions. The **Feature Flags Control Center** holds only the on/off module switches. The control center has no numbers.
+
+### 16.5 Change the platform limits
 
 > **Prerequisite (who can do this):** You must be a Super Admin.
 > **Warning:** the limits apply to every council at once.
 
 **Goal:** Set the limits that every council shares.
 
-**Start point:** Sidebar → Setup → **Global Governance Matrices** → **Platform Limits**.
+**Start point:** Sidebar → System Settings → **Global System Parameters** → **Platform Limits**.
 
 **Steps:**
 1. Enter the **Oral history recording time limit** in seconds. The default is 900 seconds (15 minutes).
@@ -1878,6 +1931,29 @@ A value of 0 for **Extra hours allowed past a scheduled shift** sends every repo
 | --- | --- | --- |
 | A character limit does not go above its default. | The default is the largest size that the council records can store. | Keep the limit at the default or lower. |
 | A recording stopped early. | The recording time limit is lower than the speaker needed. | Raise the limit. The largest value is 3,600 seconds (60 minutes). |
+
+### 16.6 Set a council's base dues rate and tenant type
+
+> **Prerequisite (who can do this):** You must be a Super Admin.
+> **Warning:** a new tenant type changes the sidebar and the labels of every member of the council at once.
+
+**Goal:** Set the base dues rate and the tenant type of one council.
+
+**Start point:** Sidebar → System Settings → **Global System Parameters** → **Global Council Parameters Dashboard**.
+
+**Steps:**
+1. Choose the council in **Council**.
+2. Choose the **Tenant type**: `KOFC` or `GENERIC`.
+3. Enter the **Base dues rate** in dollars.
+4. Select **Save council parameters**.
+
+**Expected result:** A message shows the council number, the tenant type and the new base dues. The dues forecast uses the new rate.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The message says "Enter a base dues rate." | The rate box is empty. | Enter the rate, then save. |
+| The Faith Center and the Supreme Council Sync left the sidebar. | The tenant type is a white-labelled organization. | Choose the Knights of Columbus tenant type again. |
 
 ---
 

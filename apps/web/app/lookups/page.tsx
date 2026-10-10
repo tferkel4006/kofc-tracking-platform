@@ -4,13 +4,11 @@
 // renamed or deleted; a row still referenced elsewhere cannot be deleted and the message says where.
 // Rows come from lookups.listForMaintenance, and the drivers enforce the same tier on that read and every write
 // (SUPER_ADMIN_REQUIRED), so hiding the page is not the only gate. Drop-downs elsewhere keep the open lookups.list.
-// Sprint 6I: the Global Council Parameters Dashboard card above the tables sets a council's tenant type and base dues
-// rate (councils.setGlobalParameters, Super Admins only).
+// Sprint 7C Extension: the Global Council Parameters Dashboard (Sprint 6I) and the Platform Limits card (Sprint 7C) moved
+// to their own page, Global System Parameters (/system-settings/global-settings).
 import { useState } from 'react';
 import { describeError, LOOKUP_META, LOOKUP_TABLE_ORDER, type LookupTableName, type LookupValues } from '@kofc/shared';
 import { RequireArea } from '@/components/CouncilScope';
-import { GlobalParametersCard } from '@/components/GlobalParametersCard';
-import { PlatformSettingsCard } from '@/components/SettingsParts';
 import { Button, cx, Empty, Input, Notice, PageTitle, Pill, Table, Tabs, Td } from '@/components/ui';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -169,8 +167,6 @@ function Lookups() {
   return (
     <>
       <PageTitle>System lookups</PageTitle>
-      <GlobalParametersCard />
-      <PlatformSettingsCard />
       <Tabs
         tabs={LOOKUP_TABLE_ORDER.map((t) => ({ id: t, label: LOOKUP_META[t].label }))}
         value={table}

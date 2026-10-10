@@ -2425,8 +2425,8 @@ export interface DataService {
      */
     setDuesRate(actorId: number, councilId: number, rate: number): Promise<Council>;
     /**
-     * Sprint 6I: the Global Council Parameters Dashboard on /lookups. Saves the council's tenant_type (KOFC or GENERIC,
-     * cleanTenantType) and/or base_dues_rate (cleanDuesRate) and resolves to the updated council; a field left out keeps
+     * Sprint 6I: the Global Council Parameters Dashboard (on /system-settings/global-settings since the Sprint 7C
+     * Extension). Saves the council's tenant_type (KOFC or GENERIC, cleanTenantType) and/or base_dues_rate (cleanDuesRate) and resolves to the updated council; a field left out keeps
      * its stored value. Only an Active Super Admin may (SUPER_ADMIN_REQUIRED, nothing written). RECORD_NOT_FOUND for an
      * unknown council, INVALID_INPUT for a bad value, an unknown field or no field (cleanGlobalCouncilParameters). The
      * council's Grand Knight and Financial Secretary keep setDuesRate for their own council.
