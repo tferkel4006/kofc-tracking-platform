@@ -45,6 +45,9 @@ export function createRemoteDataService(): DataService {
       setDuesRate: notImplemented('councils.setDuesRate'),
       setGlobalParameters: notImplemented('councils.setGlobalParameters'),
       setRankThresholds: notImplemented('councils.setRankThresholds'),
+      setCouncilWideSettings: notImplemented('councils.setCouncilWideSettings'),
+      getPlatformSettings: notImplemented('councils.getPlatformSettings'),
+      setPlatformSettings: notImplemented('councils.setPlatformSettings'),
       setEmailGateway: notImplemented('councils.setEmailGateway'),
     },
     parishes: {

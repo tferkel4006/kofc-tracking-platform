@@ -102,6 +102,29 @@ export interface Council {
    */
   rank_threshold_hours?: number | null;
   rank_threshold_events?: number | null;
+  /**
+   * Sprint 7C (Schema 62): the Council Wide Settings (council-settings.ts) - the volunteer time guards' daily activity
+   * cap (DEFAULT 5), single-activity hour ceiling (DEFAULT 5.0) and shift padding allowance (DEFAULT 1.0), and the
+   * inactivity check's window in days (DEFAULT 365). A missing value reads as the default.
+   */
+  quarantine_max_daily_activities?: number | null;
+  quarantine_max_single_hours?: number | null;
+  max_shift_padding_hours?: number | null;
+  inactivity_threshold_days?: number | null;
+}
+
+/**
+ * Sprint 7C (Schema 62): the one-row table of universal limits every council shares (council-settings.ts), edited by
+ * Super Admins on /lookups. id is always 1.
+ */
+export interface PlatformSettings {
+  id: number;
+  /** The oral history recorder's time cap in seconds (DEFAULT 900). */
+  oral_history_max_seconds: number;
+  /** The longest diary entry in characters (DEFAULT 4000, at most 4000). */
+  diary_text_max_length: number;
+  /** The longest prayer intention in characters (DEFAULT 500, at most the column's 500). */
+  prayer_intention_max_length: number;
 }
 
 export interface AffiliatedCouncils {

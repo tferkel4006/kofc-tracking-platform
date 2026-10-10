@@ -510,6 +510,15 @@ import {
   quarantineActivityKey,
   quarantineReasons,
   quarantineReasonText,
+  assertMayEditCouncilWideSettings,
+  assertMaySetPlatformSettings,
+  cleanCouncilWideSettings,
+  cleanPlatformSettings,
+  councilWideSettings,
+  COUNCIL_WIDE_SETTING_NAMES,
+  platformSettings,
+  PLATFORM_SETTING_NAMES,
+  PLATFORM_SETTINGS_ID,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -530,6 +539,7 @@ import type {
   ActivityTime,
   ChatThread,
   Council,
+  PlatformSettings,
   CouncilDonationMethod,
   CouncilLookupRowMap,
   CouncilLookupTableName,
@@ -742,8 +752,10 @@ const DB_NAME = 'kofc.db';
  * 59: MemberDevotionals, Member.flag_charter_member, Council.rank_threshold_hours and rank_threshold_events (Sprint 7A).
  * 60: MemberCouncilAffiliationLog - the multi-council membership trail (Sprint 7A Extension).
  * 61: VolunteerQuarantine - time entries held for leadership review - and Council.feature_volunteer_quarantine (Sprint 7B).
+ * 62: the Council Wide Settings (Council.quarantine_max_daily_activities, quarantine_max_single_hours,
+ *     max_shift_padding_hours, inactivity_threshold_days) and PlatformSettings, the universal limits (Sprint 7C).
  */
-const SCHEMA_VERSION = 61;
+const SCHEMA_VERSION = 62;
 
 /** A time entry the Sprint 7B guards judge (volunteer-quarantine.ts). */
 interface QuarantineEntry {
@@ -1496,6 +1508,36 @@ export class SqliteDataService implements DataService {
       return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [councilId]))!;
     },
 
+    setCouncilWideSettings: async (actorId, councilId, settings) => {
+      const clean = cleanCouncilWideSettings(settings);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMayEditCouncilWideSettings(await this.memberWriteActor(db, actorId), councilId);
+        await this.requireRecord(db, 'Council', councilId);
+        // Only the four known columns, so the names are safe to interpolate.
+        const columns = COUNCIL_WIDE_SETTING_NAMES.filter((c) => clean[c] !== undefined);
+        await db.runAsync(`UPDATE [Council] SET ${columns.map((c) => `[${c}] = ?`).join(', ')} WHERE [id] = ?`, [...columns.map((c) => clean[c]!), councilId]);
+      });
+      return (await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [councilId]))!;
+    },
+
+    getPlatformSettings: async () => this.platformSettingsOf(await this.ready()),
+
+    setPlatformSettings: async (actorId, settings) => {
+      const clean = cleanPlatformSettings(settings);
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        assertMaySetPlatformSettings(await this.memberWriteActor(db, actorId));
+        const next = { ...(await this.platformSettingsOf(db)), ...clean };
+        // Only the three known columns, so the names are safe to interpolate.
+        await db.runAsync(
+          `INSERT OR REPLACE INTO [PlatformSettings] ([id], ${PLATFORM_SETTING_NAMES.map((c) => `[${c}]`).join(', ')}) VALUES (?, ?, ?, ?)`,
+          [PLATFORM_SETTINGS_ID, ...PLATFORM_SETTING_NAMES.map((c) => next[c])],
+        );
+      });
+      return this.platformSettingsOf(db);
+    },
+
     setEmailGateway: async (actorId, councilId, settings) => {
       const db = await this.ready();
       await db.withTransactionAsync(async () => {
@@ -2023,7 +2065,15 @@ export class SqliteDataService implements DataService {
           this.serviceLogs(db),
         ]);
         const ids = new Set(members.map((m) => m.id));
-        swept = planInactivitySweep({ members, statuses, memberTypes, logs: logs.filter((l) => ids.has(l.MemberID)), today: toIsoDate(this.now()) });
+        const council = await db.getFirstAsync<Council>('SELECT [inactivity_threshold_days] FROM [Council] WHERE [id] = ?', [councilId]);
+        swept = planInactivitySweep({
+          members,
+          statuses,
+          memberTypes,
+          logs: logs.filter((l) => ids.has(l.MemberID)),
+          today: toIsoDate(this.now()),
+          thresholdDays: councilWideSettings(council).inactivity_threshold_days,
+        });
         const inactive = memberStatusId(statuses, INACTIVE_STATUS);
         for (const memberId of swept) {
           const stored = (await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [memberId]))!;
@@ -3958,8 +4008,11 @@ export class SqliteDataService implements DataService {
    * an exempt member or while their council's feature_volunteer_quarantine flag is off.
    */
   private async quarantineReasonsFor(db: SQLite.SQLiteDatabase, memberId: number, entry: QuarantineEntry): Promise<string[]> {
-    const member = await db.getFirstAsync<{ memberType: string | null; flag: number | null }>(
-      `SELECT t.[Type] AS memberType, c.[feature_volunteer_quarantine] AS flag FROM [Member] m
+    const member = await db.getFirstAsync<
+      { memberType: string | null; flag: number | null } & Pick<Council, 'quarantine_max_daily_activities' | 'quarantine_max_single_hours' | 'max_shift_padding_hours'>
+    >(
+      `SELECT t.[Type] AS memberType, c.[feature_volunteer_quarantine] AS flag, c.[quarantine_max_daily_activities],
+              c.[quarantine_max_single_hours], c.[max_shift_padding_hours] FROM [Member] m
          LEFT JOIN [MemberType] t ON t.[id] = m.[MemberTypeID]
          LEFT JOIN [Council] c ON c.[id] = m.[CouncilID]
         WHERE m.[id] = ?`,
@@ -3987,7 +4040,12 @@ export class SqliteDataService implements DataService {
       entry.activityType === 'MANUAL'
         ? day.filter((d) => d.type === 'MANUAL' && d.activityId === entry.activityId).reduce((sum, d) => sum + d.hours, 0)
         : 0;
-    return quarantineReasons({ ...entry, dayActivityKeys, otherHoursSameActivity });
+    return quarantineReasons({ ...entry, dayActivityKeys, otherHoursSameActivity }, councilWideSettings(member));
+  }
+
+  /** The universal limits (Sprint 7C), with the defaults when the row is missing. */
+  private async platformSettingsOf(db: SQLite.SQLiteDatabase): Promise<PlatformSettings> {
+    return platformSettings(await db.getFirstAsync<PlatformSettings>('SELECT * FROM [PlatformSettings] WHERE [id] = ?', [PLATFORM_SETTINGS_ID]));
   }
 
   /** Stores a held entry (PENDING) in place of the time row. */
@@ -6851,7 +6909,7 @@ export class SqliteDataService implements DataService {
 
     addDiaryEntry: async (actorId, councilId, input) => {
       const db = await this.ready();
-      const clean = cleanDiaryEntry(input, this.now());
+      const clean = cleanDiaryEntry(input, this.now(), (await this.platformSettingsOf(db)).diary_text_max_length);
       let entryId = 0;
       await db.withTransactionAsync(async () => {
         assertMayReadCouncilHistory(await this.memberWriteActor(db, actorId), councilId, `write in the diary of council ${councilId}`);
@@ -7097,8 +7155,8 @@ export class SqliteDataService implements DataService {
     },
 
     addIntention: async (actorId, councilId, text) => {
-      const clean = cleanPrayerIntentionText(text);
       const db = await this.ready();
+      const clean = cleanPrayerIntentionText(text, (await this.platformSettingsOf(db)).prayer_intention_max_length);
       let intentionId = 0;
       await db.withTransactionAsync(async () => {
         assertMayJoinCouncilPrayers(await this.memberWriteActor(db, actorId), councilId, `post a prayer intention for council ${councilId}`);

@@ -909,7 +909,7 @@ New columns:
 •	Council.rank_threshold_events (INT, NOT NULL, DEFAULT 10) — Distinct events served (EventTime) that make a 'Saint'. Both are set by the council's Admins or a Super Admin on the dashboard (councils.setRankThresholds), whole numbers from 1 to 10,000 hours and 1 to 1,000 events.
 Canonization shield. Levels: Servant of God, Venerable (a third of both thresholds), Blessed (two thirds of both), Saint (both met). Measured only on logged service (EventTime by ShiftDate and ActivityTime, any council), never on the devotional tally.
 Lifecycle hooks, in the same transaction as the member write: members.create and supreme.syncSupremeRoster put a new member on every council-wide distribution list of the council; members.update takes a member marked Deceased or Former off every list (private and council-wide); a transfer (a new CouncilID, Super Admins only) stores the member Active, takes them off the old council's lists and puts them on the new council's council-wide lists. The Sprint 6P transfer guard still closes their old terms 'Transferred'.
-Inactivity sweep. members.sweepInactive (Run inactivity sweep on the roster, the council's Admins or a Super Admin) marks Inactive every Active member of type Member whose last logged service, or join date when none is logged, is more than 365 days ago. Admins, Super Admins and members with neither date are left alone. There is no scheduler: an Admin runs it.
+Inactivity sweep. members.sweepInactive (🔍 Check for Inactive Members on the roster, the council's Admins or a Super Admin) marks Inactive every Active member of type Member whose last logged service, or join date when none is logged, is more than 365 days ago. Admins, Super Admins and members with neither date are left alone. There is no scheduler: an Admin runs it.
 Engagement card. reports.councilEngagement lists the month's volunteers at the council's events and activities and the Top 5 Volunteers Leaderboard (the council's Active members by all hours logged there; ties share a rank). The dashboard shows it with the month's cash raised.
 Roster import template. py scripts/roster_import_template.py writes apps/web/public/templates/roster_import_template.xlsx (openpyxl): the roster import's headers, a sample row, and drop-downs for Role (OFFICE_ROLE_NAMES plus Member), Degree and Charter Member. The import does not read Role.
 ________________________________________
@@ -949,4 +949,20 @@ A regular member's time entry held for leadership review instead of being writte
 Guards (eventTime.logHours, activityTime.logHours, activityTime.addQuarterHour). An entry is held when it would be the member's sixth distinct activity that day (shifts by ShiftDate, activities by ActivityDate, held entries included); when it would put more than 5.0 hours against one activity that day (logged and held entries on it added up); or, for a shift, when it is more than 1.0 hour over the scheduled length. The call resolves to { quarantined } instead of the time row. A new report on a shift replaces the member's pending one; rapid taps past a guard grow one held row.
 Exempt. Admins, Super Admins, holders of an elected office or a Trustee seat, and the owner of the shift's event. Everyone while Council.feature_volunteer_quarantine is 0.
 Clearance desk. volunteerQuarantine.listPending, clear and reject: the council's Active Grand Knight, Deputy Grand Knight and Admins, and any Active Super Admin. Clear (APPROVED) writes the entry to EventTime (replacing the member's row for the shift) or adds an ActivityTime row; the 3- and 6-month logging walls do not apply. Reject (REJECTED) writes nothing to the time tables. A decided row cannot be decided again (QUARANTINE_STATUS_CONFLICT).
+________________________________________
+# 31. Council Wide Settings and Platform Settings (Sprint 7C)
+Schema version 62. Rules: council-settings.ts (councilWideSettings, cleanCouncilWideSettings, assertMayEditCouncilWideSettings, platformSettings, cleanPlatformSettings, assertMaySetPlatformSettings).
+[Council] (new columns)
+•	quarantine_max_daily_activities (INT, NOT NULL, DEFAULT 5) — More distinct activities than this in one day sends a member's entry to review. 1 to 24.
+•	quarantine_max_single_hours (DECIMAL(5,2), NOT NULL, DEFAULT 5.0) — More hours than this against one activity in one day sends the entry to review. 0.25 to 24, in 0.25 steps.
+•	max_shift_padding_hours (DECIMAL(5,2), NOT NULL, DEFAULT 1.0) — Hours a shift report may run over the scheduled length before review. 0 to 8, in 0.25 steps.
+•	inactivity_threshold_days (INT, NOT NULL, DEFAULT 365) — members.sweepInactive (🔍 Check for Inactive Members) marks Inactive a plain member with no logged service in more than this many days. 30 to 3,650.
+Editing. councils.setCouncilWideSettings on /setup/council-settings (Setup pillar, "Council Wide Settings"): an Active Admin or officer (a Role with Officer = 1) of the council, or any Active Super Admin. The guards and the sweep read the council's row on every call.
+[PlatformSettings]
+One row (id 1) of the universal limits every council shares, seeded at the defaults.
+•	id (INT, NOT NULL) — Primary Key. Always 1.
+•	oral_history_max_seconds (INT, NOT NULL, DEFAULT 900) — The oral history recorder's time cap. 60 to 3,600.
+•	diary_text_max_length (INT, NOT NULL, DEFAULT 4000) — The longest diary entry or testimonial note. 100 to 4,000.
+•	prayer_intention_max_length (INT, NOT NULL, DEFAULT 500) — The longest prayer intention. 50 to 500 (the column's size).
+Editing. councils.getPlatformSettings (anyone) and councils.setPlatformSettings (Active Super Admin only, SUPER_ADMIN_REQUIRED), the Platform Limits card on /lookups. history.addDiaryEntry and prayers.addIntention apply the character limits; the web recorder applies the time cap.
 ________________________________________

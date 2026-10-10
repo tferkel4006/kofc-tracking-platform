@@ -112,6 +112,12 @@ export const NAV: Record<PortalNavItem | 'profile' | 'messages' | 'distribution-
     hint: "Switch each council's optional modules on and off",
     restrictedTo: 'Super Admins',
   },
+  'setup/council-settings': {
+    href: '/setup/council-settings',
+    label: 'Council Wide Settings',
+    hint: 'Daily activity and hour limits, shift padding and the inactive-member window',
+    restrictedTo: 'council officers, Admins and Super Admins',
+  },
   help: { href: '/help', label: 'Online Help Center', hint: 'Searchable answers from the user manuals, and feedback' },
   'governance/bylaws': { href: '/governance/bylaws', label: 'Constitutional Bylaws', hint: "The council's own bylaws, article by article" },
   'governance/advisor': {

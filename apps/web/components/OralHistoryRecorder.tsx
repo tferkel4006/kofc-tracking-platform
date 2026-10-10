@@ -5,21 +5,22 @@
 // id is written to the member's diary entry for today, filed under the chosen fraternal year (history.addDiaryEntry).
 // While the vault is switched off the entry keeps a browser blob link, which plays only in this browser session.
 // One diary entry per member per day: once today's entry exists the button is disabled.
-// Sprint 6M: every session is capped at ORAL_HISTORY_MAX_SECONDS (15 minutes). While recording, a countdown
+// Sprint 6M: every session is capped at ORAL_HISTORY_MAX_SECONDS (15 minutes; since Sprint 7C the Super Admins' platform
+// limit, PlatformSettings.oral_history_max_seconds). While recording, a countdown
 // meter (navy on white, brand red near the end) shows the minutes and seconds left before the recorder stops and
 // saves on its own; in the last minute it turns gold and says so. Screen readers hear it each minute, and every second of
 // the final ten.
 import { useEffect, useRef, useState } from 'react';
 import {
   describeError,
-  DIARY_TEXT_MAX_LENGTH,
   ORAL_HISTORY_BITS_PER_SECOND,
-  ORAL_HISTORY_MAX_SECONDS,
   oralHistoryCountdown,
   oralHistoryFileName,
   pickOralHistoryMimeType,
+  platformSettings,
   type CouncilSpiritualDiary,
 } from '@kofc/shared';
+import { usePlatformSettings } from '@/components/SettingsParts';
 import { Button, cx, Field, Notice, Select, Textarea } from '@/components/ui';
 import { useUser } from '@/lib/session';
 import { db } from '@/services/db';
@@ -49,6 +50,9 @@ export function OralHistoryRecorder({
   onSaved: () => Promise<void>;
 }) {
   const user = useUser();
+  const limits = platformSettings(usePlatformSettings());
+  const maxSeconds = limits.oral_history_max_seconds;
+  const maxChars = limits.diary_text_max_length;
   const [year, setYear] = useState(defaultYear);
   const [note, setNote] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
@@ -70,10 +74,10 @@ export function OralHistoryRecorder({
     },
     [],
   );
-  // The recorder stops itself at ORAL_HISTORY_MAX_SECONDS and saves what it has.
+  // The recorder stops itself at the platform's time limit and saves what it has.
   useEffect(() => {
-    if (phase === 'recording' && elapsed >= ORAL_HISTORY_MAX_SECONDS) stop();
-  }, [phase, elapsed]);
+    if (phase === 'recording' && elapsed >= maxSeconds) stop();
+  }, [phase, elapsed, maxSeconds]);
 
   function release() {
     if (timer.current) clearInterval(timer.current);
@@ -139,7 +143,7 @@ export function OralHistoryRecorder({
     recorder.current = null;
   }
 
-  const countdown = oralHistoryCountdown(elapsed);
+  const countdown = oralHistoryCountdown(elapsed, maxSeconds);
   const blocked = todaysEntry
     ? `You already wrote today's diary entry (filed under ${todaysEntry.fraternal_year}). One entry per day is allowed; record again tomorrow.`
     : unavailable;
@@ -163,8 +167,8 @@ export function OralHistoryRecorder({
             </Select>
           )}
         </Field>
-        <Field label="What is the testimonial about? (optional)" hint={`Saved as the diary text. At most ${DIARY_TEXT_MAX_LENGTH.toLocaleString('en-US')} characters.`}>
-          {(id) => <Textarea id={id} value={note} maxLength={DIARY_TEXT_MAX_LENGTH} onChange={(e) => setNote(e.target.value)} disabled={phase !== 'idle'} />}
+        <Field label="What is the testimonial about? (optional)" hint={`Saved as the diary text. At most ${maxChars.toLocaleString('en-US')} characters.`}>
+          {(id) => <Textarea id={id} value={note} maxLength={maxChars} onChange={(e) => setNote(e.target.value)} disabled={phase !== 'idle'} />}
         </Field>
       </div>
       <div className="flex flex-wrap items-center gap-3">
@@ -181,15 +185,15 @@ export function OralHistoryRecorder({
           {phase === 'starting'
             ? 'Asking for the microphone…'
             : phase === 'recording'
-              ? `● Recording ${clock(elapsed)} of ${clock(ORAL_HISTORY_MAX_SECONDS)}`
+              ? `● Recording ${clock(elapsed)} of ${clock(maxSeconds)}`
               : phase === 'saving'
                 ? 'Saving the recording…'
                 : ''}
         </span>
       </div>
-      {phase === 'recording' ? <CountdownMeter countdown={countdown} /> : null}
+      {phase === 'recording' ? <CountdownMeter countdown={countdown} maxSeconds={maxSeconds} /> : null}
       {phase === 'idle' && !blocked ? (
-        <p className="text-sm">Each recording can run up to {ORAL_HISTORY_MAX_SECONDS / 60} minutes. It stops and saves on its own when the time runs out.</p>
+        <p className="text-sm">Each recording can run up to {minutesText(maxSeconds)}. It stops and saves on its own when the time runs out.</p>
       ) : null}
       {blocked && phase === 'idle' ? <p className="text-sm">{blocked}</p> : null}
     </div>
@@ -202,7 +206,11 @@ export function OralHistoryRecorder({
  * spelled out, so the state never rests on colour alone. The visible clock updates every second; the polite live region
  * speaks only on each whole minute and every second of the last ten, so a screen reader is not flooded.
  */
-function CountdownMeter({ countdown }: { countdown: ReturnType<typeof oralHistoryCountdown> }) {
+/** "15 minutes", "1 minute", "90 seconds". */
+const minutesText = (seconds: number): string =>
+  seconds % 60 === 0 ? `${seconds / 60} minute${seconds === 60 ? '' : 's'}` : `${seconds} seconds`;
+
+function CountdownMeter({ countdown, maxSeconds }: { countdown: ReturnType<typeof oralHistoryCountdown>; maxSeconds: number }) {
   const { remainingSeconds, remainingLabel, remainingSpoken, percentRemaining, warning } = countdown;
   const announce = remainingSeconds % 60 === 0 || remainingSeconds <= 10;
   return (
@@ -215,7 +223,7 @@ function CountdownMeter({ countdown }: { countdown: ReturnType<typeof oralHistor
         <div className={cx('h-full', warning ? 'bg-brand-red' : 'bg-navy')} style={{ width: `${percentRemaining}%` }} />
       </div>
       <p className={cx('mt-2 text-base', warning && 'text-brand-red')}>
-        {warning ? `⚠ Under one minute left: the recording stops and saves at 00:00.` : `The recording stops and saves on its own at 00:00 (${ORAL_HISTORY_MAX_SECONDS / 60}-minute limit).`}
+        {warning ? `⚠ Under one minute left: the recording stops and saves at 00:00.` : `The recording stops and saves on its own at 00:00 (${minutesText(maxSeconds)} limit).`}
       </p>
       <span className="sr-only" aria-live="polite">
         {announce ? `${remainingSpoken} left` : ''}

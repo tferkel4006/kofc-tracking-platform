@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { describeError, LOOKUP_META, LOOKUP_TABLE_ORDER, type LookupTableName, type LookupValues } from '@kofc/shared';
 import { RequireArea } from '@/components/CouncilScope';
 import { GlobalParametersCard } from '@/components/GlobalParametersCard';
+import { PlatformSettingsCard } from '@/components/SettingsParts';
 import { Button, cx, Empty, Input, Notice, PageTitle, Pill, Table, Tabs, Td } from '@/components/ui';
 import { useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
@@ -169,6 +170,7 @@ function Lookups() {
     <>
       <PageTitle>System lookups</PageTitle>
       <GlobalParametersCard />
+      <PlatformSettingsCard />
       <Tabs
         tabs={LOOKUP_TABLE_ORDER.map((t) => ({ id: t, label: LOOKUP_META[t].label }))}
         value={table}

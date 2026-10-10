@@ -10,7 +10,7 @@
 import { useState } from 'react';
 import {
   describeError,
-  DIARY_TEXT_MAX_LENGTH,
+  platformSettings,
   driveFileViewUrl,
   HISTORY_TEXT_MAX_LENGTH,
   isDriveFileId,
@@ -20,6 +20,7 @@ import {
   type DiaryEntryDetail,
   type LegacyYear,
 } from '@kofc/shared';
+import { usePlatformSettings } from '@/components/SettingsParts';
 import { RequireArea } from '@/components/CouncilScope';
 import { SummaryCard } from '@/components/DuesParts';
 import { InMemoriamDeck } from '@/components/InMemoriamParts';
@@ -242,6 +243,7 @@ function YearCard({ year, matrix, reload }: { year: LegacyYear; matrix: CouncilL
 
 function WrittenEntry({ matrix, reload }: { matrix: CouncilLegacyMatrix; reload: () => Promise<void> }) {
   const user = useUser();
+  const maxChars = platformSettings(usePlatformSettings()).diary_text_max_length;
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: 'error' | 'info'; text: string } | null>(null);
@@ -267,7 +269,7 @@ function WrittenEntry({ matrix, reload }: { matrix: CouncilLegacyMatrix; reload:
         </Notice>
       ) : null}
       <Field label={`Today's written entry (filed under ${matrix.currentFraternalYear})`} hint="One entry per day: a written entry or a recording.">
-        {(id) => <Textarea id={id} value={text} maxLength={DIARY_TEXT_MAX_LENGTH} onChange={(e) => setText(e.target.value)} disabled={!!matrix.myEntryToday} />}
+        {(id) => <Textarea id={id} value={text} maxLength={maxChars} onChange={(e) => setText(e.target.value)} disabled={!!matrix.myEntryToday} />}
       </Field>
       <div>
         <Button onClick={() => void save()} disabled={busy || !text.trim() || !!matrix.myEntryToday}>

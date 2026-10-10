@@ -57,8 +57,13 @@ export const mayClosePrayerIntention = (actor: MemberWriteActor, intention: Pick
 
 // ---- validation -----------------------------------------------------------------------------------------------
 
-/** The intention's text, trimmed and checked by the diary content guard. Rejects INVALID_INPUT or DIARY_CONTENT_BLOCKED. */
-export const cleanPrayerIntentionText = (text: unknown): string => assertDiaryTextAllowed(assertText(text, 'Prayer intention', PRAYER_INTENTION_MAX_LENGTH));
+/**
+ * The intention's text, trimmed and checked by the diary content guard. Rejects INVALID_INPUT or DIARY_CONTENT_BLOCKED.
+ * `maxLength` is the platform's character limit (Sprint 7C, PlatformSettings.prayer_intention_max_length), never more
+ * than the column's PRAYER_INTENTION_MAX_LENGTH.
+ */
+export const cleanPrayerIntentionText = (text: unknown, maxLength: number = PRAYER_INTENTION_MAX_LENGTH): string =>
+  assertDiaryTextAllowed(assertText(text, 'Prayer intention', Math.min(maxLength, PRAYER_INTENTION_MAX_LENGTH)));
 
 /** RECORD_NOT_FOUND for a missing intention. */
 export function requirePrayerIntention<T extends Pick<CouncilPrayerIntention, 'id'>>(intention: T | null | undefined, intentionId: number): T {

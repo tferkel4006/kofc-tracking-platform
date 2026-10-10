@@ -2,7 +2,7 @@
 // Grand Knight Authorization Desk (Sprint 5Z-4): the last line of expense approval. The council's Grand Knight,
 // its Admins and any Super Admin open it (canOpenExpenseAuthorizeDesk; the drivers: listAuthorizationQueue). It lists
 // only 'Submitted' sheets that carry the Financial Secretary's written order and, since Sprint 6Q, the Treasurer's
-// ledger coding, oldest first, with the '✍️ Countersign Expense' command (expenses.grandKnightAuthorizeOrder), which sets
+// ledger coding, oldest first, with the '✍️ Final Release for Payment' command (expenses.grandKnightAuthorizeOrder), which sets
 // the sheet 'Approved' and releases it to the disbursement vault. The Grand Knight sees the Treasurer's budget line and
 // ledger account in the receipt drawer and cannot change them. Only the Grand Knight or a Super Admin counter-signs,
 // never on their own sheet, and never the officer who issued the order or coded the sheet (expenseCounterSignBlock;
@@ -123,8 +123,8 @@ function AuthorizationDesk() {
     }
     if (block === 'seat') return <Pill tone="outline">Grand Knight signs</Pill>;
     return (
-      <Button disabled={busyId !== null} className="px-5 py-2" aria-label={`Countersign expense report ${d.report.id}`} onClick={() => void counterSign(d)}>
-        {busyId === d.report.id ? 'Countersigning…' : EXPENSE_COUNTERSIGN_LABEL}
+      <Button disabled={busyId !== null} className="px-5 py-2" aria-label={`Final release for payment of expense report ${d.report.id}`} onClick={() => void counterSign(d)}>
+        {busyId === d.report.id ? 'Releasing…' : EXPENSE_COUNTERSIGN_LABEL}
       </Button>
     );
   };

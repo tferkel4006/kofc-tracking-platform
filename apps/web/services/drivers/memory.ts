@@ -508,6 +508,13 @@ import {
   quarantineActivityKey,
   quarantineReasons,
   quarantineReasonText,
+  assertMayEditCouncilWideSettings,
+  assertMaySetPlatformSettings,
+  cleanCouncilWideSettings,
+  cleanPlatformSettings,
+  councilWideSettings,
+  platformSettings,
+  PLATFORM_SETTINGS_ID,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -555,6 +562,7 @@ import type {
   ActivityTime,
   ChatThread,
   Council,
+  PlatformSettings,
   CouncilDonationMethod,
   CouncilLookupRowMap,
   CouncilLookupTableName,
@@ -1356,6 +1364,29 @@ export class MemoryDataService implements DataService {
       Object.assign(row, { rank_threshold_hours: clean.hours, rank_threshold_events: clean.events });
       return { ...row } as unknown as Council;
     },
+
+    setCouncilWideSettings: async (actorId, councilId, settings) => {
+      const clean = cleanCouncilWideSettings(settings);
+      const s = await this.ready();
+      assertMayEditCouncilWideSettings(this.memberWriteActor(s, actorId), councilId);
+      const row = this.requireRecord(s, 'Council', councilId);
+      Object.assign(row, clean);
+      return { ...row } as unknown as Council;
+    },
+
+    getPlatformSettings: async () => this.platformSettingsOf(await this.ready()),
+
+    setPlatformSettings: async (actorId, settings) => {
+      const clean = cleanPlatformSettings(settings);
+      const s = await this.ready();
+      assertMaySetPlatformSettings(this.memberWriteActor(s, actorId));
+      return s.transaction(() => {
+        const row = s.rows('PlatformSettings').find((r) => r.id === PLATFORM_SETTINGS_ID);
+        if (row) Object.assign(row, clean);
+        else s.insert('PlatformSettings', { ...platformSettings(null), ...clean });
+        return this.platformSettingsOf(s);
+      });
+    },
   };
 
   // ---- council-level maintenance: parishes, pastors, activities, lists ----
@@ -1787,6 +1818,7 @@ export class MemoryDataService implements DataService {
           memberTypes: s.rows('MemberType') as unknown as MemberType[],
           logs: this.serviceLogs(s).filter((l) => ids.has(l.MemberID)),
           today: toIsoDate(this.now()),
+          thresholdDays: councilWideSettings(this.requireRecord(s, 'Council', councilId) as Partial<Council>).inactivity_threshold_days,
         });
         const inactive = memberStatusId(statuses, INACTIVE_STATUS);
         return members
@@ -3384,7 +3416,12 @@ export class MemoryDataService implements DataService {
         otherHoursSameActivity += q.hours_reported as number;
       }
     }
-    return quarantineReasons({ ...entry, dayActivityKeys, otherHoursSameActivity });
+    return quarantineReasons({ ...entry, dayActivityKeys, otherHoursSameActivity }, councilWideSettings(council as Partial<Council> | undefined));
+  }
+
+  /** The universal limits (Sprint 7C), with the defaults when the row is missing. */
+  private platformSettingsOf(s: MemoryStore): PlatformSettings {
+    return platformSettings(s.rows('PlatformSettings').find((r) => r.id === PLATFORM_SETTINGS_ID) as Partial<PlatformSettings> | undefined);
   }
 
   /** Stores a held entry (PENDING) in place of the time row. */
@@ -5775,7 +5812,7 @@ export class MemoryDataService implements DataService {
 
     addDiaryEntry: async (actorId, councilId, input) => {
       const s = await this.ready();
-      const clean = cleanDiaryEntry(input, this.now());
+      const clean = cleanDiaryEntry(input, this.now(), this.platformSettingsOf(s).diary_text_max_length);
       return s.transaction(() => {
         assertMayReadCouncilHistory(this.memberWriteActor(s, actorId), councilId, `write in the diary of council ${councilId}`);
         this.assertCouncilsExist(s, [councilId]);
@@ -5974,8 +6011,8 @@ export class MemoryDataService implements DataService {
     },
 
     addIntention: async (actorId, councilId, text) => {
-      const clean = cleanPrayerIntentionText(text);
       const s = await this.ready();
+      const clean = cleanPrayerIntentionText(text, this.platformSettingsOf(s).prayer_intention_max_length);
       return s.transaction(() => {
         assertMayJoinCouncilPrayers(this.memberWriteActor(s, actorId), councilId, `post a prayer intention for council ${councilId}`);
         this.assertCouncilsExist(s, [councilId]);

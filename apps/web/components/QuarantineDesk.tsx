@@ -3,8 +3,8 @@
 // Knight, Deputy Grand Knight and Admins, and any Super Admin (canReviewVolunteerQuarantine). It lists every time entry
 // the over-reporting guards held from the time tables (volunteerQuarantine.listPending) - member, activity, date, hours,
 // the member's own description and why it was held - with two decisions per row:
-//   - Clear Hours to Ledger: APPROVED, and the hours are written to EventTime or ActivityTime so every total counts them;
-//   - Delete Fraudulent Time: REJECTED, and the hours never count.
+//   - Approve & Add to Time Log (Sprint 7C wording; was Clear Hours to Ledger): APPROVED, and the hours are written to EventTime or ActivityTime so every total counts them;
+//   - Reject & Remove (was Delete Fraudulent Time): REJECTED, and the hours never count.
 // Hidden while the council's feature_volunteer_quarantine flag is off.
 import { useState } from 'react';
 import { describeError, type QuarantineDeskEntry } from '@kofc/shared';
@@ -88,10 +88,10 @@ export function QuarantineDesk({ actorId, councilId }: { actorId: number; counci
                   disabled={busy !== null}
                   onClick={() => void decide(entry, 'clear')}
                 >
-                  [ 🟢 Clear Hours to Ledger ]
+                  [ 🟢 Approve & Add to Time Log ]
                 </button>
                 <Button variant="danger" disabled={busy !== null} onClick={() => void decide(entry, 'reject')}>
-                  [ 🔴 Delete Fraudulent Time ]
+                  [ 🔴 Reject & Remove ]
                 </Button>
               </div>
             </li>

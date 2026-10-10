@@ -26,8 +26,8 @@ import type { Activities, Event, ExpenseReport, GLAccount } from './types';
 /** The seat that codes expense sheets to the ledger and logs concluded revenue, matched by Role name. */
 export const TREASURER_ROLE_NAME = 'Treasurer';
 
-/** The desk's command and card titles. */
-export const TREASURER_CODE_EXPENSE_LABEL = '🧾 Code to Ledger';
+/** The desk's command and card titles. Sprint 7C: the command reads in plain English (was '🧾 Code to Ledger'). */
+export const TREASURER_CODE_EXPENSE_LABEL = '🏷️ Categorize & Lock Expense';
 export const LOG_CONCLUDED_REVENUE_TITLE = '💰 Log Concluded Event Revenues';
 
 const invalid = (message: string, details: Record<string, unknown> = {}) => new BusinessRuleError('INVALID_INPUT', message, details);

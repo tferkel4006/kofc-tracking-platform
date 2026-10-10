@@ -5,7 +5,8 @@
 // these, then only store.
 //
 // A regular member's time entry is held in VolunteerQuarantine (clearance_status PENDING) instead of EventTime or
-// ActivityTime when any of these hold:
+// ActivityTime when any of these hold (the numbers are the defaults; since Sprint 7C each council sets its own on
+// Council Wide Settings - Council.quarantine_max_daily_activities, quarantine_max_single_hours, max_shift_padding_hours):
 //   - 5/5 activity rule: the entry would be the member's sixth (or later) distinct activity that day - shifts by
 //     ShiftDate, council activities by ActivityDate, and their own entries already held for review that day;
 //   - 5/5 hours rule: it would put more than 5.0 hours against one activity that day (a shift, or the sum of the day's
@@ -30,16 +31,31 @@ import {
   SecurityPrivilegeError,
   type MemberWriteActor,
 } from './rules';
+import {
+  DEFAULT_MAX_SHIFT_PADDING_HOURS,
+  DEFAULT_QUARANTINE_MAX_DAILY_ACTIVITIES,
+  DEFAULT_QUARANTINE_MAX_SINGLE_HOURS,
+  type CouncilWideSettings,
+} from './council-settings';
 import type { VolunteerQuarantine, VolunteerQuarantineActivityType, VolunteerQuarantineStatus } from './types';
 
 export const QUARANTINE_ACTIVITY_TYPES = ['SHIFT', 'MANUAL'] as const satisfies readonly VolunteerQuarantineActivityType[];
 export const QUARANTINE_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const satisfies readonly VolunteerQuarantineStatus[];
-/** More distinct activities than this in one day sends the entry to review. */
-export const QUARANTINE_DAILY_ACTIVITY_LIMIT = 5;
-/** More hours than this against one activity in one day sends the entry to review. */
-export const QUARANTINE_SINGLE_ACTIVITY_HOURS_LIMIT = 5.0;
-/** A shift report may run this many hours over the shift's scheduled length before it is sent to review. */
-export const SHIFT_PADDING_ALLOWANCE_HOURS = 1.0;
+/** Default: more distinct activities than this in one day sends the entry to review (quarantine_max_daily_activities). */
+export const QUARANTINE_DAILY_ACTIVITY_LIMIT = DEFAULT_QUARANTINE_MAX_DAILY_ACTIVITIES;
+/** Default: more hours than this against one activity in one day sends the entry to review (quarantine_max_single_hours). */
+export const QUARANTINE_SINGLE_ACTIVITY_HOURS_LIMIT = DEFAULT_QUARANTINE_MAX_SINGLE_HOURS;
+/** Default: a shift report may run this many hours over the scheduled length before review (max_shift_padding_hours). */
+export const SHIFT_PADDING_ALLOWANCE_HOURS = DEFAULT_MAX_SHIFT_PADDING_HOURS;
+
+/** The three guard limits of one council (council-settings.ts councilWideSettings). */
+export type QuarantineLimits = Pick<CouncilWideSettings, 'quarantine_max_daily_activities' | 'quarantine_max_single_hours' | 'max_shift_padding_hours'>;
+
+export const DEFAULT_QUARANTINE_LIMITS: QuarantineLimits = {
+  quarantine_max_daily_activities: QUARANTINE_DAILY_ACTIVITY_LIMIT,
+  quarantine_max_single_hours: QUARANTINE_SINGLE_ACTIVITY_HOURS_LIMIT,
+  max_shift_padding_hours: SHIFT_PADDING_ALLOWANCE_HOURS,
+};
 /** VolunteerQuarantine.quarantine_reason is VARCHAR(500). */
 export const QUARANTINE_REASON_MAX_LENGTH = 500;
 
@@ -88,29 +104,32 @@ export interface QuarantineCheck {
   dayActivityKeys: ReadonlySet<string>;
 }
 
+/** "5.0 hours", "1.0 hour", "0.25 hours". */
+const hoursText = (h: number): string => `${h.toFixed(Number.isInteger(h * 10) ? 1 : 2)} hour${h === 1 ? '' : 's'}`;
+
 /**
  * Why the entry must be held for review; an empty list means it logs directly. The caller has already decided the
- * logger is not exempt and the council's flag is on.
+ * logger is not exempt and the council's flag is on. `limits` are the council's own (Sprint 7C, Council Wide Settings);
+ * left out, the defaults.
  */
-export function quarantineReasons(check: QuarantineCheck): string[] {
+export function quarantineReasons(check: QuarantineCheck, limits: QuarantineLimits = DEFAULT_QUARANTINE_LIMITS): string[] {
   const reasons: string[] = [];
   const key = quarantineActivityKey(check.activityType, check.activityId);
-  if (!check.dayActivityKeys.has(key) && check.dayActivityKeys.size >= QUARANTINE_DAILY_ACTIVITY_LIMIT) {
+  const maxActivities = limits.quarantine_max_daily_activities;
+  if (!check.dayActivityKeys.has(key) && check.dayActivityKeys.size >= maxActivities) {
     reasons.push(
-      `More than ${QUARANTINE_DAILY_ACTIVITY_LIMIT} activities in one day: this is activity ${check.dayActivityKeys.size + 1} reported for the day.`,
+      `More than ${maxActivities} ${maxActivities === 1 ? 'activity' : 'activities'} in one day: this is activity ${check.dayActivityKeys.size + 1} reported for the day.`,
     );
   }
   const dayHours = round2(check.hours + (check.activityType === 'MANUAL' ? (check.otherHoursSameActivity ?? 0) : 0));
-  if (dayHours > QUARANTINE_SINGLE_ACTIVITY_HOURS_LIMIT) {
-    reasons.push(
-      `More than ${QUARANTINE_SINGLE_ACTIVITY_HOURS_LIMIT.toFixed(1)} hours against one activity: ${dayHours} hours reported for the day.`,
-    );
+  if (dayHours > limits.quarantine_max_single_hours) {
+    reasons.push(`More than ${hoursText(limits.quarantine_max_single_hours)} against one activity: ${dayHours} hours reported for the day.`);
   }
   if (check.activityType === 'SHIFT' && check.scheduledHours != null) {
-    const ceiling = round2(check.scheduledHours + SHIFT_PADDING_ALLOWANCE_HOURS);
+    const ceiling = round2(check.scheduledHours + limits.max_shift_padding_hours);
     if (check.hours > ceiling) {
       reasons.push(
-        `More than ${SHIFT_PADDING_ALLOWANCE_HOURS.toFixed(1)} hour over the scheduled shift: ${check.hours} hours reported against a ` +
+        `More than ${hoursText(limits.max_shift_padding_hours)} over the scheduled shift: ${check.hours} hours reported against a ` +
           `${check.scheduledHours}-hour shift (limit ${ceiling}).`,
       );
     }

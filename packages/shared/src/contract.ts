@@ -27,6 +27,7 @@ import type {
   CharityDonationProposal,
   ChatThread,
   Council,
+  PlatformSettings,
   CouncilBudgetCategory,
   BudgetCategoryType,
   BudgetLineStatus,
@@ -111,6 +112,7 @@ import type { FeatureFlagChanges, FeatureFlagName } from './features';
 import type { EmailGatewayColumn, EmailGatewaySettings } from './email-gateway';
 import type { AffiliationHistoryEntry, CouncilEngagement, DevotionalEntry, DevotionalProgress, MemberCenter, RankThresholds } from './member-lifecycle';
 import type { QuarantineDeskEntry, QuarantinedHours } from './volunteer-quarantine';
+import type { CouncilWideSettings } from './council-settings';
 
 // 1. LOOKUPS
 /** The global lookup tables a Super Admin maintains (Blueprint: "System Lookup Manager"). */
@@ -2437,6 +2439,27 @@ export interface DataService {
      * council, INVALID_INPUT for a value that is not a whole number from 1 to the maximum.
      */
     setRankThresholds(actorId: number, councilId: number, thresholds: RankThresholds): Promise<Council>;
+    /**
+     * Sprint 7C: the Council Wide Settings page (/setup/council-settings). Saves one or more of the council's
+     * quarantine_max_daily_activities, quarantine_max_single_hours, max_shift_padding_hours and inactivity_threshold_days
+     * (council-settings.ts cleanCouncilWideSettings) and resolves to the updated council; a field left out keeps its
+     * stored value. By an Active Admin or officer of the council, or an Active Super Admin (ADMIN_REQUIRED,
+     * COUNCIL_ACCESS_DENIED, nothing written). RECORD_NOT_FOUND for an unknown council, INVALID_INPUT for a value out of
+     * range, hours that are not quarter hours, an unknown field or no field.
+     */
+    setCouncilWideSettings(actorId: number, councilId: number, settings: Partial<CouncilWideSettings>): Promise<Council>;
+    /**
+     * Sprint 7C: the universal limits every council shares (the one PlatformSettings row; council-settings.ts
+     * platformSettings fills defaults when the row is missing). Open to every caller: the recorder and the text boxes
+     * read them.
+     */
+    getPlatformSettings(): Promise<PlatformSettings>;
+    /**
+     * Sprint 7C: saves one or more platform settings (cleanPlatformSettings) and resolves to the stored row. Only an
+     * Active Super Admin may (SUPER_ADMIN_REQUIRED, nothing written). INVALID_INPUT for a value out of range, an unknown
+     * field or no field.
+     */
+    setPlatformSettings(actorId: number, settings: Partial<Omit<PlatformSettings, 'id'>>): Promise<PlatformSettings>;
   };
 
   /**
@@ -2553,7 +2576,8 @@ export interface DataService {
     /**
      * Sprint 7A: the inactivity sweep (member-lifecycle.ts planInactivitySweep). Marks Inactive every Active plain member
      * (MemberType 'Member') of the council whose last logged service (EventTime by ShiftDate, ActivityTime by
-     * ActivityDate), or join date when they have none, is more than INACTIVITY_SWEEP_DAYS days ago, in one transaction,
+     * ActivityDate), or join date when they have none, is more than the council's inactivity_threshold_days (Sprint 7C,
+     * DEFAULT INACTIVITY_SWEEP_DAYS) days ago, in one transaction,
      * and resolves to the members it changed. By an Active Admin of the council or an Active Super Admin (ADMIN_REQUIRED,
      * COUNCIL_ACCESS_DENIED). Rejects INVALID_INPUT for an unknown council.
      *
@@ -3997,7 +4021,7 @@ export interface DataService {
     /** The council's PENDING entries with member names, activity labels and notes, oldest first. INVALID_INPUT for an unknown council. */
     listPending(actorId: number, councilId: number): Promise<QuarantineDeskEntry[]>;
     /**
-     * "Clear Hours to Ledger": flips the entry to APPROVED and writes it to the time tables in one transaction - a shift
+     * "Approve & Add to Time Log": flips the entry to APPROVED and writes it to the time tables in one transaction - a shift
      * report replaces the member's EventTime row for the shift (or adds one), a council activity entry adds an
      * ActivityTime row - so its hours join every total. The logging walls (3 and 6 months) do not apply to a review.
      * RECORD_NOT_FOUND for an unknown entry, QUARANTINE_STATUS_CONFLICT once decided, SHIFT_NOT_FOUND or
@@ -4005,7 +4029,7 @@ export interface DataService {
      */
     clear(actorId: number, quarantineId: number): Promise<VolunteerQuarantine>;
     /**
-     * "Delete Fraudulent Time": flips the entry to REJECTED. Its hours never reach the time tables; the row stays as the
+     * "Reject & Remove": flips the entry to REJECTED. Its hours never reach the time tables; the row stays as the
      * review record. RECORD_NOT_FOUND, QUARANTINE_STATUS_CONFLICT as for clear.
      */
     reject(actorId: number, quarantineId: number): Promise<VolunteerQuarantine>;

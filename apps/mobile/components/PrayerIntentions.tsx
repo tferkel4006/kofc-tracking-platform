@@ -10,7 +10,7 @@ import {
   describeError,
   describePrayerCount,
   isFraternalTenant,
-  PRAYER_INTENTION_MAX_LENGTH,
+  platformSettings,
   PRAYING_HANDS_LABEL,
   type PrayerIntentionDetail,
 } from '@kofc/shared';
@@ -82,6 +82,9 @@ export function PrayerIntentions({ version }: { version: number }) {
     async () => (fraternal ? db.prayers.getBoard(user.memberId, user.councilId) : null),
     [user.memberId, user.councilId, fraternal, version],
   );
+  // Sprint 7C: the Super Admins' platform character limit (PlatformSettings.prayer_intention_max_length).
+  const limits = useLoad(() => db.councils.getPlatformSettings(), []);
+  const maxChars = platformSettings(limits.data).prayer_intention_max_length;
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +114,7 @@ export function PrayerIntentions({ version }: { version: number }) {
           onChangeText={setText}
           placeholder="Ask the council to pray for…"
           accessibilityLabel="New prayer intention"
-          maxLength={PRAYER_INTENTION_MAX_LENGTH}
+          maxLength={maxChars}
           multiline
           editable={!busy}
         />

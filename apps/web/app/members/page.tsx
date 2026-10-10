@@ -13,7 +13,7 @@ import {
   canEditMember,
   describeError,
   grantableMemberTypes,
-  INACTIVITY_SWEEP_DAYS,
+  councilWideSettings,
   type Degree,
   type Member,
   type MemberStatus,
@@ -336,6 +336,8 @@ function MemberForm({
 function Roster() {
   const user = useUser();
   const scope = useCouncilScope();
+  const council = useLoad(() => db.councils.get(scope.councilId), [scope.councilId]);
+  const inactiveDays = councilWideSettings(council.data).inactivity_threshold_days;
   const [selected, setSelected] = useState<number | 'new' | null>(null);
   const [filter, setFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<number | 'all'>('all');
@@ -370,6 +372,7 @@ function Roster() {
   const failure = lookups.error ?? members.error;
 
   // Sprint 7A: the inactivity sweep (members.sweepInactive). There is no scheduler in the portal, so an Admin runs it here.
+  // Sprint 7C: the button reads 'Check for Inactive Members' and the window is the council's inactivity_threshold_days.
   const sweep = async () => {
     setSweeping(true);
     setSweepMessage(null);
@@ -379,7 +382,7 @@ function Roster() {
         tone: 'info',
         text:
           swept.length === 0
-            ? `No active member has gone more than ${INACTIVITY_SWEEP_DAYS} days without logged service.`
+            ? `No active member has gone more than ${inactiveDays} days without logged service.`
             : `Marked ${swept.length} member${swept.length === 1 ? '' : 's'} Inactive: ${swept.map((m) => `${m.MemberFirstName} ${m.MemberLastName}`).join(', ')}.`,
       });
       await members.reload();
@@ -403,10 +406,10 @@ function Roster() {
               <Button
                 variant="secondary"
                 disabled={sweeping}
-                title={`Marks Inactive every active member with no logged service in more than ${INACTIVITY_SWEEP_DAYS} days`}
+                title={`Marks Inactive every active member with no logged service in more than ${inactiveDays} days (set on Council Wide Settings)`}
                 onClick={() => void sweep()}
               >
-                {sweeping ? 'Sweeping…' : 'Run inactivity sweep'}
+                {sweeping ? 'Checking…' : '🔍 Check for Inactive Members'}
               </Button>
             ) : null}
             {canCreateMembers(user, scope.councilId) ? <Button onClick={() => setSelected('new')}>Add member</Button> : null}

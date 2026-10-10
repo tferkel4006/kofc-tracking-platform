@@ -2992,3 +2992,37 @@ GO
 
 ALTER TABLE [Council] ADD [feature_volunteer_quarantine] BIT NOT NULL DEFAULT 1;
 GO
+
+-- =========================================================================
+-- Sprint 7C: COUNCIL WIDE SETTINGS AND PLATFORM SETTINGS (schema version 62)
+--
+-- Four numbers that were hardcoded become Council columns, the Council Wide Settings (council-settings.ts). The
+-- council's Admins and officers edit them on /setup/council-settings (councils.setCouncilWideSettings):
+--   - quarantine_max_daily_activities: more distinct activities than this in one day sends a member's time entry to
+--     leadership review (the volunteer time guards, volunteer-quarantine.ts);
+--   - quarantine_max_single_hours: more hours than this against one activity in one day sends it to review;
+--   - max_shift_padding_hours: a shift report may run this many hours over the shift's scheduled length;
+--   - inactivity_threshold_days: Check for Inactive Members marks Inactive a member with no logged service in more
+--     than this many days (member-lifecycle.ts planInactivitySweep).
+--
+-- PlatformSettings is a one-row table (id 1) of the universal limits every council shares, edited by Super Admins on
+-- /lookups (councils.setPlatformSettings): the oral history recorder's time cap in seconds and the character limits
+-- of a diary entry and a prayer intention. A character limit never exceeds its column's size.
+-- =========================================================================
+ALTER TABLE [Council] ADD [quarantine_max_daily_activities] INT NOT NULL DEFAULT 5;
+GO
+ALTER TABLE [Council] ADD [quarantine_max_single_hours] DECIMAL(5,2) NOT NULL DEFAULT 5.0;
+GO
+ALTER TABLE [Council] ADD [max_shift_padding_hours] DECIMAL(5,2) NOT NULL DEFAULT 1.0;
+GO
+ALTER TABLE [Council] ADD [inactivity_threshold_days] INT NOT NULL DEFAULT 365;
+GO
+
+CREATE TABLE [PlatformSettings] (
+	[id] INT NOT NULL,
+	[oral_history_max_seconds] INT NOT NULL DEFAULT 900,
+	[diary_text_max_length] INT NOT NULL DEFAULT 4000,
+	[prayer_intention_max_length] INT NOT NULL DEFAULT 500,
+	PRIMARY KEY([id])
+);
+GO

@@ -73,6 +73,7 @@ export type PortalArea =
   | 'resources/bulletins'
   | 'resources/marketing'
   | 'credentials-vault'
+  | 'setup/council-settings'
   | 'performance/charts'
   | 'history'
   | 'faith-center'
@@ -241,6 +242,12 @@ export const canOpenConstitutionalAdvisor = (u: Actor): boolean => canOpenOffice
 export const canOpenCredentialsVault = (u: Actor): boolean => canOpenOfficerTools(u);
 
 /**
+ * The Council Wide Settings page (Sprint 7C, /setup/council-settings), mirroring assertMayEditCouncilWideSettings: the
+ * council's Admins and officers, and any Super Admin.
+ */
+export const canEditCouncilWideSettings = (u: Actor): boolean => canOpenOfficerTools(u);
+
+/**
  * Updating an event's results on the post-event ledger (Sprint 6R): strictly the event's owner, an elected officer
  * (isOfficer: a Role with Officer = 1) of a council the event is linked to, an Admin of such a council, and any Super
  * Admin. Every other member sees neither the event on the ledger nor a link to update it.
@@ -334,7 +341,7 @@ export const canLogConcludedRevenue = (u: Actor, councilId: number): boolean => 
 export type ExpenseSignatureBlock = 'seat' | 'own-report' | 'collusion';
 
 /**
- * The '📜 Approve Expense' control on one sheet, mirroring assertMayIssueExpenseOrder then assertNotSelfApproval
+ * The '📝 Verify & Sign Expense' control on one sheet, mirroring assertMayIssueExpenseOrder then assertNotSelfApproval
  * (activity status is checked there): the council's Financial Secretary or any Super Admin, never on their own sheet.
  */
 export function expenseOrderBlock(u: Actor, report: Pick<ExpenseReport, 'CouncilID' | 'SubmitterMemberID'>): ExpenseSignatureBlock | null {
@@ -347,7 +354,7 @@ export const canIssueExpenseOrder = (u: Actor, report: Pick<ExpenseReport, 'Coun
   expenseOrderBlock(u, report) === null;
 
 /**
- * The '✍️ Countersign Expense' control on one sheet, mirroring assertMayAuthorizeExpenseOrder, assertNotSelfApproval and
+ * The '✍️ Final Release for Payment' control on one sheet, mirroring assertMayAuthorizeExpenseOrder, assertNotSelfApproval and
  * assertDistinctExpenseSigners: the council's Grand Knight or any Super Admin, never on their own sheet, and never by
  * the officer who issued its written order ('collusion', the Collusion Guard).
  */
@@ -368,7 +375,7 @@ export const canCounterSignExpenseOrder = (
 ): boolean => expenseCounterSignBlock(u, report) === null;
 
 /**
- * The '🧾 Code to Ledger' control on one sheet (Sprint 6Q), mirroring assertMayCodeExpenseLedger, assertNotSelfApproval
+ * The '🏷️ Categorize & Lock Expense' control on one sheet (Sprint 6Q), mirroring assertMayCodeExpenseLedger, assertNotSelfApproval
  * and assertDistinctExpenseSigners: the council's Treasurer or any Super Admin, never on their own sheet, and never the
  * officer who issued its written order ('collusion').
  */
@@ -628,6 +635,8 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, ten
   areas.push('governance/bylaws', 'answers/sop', 'resources/bulletins');
   if (canOpenConstitutionalAdvisor(u)) areas.push('governance/advisor');
   if (canOpenCredentialsVault(u)) areas.push('credentials-vault');
+  // Sprint 7C: the Council Wide Settings page - the volunteer time limits and the inactivity window - is an officer tool too.
+  if (canEditCouncilWideSettings(u)) areas.push('setup/council-settings');
   if (isAdmin(u) || canViewExecutiveDashboard(u, u.councilId)) areas.push('performance/charts');
   // Sprint 6K: every member reads the council's Team Legacy history and records oral history; the annals' keepers are
   // decided inside (assertMayKeepCouncilAnnals).
@@ -689,7 +698,18 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
   {
     id: 'setup',
     label: 'Setup',
-    items: ['councils', 'feature-flags', 'members', 'supreme-sync', 'council-lookups', 'credentials-vault', 'charities/registry', 'lookups', 'parishes'],
+    items: [
+      'councils',
+      'feature-flags',
+      'setup/council-settings',
+      'members',
+      'supreme-sync',
+      'council-lookups',
+      'credentials-vault',
+      'charities/registry',
+      'lookups',
+      'parishes',
+    ],
   },
 ];
 

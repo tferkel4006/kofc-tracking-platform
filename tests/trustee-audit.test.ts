@@ -217,7 +217,7 @@ describe('oral history recording ceiling', () => {
 
   it('puts the countdown meter on the recording screen', () => {
     const recorder = read('apps/web/components/OralHistoryRecorder.tsx');
-    expect(recorder).toContain('oralHistoryCountdown(elapsed)');
+    expect(recorder).toContain('oralHistoryCountdown(elapsed, maxSeconds)');
     expect(recorder).toContain('role="timer"');
     expect(recorder).toContain('border-2 border-navy bg-white');
     expect(recorder).toContain('Time left before automatic stop');

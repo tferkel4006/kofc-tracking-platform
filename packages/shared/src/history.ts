@@ -159,16 +159,20 @@ export function mergeCouncilAnnals(
   };
 }
 
-/** The diary row history.addDiaryEntry writes for `today` (local date). */
+/**
+ * The diary row history.addDiaryEntry writes for `today` (local date). `maxLength` is the platform's diary character
+ * limit (Sprint 7C, PlatformSettings.diary_text_max_length), never more than DIARY_TEXT_MAX_LENGTH.
+ */
 export function cleanDiaryEntry(
   input: NewDiaryEntryInput,
   today: Date,
+  maxLength: number = DIARY_TEXT_MAX_LENGTH,
 ): Pick<CouncilSpiritualDiary, 'entry_date' | 'fraternal_year' | 'diary_text' | 'audio_asset_url'> {
   if (input === null || typeof input !== 'object') throw invalid('The diary entry must be an object.');
   return {
     entry_date: toIsoDate(today),
     fraternal_year: input.fraternal_year === undefined ? currentFraternalYear(today) : assertFraternalYear(input.fraternal_year),
-    diary_text: assertDiaryTextAllowed(assertText(input.diary_text, 'Diary entry', DIARY_TEXT_MAX_LENGTH)),
+    diary_text: assertDiaryTextAllowed(assertText(input.diary_text, 'Diary entry', Math.min(maxLength, DIARY_TEXT_MAX_LENGTH))),
     audio_asset_url: cleanHistoryAssetUrl(input.audio_asset_url, 'Oral history recording', true) ?? null,
   };
 }

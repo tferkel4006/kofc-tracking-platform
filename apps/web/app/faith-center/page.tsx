@@ -16,7 +16,7 @@ import {
   liturgicalBanner,
   NABRE_NOTICE,
   observancesBetween,
-  PRAYER_INTENTION_MAX_LENGTH,
+  platformSettings,
   PRAYING_HANDS_LABEL,
   toIsoDate,
   type PrayerIntentionDetail,
@@ -24,6 +24,7 @@ import {
 import { RequireArea } from '@/components/CouncilScope';
 import { Button, Empty, Field, Notice, PageTitle, Panel, Textarea } from '@/components/ui';
 import { useUser } from '@/lib/session';
+import { usePlatformSettings } from '@/components/SettingsParts';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
@@ -156,6 +157,7 @@ function IntentionRow({ item, onChanged }: { item: PrayerIntentionDetail; onChan
 
 function NewIntention({ councilId, onSaved }: { councilId: number; onSaved: () => Promise<void> }) {
   const user = useUser();
+  const maxChars = platformSettings(usePlatformSettings()).prayer_intention_max_length;
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -184,7 +186,7 @@ function NewIntention({ councilId, onSaved }: { councilId: number; onSaved: () =
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="e.g. For my father's recovery after surgery."
-            maxLength={PRAYER_INTENTION_MAX_LENGTH}
+            maxLength={maxChars}
             rows={3}
             disabled={busy}
           />
@@ -195,7 +197,7 @@ function NewIntention({ councilId, onSaved }: { councilId: number; onSaved: () =
           {busy ? 'Posting…' : 'Post intention'}
         </Button>
         <span className="text-sm text-muted">
-          {text.length} / {PRAYER_INTENTION_MAX_LENGTH}
+          {text.length} / {maxChars}
         </span>
       </div>
       {error ? (

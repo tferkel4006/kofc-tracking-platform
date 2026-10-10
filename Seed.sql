@@ -299,6 +299,11 @@ Insert Into [GLAccount] ([CouncilID], [AccountName], [AccountType], [ParentAccou
 Values
 (1, 'Opening Balance Equity', 'Equity', NULL, 0, 0.00);
 GO
+
+-- Sprint 7C: the one PlatformSettings row (id 1) - the universal limits every council shares, at their defaults.
+INSERT INTO [PlatformSettings] ([id], [oral_history_max_seconds], [diary_text_max_length], [prayer_intention_max_length])
+VALUES (1, 900, 4000, 500);
+GO
 -- @presentation-data
 -- Everything below this marker is presentation data. The apps load it (presentationData: true); the automated
 -- tests keep the minimal baseline above, so their fixture ids, vacant seats and empty ledgers stay stable.

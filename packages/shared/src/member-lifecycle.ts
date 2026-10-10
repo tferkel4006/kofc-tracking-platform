@@ -23,7 +23,10 @@ const invalid = (message: string, details: Record<string, unknown> = {}) => new 
 export const LIFECYCLE_EXCISED_STATUSES = ['Deceased', 'Former'] as const;
 /** The status the inactivity sweep sets. */
 export const INACTIVE_STATUS = 'Inactive';
-/** Days without logged service after which the sweep marks an Active member Inactive (more than this many). */
+/**
+ * Days without logged service after which the sweep marks an Active member Inactive (more than this many): the default of
+ * Council.inactivity_threshold_days, which each council sets on Council Wide Settings since Sprint 7C.
+ */
 export const INACTIVITY_SWEEP_DAYS = 365;
 
 // ---- lifecycle hooks ------------------------------------------------------------------------------------------
@@ -110,9 +113,10 @@ export function lastServiceDates(logs: readonly ServiceLogRow[]): Map<number, st
 
 /**
  * The members the inactivity sweep marks Inactive: Active, of member type 'Member' (Admins and Super Admins are never
- * swept, so a quiet administrator cannot lock themselves out), and more than INACTIVITY_SWEEP_DAYS days past their
- * last logged service - or, with none logged, past the day they joined the council. A member with neither is left as
- * they are. Ascending id order.
+ * swept, so a quiet administrator cannot lock themselves out), and more than `thresholdDays` days past their last
+ * logged service - or, with none logged, past the day they joined the council. A member with neither is left as they
+ * are. Ascending id order. Sprint 7C: `thresholdDays` is the council's inactivity_threshold_days (council-settings.ts);
+ * left out, INACTIVITY_SWEEP_DAYS.
  */
 export function planInactivitySweep(input: {
   members: readonly Pick<Member, 'id' | 'StatusID' | 'MemberTypeID' | 'DateJoinedCouncil'>[];
@@ -120,7 +124,9 @@ export function planInactivitySweep(input: {
   memberTypes: readonly MemberType[];
   logs: readonly ServiceLogRow[];
   today: string;
+  thresholdDays?: number;
 }): number[] {
+  const thresholdDays = input.thresholdDays ?? INACTIVITY_SWEEP_DAYS;
   const active = memberStatusId(input.statuses, 'Active');
   const plainType = input.memberTypes.find((t) => t.Type === 'Member')?.id;
   const last = lastServiceDates(input.logs);
@@ -128,7 +134,7 @@ export function planInactivitySweep(input: {
     .filter((m) => m.StatusID === active && m.MemberTypeID === plainType)
     .filter((m) => {
       const days = daysSinceJoined(last.get(m.id) ?? m.DateJoinedCouncil ?? null, input.today);
-      return days !== null && days > INACTIVITY_SWEEP_DAYS;
+      return days !== null && days > thresholdDays;
     })
     .map((m) => m.id)
     .sort((a, b) => a - b);
@@ -140,14 +146,14 @@ export function assertMaySweepInactiveMembers(actor: MemberWriteActor, councilId
   if (!hasAdminRights(actor)) {
     throw new SecurityPrivilegeError(
       'ADMIN_REQUIRED',
-      `Only an active Admin of the council or a Super Admin can run the inactivity sweep; member ${actor.memberId} is ${describeActor(actor)}.`,
+      `Only an active Admin of the council or a Super Admin can check for inactive members; member ${actor.memberId} is ${describeActor(actor)}.`,
       { actorId: actor.memberId, councilId },
     );
   }
   if (actor.councilId !== councilId) {
     throw new SecurityPrivilegeError(
       'COUNCIL_ACCESS_DENIED',
-      `Admin ${actor.memberId} of council ${actor.councilId} cannot run the inactivity sweep for council ${councilId}.`,
+      `Admin ${actor.memberId} of council ${actor.councilId} cannot check for inactive members in council ${councilId}.`,
       { actorId: actor.memberId, actorCouncilId: actor.councilId, councilId },
     );
   }

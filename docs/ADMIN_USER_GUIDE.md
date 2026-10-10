@@ -26,7 +26,8 @@
 13. [Automated messages reference](#13-automated-messages-reference)
 14. [Member engagement and the roster lifecycle](#14-member-engagement-and-the-roster-lifecycle)
 15. [Volunteer time quarantine](#15-volunteer-time-quarantine)
-16. [Appendix: QR code files](#appendix-qr-code-files)
+16. [Council Wide Settings and platform limits](#16-council-wide-settings-and-platform-limits)
+17. [Appendix: QR code files](#appendix-qr-code-files)
 
 ### How to read a tutorial
 
@@ -524,15 +525,17 @@ The SOP Center holds the same procedure: **Answers → SOP Center → Edit the c
 | Step | Who acts | Where | Status tag |
 | --- | --- | --- | --- |
 | 1. File | The member | **My Expense Reports** | **Submitted** |
-| 2. Written order | The Financial Secretary | **FS Expense Audit** → **📜 Approve Expense** | **Order Issued** |
-| 3. Counter-sign | The Grand Knight | **GK Expense Authorize** → **✍️ Countersign Expense** | **Approved** |
-| 4. Pay | The FS or the Treasurer | **Bulk Check Disbursements** | **Reimbursed** |
+| 2. Written order | The Financial Secretary | **FS Expense Audit** → **📝 Verify & Sign Expense** | **Order Issued** |
+| 3. Categorize | The Treasurer | **Treasurer Ledger Audit Desk** → **🏷️ Categorize & Lock Expense** | **Order Issued** |
+| 4. Final release | The Grand Knight | **GK Expense Authorize** → **✍️ Final Release for Payment** | **Approved** |
+| 5. Pay | The FS or the Treasurer | **Bulk Check Disbursements** | **Reimbursed** |
 | Return | Council leadership | **Leadership Auditing Queue** → **Reject & Return** | **Returned** |
 
 - A Super Admin may sign either line, but never both lines of the same report.
 - Each signer chooses the budget line in **Assign Ledger Budget Line Item**. The report saves the line.
 - The budget counts the report only against the saved line.
-- The officer who issued the order sees a **🔒 Collusion Guard** tag. That officer sees no counter-sign button.
+- The Treasurer chooses the budget line and the ledger account before the Grand Knight signs. **🏷️ Categorize & Lock Expense** locks both choices.
+- The officer who issued the order sees a **🔒 Collusion Guard** tag. That officer sees no **✍️ Final Release for Payment** button.
 - Council Admins open both desks to follow the work. Only the seat holders or a Super Admin sign.
 - A signer sees no button on a report the signer cannot sign. A tag tells who signs the report.
 - A return clears both signatures and the saved budget line.
@@ -554,7 +557,7 @@ The SOP Center holds the same procedure: **Answers → SOP Center → Edit the c
 1. Open the submitted report.
 2. Check each receipt against its line.
 3. Check the line in **Assign Ledger Budget Line Item**. A meeting report starts on the fraternal activities meetings line, for example **Monthly Council Meetings**.
-4. Select **📜 Approve Expense**.
+4. Select **📝 Verify & Sign Expense**.
 
 <!-- KEEP_IMAGE: FS audit desk capture -->
 ![FS Audit Desk (/expenses/audit)](../generated/dashboard_visual_catalog/expenses_audit.png)
@@ -565,23 +568,23 @@ The SOP Center holds the same procedure: **Answers → SOP Center → Edit the c
 **Common problems:**
 | Problem | Cause | Fix |
 | --- | --- | --- |
-| No **📜 Approve Expense** button shows. | You submitted the report, or you do not hold the seat. | Another signer must act. |
-| **📜 Approve Expense** is not available. | No budget line is chosen. | Choose a line in **Assign Ledger Budget Line Item**. |
+| No **📝 Verify & Sign Expense** button shows. | You submitted the report, or you do not hold the seat. | Another signer must act. |
+| **📝 Verify & Sign Expense** is not available. | No budget line is chosen. | Choose a line in **Assign Ledger Budget Line Item**. |
 
-### 6.3 Counter-sign a voucher
+### 6.3 Give the final release for payment
 
 > **Prerequisite (who can do this):** You must be the council's Grand Knight or a Super Admin. Council Admins read the desk only.
-> **Warning:** the counter-signature approves the report for payment.
+> **Warning:** the final release approves the report for payment.
 
-**Goal:** Give the second signature.
+**Goal:** Give the second signature, which releases the report for payment.
 
 **Start point:** Sidebar → Finances → **GK Expense Authorize**.
 
 **Steps:**
 1. Open the ordered report.
 2. Check the order and the receipts.
-3. Check the line in **Assign Ledger Budget Line Item**. The line starts on the Financial Secretary's choice.
-4. Select **✍️ Countersign Expense**.
+3. Check the line in **Assign Ledger Budget Line Item**. The line starts on the Treasurer's choice.
+4. Select **✍️ Final Release for Payment**.
 
 <!-- KEEP_IMAGE: GK authorization desk capture -->
 ![GK Authorization Desk (/expenses/authorize)](../generated/dashboard_visual_catalog/expenses_authorize.png)
@@ -592,7 +595,7 @@ The SOP Center holds the same procedure: **Answers → SOP Center → Edit the c
 **Common problems:**
 | Problem | Cause | Fix |
 | --- | --- | --- |
-| **🔒 Collusion Guard** shows. | You issued the written order. | Another signer must counter-sign. |
+| **🔒 Collusion Guard** shows. | You issued the written order. | Another signer must give the final release. |
 
 ### 6.4 Return a report to the member
 
@@ -1420,6 +1423,7 @@ The outbound email settings are not on this page. Set them on the **Credentials 
 <!-- /KEEP_IMAGE -->
 
 A Super Admin also sets each council's base dues rate and tenant type in the **Global Council Parameters Dashboard**, at the top of **Global Governance Matrices**.
+The **Platform Limits** card below the dashboard holds the limits that every council shares (section 16.4).
 
 **Expected result:** Every council sees the new value.
 
@@ -1678,18 +1682,19 @@ The platform keeps a history of every council that a member belongs to. The hist
 | Excel refuses a value. | The value is not on the drop-down list or is not a date. | Choose a value from the list. Enter dates as YYYY-MM-DD. |
 | A **Charter Member** mark is missing. | The cell was not **Yes**. | Tick **Charter member** on the member form. |
 
-### 14.9 Run the inactivity sweep
+### 14.9 Check for inactive members (the inactivity sweep)
 
 > **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
-> **Warning:** the sweep changes the status of many members at once. The sweep has no undo button.
+> **Warning:** the check changes the status of many members at once. The check has no undo button.
 
-**Goal:** Mark members **Inactive** after more than 365 days without logged service.
+**Goal:** Mark members **Inactive** after more days without logged service than the council allows.
 
 **Start point:** Sidebar → Setup → **Affiliated Roster**.
 
 **Steps:**
-1. Select **Run inactivity sweep** at the top of the page. The sweep starts at once.
-2. Read the message. The message names each member marked **Inactive**.
+1. Check the number of days in **Council Wide Settings** (section 16.3). The default is 365 days.
+2. Select **🔍 Check for Inactive Members** at the top of the roster. The check starts at once.
+3. Read the message. The message names each member marked **Inactive**.
 
 **Expected result:** Each named member shows **Inactive** in the roster.
 
@@ -1697,7 +1702,8 @@ The sweep follows these rules:
 - The sweep checks active members of the type **Member** only. The sweep never changes an Admin or a Super Admin.
 - The sweep counts shift hours and activity hours. A member with no hours is measured from the join date.
 - The sweep skips a member with no hours and no join date.
-- The platform has no background scheduler. An Admin runs the sweep by hand.
+- The platform has no background scheduler. An Admin runs the check by hand.
+- The council sets the number of days in **Days without service before a member counts as inactive**.
 
 **Common problems:**
 | Problem | Cause | Fix |
@@ -1725,6 +1731,7 @@ The message also gives the reason.
 ### 15.2 Concept: the 5/5 over-reporting rules
 
 The platform holds a regular member's entry when either 5/5 rule applies.
+The numbers 5 and 5.0 are the defaults. Each council can change them in **Council Wide Settings** (section 16.3).
 
 | Rule | The platform holds the entry when | Example |
 | --- | --- | --- |
@@ -1740,6 +1747,7 @@ The two rules count in this way:
 ### 15.3 Concept: the +1 hour shift padding rule
 
 A regular member may report up to 1.0 hour more than the scheduled shift. Set-up and clean-up often take extra time.
+The 1.0 hour is the default. Each council can change it in **Extra hours allowed past a scheduled shift** (section 16.3).
 The platform holds a shift report that is more than 1.0 hour over the scheduled length.
 
 | Scheduled shift | Largest report that counts at once | Report that goes to review |
@@ -1765,10 +1773,10 @@ Appointed officers, such as the Financial Secretary (FS), follow the rules.
 A Super Admin can switch the quarantine off. The Super Admin turns off **Volunteer time quarantine** in the Feature Flags Control Center (section 3).
 When the switch is off, every entry counts at once. The desk is hidden. Entries that wait for review stay in quarantine until the switch is on again.
 
-### 15.5 Clear or delete held volunteer time
+### 15.5 Approve or reject held volunteer time
 
 > **Prerequisite (who can do this):** The Grand Knight (GK), the Deputy Grand Knight (DGK) or an Admin of the council, or a Super Admin. Other members do not see the desk.
-> **Warning:** each decision is final. You cannot change a cleared or deleted entry on the desk.
+> **Warning:** each decision is final. You cannot change an approved or rejected entry on the desk.
 
 **Goal:** Decide each held entry, so that true hours count and false hours never count.
 
@@ -1779,19 +1787,97 @@ When the switch is off, every entry counts at once. The desk is hidden. Entries 
 2. Read each entry: the member name, the shift or activity, the date and the hours.
 3. Read the **Description** that the member wrote. Read the red reason under the description.
 4. Ask the member or the event owner about the time when the entry is not clear.
-5. Select **[ 🟢 Clear Hours to Ledger ]** for true hours. The hours count in every total at once.
-6. Select **[ 🔴 Delete Fraudulent Time ]** for false hours. The hours never count. You cannot undo this.
+5. Select **[ 🟢 Approve & Add to Time Log ]** for true hours. The hours count in every total at once.
+6. Select **[ 🔴 Reject & Remove ]** for false hours. The hours never count. You cannot undo this.
 
-**Expected result:** The entry leaves the desk. A message confirms the decision. A cleared entry shows in the council's hours and on the member's shield.
+**Expected result:** The entry leaves the desk. A message confirms the decision. An approved entry shows in the council's hours and on the member's shield.
 
 **Common problems:**
 | Problem | Cause | Fix |
 | --- | --- | --- |
 | The desk is not on the dashboard. | Your role is not GK, DGK or Admin, or the quarantine switch is off. | Ask a Super Admin to check your role and the **Volunteer time quarantine** switch. |
 | The desk says "has switched Volunteer time quarantine off". | A Super Admin opened another council, and that council has the switch off. | Turn the switch on for that council, or choose another council. |
-| A cleared shift report replaced other hours. | A member has one report for each shift. Clearing writes the held report over the old one. | Ask the member to report the correct hours again. |
-| A cleared activity entry is missing. | Someone deleted the activity after the member logged the time. | Restore the activity. Ask the member to log the time again. |
-| A member says the hours are lost. | The entry waits on the desk. | Decide the entry. Tell the member that held hours count after a leader clears them. |
+| An approved shift report replaced other hours. | A member has one report for each shift. Approval writes the held report over the old one. | Ask the member to report the correct hours again. |
+| An approved activity entry is missing. | Someone deleted the activity after the member logged the time. | Restore the activity. Ask the member to log the time again. |
+| A member says the hours are lost. | The entry waits on the desk. | Decide the entry. Tell the member that held hours count after a leader approves them. |
+
+---
+
+## 16. Council Wide Settings and platform limits
+
+### 16.1 Concept: council settings and platform limits
+
+Some limits belong to one council. Other limits belong to every council at once.
+
+| Kind | Who changes it | Where | What it holds |
+| --- | --- | --- | --- |
+| Council Wide Settings | The council's Admins and officers, or a Super Admin | Sidebar → Setup → **Council Wide Settings** | The volunteer time limits and the inactive-member window of one council |
+| Platform Limits | Super Admins only | Sidebar → Setup → **Global Governance Matrices** → **Platform Limits** | The recording time limit and two character limits for every council |
+
+A new council starts with the default values. A change applies to the next entry that a member saves. A change never moves hours that are already logged or held.
+
+### 16.2 Concept: the four council settings
+
+| On-screen label | Default | Allowed values | What the setting controls |
+| --- | --- | --- | --- |
+| **Most activities a member may report in one day** | 5 | 1 to 24 | The 5-activity rule (section 15.2) |
+| **Most hours a member may report on one activity in one day** | 5.0 hours | 0.25 to 24, in quarter hours | The 5.0-hour rule (section 15.2) |
+| **Extra hours allowed past a scheduled shift** | 1.0 hour | 0 to 8, in quarter hours | The shift padding rule (section 15.3) |
+| **Days without service before a member counts as inactive** | 365 days | 30 to 3,650 | **🔍 Check for Inactive Members** (section 14.9) |
+
+A value of 0 for **Extra hours allowed past a scheduled shift** sends every report longer than the scheduled shift to review.
+
+### 16.3 Change the Council Wide Settings
+
+> **Prerequisite (who can do this):** You must be a council Admin or a council officer of the council, or a Super Admin. Other members do not see this page.
+
+**Goal:** Set your council's volunteer time limits and its inactive-member window.
+
+**Start point:** Sidebar → Setup → **Council Wide Settings**.
+
+**Steps:**
+1. Super Admins only: choose the council in **Council** at the top of the page.
+2. In **Volunteer time limits**, enter the new numbers.
+3. Select **Save time limits**.
+4. In **Inactive members**, enter the number of days.
+5. Select **Save inactive-member window**.
+
+<!-- KEEP_IMAGE: council wide settings capture -->
+![Council Wide Settings (/setup/council-settings)](../generated/dashboard_visual_catalog/setup_council-settings.png)
+<!-- /KEEP_IMAGE -->
+
+**Expected result:** A message says "Saved for council" with the council number. The next hours that a member logs follow the new limits.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The page is not in the sidebar. | You are not an Admin or an officer of the council. | Ask a council Admin to make the change. |
+| The message says the value "must be a multiple of 0.25 hours". | Hours use 15-minute steps. | Enter a value such as `4.5` or `4.75`. |
+| The message says the value must be "from" one number "to" another. | The value is outside the allowed range (section 16.2). | Enter a value inside the range. |
+| The message says "Nothing changed." | Every number is the same as the saved value. | Change a number, then save. |
+
+### 16.4 Change the platform limits
+
+> **Prerequisite (who can do this):** You must be a Super Admin.
+> **Warning:** the limits apply to every council at once.
+
+**Goal:** Set the limits that every council shares.
+
+**Start point:** Sidebar → Setup → **Global Governance Matrices** → **Platform Limits**.
+
+**Steps:**
+1. Enter the **Oral history recording time limit** in seconds. The default is 900 seconds (15 minutes).
+2. Enter the **Diary entry character limit**. The default and the largest value is 4,000 characters.
+3. Enter the **Prayer intention character limit**. The default and the largest value is 500 characters.
+4. Select **Save platform limits**.
+
+**Expected result:** A message says "Platform limits saved." The recorder, the diary box and the prayer intention box use the new limits.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A character limit does not go above its default. | The default is the largest size that the council records can store. | Keep the limit at the default or lower. |
+| A recording stopped early. | The recording time limit is lower than the speaker needed. | Raise the limit. The largest value is 3,600 seconds (60 minutes). |
 
 ---
 

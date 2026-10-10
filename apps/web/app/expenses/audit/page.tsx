@@ -1,7 +1,7 @@
 'use client';
 // Financial Secretary Audit Desk (Sprint 5Z-4): the first line of expense dual approval. The council's Financial
 // Secretary, its Admins and any Super Admin open it (canOpenExpenseAuditDesk). It lists every 'Submitted' sheet still
-// waiting for its written order, oldest first, with a receipt drawer and the gold 'Approve Expense' command
+// waiting for its written order, oldest first, with a receipt drawer and the gold '📝 Verify & Sign Expense' command
 // (expenses.financialSecretaryAuditOrder). Sprint 6Q removed the budget line picker: the Treasurer codes the budget
 // line and ledger account next, on the Treasurer Ledger Audit Desk. Only the Financial Secretary or a Super Admin
 // signs, never on their own sheet (expenseOrderBlock; the drivers: FINANCIAL_SECRETARY_REQUIRED,
@@ -89,8 +89,8 @@ function AuditDesk() {
     }
     if (block === 'seat') return <Pill tone="outline">Financial Secretary signs</Pill>;
     return (
-      <Button variant="gold" disabled={busyId !== null} aria-label={`Approve expense report ${d.report.id}`} onClick={() => void issue(d)}>
-        {busyId === d.report.id ? 'Approving…' : EXPENSE_APPROVE_LABEL}
+      <Button variant="gold" disabled={busyId !== null} aria-label={`Verify and sign expense report ${d.report.id}`} onClick={() => void issue(d)}>
+        {busyId === d.report.id ? 'Signing…' : EXPENSE_APPROVE_LABEL}
       </Button>
     );
   };

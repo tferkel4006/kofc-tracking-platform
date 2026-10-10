@@ -134,7 +134,7 @@ function TreasurerDesk() {
           title={ready ? undefined : 'Choose a budget line and a ledger account first.'}
           onClick={() => (ready ? void code(d, lineId, accountId) : undefined)}
         >
-          {busyId === d.report.id ? 'Coding…' : TREASURER_CODE_EXPENSE_LABEL}
+          {busyId === d.report.id ? 'Locking…' : TREASURER_CODE_EXPENSE_LABEL}
         </Button>
       </span>
     );

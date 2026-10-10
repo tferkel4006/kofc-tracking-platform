@@ -544,6 +544,46 @@ export const TABLES: Record<string, TableMeta> = {
           "kind": "literal",
           "value": 1
         }
+      },
+      {
+        "name": "quarantine_max_daily_activities",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 5
+        }
+      },
+      {
+        "name": "quarantine_max_single_hours",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 5
+        }
+      },
+      {
+        "name": "max_shift_padding_hours",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 1
+        }
+      },
+      {
+        "name": "inactivity_threshold_days",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 365
+        }
       }
     ],
     "foreignKeys": [],
@@ -6739,6 +6779,52 @@ export const TABLES: Record<string, TableMeta> = {
       }
     ],
     "uniqueKeys": []
+  },
+  "PlatformSettings": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "oral_history_max_seconds",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 900
+        }
+      },
+      {
+        "name": "diary_text_max_length",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 4000
+        }
+      },
+      {
+        "name": "prayer_intention_max_length",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 500
+        }
+      }
+    ],
+    "foreignKeys": [],
+    "uniqueKeys": []
   }
 };
 
@@ -7539,6 +7625,17 @@ export const SEED_DATA: readonly SeedTable[] = [
         "ParentAccountID": null,
         "IsVirtualGoal": 0,
         "TargetGoalAmount": 0
+      }
+    ]
+  },
+  {
+    "table": "PlatformSettings",
+    "rows": [
+      {
+        "id": 1,
+        "oral_history_max_seconds": 900,
+        "diary_text_max_length": 4000,
+        "prayer_intention_max_length": 500
       }
     ]
   }

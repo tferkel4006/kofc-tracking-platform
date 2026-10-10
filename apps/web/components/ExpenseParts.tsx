@@ -367,9 +367,12 @@ export function SignatureDeskTable({
 // ---- 'Assign Ledger Budget Line Item' (Sprint 6G) ---------------------------------------------------
 
 export const ASSIGN_BUDGET_LINE_LABEL = 'Assign Ledger Budget Line Item';
-/** The signing commands of the two dual-approval desks (Sprint 6G Extension). */
-export const EXPENSE_APPROVE_LABEL = '📜 Approve Expense';
-export const EXPENSE_COUNTERSIGN_LABEL = '✍️ Countersign Expense';
+/**
+ * The signing commands of the two dual-approval desks (Sprint 6G Extension), in plain English since Sprint 7C (were
+ * '📜 Approve Expense' and '✍️ Countersign Expense').
+ */
+export const EXPENSE_APPROVE_LABEL = '📝 Verify & Sign Expense';
+export const EXPENSE_COUNTERSIGN_LABEL = '✍️ Final Release for Payment';
 
 export interface ExpenseBudgetLineAssignments {
   fraternalYear: string;
