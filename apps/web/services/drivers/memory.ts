@@ -283,6 +283,13 @@ import {
   memberStatusId,
   planInactivitySweep,
   planMemberLifecycle,
+  assertMayReadAffiliations,
+  buildAffiliationHistory,
+  buildMemberCenter,
+  councilDevotionTotals,
+  councilTenantType,
+  isFraternalTenant,
+  planAffiliationLog,
   type DevotionalProgress,
   type ServiceLogRow,
   assertPrayerIntentionOpen,
@@ -522,6 +529,7 @@ import type {
   CouncilPrayerIntention,
   CouncilPrayerIntentionPrayer,
   MemberDevotionals,
+  MemberCouncilAffiliationLog,
   MemberStatus,
   MemberType,
   OfficerNominations,
@@ -1762,9 +1770,23 @@ export class MemoryDataService implements DataService {
         return members
           .filter((m) => swept.includes(m.id as number))
           .map((m) => {
+            this.applyLifecycleHooks(s, m.id as number, { ...m } as unknown as Member, { ...(m as unknown as NewMember), StatusID: inactive });
             m.StatusID = inactive;
             return withoutPushToken({ ...m }) as unknown as Member;
           });
+      });
+    },
+
+    listAffiliations: async (actorId, memberId) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const member = this.requireMember(s, memberId) as unknown as Member;
+      assertMayReadAffiliations(actor, member);
+      return buildAffiliationHistory({
+        member,
+        rows: this.copyRows<MemberCouncilAffiliationLog>(s, 'MemberCouncilAffiliationLog', (r) => r.user_id === memberId),
+        councils: s.rows('Council') as unknown as Council[],
+        statuses: s.rows('MemberStatus') as unknown as MemberStatus[],
       });
     },
   };
@@ -1783,6 +1805,20 @@ export class MemoryDataService implements DataService {
     });
     s.remove('DistributionListMembers', (m) => m.MemberID === memberId && plan.leaveListIds.includes(m.ListID as number));
     for (const listId of plan.joinListIds) s.insert('DistributionListMembers', { ListID: listId, MemberID: memberId });
+    // Sprint 7A Extension: the multi-council membership trail.
+    const log = planAffiliationLog({
+      memberId,
+      before,
+      after: { ...after, StatusID: plan.statusId },
+      statuses: s.rows('MemberStatus') as unknown as MemberStatus[],
+      rows: s.rows('MemberCouncilAffiliationLog').filter((r) => r.user_id === memberId) as unknown as MemberCouncilAffiliationLog[],
+      now: toTimestamp(this.now()),
+    });
+    for (const u of log.updates) {
+      const row = s.rows('MemberCouncilAffiliationLog').find((r) => r.id === u.id);
+      if (row) Object.assign(row, { membership_status: u.membership_status, date_exited: u.date_exited });
+    }
+    for (const row of log.inserts) s.insert('MemberCouncilAffiliationLog', { ...row });
     return plan.statusId;
   }
 
@@ -3150,6 +3186,36 @@ export class MemoryDataService implements DataService {
         logs: this.serviceLogs(s, councilId),
         members: s.rows('Member') as unknown as Member[],
         activeStatusId: this.activeStatusId(s) as number,
+      });
+    },
+
+    memberCenter: async (actorId, councilId, year, month) => {
+      const { fromDate, toDate } = monthBounds(year, month);
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      assertMayReadCouncilHistory(actor, councilId, `open the Member Center of council ${councilId}`);
+      this.assertCouncilsExist(s, [councilId]);
+      const council = s.rows('Council').find((c) => c.id === councilId) as unknown as Council;
+      const viewer = this.requireMember(s, actorId) as unknown as Member;
+      const viewerCouncil = s.rows('Council').find((c) => c.id === viewer.CouncilID) as unknown as Council | undefined;
+      const councilMembers = new Set(s.rows('Member').filter((m) => m.CouncilID === councilId).map((m) => m.id as number));
+      return buildMemberCenter({
+        engagement: buildCouncilEngagement({
+          councilId,
+          year,
+          month,
+          fromDate,
+          toDate,
+          logs: this.serviceLogs(s, councilId),
+          members: s.rows('Member') as unknown as Member[],
+          activeStatusId: this.activeStatusId(s) as number,
+        }),
+        viewer,
+        viewerLogs: this.serviceLogs(s).filter((l) => l.MemberID === actorId),
+        thresholds: councilRankThresholds(viewerCouncil),
+        devotions: isFraternalTenant(councilTenantType(council))
+          ? councilDevotionTotals(s.rows('MemberDevotionals') as unknown as MemberDevotionals[], councilMembers)
+          : null,
       });
     },
 

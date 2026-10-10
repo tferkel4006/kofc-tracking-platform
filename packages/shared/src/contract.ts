@@ -108,7 +108,7 @@ import type { CadenceConfigInput } from './meetings';
 import type { DistributionGroup } from './messaging';
 import type { FeatureFlagChanges, FeatureFlagName } from './features';
 import type { EmailGatewayColumn, EmailGatewaySettings } from './email-gateway';
-import type { CouncilEngagement, DevotionalEntry, DevotionalProgress, RankThresholds } from './member-lifecycle';
+import type { AffiliationHistoryEntry, CouncilEngagement, DevotionalEntry, DevotionalProgress, MemberCenter, RankThresholds } from './member-lifecycle';
 
 // 1. LOOKUPS
 /** The global lookup tables a Super Admin maintains (Blueprint: "System Lookup Manager"). */
@@ -2562,6 +2562,17 @@ export interface DataService {
      * council-wide lists.
      */
     sweepInactive(actorId: number, councilId: number): Promise<Member[]>;
+    /**
+     * Sprint 7A Extension: the member's council history card (member-lifecycle.ts buildAffiliationHistory) - their
+     * MemberCouncilAffiliationLog rows, oldest first, with council names, plus their current membership when the log has
+     * no row for it yet. The member themself, an Active Admin of their council or an Active Super Admin (ADMIN_REQUIRED,
+     * COUNCIL_ACCESS_DENIED). MEMBER_NOT_FOUND for an unknown member.
+     *
+     * The log is written by create, update and supreme.syncSupremeRoster in the same transaction as the member
+     * (planAffiliationLog): a new member opens a row; a transfer closes the old council's row as 'Former' and opens an
+     * Active row in the new council; a status change restates the open row, and Deceased or Former closes it.
+     */
+    listAffiliations(actorId: number, memberId: number): Promise<AffiliationHistoryEntry[]>;
   };
 
   memberProfiles: {
@@ -2968,6 +2979,15 @@ export interface DataService {
      * year before 1882 or after 9999, or a month outside 1-12.
      */
     councilEngagement(actorId: number, councilId: number, year: number, month: number): Promise<CouncilEngagement>;
+    /**
+     * Sprint 7A Extension: the Shared Member Center (member-lifecycle.ts buildMemberCenter), open to every member. The
+     * month's volunteers, volunteer count and hours and the Top 5 Volunteers Leaderboard as in councilEngagement; the
+     * council's combined devotional sums (its members' MemberDevotionals added up - never one member's tally); and the
+     * caller's own impact card: events attended, hours and canonization shield. It carries no cash, budget or ledger
+     * figure. Any Active member of the council or an Active Super Admin (COUNCIL_ACCESS_DENIED). For a white-label council
+     * the devotional sums and the shield are null. Rejects INVALID_INPUT as councilEngagement does.
+     */
+    memberCenter(actorId: number, councilId: number, year: number, month: number): Promise<MemberCenter>;
   };
 
   meetings: {
@@ -3940,7 +3960,8 @@ export interface DataService {
 
   /**
    * The phone's devotional tracker and canonization shield (Sprint 7A, member-lifecycle.ts). Each member reads and adds to
-   * only their own tally (MemberDevotionals); nobody else, Admins included, can read it. A Knights of Columbus extension:
+   * only their own tally (MemberDevotionals); nobody else, Admins included, can read it. The Shared Member Center
+   * (reports.memberCenter) shows only the council's sums. A Knights of Columbus extension:
    * a white-label council rejects FRATERNAL_EXTENSION_REQUIRED. MEMBER_NOT_FOUND for an unknown member.
    */
   devotionals: {

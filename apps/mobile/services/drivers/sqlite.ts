@@ -287,6 +287,13 @@ import {
   memberStatusId,
   planInactivitySweep,
   planMemberLifecycle,
+  assertMayReadAffiliations,
+  buildAffiliationHistory,
+  buildMemberCenter,
+  councilDevotionTotals,
+  councilTenantType,
+  isFraternalTenant,
+  planAffiliationLog,
   type DevotionalProgress,
   type ServiceLogRow,
   assertPrayerIntentionOpen,
@@ -610,6 +617,7 @@ import type {
   CouncilPrayerIntention,
   CouncilPrayerIntentionPrayer,
   MemberDevotionals,
+  MemberCouncilAffiliationLog,
   MemberStatus,
   MemberType,
   OfficerNominations,
@@ -720,8 +728,9 @@ const DB_NAME = 'kofc.db';
  * 58: ExpenseReceipts, ExpenseLineItem.is_personal_exclusion and receipt_id - multi-receipt split tickets; and
  *     ExpenseReport.flag_missing_receipt and missing_receipt_reason - the Honor Voucher (Sprint 6S).
  * 59: MemberDevotionals, Member.flag_charter_member, Council.rank_threshold_hours and rank_threshold_events (Sprint 7A).
+ * 60: MemberCouncilAffiliationLog - the multi-council membership trail (Sprint 7A Extension).
  */
-const SCHEMA_VERSION = 59;
+const SCHEMA_VERSION = 60;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -1993,11 +2002,29 @@ export class SqliteDataService implements DataService {
         const ids = new Set(members.map((m) => m.id));
         swept = planInactivitySweep({ members, statuses, memberTypes, logs: logs.filter((l) => ids.has(l.MemberID)), today: toIsoDate(this.now()) });
         const inactive = memberStatusId(statuses, INACTIVE_STATUS);
-        for (const memberId of swept) await db.runAsync('UPDATE [Member] SET [StatusID] = ? WHERE [id] = ?', [inactive, memberId]);
+        for (const memberId of swept) {
+          const stored = (await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [memberId]))!;
+          await this.applyLifecycleHooks(db, memberId, stored, { ...(stored as unknown as NewMember), StatusID: inactive });
+          await db.runAsync('UPDATE [Member] SET [StatusID] = ? WHERE [id] = ?', [inactive, memberId]);
+        }
       });
       const out: Member[] = [];
       for (const memberId of swept) out.push(withoutPushToken((await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [memberId]))!));
       return out;
+    },
+
+    listAffiliations: async (actorId, memberId) => {
+      const db = await this.ready();
+      const actor = await this.memberWriteActor(db, actorId);
+      const member = await db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [memberId]);
+      if (!member) throw new BusinessRuleError('MEMBER_NOT_FOUND', `No member with id ${memberId}.`, { memberId });
+      assertMayReadAffiliations(actor, member);
+      const [rows, councils, statuses] = await Promise.all([
+        db.getAllAsync<MemberCouncilAffiliationLog>('SELECT * FROM [MemberCouncilAffiliationLog] WHERE [user_id] = ?', [memberId]),
+        db.getAllAsync<Council>('SELECT [id], [CouncilNumber], [CouncilName] FROM [Council]'),
+        db.getAllAsync<MemberStatus>('SELECT * FROM [MemberStatus]'),
+      ]);
+      return buildAffiliationHistory({ member, rows, councils, statuses });
     },
   };
 
@@ -2014,6 +2041,24 @@ export class SqliteDataService implements DataService {
     const plan = planMemberLifecycle({ before, after, statuses, lists, memberListIds: entries.map((e) => e.ListID) });
     for (const listId of plan.leaveListIds) await db.runAsync('DELETE FROM [DistributionListMembers] WHERE [ListID] = ? AND [MemberID] = ?', [listId, memberId]);
     for (const listId of plan.joinListIds) await db.runAsync('INSERT INTO [DistributionListMembers] ([ListID], [MemberID]) VALUES (?, ?)', [listId, memberId]);
+    // Sprint 7A Extension: the multi-council membership trail.
+    const log = planAffiliationLog({
+      memberId,
+      before,
+      after: { ...after, StatusID: plan.statusId },
+      statuses,
+      rows: await db.getAllAsync<MemberCouncilAffiliationLog>('SELECT * FROM [MemberCouncilAffiliationLog] WHERE [user_id] = ?', [memberId]),
+      now: toTimestamp(this.now()),
+    });
+    for (const u of log.updates) {
+      await db.runAsync('UPDATE [MemberCouncilAffiliationLog] SET [membership_status] = ?, [date_exited] = ? WHERE [id] = ?', [u.membership_status, u.date_exited, u.id]);
+    }
+    for (const r of log.inserts) {
+      await db.runAsync(
+        'INSERT INTO [MemberCouncilAffiliationLog] ([user_id], [council_id], [membership_status], [date_joined], [date_exited]) VALUES (?, ?, ?, ?, ?)',
+        [r.user_id, r.council_id, r.membership_status, r.date_joined, r.date_exited ?? null],
+      );
+    }
     return plan.statusId;
   }
 
@@ -3699,6 +3744,30 @@ export class SqliteDataService implements DataService {
         db.getFirstAsync<{ id: number }>("SELECT [id] FROM [MemberStatus] WHERE [Status] = 'Active'"),
       ]);
       return buildCouncilEngagement({ councilId, year, month, fromDate, toDate, logs, members, activeStatusId: active!.id });
+    },
+
+    memberCenter: async (actorId, councilId, year, month) => {
+      const { fromDate, toDate } = monthBounds(year, month);
+      const db = await this.ready();
+      assertMayReadCouncilHistory(await this.memberWriteActor(db, actorId), councilId, `open the Member Center of council ${councilId}`);
+      await this.assertCouncilsExist(db, [councilId]);
+      const [councilLogs, allLogs, members, active, council, viewer, devotionRows] = await Promise.all([
+        this.serviceLogs(db, councilId),
+        this.serviceLogs(db),
+        db.getAllAsync<Member>('SELECT [id], [CouncilID], [StatusID], [MemberFirstName], [MemberLastName] FROM [Member]'),
+        db.getFirstAsync<{ id: number }>("SELECT [id] FROM [MemberStatus] WHERE [Status] = 'Active'"),
+        db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [councilId]),
+        db.getFirstAsync<Member>('SELECT * FROM [Member] WHERE [id] = ?', [actorId]),
+        db.getAllAsync<MemberDevotionals>('SELECT d.* FROM [MemberDevotionals] d JOIN [Member] m ON m.[id] = d.[user_id] WHERE m.[CouncilID] = ?', [councilId]),
+      ]);
+      const viewerCouncil = await db.getFirstAsync<Council>('SELECT * FROM [Council] WHERE [id] = ?', [viewer!.CouncilID]);
+      return buildMemberCenter({
+        engagement: buildCouncilEngagement({ councilId, year, month, fromDate, toDate, logs: councilLogs, members, activeStatusId: active!.id }),
+        viewer: viewer!,
+        viewerLogs: allLogs.filter((l) => l.MemberID === actorId),
+        thresholds: councilRankThresholds(viewerCouncil),
+        devotions: isFraternalTenant(councilTenantType(council)) ? councilDevotionTotals(devotionRows, new Set(devotionRows.map((d) => d.user_id))) : null,
+      });
     },
 
     missionAreaFootprint: async (actorId, councilId, fraternalYear) => {

@@ -22,6 +22,7 @@ import {
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { Drawer } from '@/components/Drawer';
+import { AffiliationHistoryCard } from '@/components/EngagementParts';
 import { ProfileExtensionsEditor } from '@/components/ProfileExtensionsEditor';
 import { SkillFilterDrawer } from '@/components/SkillFilterDrawer';
 import { Button, cx, Empty, Field, Input, NewMemberBadge, Notice, PageTitle, Panel, Pill, Select, Table, Td } from '@/components/ui';
@@ -481,6 +482,8 @@ function Roster() {
                 </div>
               ) : null}
               <MemberForm member={current} councilId={scope.councilId} lookups={lookups.data} onSaved={() => void members.reload()} />
+              {/* Sprint 7A Extension: every council the member has belonged to, kept across transfers. */}
+              <AffiliationHistoryCard key={`${current.id}-${current.CouncilID}-${current.StatusID}`} memberId={current.id} />
             </div>
           ) : (
             <Empty>Choose a member to view or change their record{canCreateMembers(user, scope.councilId) ? ', or add a new one' : ''}.</Empty>

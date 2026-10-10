@@ -6534,6 +6534,68 @@ export const TABLES: Record<string, TableMeta> = {
       }
     ],
     "uniqueKeys": []
+  },
+  "MemberCouncilAffiliationLog": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "user_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "council_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "membership_status",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "date_joined",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "date_exited",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "user_id",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "council_id",
+        "refTable": "Council",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": []
   }
 };
 

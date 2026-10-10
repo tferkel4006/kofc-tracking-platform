@@ -85,6 +85,7 @@ export function createRemoteDataService(): DataService {
       update: notImplemented('members.update'),
       resendWelcome: notImplemented('members.resendWelcome'),
       sweepInactive: notImplemented('members.sweepInactive'),
+      listAffiliations: notImplemented('members.listAffiliations'),
     },
     memberProfiles: {
       listOptions: notImplemented('memberProfiles.listOptions'),
@@ -168,6 +169,7 @@ export function createRemoteDataService(): DataService {
       listNoShowsAudit: notImplemented('reports.listNoShowsAudit'),
       listShiftsAwaitingHours: notImplemented('reports.listShiftsAwaitingHours'),
       councilEngagement: notImplemented('reports.councilEngagement'),
+      memberCenter: notImplemented('reports.memberCenter'),
     },
     meetings: {
       get: notImplemented('meetings.get'),

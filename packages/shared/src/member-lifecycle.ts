@@ -1,5 +1,5 @@
 // =========================================================================
-// MEMBER LIFECYCLE, DEVOTIONALS AND CANONIZATION RANKS (Sprint 7A, schema 59)
+// MEMBER LIFECYCLE, DEVOTIONALS, CANONIZATION RANKS AND THE MEMBER CENTER (Sprint 7A, schemas 59-60)
 // Pure helpers behind the member lifecycle hooks (members.create, members.update, supreme.syncSupremeRoster and
 // members.sweepInactive), the phone's devotional tracker (devotionals.*), the canonization shield and the dashboard's
 // monthly engagement card (reports.councilEngagement). Drivers load rows, call these, then only store.
@@ -15,7 +15,7 @@
 import type { NewMember } from './contract';
 import { daysSinceJoined } from './onboarding';
 import { BusinessRuleError, describeActor, hasAdminRights, hasSuperAdminRights, SecurityPrivilegeError, type MemberWriteActor } from './rules';
-import type { Council, Member, MemberDevotionals, MemberStatus, MemberType } from './types';
+import type { Council, Member, MemberCouncilAffiliationLog, MemberDevotionals, MemberStatus, MemberType } from './types';
 
 const invalid = (message: string, details: Record<string, unknown> = {}) => new BusinessRuleError('INVALID_INPUT', message, details);
 
@@ -395,4 +395,211 @@ export function buildCouncilEngagement(input: {
   const leaderboard = ranked.map((s, i) => ({ ...s, rank: i > 0 && ranked[i - 1]!.hours === s.hours ? 0 : i + 1 }));
   for (let i = 1; i < leaderboard.length; i++) if (leaderboard[i]!.rank === 0) leaderboard[i]!.rank = leaderboard[i - 1]!.rank;
   return { councilId: input.councilId, year: input.year, month: input.month, volunteers, leaderboard };
+}
+
+// ---- multi-council affiliation log (Sprint 7A Extension, schema 60) ---------------------------------------------
+
+/** A MemberCouncilAffiliationLog row to insert. */
+export type NewAffiliationRow = Omit<MemberCouncilAffiliationLog, 'id'>;
+
+/** What a member write does to the member's affiliation log. */
+export interface AffiliationLogPlan {
+  inserts: NewAffiliationRow[];
+  updates: { id: number; membership_status: string; date_exited: string | null }[];
+}
+
+/** The status a membership closed by transfer keeps. */
+export const TRANSFERRED_OUT_STATUS = 'Former';
+
+const joinStamp = (date: string | null | undefined, fallback: string): string => (date ? `${date.slice(0, 10)} 00:00:00` : fallback);
+
+/**
+ * The log rows a member write adds or changes (the table's header in Schema.sql gives the rules). `before` is the stored
+ * member (null for a new one); `after` is what will be stored, with the status planMemberLifecycle chose; `rows` is the
+ * member's log so far; `now` is 'YYYY-MM-DD HH:MM:SS'.
+ */
+export function planAffiliationLog(input: {
+  memberId: number;
+  before: Pick<Member, 'CouncilID' | 'StatusID' | 'DateJoinedCouncil'> | null;
+  after: Pick<NewMember, 'CouncilID' | 'StatusID' | 'DateJoinedCouncil'>;
+  statuses: readonly MemberStatus[];
+  rows: readonly Pick<MemberCouncilAffiliationLog, 'id' | 'council_id' | 'date_exited'>[];
+  now: string;
+}): AffiliationLogPlan {
+  const { memberId, before, after, statuses, rows, now } = input;
+  const status = statusNameOf(statuses, after.StatusID) ?? 'Active';
+  const excised = (LIFECYCLE_EXCISED_STATUSES as readonly string[]).includes(status);
+  const openIn = (councilId: number) => rows.filter((r) => r.council_id === councilId && r.date_exited == null);
+  const plan: AffiliationLogPlan = { inserts: [], updates: [] };
+  const open = (councilId: number, joined: string) =>
+    plan.inserts.push({ user_id: memberId, council_id: councilId, membership_status: status, date_joined: joined, date_exited: excised ? now : null });
+
+  if (before === null) {
+    open(after.CouncilID, joinStamp(after.DateJoinedCouncil, now));
+  } else if (before.CouncilID !== after.CouncilID) {
+    const left = openIn(before.CouncilID);
+    for (const r of left) plan.updates.push({ id: r.id, membership_status: TRANSFERRED_OUT_STATUS, date_exited: now });
+    if (left.length === 0 && !rows.some((r) => r.council_id === before.CouncilID)) {
+      plan.inserts.push({
+        user_id: memberId,
+        council_id: before.CouncilID,
+        membership_status: TRANSFERRED_OUT_STATUS,
+        date_joined: joinStamp(before.DateJoinedCouncil, now),
+        date_exited: now,
+      });
+    }
+    open(after.CouncilID, now);
+  } else if (before.StatusID !== after.StatusID) {
+    const here = openIn(after.CouncilID);
+    if (here.length > 0) {
+      for (const r of here) plan.updates.push({ id: r.id, membership_status: status, date_exited: excised ? now : null });
+    } else if (!rows.some((r) => r.council_id === after.CouncilID)) {
+      open(after.CouncilID, joinStamp(after.DateJoinedCouncil, now)); // a member from before the log began
+    } else if (!excised) {
+      open(after.CouncilID, now); // rejoining after leaving
+    }
+  }
+  return plan;
+}
+
+/** One line of a member's council history card. */
+export interface AffiliationHistoryEntry {
+  /** The log row; null for the current membership of a member whose log has no row for it yet (added before schema 60). */
+  id: number | null;
+  councilId: number;
+  councilNumber: number | null;
+  councilName: string;
+  status: string;
+  /** 'YYYY-MM-DD HH:MM:SS', or null when nothing records it. */
+  dateJoined: string | null;
+  dateExited: string | null;
+}
+
+/**
+ * members.listAffiliations: the member's log, oldest first, with council names. When no row covers the member's current
+ * council (a member added before the log began), the current membership is added from the Member row.
+ */
+export function buildAffiliationHistory(input: {
+  member: Pick<Member, 'CouncilID' | 'StatusID' | 'DateJoinedCouncil'>;
+  rows: readonly MemberCouncilAffiliationLog[];
+  councils: readonly Pick<Council, 'id' | 'CouncilNumber' | 'CouncilName'>[];
+  statuses: readonly MemberStatus[];
+}): AffiliationHistoryEntry[] {
+  const council = (id: number) => input.councils.find((c) => c.id === id);
+  const entry = (councilId: number) => ({
+    councilId,
+    councilNumber: council(councilId)?.CouncilNumber ?? null,
+    councilName: council(councilId)?.CouncilName ?? `Council ${councilId}`,
+  });
+  const entries: AffiliationHistoryEntry[] = input.rows.map((r) => ({
+    id: r.id,
+    ...entry(r.council_id),
+    status: r.membership_status,
+    dateJoined: r.date_joined,
+    dateExited: r.date_exited ?? null,
+  }));
+  const current = input.member.CouncilID;
+  const status = statusNameOf(input.statuses, input.member.StatusID) ?? '';
+  // A Deceased or Former member's membership is closed, so a closed row in the current council covers it.
+  const closedOk = (LIFECYCLE_EXCISED_STATUSES as readonly string[]).includes(status);
+  const covered = input.rows.some((r) => r.council_id === current && (r.date_exited == null || closedOk));
+  if (!covered) {
+    entries.push({
+      id: null,
+      ...entry(current),
+      status,
+      dateJoined: input.member.DateJoinedCouncil ? joinStamp(input.member.DateJoinedCouncil, '') : null,
+      dateExited: null,
+    });
+  }
+  return entries.sort((a, b) => (a.dateJoined ?? '').localeCompare(b.dateJoined ?? '') || (a.id ?? Infinity) - (b.id ?? Infinity));
+}
+
+/** members.listAffiliations: the member themself, an Active Admin of the member's council, or an Active Super Admin. */
+export function assertMayReadAffiliations(actor: MemberWriteActor, member: Pick<Member, 'id' | 'CouncilID'>): void {
+  if (actor.memberId === member.id || hasSuperAdminRights(actor)) return;
+  if (hasAdminRights(actor) && actor.councilId === member.CouncilID) return;
+  throw new SecurityPrivilegeError(
+    hasAdminRights(actor) ? 'COUNCIL_ACCESS_DENIED' : 'ADMIN_REQUIRED',
+    `Member ${actor.memberId} cannot read the council history of member ${member.id}; only the member, an Admin of their council or a Super Admin can.`,
+    { actorId: actor.memberId, memberId: member.id },
+  );
+}
+
+// ---- Shared Member Center (Sprint 7A Extension) ------------------------------------------------------------------
+
+/** The council's combined devotional tally: sums only, never who prayed what. */
+export interface CouncilDevotionTotals {
+  rosaries: number;
+  adorations: number;
+  confessions: number;
+  /** Members with anything logged. */
+  contributors: number;
+}
+
+/** The viewer's own impact card. */
+export interface PersonalImpact {
+  memberId: number;
+  firstName: string;
+  lastName: string;
+  /** Distinct events the member logged a shift at, ever. */
+  eventsAttended: number;
+  /** All hours the member logged, events and activities, ever. */
+  hours: number;
+  /** null for a white-label council (the shield is a Knights of Columbus extension). */
+  rank: CanonizationRank | null;
+}
+
+/**
+ * reports.memberCenter: the Shared Member Center, open to every member. Collective, non-financial council figures - no
+ * cash, budget or ledger figure is in it - and the viewer's own impact card.
+ */
+export interface MemberCenter extends CouncilEngagement {
+  volunteerCount: number;
+  totalHours: number;
+  /** null for a white-label council. */
+  devotions: CouncilDevotionTotals | null;
+  me: PersonalImpact;
+}
+
+/** Sums the council members' devotional tallies (rows of other members are ignored). */
+export function councilDevotionTotals(rows: readonly MemberDevotionals[], memberIds: ReadonlySet<number>): CouncilDevotionTotals {
+  const totals: CouncilDevotionTotals = { rosaries: 0, adorations: 0, confessions: 0, contributors: 0 };
+  for (const r of rows) {
+    if (!memberIds.has(r.user_id)) continue;
+    totals.rosaries += r.rosaries_said;
+    totals.adorations += r.adorations_count;
+    totals.confessions += r.confessions_count;
+    if (r.rosaries_said + r.adorations_count + r.confessions_count > 0) totals.contributors += 1;
+  }
+  return totals;
+}
+
+/** Builds the Member Center from the engagement card, the council's devotional totals and the viewer's own logs. */
+export function buildMemberCenter(input: {
+  engagement: CouncilEngagement;
+  viewer: Pick<Member, 'id' | 'MemberFirstName' | 'MemberLastName'>;
+  /** Every service log of the viewer, any council. */
+  viewerLogs: readonly ServiceLogRow[];
+  /** The viewer's own council's thresholds. */
+  thresholds: RankThresholds;
+  /** Null for a white-label council. */
+  devotions: CouncilDevotionTotals | null;
+}): MemberCenter {
+  const { engagement, viewer } = input;
+  const metrics = memberServiceMetrics(viewer.id, input.viewerLogs);
+  return {
+    ...engagement,
+    volunteerCount: engagement.volunteers.length,
+    totalHours: Math.round(engagement.volunteers.reduce((sum, v) => sum + v.hours, 0) * 100) / 100,
+    devotions: input.devotions,
+    me: {
+      memberId: viewer.id,
+      firstName: viewer.MemberFirstName,
+      lastName: viewer.MemberLastName,
+      eventsAttended: metrics.events,
+      hours: metrics.hours,
+      rank: input.devotions === null ? null : canonizationRank(metrics, input.thresholds),
+    },
+  };
 }

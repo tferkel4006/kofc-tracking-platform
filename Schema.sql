@@ -2895,3 +2895,41 @@ ALTER TABLE [Council] ADD [rank_threshold_hours] INT NOT NULL DEFAULT 100;
 GO
 ALTER TABLE [Council] ADD [rank_threshold_events] INT NOT NULL DEFAULT 10;
 GO
+
+-- =========================================================================
+-- Sprint 7A Extension: MULTI-COUNCIL ROSTER AFFILIATION LOG (schema version 60)
+--
+-- MemberCouncilAffiliationLog keeps each member's council membership trail: one row per stretch of membership in a
+-- council. Member.CouncilID says only where a member is now; the log keeps where they have been.
+--   - A new member (added by hand or from Supreme's roster) opens an Active row in their council, dated by
+--     DateJoinedCouncil when known.
+--   - A transfer is one write: the row in the council left is closed (date_exited set, membership_status 'Former') -
+--     or, for a member with no row there yet, a closed row is written from their join date - and an Active row opens in
+--     the new council.
+--   - A status change in the same council restates the open row's membership_status; Deceased or Former also closes it.
+-- Rows are never deleted. Rules: member-lifecycle.ts planAffiliationLog.
+-- =========================================================================
+CREATE TABLE [MemberCouncilAffiliationLog] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[user_id] INT NOT NULL,
+	[council_id] INT NOT NULL,
+	[membership_status] VARCHAR(20) NOT NULL,
+	[date_joined] DATETIME NOT NULL,
+	[date_exited] DATETIME NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [MemberCouncilAffiliationLog]
+ADD FOREIGN KEY([user_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [MemberCouncilAffiliationLog]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE INDEX [MemberCouncilAffiliationLog_Member_Idx] ON [MemberCouncilAffiliationLog] ([user_id]);
+GO

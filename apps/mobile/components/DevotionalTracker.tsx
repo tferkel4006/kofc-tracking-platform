@@ -30,7 +30,7 @@ const hoursText = (h: number) => `${h.toLocaleString('en-US', { maximumFractionD
 const eventsText = (n: number) => `${n} event${n === 1 ? '' : 's'}`;
 
 /** The shield: a navy crest with a gold rim, the level in large type, and a gold bar toward Saint. */
-function CanonizationShield({ rank }: { rank: CanonizationRank }) {
+export function CanonizationShield({ rank }: { rank: CanonizationRank }) {
   const { color, space, radius, border } = useTheme();
   const percent = Math.round(rank.progress * 100);
   return (

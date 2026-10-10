@@ -896,7 +896,7 @@ ________________________________________
 # 28. Member Lifecycle, Devotional Tracker and Canonization Shield (Sprint 7A)
 Schema version 59. Rules: member-lifecycle.ts (planMemberLifecycle, planInactivitySweep, cleanDevotionalEntry, canonizationRank, buildCouncilEngagement).
 [MemberDevotionals]
-A member's running devotional tally, logged on the phone's Home (My devotions). One row per member, created by the first devotionals.record. Only the member reads it; no council screen shows it.
+A member's running devotional tally, logged on the phone's Home (My devotions). One row per member, created by the first devotionals.record. Only the member reads their own row. From Sprint 7A Extension the Shared Member Center shows the council's sums (never one member's tally).
 •	user_id (INT, NOT NULL) — Primary Key. Foreign Key references Member(id).
 •	rosaries_said (INT, NOT NULL, DEFAULT 0) — Rosaries said.
 •	adorations_count (INT, NOT NULL, DEFAULT 0) — Hours of Eucharistic adoration.
@@ -911,4 +911,18 @@ Lifecycle hooks, in the same transaction as the member write: members.create and
 Inactivity sweep. members.sweepInactive (Run inactivity sweep on the roster, the council's Admins or a Super Admin) marks Inactive every Active member of type Member whose last logged service, or join date when none is logged, is more than 365 days ago. Admins, Super Admins and members with neither date are left alone. There is no scheduler: an Admin runs it.
 Engagement card. reports.councilEngagement lists the month's volunteers at the council's events and activities and the Top 5 Volunteers Leaderboard (the council's Active members by all hours logged there; ties share a rank). The dashboard shows it with the month's cash raised.
 Roster import template. py scripts/roster_import_template.py writes apps/web/public/templates/roster_import_template.xlsx (openpyxl): the roster import's headers, a sample row, and drop-downs for Role (OFFICE_ROLE_NAMES plus Member), Degree and Charter Member. The import does not read Role.
+________________________________________
+# 29. Multi-Council Membership History and the Shared Member Center (Sprint 7A Extension)
+Schema version 60. Rules: member-lifecycle.ts (planAffiliationLog, buildAffiliationHistory, buildMemberCenter, councilDevotionTotals).
+[MemberCouncilAffiliationLog]
+One stretch of a member's membership in a council. Member.CouncilID says only where the member is now; the log keeps where they have been. Rows are never deleted. Written by members.create, members.update, members.sweepInactive and supreme.syncSupremeRoster in the same transaction as the member.
+•	id (INT, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	user_id (INT, NOT NULL) — Foreign Key references Member(id).
+•	council_id (INT, NOT NULL) — Foreign Key references Council(id). Blocks deleting the council (RECORD_IN_USE).
+•	membership_status (VARCHAR(20), NOT NULL) — A MemberStatus name. 'Former' once the member left the council by transfer.
+•	date_joined (DATETIME, NOT NULL) — The join date (midnight) when known, otherwise when the row was written.
+•	date_exited (DATETIME, NULL) — When the membership closed: a transfer out, or a status of Deceased or Former. NULL while open.
+Rules. A new member opens an Active row. A transfer closes the open row in the council left as 'Former' (for a member with no row there, it writes a closed row from their join date) and opens an Active row in the new council. A status change in the same council restates the open row; Deceased or Former also closes it; rejoining opens a new row. A member added before schema 60 shows their current membership on the history card from the Member row until the log has a row for it.
+History card. members.listAffiliations: the member, an Admin of their council or a Super Admin. Shown on the Affiliated Roster (Council membership history) and on the Shared Member Center (My council history), web and phone.
+Shared Member Center. reports.memberCenter, for every Active member of the council (portal area member-center, Performance pillar; phone: Home -> Open the Member Center). It carries the month's volunteers, volunteer count and hours, the council's combined devotional sums, the Top 5 Volunteers Leaderboard and the viewer's own events attended, hours and canonization shield. It carries no cash, budget or ledger figure; the finance pages and the executive dashboard keep their own audiences. For a white-label council the devotional sums and the shield are null.
 ________________________________________

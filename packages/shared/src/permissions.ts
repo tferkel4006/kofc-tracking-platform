@@ -76,6 +76,7 @@ export type PortalArea =
   | 'performance/charts'
   | 'history'
   | 'faith-center'
+  | 'member-center'
   | 'profile';
 
 /** Areas served from a route other than `/${area}`: the budget center lives at /budget (Sprint 5Y-2). */
@@ -628,6 +629,9 @@ export function portalAreas(u: Actor, flags: FeatureFlags = ALL_FEATURES_ON, ten
   // Intentions List. A Knights of Columbus extension, so a white-label tenant loses it (FRATERNAL_AREAS).
   areas.push('faith-center');
   if (canOpenMarketingFactory(u)) areas.push('resources/marketing');
+  // Sprint 7A Extension: the Shared Member Center - collective, non-financial council figures and the member's own impact
+  // card - is every member's. The executive dashboard and the finance screens stay with their own audiences above.
+  areas.push('member-center');
   return withTenantGate(withFeatureFlags(areas, flags), tenant);
 }
 
@@ -672,7 +676,7 @@ export const PORTAL_NAV_GROUPS: readonly PortalNavGroup[] = [
       'financials/budget',
     ],
   },
-  { id: 'performance', label: 'Performance', items: ['dashboard', 'performance/charts', 'history', 'ledger', 'lessons-registry'] },
+  { id: 'performance', label: 'Performance', items: ['member-center', 'dashboard', 'performance/charts', 'history', 'ledger', 'lessons-registry'] },
   { id: 'resources', label: 'Resources', items: ['gallery', 'resources/bulletins', 'resources/marketing'] },
   { id: 'answers', label: 'Answers', items: ['help', 'answers/help', 'answers/sop'] },
   {

@@ -109,6 +109,7 @@ export const RECORD_REFERENCES: Record<MaintainedTable, readonly RecordReference
     { table: 'CouncilSpiritualDiary', column: 'council_id', noun: ['diary entry', 'diary entries'] },
     { table: 'CouncilAudits', column: 'council_id', noun: ['Trustee audit', 'Trustee audits'] },
     { table: 'CouncilPrayerIntention', column: 'council_id', noun: ['prayer intention', 'prayer intentions'] },
+    { table: 'MemberCouncilAffiliationLog', column: 'council_id', noun: ['council membership history row', 'council membership history rows'] },
     { table: 'CouncilInMemoriam', column: 'council_id', noun: ['In Memoriam entry', 'In Memoriam entries'] },
     { table: 'CouncilLeadershipSnapshot', column: 'council_id', noun: ['leadership snapshot', 'leadership snapshots'] },
     { table: 'CouncilMediaVault', column: 'council_id', noun: ['vault photo', 'vault photos'] },

@@ -1201,3 +1201,13 @@ export interface MemberDevotionals {
   adorations_count: number; // INT, DEFAULT 0 - hours of Eucharistic adoration
   confessions_count: number; // INT, DEFAULT 0
 }
+
+/** Sprint 7A Extension: one stretch of a member's membership in a council (the multi-council membership trail). */
+export interface MemberCouncilAffiliationLog {
+  id: number;
+  user_id: number; // Member
+  council_id: number; // Council
+  membership_status: string; // VARCHAR(20): a MemberStatus name, 'Former' once the member left by transfer
+  date_joined: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS'
+  date_exited?: string | null; // DATETIME, 'YYYY-MM-DD HH:MM:SS'; NULL while the membership is open
+}

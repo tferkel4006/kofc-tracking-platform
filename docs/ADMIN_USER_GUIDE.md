@@ -24,7 +24,8 @@
 11. [Data protection rules](#11-data-protection-rules)
 12. [Troubleshooting reference](#12-troubleshooting-reference)
 13. [Automated messages reference](#13-automated-messages-reference)
-14. [Appendix: QR code files](#appendix-qr-code-files)
+14. [Member engagement and the roster lifecycle](#14-member-engagement-and-the-roster-lifecycle)
+15. [Appendix: QR code files](#appendix-qr-code-files)
 
 ### How to read a tutorial
 
@@ -1235,7 +1236,8 @@ The SOP Center holds the full procedure: **Publish a standard operating procedur
 The sync reads the roster export from Supreme Headquarters. The sync adds new members and updates join dates.
 
 - The input is a CSV file with a header row. Save the Supreme Excel export as CSV first.
-- The columns are Member Number, First Name, Last Name, Email, Phone, Street, Street 2, City, State, Zip, Birth Date, Degree and Date Joined.
+- The columns are Member Number, First Name, Last Name, Email, Phone, Street, Street 2, City, State, Zip, Birth Date, Degree, Date Joined and Charter Member.
+- Admins can download a ready Excel roster template with drop-down lists (14.8).
 - Header case and spacing do not matter.
 - The file must have the member number, the names, the email and the join date columns.
 
@@ -1502,6 +1504,204 @@ Only the Financial Secretary, the Treasurer, council Admins and Super Admins see
 <!-- KEEP_IMAGE: distribution lists capture -->
 ![My Distribution Lists (/distribution-lists)](../generated/dashboard_visual_catalog/distribution-lists.png)
 <!-- /KEEP_IMAGE -->
+
+---
+
+## 14. Member engagement and the roster lifecycle
+
+### 14.1 Concept: the Shared Member Center
+
+The **Shared Member Center** shows every member how the council is doing. The page has no money on it.
+Cash, budgets and the general ledger stay on the **Executive Dashboard** and the Finances pages. Plain members cannot open those pages.
+
+| Card | What the card shows |
+| --- | --- |
+| **Council volunteers** | The month's volunteer count, the hours served and the name of each member who served |
+| **Our combined devotions** | The rosaries, hours of adoration and confessions of all members, added together |
+| **Top 5 Volunteers Leaderboard** | The 5 active members with the most hours ever logged at council events and activities |
+| **My impact** | The reader's own events attended, personal hours, canonization shield and council history |
+
+- The combined devotions show only totals. No card shows the devotions of one member.
+- Members with equal hours share a place on the leaderboard.
+- A white-label organization does not see the devotions card or the shield.
+
+### 14.2 Open the Shared Member Center
+
+> **Prerequisite (who can do this):** Every active member of the council. A Super Admin opens the page for the Super Admin's own council.
+
+**Goal:** See the council's month and your own impact.
+
+**Start point:** Sidebar → Performance → **Shared Member Center**. On the phone: Home → **Open the Member Center**.
+
+**Steps:**
+1. Choose the **Month** and the **Year**. The phone always shows the current month.
+2. Read the **Council volunteers** card.
+3. Read **Our combined devotions** and the **Top 5 Volunteers Leaderboard**.
+4. Read the **My impact** card.
+
+**Expected result:** The cards show the month's volunteers and your own figures.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A volunteer is missing from the month. | The volunteer did not log hours yet. | Ask the volunteer to log the hours. Shift hours close after 3 months. |
+| The devotions card shows 0. | No member logged devotions on the phone. | Tell members about **My devotions** on the phone Home screen. |
+
+### 14.3 Concept: personal impact and the canonization shield
+
+The **My impact** card shows three personal measures.
+
+| Measure | How the platform counts the measure |
+| --- | --- |
+| **Events attended** | The events where the member logged shift hours, each event counted one time |
+| **Personal hours** | All shift hours and activity hours the member logged |
+| Canonization shield | The member's level, from the logged hours and events against the council's thresholds |
+
+The shield has four levels. A member reaches a level when both the hours and the events meet the level's share.
+
+| Level | Share of both thresholds |
+| --- | --- |
+| Servant of God | The starting level |
+| Venerable | One third |
+| Blessed | Two thirds |
+| Saint | The full thresholds |
+
+- The default thresholds are 100 hours and 10 events.
+- Devotions do not change the shield. The shield counts logged service only.
+- The member logs devotions on the phone: Home → **My devotions** → **Log devotions**. Only the member sees the member's own tally.
+
+### 14.4 Set the canonization shield thresholds
+
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
+
+**Goal:** Set the hours and events that make a Saint in your council.
+
+**Start point:** Sidebar → Performance → **Executive Dashboard** → **Top 5 Volunteers Leaderboard**.
+
+**Steps:**
+1. Find **Canonization shield thresholds** under the leaderboard.
+2. Enter the **Hours**. Use a whole number from 1 to 10,000.
+3. Enter the **Events**. Use a whole number from 1 to 1,000.
+4. Select **Save**.
+
+**Expected result:** The message **Shield thresholds saved.** shows. Every member's shield uses the new thresholds at once.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The thresholds are refused. | A value is 0, a decimal or too large. | Enter a whole number in the allowed range. |
+| You do not see the thresholds. | Only Admins and Super Admins set the thresholds. | Ask a council Admin. |
+
+### 14.5 Read the monthly activity overview
+
+> **Prerequisite (who can do this):** You must be a seated officer or an Admin of the council, or a Super Admin.
+
+**Goal:** See the month's volunteers next to the cash collected.
+
+**Start point:** Sidebar → Performance → **Executive Dashboard**.
+
+**Steps:**
+1. Choose the **Month** and the **Year**.
+2. Read the navy **Monthly activity overview** card.
+3. Read the **Top 5 Volunteers Leaderboard** beside the overview.
+
+**Expected result:** The overview shows the volunteer count, the cash collected, the hours served and each volunteer's name.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The cash collected differs from the deposits. | The overview counts the cash raised at the month's events. | Check the **Financial ledger** panel on the same page. |
+
+### 14.6 Concept: the council membership history
+
+The platform keeps a history of every council that a member belongs to. The history does not change when a member moves.
+
+| Event | What the history records |
+| --- | --- |
+| A member is added or synced | A new membership in the council, from the join date when known |
+| A Super Admin moves a member to another council | The old membership closes as **Former**. A new **Active** membership opens in the new council. |
+| A status changes in the same council | The open membership shows the new status. **Deceased** or **Former** also closes the membership. |
+
+- A transferred member is always **Active** in the new council.
+- A transfer takes the member off the old council's distribution lists.
+- A transfer puts the member on the new council's council-wide distribution lists.
+- A member marked **Deceased** or **Former** leaves every distribution list.
+- A new member joins the council-wide distribution lists of the member's council.
+- A member added before the history began shows the current council only, from the join date.
+
+### 14.7 Read a member's council membership history
+
+> **Prerequisite (who can do this):** You must have council Admin privileges for the member's council, or Super Admin privileges. A member reads the member's own history on the **Shared Member Center**.
+
+**Goal:** See every council a member belonged to.
+
+**Start point:** Sidebar → Setup → **Affiliated Roster** → the member.
+
+**Steps:**
+1. Select the member's name in the roster.
+2. Read the **Council membership history** card under the member form.
+
+**Expected result:** The card lists each council, oldest first, with the status, the date joined and the date left. The current membership shows **current**.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| You cannot move a member to another council. | Only a Super Admin moves members between councils. | Ask a Super Admin. |
+| The join date shows **Not recorded**. | The member has no join date. | Enter the **Date joined council** on the member form. |
+
+### 14.8 Download the Excel roster template
+
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
+> **Warning:** each new row sends a welcome email at once when you sync the roster.
+
+**Goal:** Build a roster file by hand in Excel and load the file.
+
+**Start point:** Sidebar → Setup → **Supreme Council Sync** → **Supreme roster sync - new member onboarding**.
+
+**Steps:**
+1. Select **Download the Excel roster template**.
+2. Open the file in Excel. Row 2 is a sample. Replace the sample with a real member.
+3. Fill one row for each member. Use the drop-down lists for **Role**, **Degree** and **Charter Member**.
+4. Read the **Instructions** sheet for the rules of each column.
+5. Save the **Roster** sheet as CSV (File → Save As → CSV UTF-8).
+6. Load the CSV file in **Roster file**.
+7. Select **Sync *n* roster rows from Supreme**. Each new member gets a welcome email at once.
+
+**Expected result:** A message counts the new members, the updated join dates and the skipped rows.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A member's office is not set. | The sync does not assign offices from the **Role** column. | Fill offices through the elections and the Grand Knight's appointments. |
+| Excel refuses a value. | The value is not on the drop-down list or is not a date. | Choose a value from the list. Enter dates as YYYY-MM-DD. |
+| A **Charter Member** mark is missing. | The cell was not **Yes**. | Tick **Charter member** on the member form. |
+
+### 14.9 Run the inactivity sweep
+
+> **Prerequisite (who can do this):** You must have council Admin privileges for the council, or Super Admin privileges.
+> **Warning:** the sweep changes the status of many members at once. The sweep has no undo button.
+
+**Goal:** Mark members **Inactive** after more than 365 days without logged service.
+
+**Start point:** Sidebar → Setup → **Affiliated Roster**.
+
+**Steps:**
+1. Select **Run inactivity sweep** at the top of the page. The sweep starts at once.
+2. Read the message. The message names each member marked **Inactive**.
+
+**Expected result:** Each named member shows **Inactive** in the roster.
+
+The sweep follows these rules:
+- The sweep checks active members of the type **Member** only. The sweep never changes an Admin or a Super Admin.
+- The sweep counts shift hours and activity hours. A member with no hours is measured from the join date.
+- The sweep skips a member with no hours and no join date.
+- The platform has no background scheduler. An Admin runs the sweep by hand.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| A member was marked **Inactive** by mistake. | The member served but did not log hours. | Set the member's **Status** to **Active** on the member form. Ask the member to log hours. |
+| A quiet member stays **Active**. | The member has no join date, or is an Admin. | Enter the **Date joined council**. Change an Admin's status by hand. |
 
 ---
 

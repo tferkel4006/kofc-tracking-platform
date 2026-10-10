@@ -105,6 +105,8 @@ export default function AppLayout() {
         <Tabs.Screen name="expenses" options={{ ...tab('Expenses'), href: null }} />
         {/* Sprint 6C: opened from the member's name in the header (Large Text Layout Mode and sign-out). */}
         <Tabs.Screen name="settings" options={{ ...tab('Settings'), href: null }} />
+        {/* Sprint 7A Extension: the Shared Member Center, opened from the card on Home. */}
+        <Tabs.Screen name="member-center" options={{ ...tab('Member Center'), href: null }} />
       </Tabs>
     </FaithCenterProvider>
   );

@@ -7,6 +7,7 @@
 // Phase 4.5: a closable Liturgical Feast or Saint Day banner sits first, just under the header.
 // Sprint 6L Extension 3: the Council Prayer Intentions List with its Praying Hands counters follows the greeting.
 // Sprint 7A: then My devotions - the member's devotional tally and canonization shield (DevotionalTracker).
+// Sprint 7A Extension: a card opens the Shared Member Center (member-center.tsx).
 import { useState } from 'react';
 import { View } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -62,6 +63,14 @@ export default function DashboardScreen() {
       {faithOn ? <PrayerIntentions version={prayerVersion} /> : null}
       {/* Sprint 7A: the member's own devotional tally and canonization shield. */}
       {faithOn ? <DevotionalTracker version={prayerVersion} /> : null}
+
+      {/* Sprint 7A Extension: every member's way into the Shared Member Center. */}
+      <Section title="Shared Member Center">
+        <Card>
+          <AppText>See who served this month, the council&apos;s combined devotions, the Top 5 leaderboard and your own impact.</AppText>
+          <Button title="Open the Member Center" variant="secondary" onPress={() => router.push('/member-center')} />
+        </Card>
+      </Section>
 
       {state.error ? <Notice tone="error" message={state.error} /> : null}
       {!data && state.loading ? <Loading /> : null}
