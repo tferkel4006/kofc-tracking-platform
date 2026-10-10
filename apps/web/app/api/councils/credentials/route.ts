@@ -6,13 +6,14 @@
 //
 // Every answer is { credentials: CredentialStatus[] }: the key, when it was saved and REDACTED_SECRET. A value goes in
 // once and never comes back out, plain or sealed. SMTP_OUTBOUND_PASSWORD is saved with its host and username through
-// /api/councils/email-gateway instead, so it is refused here; GOOGLE_DRIVE_PRIVATE_KEY and (Sprint 6L Extension 2)
-// COPILOT_STUDIO_DIRECT_LINE_SECRET are the keys this route writes.
+// /api/councils/email-gateway instead, so it is refused here; GOOGLE_DRIVE_PRIVATE_KEY, (Sprint 6L Extension 2)
+// COPILOT_STUDIO_DIRECT_LINE_SECRET and (Sprint 6S) AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and _KEY are the keys this
+// route writes.
 //
 // Only the portal session of an Active Admin of that council or an Active Super Admin may (401 without a session, 403
 // otherwise) - the assertMayMaintainCouncilRecords rule of the email gateway.
 import { NextResponse } from 'next/server';
-import { assertMayMaintainCouncilRecords, describeError, isCredentialKey, type CredentialKey } from '@kofc/shared';
+import { assertMayMaintainCouncilRecords, describeError, isCredentialKey, resolveDocumentIntelligenceEndpoint, type CredentialKey } from '@kofc/shared';
 import { credentialsVault } from '@/services/server/credentials-vault';
 import { memberDirectory, requirePortalSession } from '@/services/server/session';
 
@@ -59,6 +60,8 @@ export async function POST(req: Request) {
 
   try {
     if (payload?.clear === true) credentialsVault().remove(councilId, key);
+    // Sprint 6S: the receipt reader calls only Azure Document Intelligence hosts, so another address is refused here.
+    else if (key === 'AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT') credentialsVault().put(councilId, key, resolveDocumentIntelligenceEndpoint(String(payload?.value ?? '')));
     else credentialsVault().put(councilId, key, payload?.value);
     return listing(councilId);
   } catch (err) {

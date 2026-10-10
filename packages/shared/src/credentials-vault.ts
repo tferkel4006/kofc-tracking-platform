@@ -1,8 +1,9 @@
 // Sprint 6Y (Schema 40): the Centralized Encrypted Credentials Vault.
 //
-// Every secret a council's portal holds - its SMTP password, its Google Drive service-account key and (Sprint 6L
-// Extension 2) its Microsoft Copilot Studio Direct Line secret - is one row
-// of CouncilCredentialsVault: council_id, credential_key (CREDENTIAL_KEYS), credential_value_encrypted and updated_at.
+// Every secret a council's portal holds - its SMTP password, its Google Drive service-account key, (Sprint 6L
+// Extension 2) its Microsoft Copilot Studio Direct Line secret and (Sprint 6S) its Azure Document Intelligence endpoint
+// and key for receipt reading - is one row of CouncilCredentialsVault: council_id, credential_key (CREDENTIAL_KEYS),
+// credential_value_encrypted and updated_at.
 // No other table holds a credential (the Council row's EmailPasswordEncrypted column is gone).
 //
 // THE TABLE BELONGS TO THE WEB SERVER ALONE. The only writer is apps/web/services/server/credentials-vault.ts, which
@@ -13,7 +14,13 @@
 import { BusinessRuleError } from './rules';
 
 /** The credentials a council may keep in the vault. */
-export const CREDENTIAL_KEYS = ['SMTP_OUTBOUND_PASSWORD', 'GOOGLE_DRIVE_PRIVATE_KEY', 'COPILOT_STUDIO_DIRECT_LINE_SECRET'] as const;
+export const CREDENTIAL_KEYS = [
+  'SMTP_OUTBOUND_PASSWORD',
+  'GOOGLE_DRIVE_PRIVATE_KEY',
+  'COPILOT_STUDIO_DIRECT_LINE_SECRET',
+  'AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT',
+  'AZURE_DOCUMENT_INTELLIGENCE_KEY',
+] as const;
 export type CredentialKey = (typeof CREDENTIAL_KEYS)[number];
 
 export const isCredentialKey = (value: unknown): value is CredentialKey => typeof value === 'string' && (CREDENTIAL_KEYS as readonly string[]).includes(value);
@@ -23,6 +30,8 @@ export const CREDENTIAL_LABELS: Record<CredentialKey, string> = {
   SMTP_OUTBOUND_PASSWORD: 'SMTP password',
   GOOGLE_DRIVE_PRIVATE_KEY: 'Google Drive service-account private key',
   COPILOT_STUDIO_DIRECT_LINE_SECRET: 'Microsoft Copilot Studio Direct Line secret',
+  AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: 'Azure Document Intelligence endpoint',
+  AZURE_DOCUMENT_INTELLIGENCE_KEY: 'Azure Document Intelligence key',
 };
 
 /**
@@ -33,6 +42,8 @@ export const CREDENTIAL_RULES: Record<CredentialKey, { maxLength: number; multiL
   SMTP_OUTBOUND_PASSWORD: { maxLength: 1000, multiLine: false },
   GOOGLE_DRIVE_PRIVATE_KEY: { maxLength: 8000, multiLine: true },
   COPILOT_STUDIO_DIRECT_LINE_SECRET: { maxLength: 500, multiLine: false },
+  AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: { maxLength: 500, multiLine: false },
+  AZURE_DOCUMENT_INTELLIGENCE_KEY: { maxLength: 500, multiLine: false },
 };
 
 /** Sealed values look like `v1.<iv>.<tag>.<ciphertext>`, each part base64url. */

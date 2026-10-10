@@ -94,6 +94,32 @@ const COPILOT_CARD: SecretCard = {
   removedText: 'Removed. The Microsoft Co-Pilot is switched off for this council.',
 };
 
+// Sprint 6S: receipt reading needs both the resource's endpoint and one of its keys.
+const OCR_ENDPOINT_CARD: SecretCard = {
+  credentialKey: 'AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT',
+  title: 'Receipt reading: Azure endpoint',
+  intro:
+    "Paste the Endpoint of the council's Azure Document Intelligence resource (in the Azure portal: the resource, Keys and Endpoint). It looks like https://name.cognitiveservices.azure.com/.",
+  label: 'Azure endpoint',
+  placeholder: 'https://name.cognitiveservices.azure.com/',
+  multiLine: false,
+  maxLength: 500,
+  savedText: 'Saved. Save the Azure key too, and the expense form can read receipts.',
+  removedText: 'Removed. Receipt reading is switched off for this council.',
+};
+
+const OCR_KEY_CARD: SecretCard = {
+  credentialKey: 'AZURE_DOCUMENT_INTELLIGENCE_KEY',
+  title: 'Receipt reading: Azure key',
+  intro: 'Paste KEY 1 from the same Keys and Endpoint page. It is locked away once saved, and only the receipt reader uses it.',
+  label: 'Azure key',
+  placeholder: 'Key 1',
+  multiLine: false,
+  maxLength: 500,
+  savedText: 'Saved. With the endpoint saved too, the expense form can read receipts.',
+  removedText: 'Removed. Receipt reading is switched off for this council.',
+};
+
 function SecretPanel({ card, councilId, saved, onChanged }: { card: SecretCard; councilId: number; saved: CredentialStatus | undefined; onChanged: () => Promise<void> }) {
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -185,6 +211,8 @@ function CredentialsVault() {
 
   const drive = vault.data?.credentials.find((c) => c.credential_key === 'GOOGLE_DRIVE_PRIVATE_KEY');
   const copilot = vault.data?.credentials.find((c) => c.credential_key === 'COPILOT_STUDIO_DIRECT_LINE_SECRET');
+  const ocrEndpoint = vault.data?.credentials.find((c) => c.credential_key === 'AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT');
+  const ocrKey = vault.data?.credentials.find((c) => c.credential_key === 'AZURE_DOCUMENT_INTELLIGENCE_KEY');
   const emailOn = councilEmailGateway(council.data) !== null && (vault.data ? Boolean(vault.data.gateway.password) : true);
   const connections: Connection[] = [
     { name: 'Outbound email', connected: emailOn, on: 'Connected to the council mail account', off: 'Using the portal default' },
@@ -192,6 +220,7 @@ function CredentialsVault() {
       ? [
           { name: 'Google Drive', connected: Boolean(drive), on: 'Connected to the council Drive', off: 'Using the portal Drive' },
           { name: 'Microsoft Co-Pilot', connected: Boolean(copilot), on: 'Connected to Copilot Studio', off: 'Not connected' },
+          { name: 'Receipt reading', connected: Boolean(ocrEndpoint && ocrKey), on: 'Connected to Azure Document Intelligence', off: 'Not connected' },
         ]
       : []),
   ];
@@ -206,6 +235,8 @@ function CredentialsVault() {
           <EmailGatewayPanel key={`email-${councilId}`} councilId={councilId} onChanged={reload} />
           <SecretPanel key={`drive-${councilId}`} card={DRIVE_CARD} councilId={councilId} saved={drive} onChanged={reload} />
           <SecretPanel key={`copilot-${councilId}`} card={COPILOT_CARD} councilId={councilId} saved={copilot} onChanged={reload} />
+          <SecretPanel key={`ocr-endpoint-${councilId}`} card={OCR_ENDPOINT_CARD} councilId={councilId} saved={ocrEndpoint} onChanged={reload} />
+          <SecretPanel key={`ocr-key-${councilId}`} card={OCR_KEY_CARD} councilId={councilId} saved={ocrKey} onChanged={reload} />
         </div>
       ) : (
         <p className="text-sm">

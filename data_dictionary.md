@@ -876,3 +876,20 @@ A saved gallery filter. When the album opens, the photos are matched again, so a
 •	created_at (DATETIME, NOT NULL, DEFAULT getdate()) — When it was saved (UTC).
 Slideshow. On the gallery, 'Play slideshow' opens the viewer in full screen. The viewer shows the next photo every 5 seconds (SLIDESHOW_INTERVAL_MS) with a 0.7-second fade and a gold progress bar. After the last photo, it goes back to the first. The space bar pauses the slideshow. If the viewer asks for reduced motion, there is no fade.
 ________________________________________
+# 27. Multi-Receipt Split Tickets, Honor Vouchers and Receipt Reading (Sprint 6S)
+Schema version 58. Rules: expenses.ts (cleanExpenseReceipts, assertExpenseSplitTicket, isHonorVoucherSheet) and receipt-ocr.ts.
+[ExpenseReceipts]
+One receipt behind an expense sheet. A sheet may carry several. expenses.submitReport writes the sheet's receipts in order (ExpenseReportInput.receipts) and replaces them when a draft is saved again; line items name theirs by position (receipt_index), stored as ExpenseLineItem.receipt_id.
+•	id (INT, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	expense_id (INT, NOT NULL) — Foreign Key references ExpenseReport(id).
+•	merchant_name (VARCHAR(255), NOT NULL) — Trimmed and required.
+•	gross_total (DECIMAL(18,2), NOT NULL) — The whole ticket, council and personal lines together; more than 0, whole cents. On a submitted sheet the lines itemised from the receipt must add up to it exactly, and a receipt no line names is refused (INVALID_INPUT).
+•	receipt_file_url (VARCHAR(2000), NULL) — A Drive file id, blob link or phone path, as ExpenseLineItem.ReceiptPhotoURL. Required on a submitted sheet unless the sheet is an Honor Voucher.
+New columns:
+•	ExpenseLineItem.is_personal_exclusion (BIT, NOT NULL, DEFAULT 0) — 1 for an item bought for personal use on a shared ticket. The line stays on the sheet so the receipt adds up, but every council figure leaves it out: ExpenseReportDetail.total (personalTotal holds it instead), the check total of expenses.recordDisbursement, reports.monthlySummary, the budget engine and rollup, concluded event performance, the asset cost basis (planExpenseAssetConversion) and the balance sheet's unpaid sheets. A submitted sheet with only personal lines is refused (INVALID_INPUT).
+•	ExpenseLineItem.receipt_id (INT, NULL) — Foreign Key references ExpenseReceipts(id): the receipt of the same sheet the line was itemised from.
+•	ExpenseReport.flag_missing_receipt (BIT, NOT NULL, DEFAULT 0) — The Honor Voucher: the member has no receipt. It lifts the receipt file requirement.
+•	ExpenseReport.missing_receipt_reason (TEXT, NULL) — Why there is no receipt, at most 2000 characters. Required while flag_missing_receipt is 1, as a draft too; stored as NULL otherwise.
+Honor Voucher badge. ExpenseReportDetail.honorVoucher is true when the sheet is flagged, or when it carries no receipt file at all (no ExpenseReceipts row with a file and no line with a ReceiptPhotoURL). The FS, Treasurer and GK desks and the Leadership Auditing Queue then print '⚠️ HONOR VOUCHER - NO RECEIPT ATTACHED' (HONOR_VOUCHER_BADGE) with the member's reason.
+Receipt reading. Two more CouncilCredentialsVault keys, AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY, saved on the Credentials Vault page by the council's Admins or a Super Admin. The endpoint must be https on a cognitiveservices.azure.com or api.cognitive.microsoft.com host (resolveDocumentIntelligenceEndpoint). POST /api/expenses/receipt-ocr (any portal session; the session's council) sends one JPEG, PNG, TIFF, BMP, HEIF or PDF of at most 4 MB to the prebuilt-receipt model (apps/web/services/ocr/receipt-parser.ts), polls the operation on the same host, and answers the merchant, date, total and item lines (parseAzureReceipt). Nothing is stored; the expense form pre-fills a receipt and its lines for the member to check.
+________________________________________

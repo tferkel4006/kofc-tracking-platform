@@ -25,7 +25,7 @@ import {
   type ExpenseReportDetail,
 } from '@kofc/shared';
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
-import { ExpenseLineItemsTable, SignatureTrail, submitterName } from '@/components/ExpenseParts';
+import { ExpenseSheetItems, SignatureTrail, submitterName } from '@/components/ExpenseParts';
 import { Button, Empty, Field, Input, Notice, PageTitle, Panel, Pill, Table, Td, Textarea } from '@/components/ui';
 import { formatFullDate, formatMoney } from '@/lib/format';
 import { useUser } from '@/lib/session';
@@ -191,7 +191,7 @@ function DisbursementLedger() {
                           <tr>
                             <Td colSpan={7} className="border-l-8 border-l-gold">
                               <div className="flex flex-col gap-3 py-2">
-                                <ExpenseLineItemsTable items={d.lineItems} total={d.total} caption={`Receipts on expense report ${d.report.id}`} />
+                                <ExpenseSheetItems detail={d} />
                                 <SignatureTrail detail={d} />
                               </div>
                             </Td>

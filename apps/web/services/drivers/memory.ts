@@ -68,6 +68,8 @@ import {
   buildExpenseReportDetails,
   cleanDisbursementCheck,
   cleanExpenseLineItems,
+  cleanExpenseReceipts,
+  assertExpenseSplitTicket,
   cleanExpenseReportIds,
   cleanExpenseReportInput,
   EXPENSE_QUEUE_STATUSES,
@@ -548,6 +550,7 @@ import type {
   EventTime,
   ExpenseDisbursement,
   ExpenseLineItem,
+  ExpenseReceipts,
   ExpenseReport,
   ExpenseReportDetail,
   ExpenseReportStatus,
@@ -612,6 +615,9 @@ import {
 } from '../seed-dev';
 
 type Row = Record<string, SeedValue>;
+
+/** An ExpenseLineItem row the council pays: personal exclusions on a split ticket (Sprint 6S) count toward no total. */
+const isCouncilPaidLine = (li: Row): boolean => !li.is_personal_exclusion;
 
 /** Allow-list mirroring the mobile driver. Exhaustive by construction. */
 const LOOKUP_TABLES: Record<LookupTableName, true> = {
@@ -2211,7 +2217,9 @@ export class MemoryDataService implements DataService {
 
     submitReport: async (actorId, report, lineItems) => {
       const clean = cleanExpenseReportInput(report);
-      const items = cleanExpenseLineItems(lineItems, clean.Status, this.now());
+      const receipts = cleanExpenseReceipts(report.receipts, clean.Status, clean.flag_missing_receipt);
+      const items = cleanExpenseLineItems(lineItems, clean.Status, this.now(), receipts.length);
+      assertExpenseSplitTicket(receipts, items, clean.Status);
       const s = await this.ready();
       const id = s.transaction(() => {
         const actor = this.requireMember(s, actorId);
@@ -2252,6 +2260,8 @@ export class MemoryDataService implements DataService {
           LinkedActivityID: clean.LinkedActivityID,
           is_long_term_asset: clean.is_long_term_asset,
           charity_request_id: clean.charity_request_id,
+          flag_missing_receipt: clean.flag_missing_receipt,
+          missing_receipt_reason: clean.missing_receipt_reason,
         };
         let reportId: number;
         if (draft) {
@@ -2259,10 +2269,20 @@ export class MemoryDataService implements DataService {
           if (status === 'Submitted') draft.RejectionReason = null;
           reportId = draft.id as number;
           s.remove('ExpenseLineItem', (li) => li.ExpenseReportID === reportId);
+          s.remove('ExpenseReceipts', (r) => r.expense_id === reportId);
         } else {
           reportId = s.insert('ExpenseReport', { ...fields, CouncilID: councilId, SubmitterMemberID: actorId }).id as number;
         }
-        for (const item of items) s.insert('ExpenseLineItem', { ...item, ReceiptPhotoURL: item.ReceiptPhotoURL ?? null, ExpenseReportID: reportId });
+        // Receipts first (Sprint 6S), so each line's receipt_index becomes the new row's id.
+        const receiptIds = receipts.map((r) => s.insert('ExpenseReceipts', { ...r, receipt_file_url: r.receipt_file_url ?? null, expense_id: reportId }).id as number);
+        for (const { receipt_index, ...item } of items) {
+          s.insert('ExpenseLineItem', {
+            ...item,
+            ReceiptPhotoURL: item.ReceiptPhotoURL ?? null,
+            receipt_id: receipt_index === null ? null : receiptIds[receipt_index],
+            ExpenseReportID: reportId,
+          });
+        }
         return reportId;
       });
       return this.expenseDetails(s, [this.requireExpenseReport(s, id)])[0];
@@ -2364,7 +2384,7 @@ export class MemoryDataService implements DataService {
         assertCheckNumberUnused(check.CheckNumber, councilId, this.councilCheckNumbers(s, councilId));
         const total = sumAmounts(
           s
-            .rows('ExpenseLineItem')
+            .rows('ExpenseLineItem').filter(isCouncilPaidLine)
             .filter((li) => ids.includes(li.ExpenseReportID as number))
             .map((li) => li.Amount as number),
         );
@@ -2417,6 +2437,7 @@ export class MemoryDataService implements DataService {
       s.rows('Member') as unknown as Member[],
       s.rows('ExpenseDisbursement') as unknown as ExpenseDisbursement[],
       s.rows('CharitableRequest') as unknown as { id: number; TargetBudgetLineID: number | null }[],
+      s.rows('ExpenseReceipts').filter((r) => ids.has(r.expense_id)) as unknown as ExpenseReceipts[],
     );
   }
 
@@ -3003,7 +3024,7 @@ export class MemoryDataService implements DataService {
         eventTime: s.rows('EventTime').filter((t) => shifts.has(t.ShiftID)).map(hours),
         activityTime: s.rows('ActivityTime').filter((t) => activities.has(t.ActivityID) && inMonth(t.ActivityDate)).map(hours),
         expenseItems: s
-          .rows('ExpenseLineItem')
+          .rows('ExpenseLineItem').filter(isCouncilPaidLine)
           .filter((li) => spendingReports.has(li.ExpenseReportID) && inMonth(li.DateOfExpense))
           .map((li) => ({ Amount: li.Amount as number })),
         charitableGifts: s
@@ -4009,7 +4030,7 @@ export class MemoryDataService implements DataService {
         .map((t) => ({ MemberID: t.MemberID as number, Hours: t.Hours as number, category: activityCategory.get(t.ActivityID)! })),
       events: periodEvents.map((e) => ({ id: e.id })),
       eventExpenseItems: s
-        .rows('ExpenseLineItem')
+        .rows('ExpenseLineItem').filter(isCouncilPaidLine)
         .filter((li) => spendSheets.has(li.ExpenseReportID))
         .map((li) => ({ Amount: li.Amount as number })),
       donations: s
@@ -4746,7 +4767,7 @@ export class MemoryDataService implements DataService {
             .filter((r) => r.CouncilID === councilId && EXPENSE_SPEND_STATUSES.includes(r.Status as ExpenseReportStatus))
             .map((r) => [r.id, r]),
         );
-        const expenseLines = s.rows('ExpenseLineItem').flatMap((li) => {
+        const expenseLines = s.rows('ExpenseLineItem').filter(isCouncilPaidLine).flatMap((li) => {
           const report = spendingReports.get(li.ExpenseReportID);
           return report ? [{ report, Amount: li.Amount as number }] : [];
         });
@@ -4886,7 +4907,7 @@ export class MemoryDataService implements DataService {
               EndDate: e.EndDate as string,
               IsAnnual: e.IsAnnual as boolean | number | null,
             })),
-          expenses: s.rows('ExpenseLineItem').flatMap((li) => {
+          expenses: s.rows('ExpenseLineItem').filter(isCouncilPaidLine).flatMap((li) => {
             const report = spendingReports.get(li.ExpenseReportID);
             if (!report) return [];
             return [{ EventID: (report.LinkedEventID as number | null) ?? null, MeetingID: (report.LinkedMeetingID as number | null) ?? null, Amount: li.Amount as number }];
@@ -4944,7 +4965,7 @@ export class MemoryDataService implements DataService {
         .map((r) => [r.id, r]),
     );
     return {
-        expenses: s.rows('ExpenseLineItem').flatMap((li) => {
+        expenses: s.rows('ExpenseLineItem').filter(isCouncilPaidLine).flatMap((li) => {
           const report = spendingReports.get(li.ExpenseReportID);
           if (!report || !inPeriod(li.DateOfExpense)) return [];
           return [{ BudgetLineID: currentBudgetLineIdOf(allLines, report.budget_line_id as number | null | undefined), Amount: li.Amount as number }];
@@ -5186,7 +5207,7 @@ export class MemoryDataService implements DataService {
       assertMayReadGeneralLedger(this.memberWriteActor(s, actorId), councilId, `read the balance sheet of council ${councilId}`);
       this.assertCouncilsExist(s, [councilId]);
       const reportCents = new Map<number, number>();
-      for (const li of s.rows('ExpenseLineItem')) {
+      for (const li of s.rows('ExpenseLineItem').filter(isCouncilPaidLine)) {
         const id = li.ExpenseReportID as number;
         reportCents.set(id, (reportCents.get(id) ?? 0) + Math.round((li.Amount as number) * 100));
       }

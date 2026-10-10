@@ -2767,6 +2767,23 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": false,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "flag_missing_receipt",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "missing_receipt_reason",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
@@ -2886,12 +2903,34 @@ export const TABLES: Record<string, TableMeta> = {
         "notNull": true,
         "identity": false,
         "default": null
+      },
+      {
+        "name": "is_personal_exclusion",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 0
+        }
+      },
+      {
+        "name": "receipt_id",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
       }
     ],
     "foreignKeys": [
       {
         "column": "ExpenseReportID",
         "refTable": "ExpenseReport",
+        "refColumn": "id"
+      },
+      {
+        "column": "receipt_id",
+        "refTable": "ExpenseReceipts",
         "refColumn": "id"
       }
     ],
@@ -6359,6 +6398,56 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "created_by_member_id",
         "refTable": "Member",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": []
+  },
+  "ExpenseReceipts": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "expense_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "merchant_name",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "gross_total",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "receipt_file_url",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "expense_id",
+        "refTable": "ExpenseReport",
         "refColumn": "id"
       }
     ],

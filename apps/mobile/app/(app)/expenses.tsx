@@ -13,13 +13,18 @@
 // phone never clears either.
 // Sprint 6Q: a fourth toggle, Activity, files receipts against a long-running council activity (such as the Ultrasound
 // Initiative). Activities have no dates, so every activity of the council is listed and no padlock applies.
+// Sprint 6S: each receipt card has a Personal switch (a split-ticket item the council does not pay), and the Honor
+// Voucher switch covers a report with no receipt and asks why. Receipts entered on the web (ExpenseReceipts) are not
+// edited here; a draft resends them, and its lines keep their receipt, so saving on the phone never drops them.
 import { useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
   addDays,
   blankExpenseLine,
+  expenseDraftPersonalTotal,
   expenseDraftTotal,
   expenseLineDraftFrom,
+  expenseReceiptInputsOf,
   expenseLinesFromDrafts,
   expenseReferenceChoices,
   expenseReferenceKey,
@@ -37,6 +42,7 @@ import {
   EXPENSE_DESCRIPTION_MAX_LENGTH,
   EXPENSE_SUBMISSION_GRACE_DAYS,
   EXPENSE_VENDOR_MAX_LENGTH,
+  MISSING_RECEIPT_REASON_MAX_LENGTH,
   type ExpenseLineDraft,
   type ExpenseReferenceOptions,
   type ExpenseReportDetail,
@@ -100,8 +106,10 @@ function ExpenseDraftForm({
   const [spentFor, setSpentFor] = useState<SpentFor>(() => spentForOf(reference));
   const [longTermAsset, setLongTermAsset] = useState(() => isLongTermAssetExpense(detail?.report ?? {}));
   const [rows, setRows] = useState<Row[]>(() =>
-    detail && detail.lineItems.length > 0 ? detail.lineItems.map((li) => keyed(expenseLineDraftFrom(li))) : [keyed(blankExpenseLine(today))],
+    detail && detail.lineItems.length > 0 ? detail.lineItems.map((li) => keyed(expenseLineDraftFrom(li, detail.receipts))) : [keyed(blankExpenseLine(today))],
   );
+  const [honorVoucher, setHonorVoucher] = useState(() => Boolean(detail?.report.flag_missing_receipt));
+  const [missingReason, setMissingReason] = useState(() => detail?.report.missing_receipt_reason ?? '');
   const [busy, setBusy] = useState<'Draft' | 'Submitted' | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The chosen category's items whose submission window is open today, plus the draft's own pick if it is not.
@@ -124,7 +132,7 @@ function ExpenseDraftForm({
   const span = expenseReferenceSpan(reference, refs);
   const locked = span ? expenseWindowLockMessage(span, today) : null;
 
-  const setCell = (key: number, field: keyof ExpenseLineDraft, value: string) =>
+  const setCell = <K extends keyof ExpenseLineDraft>(key: number, field: K, value: ExpenseLineDraft[K]) =>
     setRows((now) => now.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
 
   const save = async (status: 'Draft' | 'Submitted') => {
@@ -140,6 +148,9 @@ function ExpenseDraftForm({
           ...parseExpenseReferenceKey(reference),
           is_long_term_asset: longTermAsset,
           charity_request_id: detail?.report.charity_request_id ?? null, // keeps a link set on the web (Sprint 6H)
+          receipts: expenseReceiptInputsOf(detail?.receipts ?? []), // keeps receipts entered on the web (Sprint 6S)
+          flag_missing_receipt: honorVoucher,
+          missing_receipt_reason: honorVoucher ? missingReason : null,
         },
         items,
       );
@@ -212,6 +223,24 @@ function ExpenseDraftForm({
           Turn this on for equipment the council keeps, such as a grill or a banner. When the Grand Knight approves the report, the item is added to the
           council’s assets inventory at the report total.
         </AppText>
+        <ToggleSwitch
+          label="⚠️ No receipt (Honor Voucher)"
+          hint="The receipt was lost or never given. Leadership sees an Honor Voucher warning on this report."
+          value={honorVoucher}
+          onChange={setHonorVoucher}
+        />
+        {honorVoucher ? (
+          <Field label="WHY IS THERE NO RECEIPT? (REQUIRED)">
+            <AppInput
+              value={missingReason}
+              onChangeText={setMissingReason}
+              maxLength={MISSING_RECEIPT_REASON_MAX_LENGTH}
+              multiline
+              style={multiline}
+              placeholder="e.g. Cash purchase; the stall gave no receipt."
+            />
+          </Field>
+        ) : null}
       </Card>
 
       {rows.map((row, i) => (
@@ -259,6 +288,12 @@ function ExpenseDraftForm({
               placeholder="What was bought, and for what"
             />
           </Field>
+          <ToggleSwitch
+            label="Personal, not for the council"
+            hint="Your own item on a shared receipt. It stays on the report so the receipt adds up, but the council does not pay it."
+            value={row.IsPersonal}
+            onChange={(v) => setCell(row.key, 'IsPersonal', v)}
+          />
         </Card>
       ))}
 
@@ -266,9 +301,14 @@ function ExpenseDraftForm({
 
       <Card accent={color.gold}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <AppText variant="label">REPORT TOTAL</AppText>
+          <AppText variant="label">COUNCIL REIMBURSES</AppText>
           <AppText variant="heading">{money(expenseDraftTotal(rows))}</AppText>
         </View>
+        {expenseDraftPersonalTotal(rows) > 0 ? (
+          <AppText variant="small" tone="muted">
+            Personal, not reimbursed: {money(expenseDraftPersonalTotal(rows))}
+          </AppText>
+        ) : null}
         {error ? <Notice tone="error" message={error} onDismiss={() => setError(null)} /> : null}
         {locked ? <WindowLock message={locked} /> : null}
         {needsPick ? (

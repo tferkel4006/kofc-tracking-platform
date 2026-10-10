@@ -6,12 +6,12 @@
 // rules.ts (assertMayAuditCouncilExpenses). The form helpers at the end are
 // shared by the web portal and the phone app (Sprint 5R-2).
 // =========================================================================
-import type { DataService, DisbursementCheckDetails, ExpenseLineItemInput, ExpenseReportDetail, ExpenseReportInput } from './contract';
+import type { DataService, DisbursementCheckDetails, ExpenseLineItemInput, ExpenseReceiptInput, ExpenseReportDetail, ExpenseReportInput } from './contract';
 import { meetingLastDate } from './meetings';
 import { addDays } from './planning';
 import { formatDate } from './presentation';
 import { assertIsoDate, assertMoney, assertText, BusinessRuleError, optionalText, toIsoDate } from './rules';
-import type { Activities, Event, ExpenseDisbursement, ExpenseLineItem, ExpenseReport, ExpenseReportStatus, Meeting, Member } from './types';
+import type { Activities, Event, ExpenseDisbursement, ExpenseLineItem, ExpenseReceipts, ExpenseReport, ExpenseReportStatus, Meeting, Member } from './types';
 
 /** Every ExpenseReport.Status, in life-cycle order. */
 export const EXPENSE_REPORT_STATUSES: readonly ExpenseReportStatus[] = ['Draft', 'Submitted', 'Approved', 'Reimbursed'];
@@ -32,6 +32,12 @@ export const CHECK_NUMBER_MAX_LENGTH = 50;
 export const REJECTION_REASON_MAX_LENGTH = 2000;
 /** Longest ExpenseDisbursement.Notes; the column is TEXT. */
 export const DISBURSEMENT_NOTES_MAX_LENGTH = 2000;
+/** Longest ExpenseReceipts.merchant_name (VARCHAR(255), Sprint 6S). */
+export const RECEIPT_MERCHANT_MAX_LENGTH = 255;
+/** Longest ExpenseReport.missing_receipt_reason; the column is TEXT, the cap keeps a sheet readable (Sprint 6S). */
+export const MISSING_RECEIPT_REASON_MAX_LENGTH = 2000;
+/** The badge the Treasurer and Grand Knight desks print on a sheet with no receipt (Sprint 6S). */
+export const HONOR_VOUCHER_BADGE = '⚠️ HONOR VOUCHER - NO RECEIPT ATTACHED';
 
 const invalid = (message: string, details: Record<string, unknown> = {}) => new BusinessRuleError('INVALID_INPUT', message, details);
 
@@ -54,6 +60,10 @@ export interface CleanExpenseReportInput {
   charity_request_id: number | null;
   /** Sprint 6Q: a long-running activity of the sheet's council; never together with an event or meeting. */
   LinkedActivityID: number | null;
+  /** BIT (Sprint 6S): the Honor Voucher. */
+  flag_missing_receipt: number;
+  /** Required while flag_missing_receipt is 1; null otherwise (an unflagged sheet keeps no reason). */
+  missing_receipt_reason: string | null;
 }
 
 /** expenses.submitReport: the sheet's own fields. Only 'Draft' and 'Submitted' may be written by a member. */
@@ -72,6 +82,7 @@ export function cleanExpenseReportInput(input: ExpenseReportInput): CleanExpense
     is_long_term_asset: longTermAssetFlag(input.is_long_term_asset),
     charity_request_id: optionalId(input.charity_request_id, 'Linked charitable request'),
     LinkedActivityID: optionalId(input.LinkedActivityID, 'Linked activity'),
+    ...honorVoucherFields(input),
   };
   if (clean.LinkedActivityID !== null && (clean.LinkedEventID !== null || clean.LinkedMeetingID !== null)) {
     throw invalid('An expense report linked to an activity cannot also name an event or a meeting.', { field: 'LinkedActivityID' });
@@ -81,20 +92,102 @@ export function cleanExpenseReportInput(input: ExpenseReportInput): CleanExpense
 
 /** The long-term asset checkbox as a BIT: true or 1 is 1; false, 0 or left out is 0 (Sprint 6E). */
 function longTermAssetFlag(value: unknown): number {
+  return bitFlag(value, 'The long-term asset flag', 'is_long_term_asset');
+}
+
+/** A checkbox as a BIT: true or 1 is 1; false, 0 or left out is 0. */
+function bitFlag(value: unknown, label: string, field: string): number {
   if (value === undefined || value === null || value === false || value === 0) return 0;
   if (value === true || value === 1) return 1;
-  throw invalid(`The long-term asset flag must be true or false; received ${JSON.stringify(value)}.`, { field: 'is_long_term_asset' });
+  throw invalid(`${label} must be true or false; received ${JSON.stringify(value)}.`, { field });
 }
 
 /**
- * expenses.submitReport: the complete list of receipts. Each needs a past or present date, an amount above 0 in
- * whole cents, a vendor and a description; a 'Submitted' sheet needs at least one.
+ * The Honor Voucher (Sprint 6S): a flagged sheet must say why it has no receipt, as a draft too; an unflagged sheet
+ * stores no reason.
+ */
+function honorVoucherFields(input: ExpenseReportInput): Pick<CleanExpenseReportInput, 'flag_missing_receipt' | 'missing_receipt_reason'> {
+  const flag = bitFlag(input.flag_missing_receipt, 'The missing receipt flag', 'flag_missing_receipt');
+  if (flag === 0) return { flag_missing_receipt: 0, missing_receipt_reason: null };
+  const reason = optionalText(input.missing_receipt_reason, 'Missing receipt reason', MISSING_RECEIPT_REASON_MAX_LENGTH);
+  if (reason === null) throw invalid('An Honor Voucher needs the reason there is no receipt.', { field: 'missing_receipt_reason' });
+  return { flag_missing_receipt: 1, missing_receipt_reason: reason };
+}
+
+/** A cleaned line item: its personal flag as a BIT and its receipt as a position in the sheet's receipts (Sprint 6S). */
+export type CleanExpenseLineItem = Omit<ExpenseLineItemInput, 'is_personal_exclusion' | 'receipt_index'> & {
+  is_personal_exclusion: number;
+  receipt_index: number | null;
+};
+
+/**
+ * expenses.submitReport (Sprint 6S): the receipts behind the sheet. Each needs a merchant and a gross total above 0
+ * in whole cents. On a submitted sheet every receipt needs its file, unless the sheet is an Honor Voucher.
+ */
+export function cleanExpenseReceipts(
+  receipts: readonly ExpenseReceiptInput[] | null | undefined,
+  status: 'Draft' | 'Submitted',
+  flagMissingReceipt: number,
+): ExpenseReceiptInput[] {
+  if (receipts === undefined || receipts === null) return [];
+  if (!Array.isArray(receipts)) throw invalid('Receipts must be a list.');
+  return receipts.map((r, i) => {
+    const label = `Receipt ${i + 1}`;
+    if (typeof r !== 'object' || r === null) throw invalid(`${label} is missing.`, { receiptIndex: i });
+    const gross = assertMoney(r.gross_total, `${label} gross total`);
+    if (gross === 0) throw invalid(`${label} gross total must be more than 0.`, { receiptIndex: i });
+    const file = optionalText(r.receipt_file_url, `${label} file`, EXPENSE_RECEIPT_URL_MAX_LENGTH);
+    if (status === 'Submitted' && file === null && flagMissingReceipt !== 1) {
+      throw invalid(`${label} has no receipt file. Attach it, or tick the Honor Voucher and say why there is no receipt.`, {
+        receiptIndex: i,
+        field: 'receipt_file_url',
+      });
+    }
+    return {
+      merchant_name: assertText(r.merchant_name, `${label} merchant`, RECEIPT_MERCHANT_MAX_LENGTH),
+      gross_total: gross,
+      receipt_file_url: file,
+    };
+  });
+}
+
+/**
+ * expenses.submitReport split-ticket rule (Sprint 6S): a submitted sheet must leave the council something to pay, and
+ * the lines itemised from each receipt (council and personal together) must add up to its gross total to the cent. A
+ * receipt no line names is refused, since nothing on the sheet accounts for it. Drafts may be incomplete.
+ */
+export function assertExpenseSplitTicket(
+  receipts: readonly Pick<ExpenseReceiptInput, 'merchant_name' | 'gross_total'>[],
+  items: readonly CleanExpenseLineItem[],
+  status: 'Draft' | 'Submitted',
+): void {
+  if (status !== 'Submitted') return;
+  if (items.length > 0 && items.every((li) => li.is_personal_exclusion === 1)) {
+    throw invalid('Every line item is a personal exclusion, so the council has nothing to reimburse.', { field: 'is_personal_exclusion' });
+  }
+  receipts.forEach((r, i) => {
+    const lines = items.filter((li) => li.receipt_index === i);
+    const itemised = sumAmounts(lines.map((li) => li.Amount));
+    if (lines.length > 0 && itemised === r.gross_total) return;
+    throw invalid(
+      `Receipt ${i + 1} (${r.merchant_name}) totals ${r.gross_total.toFixed(2)}, but its line items add up to ${itemised.toFixed(2)}. ` +
+        'Itemise the whole ticket and mark what was bought for personal use as a personal exclusion.',
+      { receiptIndex: i, grossTotal: r.gross_total, itemised },
+    );
+  });
+}
+
+/**
+ * expenses.submitReport: the complete list of line items. Each needs a past or present date, an amount above 0 in
+ * whole cents, a vendor and a description; a 'Submitted' sheet needs at least one. Sprint 6S: receipt_index must name
+ * one of the sheet's `receiptCount` receipts.
  */
 export function cleanExpenseLineItems(
   items: readonly ExpenseLineItemInput[],
   status: 'Draft' | 'Submitted',
   now: Date,
-): ExpenseLineItemInput[] {
+  receiptCount = 0,
+): CleanExpenseLineItem[] {
   if (!Array.isArray(items)) throw invalid('Line items must be a list.');
   if (status === 'Submitted' && items.length === 0) {
     throw invalid('A submitted expense report needs at least one line item.');
@@ -107,12 +200,18 @@ export function cleanExpenseLineItems(
     if (date > today) throw invalid(`${label} is dated ${date}, which is in the future.`, { index: i, date });
     const amount = assertMoney(item.Amount, `${label} amount`);
     if (amount === 0) throw invalid(`${label} amount must be more than 0.`, { index: i });
+    const receiptIndex = item.receipt_index ?? null;
+    if (receiptIndex !== null && !(Number.isInteger(receiptIndex) && receiptIndex >= 0 && receiptIndex < receiptCount)) {
+      throw invalid(`${label} names receipt ${JSON.stringify(receiptIndex)}, which is not on this sheet.`, { index: i, receiptIndex });
+    }
     return {
       DateOfExpense: date,
       Amount: amount,
       VendorName: assertText(item.VendorName, `${label} vendor`, EXPENSE_VENDOR_MAX_LENGTH),
       ReceiptPhotoURL: optionalText(item.ReceiptPhotoURL, `${label} receipt photo`, EXPENSE_RECEIPT_URL_MAX_LENGTH),
       ExpenseDescription: assertText(item.ExpenseDescription, `${label} description`, EXPENSE_DESCRIPTION_MAX_LENGTH),
+      is_personal_exclusion: bitFlag(item.is_personal_exclusion, `${label} personal exclusion flag`, 'is_personal_exclusion'),
+      receipt_index: receiptIndex,
     };
   });
 }
@@ -406,6 +505,22 @@ export const CLEARED_EXPENSE_SIGNATURES = {
 export const sumAmounts = (amounts: readonly number[]): number =>
   amounts.reduce((cents, a) => cents + Math.round(a * 100), 0) / 100;
 
+/** A line the council pays: not a personal exclusion on a split ticket (Sprint 6S). */
+export const isReimbursableLine = (li: Partial<Pick<ExpenseLineItem, 'is_personal_exclusion'>>): boolean => !li.is_personal_exclusion;
+
+/**
+ * The Honor Voucher badge (Sprint 6S): the sheet is flagged, or it carries no receipt at all - no ExpenseReceipts row
+ * with a file and no line item with a receipt photo.
+ */
+export function isHonorVoucherSheet(
+  report: Partial<Pick<ExpenseReport, 'flag_missing_receipt'>>,
+  receipts: readonly Pick<ExpenseReceipts, 'receipt_file_url'>[],
+  lineItems: readonly Pick<ExpenseLineItem, 'ReceiptPhotoURL'>[],
+): boolean {
+  if (report.flag_missing_receipt) return true;
+  return !receipts.some((r) => r.receipt_file_url) && !lineItems.some((li) => li.ReceiptPhotoURL);
+}
+
 /**
  * Joins sheets with their line items, submitters and checks, keeping the order of `reports`. Line items run oldest
  * DateOfExpense first, then id.
@@ -416,6 +531,7 @@ export function buildExpenseReportDetails(
   members: readonly Pick<Member, 'id' | 'MemberFirstName' | 'MemberLastName'>[],
   disbursements: readonly ExpenseDisbursement[],
   charityRequests: readonly { id: number; TargetBudgetLineID?: number | null }[] = [],
+  receipts: readonly ExpenseReceipts[] = [],
 ): ExpenseReportDetail[] {
   return reports.map((report) => {
     const items = lineItems
@@ -428,10 +544,17 @@ export function buildExpenseReportDetails(
       return m ? `${m.MemberFirstName} ${m.MemberLastName}`.trim() : '';
     };
     const disbursement = disbursements.find((d) => d.id === report.DisbursementID);
+    const sheetReceipts = receipts
+      .filter((r) => r.expense_id === report.id)
+      .map((r) => ({ ...r }))
+      .sort((a, b) => a.id - b.id);
     return {
       report: { ...report },
       lineItems: items,
-      total: sumAmounts(items.map((li) => li.Amount)),
+      total: sumAmounts(items.filter(isReimbursableLine).map((li) => li.Amount)),
+      receipts: sheetReceipts,
+      personalTotal: sumAmounts(items.filter((li) => !isReimbursableLine(li)).map((li) => li.Amount)),
+      honorVoucher: isHonorVoucherSheet(report, sheetReceipts, items),
       submitterFirstName: submitter?.MemberFirstName ?? '',
       submitterLastName: submitter?.MemberLastName ?? '',
       disbursement: disbursement ? { ...disbursement } : null,
@@ -542,13 +665,18 @@ export function expenseStatusBadge(
   return { label: report.Status, tone: tone[report.Status] };
 }
 
-/** One receipt row as the forms hold it: text exactly as typed. ReceiptPhotoURL '' means no receipt attached. */
+/**
+ * One line row as the forms hold it: text exactly as typed. ReceiptPhotoURL '' means no receipt attached. Sprint 6S:
+ * IsPersonal ticks a personal exclusion; ReceiptIndex is the receipt's position on the form as text, '' for none.
+ */
 export interface ExpenseLineDraft {
   DateOfExpense: string;
   Amount: string;
   VendorName: string;
   ExpenseDescription: string;
   ReceiptPhotoURL: string;
+  IsPersonal: boolean;
+  ReceiptIndex: string;
 }
 
 export const blankExpenseLine = (today: string): ExpenseLineDraft => ({
@@ -557,15 +685,62 @@ export const blankExpenseLine = (today: string): ExpenseLineDraft => ({
   VendorName: '',
   ExpenseDescription: '',
   ReceiptPhotoURL: '',
+  IsPersonal: false,
+  ReceiptIndex: '',
 });
 
-export const expenseLineDraftFrom = (item: ExpenseLineItemInput): ExpenseLineDraft => ({
-  DateOfExpense: item.DateOfExpense,
-  Amount: String(item.Amount),
-  VendorName: item.VendorName,
-  ExpenseDescription: item.ExpenseDescription,
-  ReceiptPhotoURL: item.ReceiptPhotoURL ?? '',
+/** A stored line back to a form row; `receipts` (the sheet's, in order) turns its receipt_id into the row's position. */
+export const expenseLineDraftFrom = (
+  item: Omit<ExpenseLineItemInput, 'receipt_index'> & Partial<Pick<ExpenseLineItem, 'receipt_id'>>,
+  receipts: readonly Pick<ExpenseReceipts, 'id'>[] = [],
+): ExpenseLineDraft => {
+  const index = item.receipt_id == null ? -1 : receipts.findIndex((r) => r.id === item.receipt_id);
+  return {
+    DateOfExpense: item.DateOfExpense,
+    Amount: String(item.Amount),
+    VendorName: item.VendorName,
+    ExpenseDescription: item.ExpenseDescription,
+    ReceiptPhotoURL: item.ReceiptPhotoURL ?? '',
+    IsPersonal: Boolean(item.is_personal_exclusion),
+    ReceiptIndex: index < 0 ? '' : String(index),
+  };
+};
+
+/** One receipt as the web form holds it (Sprint 6S): text exactly as typed; receipt_file_url '' means no file yet. */
+export interface ExpenseReceiptDraft {
+  merchant_name: string;
+  gross_total: string;
+  receipt_file_url: string;
+}
+
+export const blankExpenseReceipt = (): ExpenseReceiptDraft => ({ merchant_name: '', gross_total: '', receipt_file_url: '' });
+
+export const expenseReceiptDraftFrom = (r: Pick<ExpenseReceipts, 'merchant_name' | 'gross_total' | 'receipt_file_url'>): ExpenseReceiptDraft => ({
+  merchant_name: r.merchant_name,
+  gross_total: String(r.gross_total),
+  receipt_file_url: r.receipt_file_url ?? '',
 });
+
+/** A typed dollar amount ('$1,042.50 ' is 1042.5); NaN when it is not a number. */
+const typedDollars = (text: string): number => Number(text.trim().replace(/[$,\s]/g, ''));
+
+/**
+ * Receipt rows to expenses.submitReport receipts (Sprint 6S). Every row is kept, since lines name receipts by
+ * position; a gross total that is not a number is refused naming the receipt. The driver validates the rest.
+ */
+export function expenseReceiptsFromDrafts(receipts: readonly ExpenseReceiptDraft[]): ExpenseReceiptInput[] {
+  return receipts.map((r, i) => {
+    const gross = typedDollars(r.gross_total);
+    if (r.gross_total.trim() === '' || !Number.isFinite(gross)) {
+      throw invalid(`Receipt ${i + 1} needs its gross total as a dollar amount such as 42.50.`, { receiptIndex: i });
+    }
+    return { merchant_name: r.merchant_name, gross_total: gross, receipt_file_url: r.receipt_file_url.trim() || null };
+  });
+}
+
+/** The receipts a stored sheet resends when a form that does not edit them saves it (the phone, Sprint 6S). */
+export const expenseReceiptInputsOf = (receipts: readonly ExpenseReceipts[]): ExpenseReceiptInput[] =>
+  receipts.map((r) => ({ merchant_name: r.merchant_name, gross_total: r.gross_total, receipt_file_url: r.receipt_file_url ?? null }));
 
 /**
  * Form rows to expenses.submitReport line items. A row left completely empty (only its default date) is dropped,
@@ -590,13 +765,20 @@ export function expenseLinesFromDrafts(lines: readonly ExpenseLineDraft[]): Expe
       VendorName: line.VendorName,
       ExpenseDescription: line.ExpenseDescription,
       ReceiptPhotoURL: line.ReceiptPhotoURL.trim() || null,
+      // Sprint 6S: the split-ticket fields are sent only when set, so a plain line reads as before.
+      ...(line.IsPersonal ? { is_personal_exclusion: 1 } : {}),
+      ...(line.ReceiptIndex ? { receipt_index: Number(line.ReceiptIndex) } : {}),
     };
   });
 }
 
-/** The running total of the rows' amounts, ignoring any that are blank or not yet a number. */
+/** The running total the council pays: the rows' amounts less personal exclusions, ignoring any not yet a number. */
 export const expenseDraftTotal = (lines: readonly ExpenseLineDraft[]): number =>
-  sumAmounts(lines.map((l) => Number(l.Amount.trim().replace(/[$,\s]/g, ''))).filter((n) => Number.isFinite(n)));
+  sumAmounts(lines.filter((l) => !l.IsPersonal).map((l) => typedDollars(l.Amount)).filter((n) => Number.isFinite(n)));
+
+/** The personal-exclusion rows in total (Sprint 6S). */
+export const expenseDraftPersonalTotal = (lines: readonly ExpenseLineDraft[]): number =>
+  sumAmounts(lines.filter((l) => l.IsPersonal).map((l) => typedDollars(l.Amount)).filter((n) => Number.isFinite(n)));
 
 /** The event or meeting a form's reference key names, as an expense window span; null for '', an activity (activities run without dates) or an unknown id. */
 export function expenseReferenceSpan(key: string, refs: ExpenseReferenceOptions): ExpenseWindowSpan | null {

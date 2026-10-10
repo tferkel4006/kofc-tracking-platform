@@ -52,6 +52,7 @@ import type {
   JournalEntry,
   ExpenseDisbursement,
   ExpenseLineItem,
+  ExpenseReceipts,
   ExpenseReport,
   LessonsLearned,
   LessonsLearnedCategory,
@@ -685,7 +686,21 @@ export interface ExpenseReportInput {
    * linked to an activity names no event or meeting, and no submission window applies.
    */
   LinkedActivityID?: number | null;
+  /**
+   * Sprint 6S: the Honor Voucher. True when the member has no receipt; missing_receipt_reason is then required and the
+   * receipts need no file. Left out it is false.
+   */
+  flag_missing_receipt?: boolean | number;
+  missing_receipt_reason?: string | null;
+  /**
+   * Sprint 6S: the receipts behind the sheet, in order. Line items name theirs by position (receipt_index). Left out,
+   * the sheet keeps no receipts.
+   */
+  receipts?: readonly ExpenseReceiptInput[] | null;
 }
+
+/** One receipt for expenses.submitReport (Sprint 6S). */
+export type ExpenseReceiptInput = Omit<ExpenseReceipts, 'id' | 'expense_id'>;
 
 /** expenses.treasurerLedgerAudit's coding (Sprint 6Q): both are required. */
 export interface ExpenseLedgerCoding {
@@ -720,7 +735,12 @@ export interface ConcludedRevenueInput {
 }
 
 /** One receipt for expenses.submitReport; its sheet comes from the call. */
-export type ExpenseLineItemInput = Omit<ExpenseLineItem, 'id' | 'ExpenseReportID'>;
+export type ExpenseLineItemInput = Omit<ExpenseLineItem, 'id' | 'ExpenseReportID' | 'receipt_id' | 'is_personal_exclusion'> & {
+  /** Sprint 6S: true or 1 for a personal line on a shared ticket; left out it is 0. */
+  is_personal_exclusion?: boolean | number;
+  /** Sprint 6S: the position (0-based) in ExpenseReportInput.receipts of the receipt this line was itemised from, or null. */
+  receipt_index?: number | null;
+};
 
 /** A check payout for expenses.recordDisbursement. TotalAmount is computed from the paid sheets, never supplied. */
 export interface DisbursementCheckDetails {
@@ -735,8 +755,14 @@ export interface ExpenseReportDetail {
   report: ExpenseReport;
   /** Oldest DateOfExpense first, then id. */
   lineItems: ExpenseLineItem[];
-  /** Sum of the line items' Amount, to the cent. */
+  /** Sum of the line items' Amount the council pays, to the cent: personal exclusions (Sprint 6S) are left out. */
   total: number;
+  /** Sprint 6S: the sheet's receipts, by id. */
+  receipts: ExpenseReceipts[];
+  /** Sprint 6S: the personal-exclusion lines in total, which the council does not pay. */
+  personalTotal: number;
+  /** Sprint 6S: the Honor Voucher badge shows - the sheet is flagged, or carries no receipt row or receipt file at all. */
+  honorVoucher: boolean;
   submitterFirstName: string;
   submitterLastName: string;
   disbursement: ExpenseDisbursement | null;

@@ -11,10 +11,12 @@ import {
   describeError,
   expenseReferenceLabel,
   expenseStatusBadge,
+  HONOR_VOUCHER_BADGE,
   REJECTION_REASON_MAX_LENGTH,
   type CouncilBudgetForecast,
   type ChartOfAccountsNode,
   type ExpenseLineItem,
+  type ExpenseReceipts,
   type GLAccount,
   expenseLedgerAccountChoices,
   type ExpenseReferenceOptions,
@@ -67,28 +69,117 @@ export function ReceiptLink({ url }: { url: string | null | undefined }) {
   );
 }
 
-/** A sheet's receipts, oldest first as the driver returns them, with their total. */
-export function ExpenseLineItemsTable({ items, total, caption }: { items: readonly ExpenseLineItem[]; total: number; caption: string }) {
+/**
+ * The Honor Voucher badge (Sprint 6S): high contrast, on any sheet flagged as having no receipt or carrying none at
+ * all. With `reason` it also quotes the member's explanation.
+ */
+export function HonorVoucherBadge({ detail, withReason = false }: { detail: Pick<ExpenseReportDetail, 'honorVoucher' | 'report'>; withReason?: boolean }) {
+  if (!detail.honorVoucher) return null;
+  const reason = detail.report.missing_receipt_reason;
   return (
-    <Table caption={caption} head={['Date', 'Vendor', 'Description', 'Receipt', 'Amount']}>
-      {items.map((li) => (
-        <tr key={li.id}>
-          <Td className="whitespace-nowrap">{formatFullDate(li.DateOfExpense)}</Td>
-          <Td className="font-bold">{li.VendorName}</Td>
-          <Td>{li.ExpenseDescription}</Td>
+    <span className="inline-flex flex-col gap-1">
+      <span role="status" className="inline-block rounded border-2 border-memorial bg-gold px-2 py-0.5 text-xs font-black uppercase tracking-wide text-memorial">
+        {HONOR_VOUCHER_BADGE}
+      </span>
+      {withReason ? (
+        <span className="text-sm">
+          <span className="font-bold">Member’s reason:</span> {reason ? <span className="whitespace-pre-wrap">{reason}</span> : <span className="text-muted">None given; the sheet carries no receipt file.</span>}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** A sheet's receipts (Sprint 6S): merchant, gross total and file. */
+export function ExpenseReceiptsTable({ receipts, caption }: { receipts: readonly ExpenseReceipts[]; caption: string }) {
+  if (receipts.length === 0) return null;
+  return (
+    <Table caption={caption} head={['#', 'Merchant', 'Receipt file', 'Gross total']}>
+      {receipts.map((r, i) => (
+        <tr key={r.id}>
+          <Td className="text-xs font-bold">R{i + 1}</Td>
+          <Td className="font-bold">{r.merchant_name}</Td>
           <Td>
-            <ReceiptLink url={li.ReceiptPhotoURL} />
+            <ReceiptLink url={r.receipt_file_url} />
           </Td>
-          <Td className="whitespace-nowrap text-right">{formatMoney(li.Amount)}</Td>
+          <Td className="whitespace-nowrap text-right">{formatMoney(r.gross_total)}</Td>
         </tr>
       ))}
+    </Table>
+  );
+}
+
+/**
+ * A sheet's line items, oldest first as the driver returns them, with the total the council pays. Sprint 6S: a line
+ * itemised from a receipt names it (R1, R2…), and personal exclusions are struck through and left out of the total.
+ */
+export function ExpenseLineItemsTable({
+  items,
+  total,
+  caption,
+  receipts = [],
+  personalTotal = 0,
+}: {
+  items: readonly ExpenseLineItem[];
+  total: number;
+  caption: string;
+  receipts?: readonly ExpenseReceipts[];
+  personalTotal?: number;
+}) {
+  const receiptLabel = (id: number | null | undefined) => {
+    const i = id == null ? -1 : receipts.findIndex((r) => r.id === id);
+    return i < 0 ? null : `R${i + 1}`;
+  };
+  return (
+    <Table caption={caption} head={['Date', 'Vendor', 'Description', 'Receipt', 'Amount']}>
+      {items.map((li) => {
+        const personal = Boolean(li.is_personal_exclusion);
+        const fromReceipt = receiptLabel(li.receipt_id);
+        return (
+          <tr key={li.id}>
+            <Td className="whitespace-nowrap">{formatFullDate(li.DateOfExpense)}</Td>
+            <Td className="font-bold">{li.VendorName}</Td>
+            <Td>
+              {li.ExpenseDescription}
+              {personal ? <span className="ml-2 rounded border border-navy px-1 text-xs font-bold uppercase">Personal, not reimbursed</span> : null}
+            </Td>
+            <Td>{li.ReceiptPhotoURL ? <ReceiptLink url={li.ReceiptPhotoURL} /> : fromReceipt ? <span className="font-bold">{fromReceipt}</span> : <ReceiptLink url={null} />}</Td>
+            <Td className={`whitespace-nowrap text-right ${personal ? 'text-muted line-through' : ''}`}>{formatMoney(li.Amount)}</Td>
+          </tr>
+        );
+      })}
+      {personalTotal > 0 ? (
+        <tr>
+          <Td colSpan={4} className="text-right text-xs font-bold uppercase tracking-wide">
+            Personal exclusions (paid by the member)
+          </Td>
+          <Td className="whitespace-nowrap text-right text-muted">{formatMoney(personalTotal)}</Td>
+        </tr>
+      ) : null}
       <tr>
         <Td colSpan={4} className="text-right text-xs font-bold uppercase tracking-wide">
-          Total
+          {personalTotal > 0 ? 'Council reimburses' : 'Total'}
         </Td>
         <Td className="whitespace-nowrap text-right font-bold">{formatMoney(total)}</Td>
       </tr>
     </Table>
+  );
+}
+
+/** The receipts and line items of one sheet, as every expense screen shows them (Sprint 6S). */
+export function ExpenseSheetItems({ detail }: { detail: ExpenseReportDetail }) {
+  const id = detail.report.id;
+  return (
+    <>
+      <ExpenseReceiptsTable receipts={detail.receipts} caption={`Receipts on expense report ${id}`} />
+      <ExpenseLineItemsTable
+        items={detail.lineItems}
+        total={detail.total}
+        receipts={detail.receipts}
+        personalTotal={detail.personalTotal}
+        caption={`Line items on expense report ${id}`}
+      />
+    </>
   );
 }
 
@@ -229,7 +320,12 @@ export function SignatureDeskTable({
         return (
           <Fragment key={d.report.id}>
             <tr>
-              <Td className="font-bold">#{d.report.id}</Td>
+              <Td className="font-bold">
+                <span className="flex flex-col items-start gap-1">
+                  #{d.report.id}
+                  <HonorVoucherBadge detail={d} />
+                </span>
+              </Td>
               <Td>{submitterName(d)}</Td>
               <Td>{expenseReferenceLabel(d.report, refs)}</Td>
               <Td>
@@ -253,7 +349,8 @@ export function SignatureDeskTable({
               <tr>
                 <Td colSpan={7} className="border-l-8 border-l-gold bg-white">
                   <div id={`desk-${d.report.id}`} className="flex flex-col gap-3 py-2">
-                    <ExpenseLineItemsTable items={d.lineItems} total={d.total} caption={`Receipts on expense report ${d.report.id}`} />
+                    <HonorVoucherBadge detail={d} withReason />
+                    <ExpenseSheetItems detail={d} />
                     <SignatureTrail detail={d} />
                     {drawer ? drawer(d) : null}
                   </div>

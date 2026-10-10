@@ -847,6 +847,24 @@ A new rollup refreshes the baselines only. The rollup never changes proposed amo
 | --- | --- | --- |
 | The button is greyed out. | The year has no lines, or the year opens after May 1. | Run the rollup first. |
 
+### 6.14 Concept: receipts, split tickets and Honor Vouchers
+
+A report holds one or more receipts. Each receipt has a merchant, a gross total and a receipt file. Each line item names the receipt it comes from.
+
+| Item | What it means | What the signers see |
+| --- | --- | --- |
+| Receipt | One ticket from one merchant, with its full total and its file. | A **Receipts** table with **R1**, **R2** and so on. |
+| Split ticket | One receipt with council items and personal items. The member lists all items and ticks **Personal** on the member's own items. | Personal lines are struck through. The total reads **Council reimburses**. |
+| Honor Voucher | The member has no receipt. The member ticks **⚠️ I have no receipt (Honor Voucher)** and writes the reason. | **⚠️ HONOR VOUCHER - NO RECEIPT ATTACHED** with the member's reason. |
+
+- The council pays only the lines without **Personal**. Checks, budgets, asset costs and the balance sheet leave personal lines out.
+- On a submitted report, the lines of each receipt must add up to the receipt's gross total.
+- On a submitted report, each receipt needs its file. An Honor Voucher lifts this rule. The reason is mandatory.
+- The **⚠️ HONOR VOUCHER - NO RECEIPT ATTACHED** badge also shows on a report that has no receipt file at all.
+- When receipt reading is connected (10.8), **🔍 Read receipt** fills in the merchant, the total and the lines from the attached photo. The member checks every figure before saving.
+
+> **Warning:** check the reason on every Honor Voucher before you sign. The badge shows on the FS, Treasurer and GK desks and in the **Leadership Auditing Queue**.
+
 ---
 
 ## 7. Performance
@@ -1336,12 +1354,12 @@ The outbound email settings are not on this page. Set them on the **Credentials 
 | *"Your role cannot maintain this council's lookups."* | You are on another council, or you have no finance role. | Ask a council Admin. |
 | A budget category will not delete. | Budget lines use the category. | Move the lines to another category. |
 
-### 10.8 Connect the council email, Google Drive and Microsoft Co-Pilot
+### 10.8 Connect the council email, Google Drive, Microsoft Co-Pilot and receipt reading
 
 > **Prerequisite (who can do this):** You must be a council Admin or a Super Admin to save or remove a connection. Seated officers see the status lines only. Other members do not see the **Credentials Vault**.
 > **Warning:** **Remove** deletes the saved password or key at once. The council goes back to the portal default.
 
-**Goal:** Connect the council's own mail account, Google Drive and Copilot Studio agent.
+**Goal:** Connect the council's own mail account, Google Drive, Copilot Studio agent and Azure receipt reader.
 
 **Start point:** Sidebar → Setup → **Credentials Vault**.
 
@@ -1353,8 +1371,11 @@ The outbound email settings are not on this page. Set them on the **Credentials 
 5. Select **Save**.
 6. For Google Drive, paste the key in **Drive key** in the **Google Drive** panel. Select **Save**.
 7. For the Microsoft Co-Pilot, paste the Direct Line secret in **Co-Pilot key**. Select **Save**. Copilot Studio shows the secret under Settings → Security → Web channel security.
+8. For receipt reading, open the council's Azure Document Intelligence resource in the Azure portal. Go to **Keys and Endpoint**.
+9. Paste the endpoint in **Azure endpoint**. Select **Save**. The endpoint looks like `https://name.cognitiveservices.azure.com/`.
+10. Paste **KEY 1** in **Azure key**. Select **Save**.
 
-**Expected result:** The status line of each saved connection shows ✓. The page never shows a saved password or key again.
+**Expected result:** The status line of each saved connection shows ✓. **Receipt reading** shows ✓ only when both Azure values are saved. The page never shows a saved password or key again.
 
 **Common problems:**
 | Problem | Cause | Fix |
@@ -1362,6 +1383,7 @@ The outbound email settings are not on this page. Set them on the **Credentials 
 | The panels are missing. | You are an officer but not an Admin. | Ask a council Admin. |
 | A message about the mail server or the sign-in email shows. | The mail server name or the email is not valid. | Copy both values from your mail service. |
 | Saved keys stop working after a server restart. | The server has no fixed vault secret. | Ask the server operator to set `CREDENTIALS_VAULT_SECRET`. Save the keys again. |
+| A message says the endpoint must be a cognitiveservices.azure.com address. | The value is not the Azure endpoint. | Copy **Endpoint** from **Keys and Endpoint**. |
 
 ### 10.9 Keep the global lists, councils, parishes and charities
 

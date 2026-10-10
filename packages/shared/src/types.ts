@@ -657,6 +657,10 @@ export interface ExpenseReport {
   general_ledger_account_id?: number | null;
   /** Sprint 6Q: a long-running council activity (Activities) the sheet spends for, instead of an event or meeting. */
   LinkedActivityID?: number | null;
+  /** BIT, Sprint 6S (Schema 58): the Honor Voucher - the member has no receipt, so the receipt file requirement is lifted. */
+  flag_missing_receipt?: number;
+  /** Sprint 6S: why there is no receipt; required while flag_missing_receipt is 1. */
+  missing_receipt_reason?: string | null;
 }
 
 /** CouncilAssetsInventory.current_status (Sprint 6E; rules layer, no CHECK). */
@@ -688,6 +692,19 @@ export interface ExpenseLineItem {
   VendorName: string;
   ReceiptPhotoURL?: string | null;
   ExpenseDescription: string;
+  /** BIT, Sprint 6S: bought for personal use on a shared ticket; kept so the receipt adds up, never paid by the council. */
+  is_personal_exclusion?: number;
+  /** Sprint 6S: the ExpenseReceipts row of the same sheet this line was itemised from, or null. */
+  receipt_id?: number | null;
+}
+
+/** One receipt behind an expense sheet (Sprint 6S, Schema 58); its lines point at it through ExpenseLineItem.receipt_id. */
+export interface ExpenseReceipts {
+  id: number;
+  expense_id: number; // ExpenseReport.id
+  merchant_name: string; // VARCHAR(255)
+  gross_total: number; // DECIMAL(18,2), more than 0: the whole ticket, council and personal lines together
+  receipt_file_url?: string | null; // VARCHAR(2000): Drive file id, blob link or phone path, as ReceiptPhotoURL
 }
 
 // 9. PUSH NOTIFICATIONS AND SUPREME COUNCIL REPORTING (Sprint 5T)

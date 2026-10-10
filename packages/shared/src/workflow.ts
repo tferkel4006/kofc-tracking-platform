@@ -176,16 +176,18 @@ export const isLongTermAssetExpense = (report: Pick<ExpenseReport, 'is_long_term
  * purchase_date the earliest DateOfExpense, original_expense_id the sheet. A sheet reaching 'Reimbursed' without a row
  * (approved before schema 43) is converted then. Returns null when nothing is to be written: the sheet is not an asset,
  * the move is not into a conversion status or not legal, `alreadyConverted` (original_expense_id is unique), or the
- * sheet has no receipts.
+ * sheet has no receipts. Personal exclusions on a split ticket (Sprint 6S) are not the council's, so they are left out.
  */
 export function planExpenseAssetConversion(input: {
   from: unknown;
   to: ExpenseReportStatus;
   report: Pick<ExpenseReport, 'id' | 'CouncilID' | 'is_long_term_asset'>;
-  lineItems: readonly Pick<ExpenseLineItem, 'DateOfExpense' | 'Amount' | 'VendorName' | 'ExpenseDescription'>[];
+  lineItems: readonly (Pick<ExpenseLineItem, 'DateOfExpense' | 'Amount' | 'VendorName' | 'ExpenseDescription'> &
+    Partial<Pick<ExpenseLineItem, 'is_personal_exclusion'>>)[];
   alreadyConverted: boolean;
 }): NewCouncilAsset | null {
-  const { from, to, report, lineItems, alreadyConverted } = input;
+  const { from, to, report, alreadyConverted } = input;
+  const lineItems = input.lineItems.filter((li) => !li.is_personal_exclusion);
   if (!isLongTermAssetExpense(report) || alreadyConverted || lineItems.length === 0) return null;
   if (!EXPENSE_ASSET_CONVERSION_STATUSES.includes(to) || !isLegalTransition(EXPENSE_WORKFLOW, from, to)) return null;
   const items = [...lineItems].sort((a, b) => String(a.DateOfExpense).localeCompare(String(b.DateOfExpense)));

@@ -65,6 +65,8 @@ import {
   buildExpenseReportDetails,
   cleanDisbursementCheck,
   cleanExpenseLineItems,
+  cleanExpenseReceipts,
+  assertExpenseSplitTicket,
   cleanExpenseReportIds,
   cleanExpenseReportInput,
   EXPENSE_QUEUE_STATUSES,
@@ -527,6 +529,7 @@ import type {
   EventTime,
   ExpenseDisbursement,
   ExpenseLineItem,
+  ExpenseReceipts,
   ExpenseReport,
   ExpenseReportDetail,
   LessonsLearned,
@@ -694,8 +697,11 @@ const DB_NAME = 'kofc.db';
  *     (Sprint 6P).
  * 56: ExpenseReport.TreasurerMemberID, TreasurerReviewedAt, general_ledger_account_id and LinkedActivityID - the Treasurer
  *     Ledger Audit Desk and activity-linked expenses; JournalEntry.LinkedActivityID - post-event revenue (Sprint 6Q).
+ * 57: Council.ein_number and the six feature_* module flags (Sprint 6R).
+ * 58: ExpenseReceipts, ExpenseLineItem.is_personal_exclusion and receipt_id - multi-receipt split tickets; and
+ *     ExpenseReport.flag_missing_receipt and missing_receipt_reason - the Honor Voucher (Sprint 6S).
  */
-const SCHEMA_VERSION = 57;
+const SCHEMA_VERSION = 58;
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -2577,7 +2583,9 @@ export class SqliteDataService implements DataService {
 
     submitReport: async (actorId, report, lineItems) => {
       const clean = cleanExpenseReportInput(report);
-      const items = cleanExpenseLineItems(lineItems, clean.Status, this.now());
+      const receipts = cleanExpenseReceipts(report.receipts, clean.Status, clean.flag_missing_receipt);
+      const items = cleanExpenseLineItems(lineItems, clean.Status, this.now(), receipts.length);
+      assertExpenseSplitTicket(receipts, items, clean.Status);
       const db = await this.ready();
       let reportId = clean.id ?? 0;
       await db.withTransactionAsync(async () => {
@@ -2621,29 +2629,62 @@ export class SqliteDataService implements DataService {
         );
         // The workflow engine decides the stored Status: a new sheet starts as Draft, and only a Draft is saved or submitted.
         const status = nextExpenseStatus(draft?.Status ?? null, clean.Status === 'Submitted' ? 'submit' : 'saveDraft', clean.id);
-        const fields: Bind[] = [status, clean.LinkedEventID, clean.LinkedMeetingID, clean.is_long_term_asset, clean.charity_request_id, clean.LinkedActivityID];
+        const fields: Bind[] = [
+          status,
+          clean.LinkedEventID,
+          clean.LinkedMeetingID,
+          clean.is_long_term_asset,
+          clean.charity_request_id,
+          clean.LinkedActivityID,
+          clean.flag_missing_receipt,
+          clean.missing_receipt_reason,
+        ];
         if (draft) {
           // Resubmitting answers the rejection, so its reason goes; a draft keeps it for the member to read.
           await db.runAsync(
             `UPDATE [ExpenseReport] SET [Status] = ?, [LinkedEventID] = ?, [LinkedMeetingID] = ?, [is_long_term_asset] = ?, [charity_request_id] = ?,
-                    [LinkedActivityID] = ?, [RejectionReason] = CASE WHEN ? = 'Submitted' THEN NULL ELSE [RejectionReason] END
+                    [LinkedActivityID] = ?, [flag_missing_receipt] = ?, [missing_receipt_reason] = ?,
+                    [RejectionReason] = CASE WHEN ? = 'Submitted' THEN NULL ELSE [RejectionReason] END
               WHERE [id] = ?`,
             [...fields, status, draft.id],
           );
           await db.runAsync('DELETE FROM [ExpenseLineItem] WHERE [ExpenseReportID] = ?', [draft.id]);
+          await db.runAsync('DELETE FROM [ExpenseReceipts] WHERE [expense_id] = ?', [draft.id]);
         } else {
           const res = await db.runAsync(
-            `INSERT INTO [ExpenseReport] ([Status], [LinkedEventID], [LinkedMeetingID], [is_long_term_asset], [charity_request_id], [LinkedActivityID], [CouncilID], [SubmitterMemberID])
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO [ExpenseReport] ([Status], [LinkedEventID], [LinkedMeetingID], [is_long_term_asset], [charity_request_id], [LinkedActivityID],
+                                          [flag_missing_receipt], [missing_receipt_reason], [CouncilID], [SubmitterMemberID])
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [...fields, councilId, actorId],
           );
           reportId = res.lastInsertRowId;
         }
+        // Receipts first (Sprint 6S), so each line's receipt_index becomes the new row's id.
+        const receiptIds: number[] = [];
+        for (const r of receipts) {
+          const res = await db.runAsync('INSERT INTO [ExpenseReceipts] ([expense_id], [merchant_name], [gross_total], [receipt_file_url]) VALUES (?, ?, ?, ?)', [
+            reportId,
+            r.merchant_name,
+            r.gross_total,
+            r.receipt_file_url ?? null,
+          ]);
+          receiptIds.push(res.lastInsertRowId);
+        }
         for (const item of items) {
           await db.runAsync(
-            `INSERT INTO [ExpenseLineItem] ([ExpenseReportID], [DateOfExpense], [Amount], [VendorName], [ReceiptPhotoURL], [ExpenseDescription])
-             VALUES (?, ?, ?, ?, ?, ?)`,
-            [reportId, item.DateOfExpense, item.Amount, item.VendorName, item.ReceiptPhotoURL ?? null, item.ExpenseDescription],
+            `INSERT INTO [ExpenseLineItem] ([ExpenseReportID], [DateOfExpense], [Amount], [VendorName], [ReceiptPhotoURL], [ExpenseDescription],
+                                            [is_personal_exclusion], [receipt_id])
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              reportId,
+              item.DateOfExpense,
+              item.Amount,
+              item.VendorName,
+              item.ReceiptPhotoURL ?? null,
+              item.ExpenseDescription,
+              item.is_personal_exclusion,
+              item.receipt_index === null ? null : receiptIds[item.receipt_index],
+            ],
           );
         }
       });
@@ -2751,7 +2792,7 @@ export class SqliteDataService implements DataService {
         assertCheckNumberUnused(check.CheckNumber, councilId, await this.councilCheckNumbers(db, councilId));
         const amounts = await selectIn<{ Amount: number }>(
           db,
-          (m) => `SELECT [Amount] FROM [ExpenseLineItem] WHERE [ExpenseReportID] IN (${m})`,
+          (m) => `SELECT [Amount] FROM [ExpenseLineItem] WHERE [is_personal_exclusion] = 0 AND [ExpenseReportID] IN (${m})`,
           ids,
         );
         const res = await db.runAsync(
@@ -2799,13 +2840,14 @@ export class SqliteDataService implements DataService {
     ];
     const disbursementIds = [...new Set(reports.map((r) => r.DisbursementID).filter((id): id is number => id != null))];
     const requestIds = [...new Set(reports.map((r) => r.charity_request_id).filter((id): id is number => id != null))];
-    const [lineItems, members, disbursements, requests] = await Promise.all([
+    const [lineItems, members, disbursements, requests, receipts] = await Promise.all([
       selectIn<ExpenseLineItem>(db, (m) => `SELECT * FROM [ExpenseLineItem] WHERE [ExpenseReportID] IN (${m})`, reportIds),
       selectIn<Member>(db, (m) => `SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member] WHERE [id] IN (${m})`, memberIds),
       selectIn<ExpenseDisbursement>(db, (m) => `SELECT * FROM [ExpenseDisbursement] WHERE [id] IN (${m})`, disbursementIds),
       selectIn<{ id: number; TargetBudgetLineID: number | null }>(db, (m) => `SELECT [id], [TargetBudgetLineID] FROM [CharitableRequest] WHERE [id] IN (${m})`, requestIds),
+      selectIn<ExpenseReceipts>(db, (m) => `SELECT * FROM [ExpenseReceipts] WHERE [expense_id] IN (${m})`, reportIds),
     ]);
-    return buildExpenseReportDetails(reports, lineItems, members, disbursements, requests);
+    return buildExpenseReportDetails(reports, lineItems, members, disbursements, requests, receipts);
   }
 
   // ---- events, shifts and time logs -------------------------------------
@@ -3528,7 +3570,7 @@ export class SqliteDataService implements DataService {
         ),
         expenseItems: await db.getAllAsync<{ Amount: number }>(
           `SELECT li.[Amount] FROM [ExpenseLineItem] li
-             JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID]
+             JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID] AND li.[is_personal_exclusion] = 0
             WHERE r.[CouncilID] = ? AND r.[Status] IN (${marks(EXPENSE_SPEND_STATUSES.length)})
               AND li.[DateOfExpense] BETWEEN ? AND ?`,
           [councilId, ...EXPENSE_SPEND_STATUSES, fromDate, toDate],
@@ -4706,7 +4748,7 @@ export class SqliteDataService implements DataService {
       db.getAllAsync<{ Amount: number }>(
         `SELECT li.[Amount]
            FROM [ExpenseLineItem] li
-           JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID]
+           JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID] AND li.[is_personal_exclusion] = 0
            JOIN [Event] e ON e.[id] = r.[LinkedEventID]
           WHERE r.[CouncilID] = ? AND r.[Status] IN (${marks(EXPENSE_SPEND_STATUSES.length)})
             AND e.[id] IN (SELECT [EventID] FROM [EventCouncils] WHERE [CouncilID] = ?) AND e.[StartDate] BETWEEN ? AND ?`,
@@ -5584,7 +5626,7 @@ export class SqliteDataService implements DataService {
         const eventExpenses = annualEvents.length
           ? await db.getAllAsync<{ EventID: number; Amount: number }>(
               `SELECT r.[LinkedEventID] AS EventID, li.[Amount] FROM [ExpenseLineItem] li
-                 JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID]
+                 JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID] AND li.[is_personal_exclusion] = 0
                 WHERE ${spending} AND r.[LinkedEventID] IN (${marks(annualEvents.length)})`,
               [councilId, ...EXPENSE_SPEND_STATUSES, ...annualEvents.map((e) => e.id)],
             )
@@ -5601,7 +5643,7 @@ export class SqliteDataService implements DataService {
         );
         const meetingExpenses = await db.getAllAsync<{ Amount: number }>(
           `SELECT li.[Amount] FROM [ExpenseLineItem] li
-             JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID]
+             JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID] AND li.[is_personal_exclusion] = 0
              JOIN [Meeting] m ON m.[id] = r.[LinkedMeetingID]
             WHERE ${spending} AND m.[CouncilID] = ? AND m.[Date] BETWEEN ? AND ?`,
           [councilId, ...EXPENSE_SPEND_STATUSES, councilId, fromDate, toDate],
@@ -5748,7 +5790,7 @@ export class SqliteDataService implements DataService {
       );
       const expenses = await db.getAllAsync<{ EventID: number | null; MeetingID: number | null; Amount: number }>(
         `SELECT r.[LinkedEventID] AS EventID, r.[LinkedMeetingID] AS MeetingID, li.[Amount] FROM [ExpenseLineItem] li
-           JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID]
+           JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID] AND li.[is_personal_exclusion] = 0
           WHERE r.[CouncilID] = ? AND r.[Status] IN (${marks(EXPENSE_SPEND_STATUSES.length)})`,
         [councilId, ...EXPENSE_SPEND_STATUSES],
       );
@@ -5835,7 +5877,7 @@ export class SqliteDataService implements DataService {
     const allLines = await this.allBudgetLines(db, councilId);
     const sheetLines = await db.getAllAsync<{ BudgetLineID: number | null; Amount: number }>(
       `SELECT r.[budget_line_id] AS BudgetLineID, li.[Amount] FROM [ExpenseLineItem] li
-         JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID]
+         JOIN [ExpenseReport] r ON r.[id] = li.[ExpenseReportID] AND li.[is_personal_exclusion] = 0
         WHERE r.[CouncilID] = ? AND r.[Status] IN (${marks(EXPENSE_SPEND_STATUSES.length)}) AND li.[DateOfExpense] BETWEEN ? AND ?`,
       [councilId, ...EXPENSE_SPEND_STATUSES, fromDate, throughDate],
     );
@@ -6136,7 +6178,7 @@ export class SqliteDataService implements DataService {
       assertMayReadGeneralLedger(await this.memberWriteActor(db, actorId), councilId, `read the balance sheet of council ${councilId}`);
       await this.assertCouncilsExist(db, [councilId]);
       const unpaid = await db.getAllAsync<{ id: number; GrandKnightApprovedAt: string | null; cents: number | null }>(
-        `SELECT r.[id], r.[GrandKnightApprovedAt], (SELECT SUM(ROUND(li.[Amount] * 100)) FROM [ExpenseLineItem] li WHERE li.[ExpenseReportID] = r.[id]) AS [cents]
+        `SELECT r.[id], r.[GrandKnightApprovedAt], (SELECT SUM(ROUND(li.[Amount] * 100)) FROM [ExpenseLineItem] li WHERE li.[ExpenseReportID] = r.[id] AND li.[is_personal_exclusion] = 0) AS [cents]
          FROM [ExpenseReport] r WHERE r.[CouncilID] = ? AND r.[Status] = 'Approved'`,
         [councilId],
       );

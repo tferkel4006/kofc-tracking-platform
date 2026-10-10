@@ -2808,3 +2808,54 @@ ALTER TABLE [Council] ADD [feature_council_history] BIT NOT NULL DEFAULT 1;
 GO
 ALTER TABLE [Council] ADD [feature_live_meeting_console] BIT NOT NULL DEFAULT 1;
 GO
+
+-- =========================================================================
+-- Sprint 6S: MULTI-RECEIPT SPLIT-TICKET SHEETS AND HONOR VOUCHERS (schema version 58)
+--
+-- ExpenseReceipts holds the receipts behind one expense sheet: the merchant, the receipt's gross total and the stored
+-- receipt file. A sheet may carry several. Each ExpenseLineItem may point at the receipt it was itemised from
+-- (receipt_id), so one receipt can be split across several lines.
+--
+-- ExpenseLineItem.is_personal_exclusion marks a line bought for personal use on a shared ticket. The line stays
+-- on the sheet so the receipt adds up, but the council never pays it: every total, check, budget figure, asset cost
+-- and balance-sheet figure counts only lines with is_personal_exclusion = 0. On a submitted sheet the lines itemised
+-- from a receipt (council and personal together) must add up to that receipt's gross_total (expenses.ts).
+--
+-- ExpenseReport.flag_missing_receipt is the Honor Voucher: the member has no receipt for the sheet. A sheet without it
+-- must carry a receipt file on every receipt row; with it the file requirement is lifted and missing_receipt_reason
+-- (required) explains why. The Treasurer and Grand Knight desks print '⚠️ HONOR VOUCHER - NO RECEIPT ATTACHED' on any
+-- sheet that is flagged or carries no receipt at all.
+-- =========================================================================
+CREATE TABLE [ExpenseReceipts] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[expense_id] INTEGER NOT NULL,
+	[merchant_name] VARCHAR(255) NOT NULL,
+	[gross_total] DECIMAL(18,2) NOT NULL,
+	[receipt_file_url] VARCHAR(2000) NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [ExpenseReceipts]
+ADD FOREIGN KEY([expense_id])
+REFERENCES [ExpenseReport]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE INDEX [ExpenseReceipts_Expense_Idx] ON [ExpenseReceipts] ([expense_id]);
+GO
+
+ALTER TABLE [ExpenseLineItem] ADD [is_personal_exclusion] BIT NOT NULL DEFAULT 0;
+GO
+ALTER TABLE [ExpenseLineItem] ADD [receipt_id] INT NULL;
+GO
+ALTER TABLE [ExpenseReport] ADD [flag_missing_receipt] BIT NOT NULL DEFAULT 0;
+GO
+ALTER TABLE [ExpenseReport] ADD [missing_receipt_reason] TEXT NULL;
+GO
+
+ALTER TABLE [ExpenseLineItem]
+ADD FOREIGN KEY([receipt_id])
+REFERENCES [ExpenseReceipts]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO

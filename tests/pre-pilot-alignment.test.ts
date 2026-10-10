@@ -43,7 +43,7 @@ describe('Schema 57', () => {
     const schema = read('Schema.sql');
     expect(schema).toContain('ALTER TABLE [Council] ADD [ein_number] VARCHAR(20) NULL;');
     for (const flag of NEW_FLAGS) expect(schema).toContain(`ALTER TABLE [Council] ADD [${flag}] BIT NOT NULL DEFAULT 1;`);
-    expect(read('apps/mobile/services/drivers/sqlite.ts')).toContain('const SCHEMA_VERSION = 57;');
+    expect(read('apps/mobile/services/drivers/sqlite.ts')).toMatch(/const SCHEMA_VERSION = (5[7-9]|[6-9]\d);/);
   });
 });
 

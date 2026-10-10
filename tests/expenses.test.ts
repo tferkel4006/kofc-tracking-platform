@@ -673,6 +673,8 @@ describe('self-payout and the expense forms (pure, Sprint 5R-2)', () => {
       VendorName: 'Costco',
       ExpenseDescription: 'Mix',
       ReceiptPhotoURL: '',
+      IsPersonal: false,
+      ReceiptIndex: '',
     });
   });
 
