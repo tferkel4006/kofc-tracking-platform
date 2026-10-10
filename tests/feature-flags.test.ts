@@ -126,8 +126,9 @@ describe.each(drivers)('$name driver: activityTime.addQuarterHour', (d) => {
 
   it('refuses a tap past 24 hours, an unknown activity and a date past the 6-month wall', async () => {
     const db = await d.make();
-    await db.activityTime.logHours(MEMBER.member, 3, 24, '2026-09-20');
-    await expectRule(db.activityTime.addQuarterHour(MEMBER.member, 3, '2026-09-20'), 'HOURS_OUT_OF_RANGE');
+    // An Admin, so the Sprint 7B 5-hour guard (which would hold a plain member's 24 hours for review) does not apply.
+    await db.activityTime.logHours(MEMBER.admin, 3, 24, '2026-09-20');
+    await expectRule(db.activityTime.addQuarterHour(MEMBER.admin, 3, '2026-09-20'), 'HOURS_OUT_OF_RANGE');
     await expectRule(db.activityTime.addQuarterHour(MEMBER.member, 999, '2026-09-20'), 'ACTIVITY_NOT_FOUND');
     await expectRule(db.activityTime.addQuarterHour(MEMBER.member, 3, '2026-03-19'), 'ACTIVITY_DATE_TOO_OLD');
     expect((await db.activityTime.listByActivity(3)).totalHours).toBe(24);

@@ -46,6 +46,7 @@ import type {
   EventSignup,
   GlobalCharityRegistry,
   EventTime,
+  VolunteerQuarantine,
   GLAccount,
   GLAccountType,
   EventIntakeSessionStatus,
@@ -109,6 +110,7 @@ import type { DistributionGroup } from './messaging';
 import type { FeatureFlagChanges, FeatureFlagName } from './features';
 import type { EmailGatewayColumn, EmailGatewaySettings } from './email-gateway';
 import type { AffiliationHistoryEntry, CouncilEngagement, DevotionalEntry, DevotionalProgress, MemberCenter, RankThresholds } from './member-lifecycle';
+import type { QuarantineDeskEntry, QuarantinedHours } from './volunteer-quarantine';
 
 // 1. LOOKUPS
 /** The global lookup tables a Super Admin maintains (Blueprint: "System Lookup Manager"). */
@@ -2920,8 +2922,14 @@ export interface DataService {
      * Rejects when `hours` is not a multiple of 0.25 in (0, 24], or the shift date is more than
      * 3 months in the past (SHIFT_REPORT_TOO_OLD). Hours may exceed the shift's scheduled
      * StartTime-EndTime length (set-up and clean-up often run over); see SHIFT_DURATION_IS_A_CEILING.
+     *
+     * Sprint 7B: a regular member's report that breaks a volunteer-quarantine.ts guard - more than 1.0 hour over the
+     * scheduled length, more than 5.0 hours, or a sixth activity that day - is not written to EventTime: it is held in
+     * VolunteerQuarantine (PENDING) and the call resolves to { quarantined }. A new report on the shift replaces the
+     * member's still-pending one. Admins, Super Admins, elected officers, Trustees and the event's owner are exempt, as is
+     * everyone while the council's feature_volunteer_quarantine flag is off.
      */
-    logHours(memberId: number, shiftId: number, hours: number, notes?: string): Promise<EventTime>;
+    logHours(memberId: number, shiftId: number, hours: number, notes?: string): Promise<EventTime | QuarantinedHours>;
   };
 
   activityTime: {
@@ -2929,14 +2937,22 @@ export interface DataService {
      * Records hours against a council activity on `date` (YYYY-MM-DD). Each call adds an entry.
      * Rejects when `hours` is not a multiple of 0.25 in (0, 24], or `date` is more than
      * 6 months in the past (ACTIVITY_DATE_TOO_OLD).
+     *
+     * Sprint 7B: as for eventTime.logHours, a regular member's entry that would be their sixth activity that day or put
+     * more than 5.0 hours against the activity that day (entries logged and held both count) is held in
+     * VolunteerQuarantine and the call resolves to { quarantined }.
      */
-    logHours(memberId: number, activityId: number, hours: number, date: string, notes?: string): Promise<ActivityTime>;
+    logHours(memberId: number, activityId: number, hours: number, date: string, notes?: string): Promise<ActivityTime | QuarantinedHours>;
     /**
      * The phone's rapid-tap tracker (Sprint 6A): adds 15 minutes (HOURS_STEP) to the member's entry for the activity on
      * `date`, in one transaction, creating a 0.25-hour entry when there is none yet. Repeated taps grow the same entry,
      * so the day keeps one row per activity. Rejects like logHours, and HOURS_OUT_OF_RANGE once the entry is at 24 hours.
+     *
+     * Sprint 7B: for a regular member, a tap that would break a guard (more than 5.0 hours on the activity that day, or a
+     * sixth activity) is held instead: it opens a 0.25-hour PENDING VolunteerQuarantine row, later taps grow that row,
+     * and the call resolves to { quarantined }. The hours already logged stay logged.
      */
-    addQuarterHour(memberId: number, activityId: number, date: string): Promise<ActivityTime>;
+    addQuarterHour(memberId: number, activityId: number, date: string): Promise<ActivityTime | QuarantinedHours>;
     /**
      * Every entry logged against the activity (ActivityTime joined to Member), newest ActivityDate first,
      * with the total hours. Rejects ACTIVITY_NOT_FOUND for an unknown activity.
@@ -3969,5 +3985,29 @@ export interface DataService {
     getProgress(actorId: number): Promise<DevotionalProgress>;
     /** Adds the entry's counts to the caller's tally (cleanDevotionalEntry; INVALID_INPUT) and resolves to the new progress. */
     record(actorId: number, entry: DevotionalEntry): Promise<DevotionalProgress>;
+  };
+
+  /**
+   * The Volunteer Time Quarantine Desk (Sprint 7B, volunteer-quarantine.ts): time entries held from EventTime and
+   * ActivityTime by the over-reporting guards. Only the council's Active Grand Knight, Deputy Grand Knight and Admins, and
+   * any Active Super Admin (ADMIN_REQUIRED, COUNCIL_ACCESS_DENIED). While the council's feature_volunteer_quarantine flag
+   * is off every call rejects FEATURE_DISABLED. MEMBER_NOT_FOUND for an unknown actor.
+   */
+  volunteerQuarantine: {
+    /** The council's PENDING entries with member names, activity labels and notes, oldest first. INVALID_INPUT for an unknown council. */
+    listPending(actorId: number, councilId: number): Promise<QuarantineDeskEntry[]>;
+    /**
+     * "Clear Hours to Ledger": flips the entry to APPROVED and writes it to the time tables in one transaction - a shift
+     * report replaces the member's EventTime row for the shift (or adds one), a council activity entry adds an
+     * ActivityTime row - so its hours join every total. The logging walls (3 and 6 months) do not apply to a review.
+     * RECORD_NOT_FOUND for an unknown entry, QUARANTINE_STATUS_CONFLICT once decided, SHIFT_NOT_FOUND or
+     * ACTIVITY_NOT_FOUND when the shift or activity is gone.
+     */
+    clear(actorId: number, quarantineId: number): Promise<VolunteerQuarantine>;
+    /**
+     * "Delete Fraudulent Time": flips the entry to REJECTED. Its hours never reach the time tables; the row stays as the
+     * review record. RECORD_NOT_FOUND, QUARANTINE_STATUS_CONFLICT as for clear.
+     */
+    reject(actorId: number, quarantineId: number): Promise<VolunteerQuarantine>;
   };
 }

@@ -22,11 +22,13 @@ import {
   HOUR_OPTIONS,
   hoursToPicker,
   isAllHandsShift,
+  isQuarantinedHours,
   isShiftFull,
   isUrgent,
   MINUTE_OPTIONS,
   padMinutes,
   pickerResult,
+  quarantinedHoursMessage,
   SHIFT_HISTORY_MONTHS,
   shiftStatus,
   sortCouncils,
@@ -54,11 +56,12 @@ const TABS: readonly { id: Tab; label: string }[] = [
 
 function useAction() {
   const [message, setMessage] = useState<Message | null>(null);
-  const run = async (action: () => Promise<void>, done: string): Promise<boolean> => {
+  // An action may resolve to its own message, such as a time entry held for review (Sprint 7B).
+  const run = async (action: () => Promise<string | void>, done: string): Promise<boolean> => {
     setMessage(null);
     try {
-      await action();
-      setMessage({ tone: 'info', text: done });
+      const said = await action();
+      setMessage({ tone: 'info', text: said ?? done });
       return true;
     } catch (err) {
       setMessage({ tone: 'error', text: describeError(err) });
@@ -371,7 +374,7 @@ function HourLedger() {
     setShiftTime(logged != null ? hoursToPicker(logged) : { hours: 0, minutes: 0 });
   };
 
-  const submit = async (action: () => Promise<void>, done: string, reset: () => void) => {
+  const submit = async (action: () => Promise<string | void>, done: string, reset: () => void) => {
     setBusy(true);
     if (await run(action, done)) {
       reset();
@@ -386,7 +389,8 @@ function HourLedger() {
     void submit(
       async () => {
         if ('error' in picked) throw new Error(picked.error);
-        await db.eventTime.logHours(user.memberId, chosenShift, picked.hours, shiftNotes.trim() || undefined);
+        const result = await db.eventTime.logHours(user.memberId, chosenShift, picked.hours, shiftNotes.trim() || undefined);
+        if (isQuarantinedHours(result)) return quarantinedHoursMessage(result.quarantined);
       },
       'Shift hours saved.',
       () => setShiftNotes(''),
@@ -399,7 +403,8 @@ function HourLedger() {
     void submit(
       async () => {
         if ('error' in picked) throw new Error(picked.error);
-        await db.activityTime.logHours(user.memberId, chosenActivity, picked.hours, activityDate, activityNotes.trim() || undefined);
+        const result = await db.activityTime.logHours(user.memberId, chosenActivity, picked.hours, activityDate, activityNotes.trim() || undefined);
+        if (isQuarantinedHours(result)) return quarantinedHoursMessage(result.quarantined);
       },
       'Activity hours saved.',
       () => {

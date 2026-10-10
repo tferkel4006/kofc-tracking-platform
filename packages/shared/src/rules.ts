@@ -129,7 +129,8 @@ export type BusinessRuleCode =
   | 'PRAYER_INTENTION_CLOSER_REQUIRED'
   | 'PRAYER_INTENTION_CLOSED'
   | 'ORAL_HISTORY_LIMIT_REACHED'
-  | 'IN_MEMORIAM_NOT_DECEASED';
+  | 'IN_MEMORIAM_NOT_DECEASED'
+  | 'QUARANTINE_STATUS_CONFLICT';
 
 /** A request the business rules refuse. `details` holds the values that caused it. */
 export class BusinessRuleError extends Error {
@@ -321,7 +322,9 @@ export function assertEventRange(startDate: string, endDate: string): void {
 /**
  * Specifications: "Time reported against a shift can be more than the shift's duration."
  * A shift's StartTime-EndTime is its planned layout, not a cap: assertValidHours (15-minute
- * steps, at most 24 per entry) is the only bound on hours logged against a shift.
+ * steps, at most 24 per entry) is the only bound that refuses hours logged against a shift.
+ * From Sprint 7B a regular member's report more than SHIFT_PADDING_ALLOWANCE_HOURS over the
+ * scheduled length is held for leadership review (volunteer-quarantine.ts), not refused.
  */
 export const SHIFT_DURATION_IS_A_CEILING = false;
 

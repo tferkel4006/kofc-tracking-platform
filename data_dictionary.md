@@ -111,6 +111,7 @@ The core multi-tenant anchor entity representing individual local councils.
 •	feature_council_bylaws (BIT, NOT NULL, DEFAULT 1) — Sprint 6R feature flag: 0 hides the Constitutional Bylaws page (/governance/bylaws).
 •	feature_council_history (BIT, NOT NULL, DEFAULT 1) — Sprint 6R feature flag: 0 hides the Team Legacy history page (/history).
 •	feature_live_meeting_console (BIT, NOT NULL, DEFAULT 1) — Sprint 6R feature flag: 0 hides the Live Meeting Console (/meetings/live); the Meeting Center stays unless flag_meeting_management is also 0.
+•	feature_volunteer_quarantine (BIT, NOT NULL, DEFAULT 1) — Sprint 7B feature flag: 0 switches off the volunteer time guards (members' time logs directly) and hides the Volunteer Time Quarantine Desk on the dashboard.
 [AffiliatedCouncils]
 Many-to-many relationship mapping shared data permissions between distinct councils.
 •	PrimaryCouncilID (INTEGER, NOT NULL) — Composite Primary Key / Foreign Key references Council(id).
@@ -925,4 +926,27 @@ One stretch of a member's membership in a council. Member.CouncilID says only wh
 Rules. A new member opens an Active row. A transfer closes the open row in the council left as 'Former' (for a member with no row there, it writes a closed row from their join date) and opens an Active row in the new council. A status change in the same council restates the open row; Deceased or Former also closes it; rejoining opens a new row. A member added before schema 60 shows their current membership on the history card from the Member row until the log has a row for it.
 History card. members.listAffiliations: the member, an Admin of their council or a Super Admin. Shown on the Affiliated Roster (Council membership history) and on the Shared Member Center (My council history), web and phone.
 Shared Member Center. reports.memberCenter, for every Active member of the council (portal area member-center, Performance pillar; phone: Home -> Open the Member Center). It carries the month's volunteers, volunteer count and hours, the council's combined devotional sums, the Top 5 Volunteers Leaderboard and the viewer's own events attended, hours and canonization shield. It carries no cash, budget or ledger figure; the finance pages and the executive dashboard keep their own audiences. For a white-label council the devotional sums and the shield are null.
+________________________________________
+# 30. Volunteer Time Quarantine (Sprint 7B)
+Schema version 61. Rules: volunteer-quarantine.ts (isQuarantineExempt, quarantineReasons, assertMayReviewQuarantine, buildQuarantineDesk).
+[VolunteerQuarantine]
+A regular member's time entry held for leadership review instead of being written to EventTime or ActivityTime. Held hours are outside the time tables, so no council summary, canonization shield or leaderboard counts them. Rows are kept as the review record.
+•	id (INT, NOT NULL) — Primary Key. Auto-incrementing identifier.
+•	council_id (INT, NOT NULL) — Foreign Key references Council(id): the member's council when they logged, whose leaders review the entry. Blocks deleting the council (RECORD_IN_USE).
+•	user_id (INT, NOT NULL) — Foreign Key references Member(id).
+•	activity_type (VARCHAR(10), NOT NULL) — 'SHIFT' (a shift report) or 'MANUAL' (a council activity entry).
+•	activity_id (INT, NOT NULL) — Shift.id for SHIFT, Activities.id for MANUAL.
+•	activity_date (DATE, NOT NULL) — The ShiftDate or ActivityDate.
+•	hours_reported (DECIMAL(5,2), NOT NULL) — The hours held, in 0.25 steps.
+•	scheduled_hours (DECIMAL(5,2), NULL) — SHIFT only: the shift's scheduled StartTime-EndTime length.
+•	notes (VARCHAR(2000), NULL) — The member's own description of the time.
+•	date_logged (DATETIME, NOT NULL) — When the member logged it.
+•	quarantine_reason (VARCHAR(500), NOT NULL) — Which guard held it, in words.
+•	clearance_status (VARCHAR(10), NOT NULL, DEFAULT 'PENDING') — PENDING, APPROVED or REJECTED.
+•	reviewed_by_member_id (INT, NULL) — Foreign Key references Member(id): who cleared or deleted it.
+•	reviewed_at (DATETIME, NULL) — When it was decided.
+•	cleared_time_id (INT, NULL) — The EventTime or ActivityTime row a clearance wrote.
+Guards (eventTime.logHours, activityTime.logHours, activityTime.addQuarterHour). An entry is held when it would be the member's sixth distinct activity that day (shifts by ShiftDate, activities by ActivityDate, held entries included); when it would put more than 5.0 hours against one activity that day (logged and held entries on it added up); or, for a shift, when it is more than 1.0 hour over the scheduled length. The call resolves to { quarantined } instead of the time row. A new report on a shift replaces the member's pending one; rapid taps past a guard grow one held row.
+Exempt. Admins, Super Admins, holders of an elected office or a Trustee seat, and the owner of the shift's event. Everyone while Council.feature_volunteer_quarantine is 0.
+Clearance desk. volunteerQuarantine.listPending, clear and reject: the council's Active Grand Knight, Deputy Grand Knight and Admins, and any Active Super Admin. Clear (APPROVED) writes the entry to EventTime (replacing the member's row for the shift) or adds an ActivityTime row; the 3- and 6-month logging walls do not apply. Reject (REJECTED) writes nothing to the time tables. A decided row cannot be decided again (QUARANTINE_STATUS_CONFLICT).
 ________________________________________

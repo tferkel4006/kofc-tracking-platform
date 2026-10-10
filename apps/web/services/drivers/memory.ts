@@ -498,6 +498,16 @@ import {
   cleanExpenseLedgerCoding,
   concludedRevenueLink,
   planConcludedRevenue,
+  assertFeatureEnabled,
+  assertMayReviewQuarantine,
+  assertQuarantinePending,
+  buildQuarantineDesk,
+  councilFeatureFlags,
+  HOURS_STEP,
+  isQuarantineExempt,
+  quarantineActivityKey,
+  quarantineReasons,
+  quarantineReasonText,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -623,6 +633,8 @@ import type {
   CouncilMediaVault,
   EventPlanningTime,
   MediaSmartAlbums,
+  VolunteerQuarantine,
+  VolunteerQuarantineActivityType,
 } from '@kofc/shared';
 import { PRESENTATION_SEED_DATA, SEED_DATA, TABLES, type SeedValue } from '../generated/schema.generated';
 import { sha256Hex } from '../password';
@@ -676,6 +688,16 @@ const noParish = (parishId: number) => new BusinessRuleError('INVALID_INPUT', `N
 
 /** Matches SQLite's CURRENT_TIMESTAMP format ('YYYY-MM-DD HH:MM:SS', UTC). */
 const nowTimestamp = () => new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+/** A time entry the Sprint 7B guards judge (volunteer-quarantine.ts). */
+interface QuarantineEntry {
+  activityType: VolunteerQuarantineActivityType;
+  activityId: number;
+  date: string;
+  hours: number;
+  scheduledHours?: number;
+  ownsEvent?: boolean;
+}
 
 class MemoryStore {
   private tables = new Map<string, Row[]>();
@@ -3067,6 +3089,21 @@ export class MemoryDataService implements DataService {
             { memberId, shiftId },
           );
         }
+        // A new report replaces the member's still-pending one for the shift (Sprint 7B).
+        s.remove('VolunteerQuarantine', (q) => this.isPendingHold(q, memberId, 'SHIFT', shiftId));
+        const member = this.requireMember(s, memberId);
+        const event = this.requireEvent(s, shift.EventID as number);
+        const scheduledHours = shiftDefaultLengthHours(shift as unknown as Shift);
+        const date = shift.ShiftDate as string;
+        const reasons = this.quarantineReasonsFor(s, member, {
+          activityType: 'SHIFT',
+          activityId: shiftId,
+          date,
+          hours,
+          scheduledHours,
+          ownsEvent: event.OwnerID === memberId,
+        });
+        if (reasons.length) return this.holdTime(s, member, { activityType: 'SHIFT', activityId: shiftId, date, hours, scheduledHours, notes, reasons });
         const existing = s.rows('EventTime').find((t) => t.ShiftID === shiftId && t.MemberID === memberId);
         if (existing) {
           (existing as Row).Hours = hours;
@@ -3085,10 +3122,12 @@ export class MemoryDataService implements DataService {
       assertActivityDateAllowed(date, this.now());
       const s = await this.ready();
       return s.transaction(() => {
-        this.requireMember(s, memberId);
+        const member = this.requireMember(s, memberId);
         if (!s.rows('Activities').some((a) => a.id === activityId)) {
           throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${activityId}.`, { activityId });
         }
+        const reasons = this.quarantineReasonsFor(s, member, { activityType: 'MANUAL', activityId, date, hours });
+        if (reasons.length) return this.holdTime(s, member, { activityType: 'MANUAL', activityId, date, hours, notes, reasons });
         const row = s.insert('ActivityTime', {
           MemberID: memberId,
           ActivityID: activityId,
@@ -3104,10 +3143,21 @@ export class MemoryDataService implements DataService {
       assertActivityDateAllowed(date, this.now());
       const s = await this.ready();
       return s.transaction(() => {
-        this.requireMember(s, memberId);
+        const member = this.requireMember(s, memberId);
         if (!s.rows('Activities').some((a) => a.id === activityId)) {
           throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${activityId}.`, { activityId });
         }
+        // Sprint 7B: once the day's taps are held for review, later taps grow the held entry.
+        const held = s
+          .rows('VolunteerQuarantine')
+          .filter((q) => this.isPendingHold(q, memberId, 'MANUAL', activityId) && q.activity_date === date)
+          .at(-1);
+        if (held) {
+          held.hours_reported = nextQuarterHourTotal(held.hours_reported as number);
+          return { quarantined: { ...held } as unknown as VolunteerQuarantine };
+        }
+        const reasons = this.quarantineReasonsFor(s, member, { activityType: 'MANUAL', activityId, date, hours: HOURS_STEP });
+        if (reasons.length) return this.holdTime(s, member, { activityType: 'MANUAL', activityId, date, hours: HOURS_STEP, reasons });
         // The newest of the member's entries for the activity that day grows (rows are in id order); there is normally just one.
         const entry = s
           .rows('ActivityTime')
@@ -3292,6 +3342,153 @@ export class MemoryDataService implements DataService {
       member: { ...this.requireMember(s, signup.MemberID as number) } as unknown as Member,
     };
   }
+
+  // ---- volunteer time quarantine (Sprint 7B) --------------------------------
+
+  private isPendingHold(q: Row, memberId: number, type: VolunteerQuarantineActivityType, activityId: number): boolean {
+    return q.user_id === memberId && q.activity_type === type && q.activity_id === activityId && q.clearance_status === 'PENDING';
+  }
+
+  /**
+   * Why a time entry must be held for review (volunteer-quarantine.ts quarantineReasons), or [] to log it - always [] for
+   * an exempt member or while their council's feature_volunteer_quarantine flag is off.
+   */
+  private quarantineReasonsFor(s: MemoryStore, member: Row, entry: QuarantineEntry): string[] {
+    const memberId = member.id as number;
+    const council = s.rows('Council').find((c) => c.id === member.CouncilID);
+    if (!councilFeatureFlags(council as Partial<Council> | undefined).feature_volunteer_quarantine) return [];
+    const logger = {
+      memberType: this.memberTypeName(s, member.MemberTypeID as number),
+      roles: this.rolesFor(s, memberId).map((r) => r.Role),
+      ownsEvent: entry.ownsEvent,
+    };
+    if (isQuarantineExempt(logger)) return [];
+    const dayActivityKeys = new Set<string>();
+    let otherHoursSameActivity = 0;
+    const shiftDates = new Map(s.rows('Shift').map((sh) => [sh.id as number, sh.ShiftDate as string]));
+    for (const t of s.rows('EventTime')) {
+      if (t.MemberID === memberId && shiftDates.get(t.ShiftID as number) === entry.date) {
+        dayActivityKeys.add(quarantineActivityKey('SHIFT', t.ShiftID as number));
+      }
+    }
+    for (const t of s.rows('ActivityTime')) {
+      if (t.MemberID !== memberId || t.ActivityDate !== entry.date) continue;
+      dayActivityKeys.add(quarantineActivityKey('MANUAL', t.ActivityID as number));
+      if (entry.activityType === 'MANUAL' && t.ActivityID === entry.activityId) otherHoursSameActivity += t.Hours as number;
+    }
+    for (const q of s.rows('VolunteerQuarantine')) {
+      if (q.user_id !== memberId || q.activity_date !== entry.date || q.clearance_status !== 'PENDING') continue;
+      const type = q.activity_type as VolunteerQuarantineActivityType;
+      dayActivityKeys.add(quarantineActivityKey(type, q.activity_id as number));
+      if (entry.activityType === 'MANUAL' && type === 'MANUAL' && q.activity_id === entry.activityId) {
+        otherHoursSameActivity += q.hours_reported as number;
+      }
+    }
+    return quarantineReasons({ ...entry, dayActivityKeys, otherHoursSameActivity });
+  }
+
+  /** Stores a held entry (PENDING) in place of the time row. */
+  private holdTime(s: MemoryStore, member: Row, entry: QuarantineEntry & { notes?: string; reasons: string[] }): { quarantined: VolunteerQuarantine } {
+    const row = s.insert('VolunteerQuarantine', {
+      council_id: member.CouncilID as number,
+      user_id: member.id as number,
+      activity_type: entry.activityType,
+      activity_id: entry.activityId,
+      activity_date: entry.date,
+      hours_reported: entry.hours,
+      scheduled_hours: entry.scheduledHours ?? null,
+      notes: entry.notes ?? null,
+      date_logged: toTimestamp(this.now()),
+      quarantine_reason: quarantineReasonText(entry.reasons),
+      clearance_status: 'PENDING',
+    });
+    return { quarantined: { ...row } as unknown as VolunteerQuarantine };
+  }
+
+  /** A desk decision's held row, after the reviewer, flag and PENDING checks; RECORD_NOT_FOUND for an unknown id. */
+  private requireReviewableHold(s: MemoryStore, actorId: number, quarantineId: number): Row {
+    const actor = this.memberWriteActor(s, actorId);
+    const row = s.rows('VolunteerQuarantine').find((q) => q.id === quarantineId);
+    if (!row) throw new BusinessRuleError('RECORD_NOT_FOUND', `No held time entry with id ${quarantineId}.`, { quarantineId });
+    const councilId = row.council_id as number;
+    assertMayReviewQuarantine(actor, councilId);
+    assertFeatureEnabled(councilId, 'feature_volunteer_quarantine', s.rows('Council').find((c) => c.id === councilId) as GateCouncil | undefined);
+    assertQuarantinePending(row as unknown as VolunteerQuarantine);
+    return row;
+  }
+
+  volunteerQuarantine: DataService['volunteerQuarantine'] = {
+    listPending: async (actorId, councilId) => {
+      const s = await this.ready();
+      const actor = this.memberWriteActor(s, actorId);
+      const council = s.rows('Council').find((c) => c.id === councilId);
+      if (!council) throw new BusinessRuleError('INVALID_INPUT', `No council with id ${councilId}.`, { councilId });
+      assertMayReviewQuarantine(actor, councilId);
+      assertFeatureEnabled(councilId, 'feature_volunteer_quarantine', council as GateCouncil);
+      const rows = s
+        .rows('VolunteerQuarantine')
+        .filter((q) => q.council_id === councilId && q.clearance_status === 'PENDING')
+        .map((q) => ({ ...q }) as unknown as VolunteerQuarantine);
+      const events = new Map(s.rows('Event').map((e) => [e.id as number, e.EventName as string]));
+      return buildQuarantineDesk(rows, {
+        members: new Map(
+          s.rows('Member').map((m) => [m.id as number, { MemberFirstName: m.MemberFirstName as string, MemberLastName: m.MemberLastName as string }]),
+        ),
+        shifts: new Map(
+          s.rows('Shift').map((sh) => [sh.id as number, { ShiftName: sh.ShiftName as string, EventName: events.get(sh.EventID as number) ?? '' }]),
+        ),
+        activities: new Map(s.rows('Activities').map((a) => [a.id as number, { ActivityName: a.ActivityName as string }])),
+      });
+    },
+
+    clear: async (actorId, quarantineId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const row = this.requireReviewableHold(s, actorId, quarantineId);
+        const memberId = row.user_id as number;
+        const activityId = row.activity_id as number;
+        let timeId: number;
+        if (row.activity_type === 'SHIFT') {
+          this.requireShift(s, activityId);
+          const existing = s.rows('EventTime').find((t) => t.ShiftID === activityId && t.MemberID === memberId);
+          if (existing) {
+            existing.Hours = row.hours_reported;
+            existing.ShiftNotes = row.notes;
+            timeId = existing.id as number;
+          } else {
+            timeId = s.insert('EventTime', { ShiftID: activityId, MemberID: memberId, Hours: row.hours_reported, ShiftNotes: row.notes }).id as number;
+          }
+        } else {
+          if (!s.rows('Activities').some((a) => a.id === activityId)) {
+            throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${activityId}.`, { activityId });
+          }
+          timeId = s.insert('ActivityTime', {
+            MemberID: memberId,
+            ActivityID: activityId,
+            ActivityDate: row.activity_date,
+            Hours: row.hours_reported,
+            ActivityNotes: row.notes,
+          }).id as number;
+        }
+        Object.assign(row, {
+          clearance_status: 'APPROVED',
+          reviewed_by_member_id: actorId,
+          reviewed_at: toTimestamp(this.now()),
+          cleared_time_id: timeId,
+        });
+        return { ...row } as unknown as VolunteerQuarantine;
+      });
+    },
+
+    reject: async (actorId, quarantineId) => {
+      const s = await this.ready();
+      return s.transaction(() => {
+        const row = this.requireReviewableHold(s, actorId, quarantineId);
+        Object.assign(row, { clearance_status: 'REJECTED', reviewed_by_member_id: actorId, reviewed_at: toTimestamp(this.now()) });
+        return { ...row } as unknown as VolunteerQuarantine;
+      });
+    },
+  };
 
   private requireShift(s: MemoryStore, shiftId: number): Row {
     const shift = s.rows('Shift').find((sh) => sh.id === shiftId);

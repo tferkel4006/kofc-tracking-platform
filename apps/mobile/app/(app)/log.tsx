@@ -19,6 +19,8 @@ import {
   formatHours,
   formatShiftWhen,
   HOURS_STEP,
+  isQuarantinedHours,
+  quarantinedHoursMessage,
   MAX_HOURS_PER_ENTRY,
   SHIFT_HISTORY_MONTHS,
   subtractMonths,
@@ -299,8 +301,10 @@ function useActivityTracker(onToast: (toast: Toast) => void) {
   };
 
   const saves = useRef<Promise<void>>(Promise.resolve());
-  const saveQuarter = async (activityId: number) => {
-    await db.activityTime.addQuarterHour(user.memberId, activityId, today);
+  /** The day's logged total after the tap, or null when the tap was held for leadership review (Sprint 7B). */
+  const saveQuarter = async (activityId: number): Promise<number | null> => {
+    const result = await db.activityTime.addQuarterHour(user.memberId, activityId, today);
+    if (isQuarantinedHours(result)) return null;
     const total = (running.current.get(activityId) ?? 0) + HOURS_STEP;
     running.current = new Map(running.current).set(activityId, total);
     setTotals(running.current);
@@ -318,7 +322,8 @@ function useActivityTracker(onToast: (toast: Toast) => void) {
       if (check === 'refused') return onToast({ tone: 'error', text: 'Not logged: Face ID or fingerprint was not confirmed.' });
       try {
         const total = await saveQuarter(activity.id);
-        onToast({ tone: 'info', text: `+15 min · ${activity.ActivityName} (${formatHours(total)} today)` });
+        if (total === null) onToast({ tone: 'info', text: `+15 min · ${activity.ActivityName} sent to leadership review (over the daily limit)` });
+        else onToast({ tone: 'info', text: `+15 min · ${activity.ActivityName} (${formatHours(total)} today)` });
       } catch (err) {
         onToast({ tone: 'error', text: describeError(err) });
       }
@@ -330,12 +335,13 @@ function useActivityTracker(onToast: (toast: Toast) => void) {
     setQueue(new Map());
     saves.current = saves.current.then(async () => {
       let saved = 0;
+      let held = 0;
       const left = new Map<number, number>();
       for (const [activityId, quarters] of batch) {
         for (let i = 0; i < quarters; i++) {
           try {
-            await saveQuarter(activityId);
-            saved++;
+            if ((await saveQuarter(activityId)) === null) held++;
+            else saved++;
           } catch (err) {
             left.set(activityId, quarters - i);
             onToast({ tone: 'error', text: describeError(err) });
@@ -349,7 +355,9 @@ function useActivityTracker(onToast: (toast: Toast) => void) {
         for (const [id, n] of left) merged.set(id, (merged.get(id) ?? 0) + n);
         setQueue(merged);
       }
-      if (saved > 0 && left.size === 0) onToast({ tone: 'info', text: `Logged ${formatHours(saved * HOURS_STEP)} for today.` });
+      if (held > 0 && left.size === 0) {
+        onToast({ tone: 'info', text: `Logged ${formatHours(saved * HOURS_STEP)}; ${formatHours(held * HOURS_STEP)} sent to leadership review (over the daily limit).` });
+      } else if (saved > 0 && left.size === 0) onToast({ tone: 'info', text: `Logged ${formatHours(saved * HOURS_STEP)} for today.` });
     });
   };
 
@@ -473,8 +481,9 @@ function ShiftReport({ onToast }: { onToast: (toast: Toast) => void }) {
     if (!canSave || shiftId === null) return;
     setBusy(true);
     try {
-      await db.eventTime.logHours(user.memberId, shiftId, hours, notes.trim() || undefined);
-      onToast({ tone: 'info', text: `Saved ${formatHours(hours)} to ${chosen?.shift.ShiftName ?? 'the shift'}` });
+      const result = await db.eventTime.logHours(user.memberId, shiftId, hours, notes.trim() || undefined);
+      if (isQuarantinedHours(result)) onToast({ tone: 'info', text: quarantinedHoursMessage(result.quarantined) });
+      else onToast({ tone: 'info', text: `Saved ${formatHours(hours)} to ${chosen?.shift.ShiftName ?? 'the shift'}` });
       setNotes('');
       await state.reload();
     } catch (err) {

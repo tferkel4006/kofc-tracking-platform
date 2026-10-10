@@ -72,6 +72,8 @@ export interface Council {
   feature_council_bylaws?: number;
   feature_council_history?: number;
   feature_live_meeting_console?: number;
+  /** BIT (Sprint 7B, Schema 61): 0 switches off the volunteer time guards and hides the quarantine desk. Default 1. */
+  feature_volunteer_quarantine?: number;
   /** Sprint 6R (Schema 57): the council's IRS Employer Identification Number, stored as 'NN-NNNNNNN'. NULL until entered. */
   ein_number?: string | null;
   /** Sprint 6Z (Schema 35): the council's bylaws as light markdown (bylaws.ts); written only by councils.setBylaws. */
@@ -1210,4 +1212,29 @@ export interface MemberCouncilAffiliationLog {
   membership_status: string; // VARCHAR(20): a MemberStatus name, 'Former' once the member left by transfer
   date_joined: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS'
   date_exited?: string | null; // DATETIME, 'YYYY-MM-DD HH:MM:SS'; NULL while the membership is open
+}
+
+/** Sprint 7B: a time entry's kind - a shift report (EventTime) or a council activity entry (ActivityTime). */
+export type VolunteerQuarantineActivityType = 'SHIFT' | 'MANUAL';
+/** Sprint 7B: PENDING while held; APPROVED once cleared to the time tables; REJECTED once deleted as unfounded. */
+export type VolunteerQuarantineStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+/** Sprint 7B: a regular member's time entry held for leadership review instead of logged (volunteer-quarantine.ts). */
+export interface VolunteerQuarantine {
+  id: number;
+  council_id: number; // Council: the member's council when they logged, whose leaders review it
+  user_id: number; // Member
+  activity_type: VolunteerQuarantineActivityType; // VARCHAR(10)
+  activity_id: number; // Shift.id for SHIFT, Activities.id for MANUAL
+  activity_date: string; // DATE, YYYY-MM-DD: the ShiftDate or ActivityDate
+  hours_reported: number; // DECIMAL(5,2)
+  scheduled_hours?: number | null; // DECIMAL(5,2): the shift's scheduled length; NULL for MANUAL
+  notes?: string | null; // VARCHAR(2000): the member's own description of the time
+  date_logged: string; // DATETIME, 'YYYY-MM-DD HH:MM:SS'
+  quarantine_reason: string; // VARCHAR(500)
+  clearance_status: VolunteerQuarantineStatus; // VARCHAR(10), DEFAULT 'PENDING'
+  reviewed_by_member_id?: number | null; // Member who cleared or deleted it
+  reviewed_at?: string | null; // DATETIME
+  /** The EventTime or ActivityTime row a clearance wrote; NULL until APPROVED. */
+  cleared_time_id?: number | null;
 }

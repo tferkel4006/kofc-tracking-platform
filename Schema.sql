@@ -2933,3 +2933,62 @@ GO
 
 CREATE INDEX [MemberCouncilAffiliationLog_Member_Idx] ON [MemberCouncilAffiliationLog] ([user_id]);
 GO
+
+-- =========================================================================
+-- Sprint 7B: VOLUNTEER TIME QUARANTINE (schema version 61)
+--
+-- VolunteerQuarantine holds a regular member's time entry for leadership review instead of writing it to EventTime
+-- (activity_type 'SHIFT', activity_id = Shift.id) or ActivityTime ('MANUAL', activity_id = Activities.id) when it breaks
+-- an over-reporting guard (volunteer-quarantine.ts):
+--   - 5/5 rule: a sixth distinct activity in one day, or more than 5.0 hours against one activity in one day;
+--   - +1 hour shift padding gate: more than 1.0 hour over the shift's scheduled StartTime-EndTime length.
+-- Admins, Super Admins, elected officers, Trustees and the shift's event owner are exempt. Held hours sit outside the
+-- time tables, so no summary, shield or leaderboard counts them. The Volunteer Time Quarantine Desk (Grand Knight,
+-- Deputy Grand Knight, Admins) clears an entry to APPROVED - writing it to EventTime or ActivityTime (cleared_time_id) -
+-- or deletes it as REJECTED, whose hours never count. Rows are kept as the review record.
+--
+-- Council.feature_volunteer_quarantine switches the guards and the desk off together (feature flag, default on).
+-- =========================================================================
+CREATE TABLE [VolunteerQuarantine] (
+	[id] INTEGER NOT NULL IDENTITY,
+	[council_id] INT NOT NULL,
+	[user_id] INT NOT NULL,
+	[activity_type] VARCHAR(10) NOT NULL,
+	[activity_id] INT NOT NULL,
+	[activity_date] DATE NOT NULL,
+	[hours_reported] DECIMAL(5,2) NOT NULL,
+	[scheduled_hours] DECIMAL(5,2) NULL,
+	[notes] VARCHAR(2000) NULL,
+	[date_logged] DATETIME NOT NULL,
+	[quarantine_reason] VARCHAR(500) NOT NULL,
+	[clearance_status] VARCHAR(10) NOT NULL DEFAULT 'PENDING',
+	[reviewed_by_member_id] INT NULL,
+	[reviewed_at] DATETIME NULL,
+	[cleared_time_id] INT NULL,
+	PRIMARY KEY([id])
+);
+GO
+
+ALTER TABLE [VolunteerQuarantine]
+ADD FOREIGN KEY([council_id])
+REFERENCES [Council]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [VolunteerQuarantine]
+ADD FOREIGN KEY([user_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+ALTER TABLE [VolunteerQuarantine]
+ADD FOREIGN KEY([reviewed_by_member_id])
+REFERENCES [Member]([id])
+ON UPDATE NO ACTION ON DELETE NO ACTION;
+GO
+
+CREATE INDEX [VolunteerQuarantine_Council_Status_Idx] ON [VolunteerQuarantine] ([council_id], [clearance_status]);
+GO
+CREATE INDEX [VolunteerQuarantine_Member_Day_Idx] ON [VolunteerQuarantine] ([user_id], [activity_date]);
+GO
+
+ALTER TABLE [Council] ADD [feature_volunteer_quarantine] BIT NOT NULL DEFAULT 1;
+GO

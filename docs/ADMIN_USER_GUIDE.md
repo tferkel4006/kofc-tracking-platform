@@ -25,7 +25,8 @@
 12. [Troubleshooting reference](#12-troubleshooting-reference)
 13. [Automated messages reference](#13-automated-messages-reference)
 14. [Member engagement and the roster lifecycle](#14-member-engagement-and-the-roster-lifecycle)
-15. [Appendix: QR code files](#appendix-qr-code-files)
+15. [Volunteer time quarantine](#15-volunteer-time-quarantine)
+16. [Appendix: QR code files](#appendix-qr-code-files)
 
 ### How to read a tutorial
 
@@ -114,7 +115,7 @@ Three pages open from the header, not from the sidebar.
 
 ### 3.1 Concept: backend logic of the flags
 
-Each council row has eleven on/off columns. Each column is a module feature flag. A new council has every flag on.
+Each council row has twelve on/off columns. Each column is a module feature flag. A new council has every flag on.
 
 | Flag column | Label in the Feature Flags Control Center | Web pages hidden when off | Phone items hidden when off |
 | --- | --- | --- | --- |
@@ -129,6 +130,7 @@ Each council row has eleven on/off columns. Each column is a module feature flag
 | `feature_council_bylaws` | **Council bylaws** | Constitutional Bylaws | None |
 | `feature_council_history` | **Council history** | Council history (Team Legacy) | None |
 | `feature_live_meeting_console` | **Live meeting console** | Live Meeting Console | None |
+| `feature_volunteer_quarantine` | **Volunteer time quarantine** | The **Volunteer Time Quarantine Desk** on the Executive Dashboard. Members' hours also stop going to review (section 15). | None |
 
 The flags follow four rules.
 
@@ -159,7 +161,7 @@ The general ledger, the budget and the activity hour log have no flag. They stay
 | Problem | Cause | Fix |
 | --- | --- | --- |
 | A member still sees a phone tab. | The phone read the flags before the change. | Ask the member to sign out and sign in again. |
-| *"… is not a feature flag"* | The request named an unknown flag. | Use one of the eleven flags in 3.1. |
+| *"… is not a feature flag"* | The request named an unknown flag. | Use one of the twelve flags in 3.1. |
 
 ---
 
@@ -1702,6 +1704,94 @@ The sweep follows these rules:
 | --- | --- | --- |
 | A member was marked **Inactive** by mistake. | The member served but did not log hours. | Set the member's **Status** to **Active** on the member form. Ask the member to log hours. |
 | A quiet member stays **Active**. | The member has no join date, or is an Admin. | Enter the **Date joined council**. Change an Admin's status by hand. |
+
+---
+
+## 15. Volunteer time quarantine
+
+### 15.1 Concept: the volunteer time quarantine
+
+The volunteer time quarantine protects the council's hour totals from over-reporting.
+The platform holds some hour entries for leadership review. A held entry is in quarantine.
+A held entry does not count anywhere until a leader clears it. The rule covers these totals:
+
+- The council's monthly summary and the **Executive Dashboard** hours.
+- The member's canonization shield and personal hours.
+- The **Top 5 Volunteers Leaderboard** and the **Shared Member Center**.
+
+The member sees this message when the platform holds an entry: "... hours sent to leadership review before they count toward your totals."
+The message also gives the reason.
+
+### 15.2 Concept: the 5/5 over-reporting rules
+
+The platform holds a regular member's entry when either 5/5 rule applies.
+
+| Rule | The platform holds the entry when | Example |
+| --- | --- | --- |
+| **5 activities** | The entry is the member's sixth different activity on the same day. | A member logs 5 activities on Saturday. The sixth activity on Saturday goes to review. |
+| **5.0 hours** | The entry puts more than 5.0 hours against one activity on one day. | A member logs 3 hours of **Food drive**. A second entry of 2.25 hours on the same day goes to review. |
+
+The two rules count in this way:
+- A shift counts on the shift date. A council activity counts on the activity date.
+- Held entries count toward both rules. A member cannot split hours to get past a rule.
+- A second entry on an activity that the member already logged that day is not a new activity.
+- On the phone **Report** tab, taps past a rule go to one held entry. The hours logged before the limit still count.
+
+### 15.3 Concept: the +1 hour shift padding rule
+
+A regular member may report up to 1.0 hour more than the scheduled shift. Set-up and clean-up often take extra time.
+The platform holds a shift report that is more than 1.0 hour over the scheduled length.
+
+| Scheduled shift | Largest report that counts at once | Report that goes to review |
+| --- | --- | --- |
+| 08:00 to 11:00 (3 hours) | 4 hours | 4.25 hours or more |
+| 18:00 to 20:00 (2 hours) | 3 hours | 3.25 hours or more |
+
+A shift report of more than 5.0 hours also goes to review under the 5.0-hour rule. A new report on the same shift replaces the member's report that waits for review.
+
+### 15.4 Concept: who the rules do not apply to
+
+The rules apply to regular members only. These members are exempt. The platform always logs their hours at once:
+
+| Exempt member | Why |
+| --- | --- |
+| Admins and Super Admins | They keep the council records. |
+| Elected officers: Grand Knight (GK), Deputy Grand Knight (DGK), Chancellor, Recorder, Treasurer, Warden, Advocate, Inside Guard and Outside Guard | The council elected them to lead. |
+| Trustees 1, 2 and 3 | The council elected them too. |
+| The owner of the event | The owner runs the shift. The exemption covers only the shifts of the owner's own event. |
+
+Appointed officers, such as the Financial Secretary (FS), follow the rules.
+
+A Super Admin can switch the quarantine off. The Super Admin turns off **Volunteer time quarantine** in the Feature Flags Control Center (section 3).
+When the switch is off, every entry counts at once. The desk is hidden. Entries that wait for review stay in quarantine until the switch is on again.
+
+### 15.5 Clear or delete held volunteer time
+
+> **Prerequisite (who can do this):** The Grand Knight (GK), the Deputy Grand Knight (DGK) or an Admin of the council, or a Super Admin. Other members do not see the desk.
+> **Warning:** each decision is final. You cannot change a cleared or deleted entry on the desk.
+
+**Goal:** Decide each held entry, so that true hours count and false hours never count.
+
+**Start point:** Sidebar → Performance → **Executive Dashboard** → **🚨 Volunteer Time Quarantine Desk** (at the top of the page).
+
+**Steps:**
+1. Read the count of pending entries in the desk header.
+2. Read each entry: the member name, the shift or activity, the date and the hours.
+3. Read the **Description** that the member wrote. Read the red reason under the description.
+4. Ask the member or the event owner about the time when the entry is not clear.
+5. Select **[ 🟢 Clear Hours to Ledger ]** for true hours. The hours count in every total at once.
+6. Select **[ 🔴 Delete Fraudulent Time ]** for false hours. The hours never count. You cannot undo this.
+
+**Expected result:** The entry leaves the desk. A message confirms the decision. A cleared entry shows in the council's hours and on the member's shield.
+
+**Common problems:**
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The desk is not on the dashboard. | Your role is not GK, DGK or Admin, or the quarantine switch is off. | Ask a Super Admin to check your role and the **Volunteer time quarantine** switch. |
+| The desk says "has switched Volunteer time quarantine off". | A Super Admin opened another council, and that council has the switch off. | Turn the switch on for that council, or choose another council. |
+| A cleared shift report replaced other hours. | A member has one report for each shift. Clearing writes the held report over the old one. | Ask the member to report the correct hours again. |
+| A cleared activity entry is missing. | Someone deleted the activity after the member logged the time. | Restore the activity. Ask the member to log the time again. |
+| A member says the hours are lost. | The entry waits on the desk. | Decide the entry. Tell the member that held hours count after a leader clears them. |
 
 ---
 

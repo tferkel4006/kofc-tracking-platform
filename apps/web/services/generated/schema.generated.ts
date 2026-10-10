@@ -534,6 +534,16 @@ export const TABLES: Record<string, TableMeta> = {
           "kind": "literal",
           "value": 10
         }
+      },
+      {
+        "name": "feature_volunteer_quarantine",
+        "kind": "bit",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": 1
+        }
       }
     ],
     "foreignKeys": [],
@@ -6592,6 +6602,139 @@ export const TABLES: Record<string, TableMeta> = {
       {
         "column": "council_id",
         "refTable": "Council",
+        "refColumn": "id"
+      }
+    ],
+    "uniqueKeys": []
+  },
+  "VolunteerQuarantine": {
+    "primaryKey": [
+      "id"
+    ],
+    "columns": [
+      {
+        "name": "id",
+        "kind": "int",
+        "notNull": true,
+        "identity": true,
+        "default": null
+      },
+      {
+        "name": "council_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "user_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "activity_type",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "activity_id",
+        "kind": "int",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "activity_date",
+        "kind": "date",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "hours_reported",
+        "kind": "real",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "scheduled_hours",
+        "kind": "real",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "notes",
+        "kind": "text",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "date_logged",
+        "kind": "datetime",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "quarantine_reason",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "clearance_status",
+        "kind": "text",
+        "notNull": true,
+        "identity": false,
+        "default": {
+          "kind": "literal",
+          "value": "PENDING"
+        }
+      },
+      {
+        "name": "reviewed_by_member_id",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "reviewed_at",
+        "kind": "datetime",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      },
+      {
+        "name": "cleared_time_id",
+        "kind": "int",
+        "notNull": false,
+        "identity": false,
+        "default": null
+      }
+    ],
+    "foreignKeys": [
+      {
+        "column": "council_id",
+        "refTable": "Council",
+        "refColumn": "id"
+      },
+      {
+        "column": "user_id",
+        "refTable": "Member",
+        "refColumn": "id"
+      },
+      {
+        "column": "reviewed_by_member_id",
+        "refTable": "Member",
         "refColumn": "id"
       }
     ],

@@ -18,10 +18,14 @@
 //
 // Under the scorecards (Sprint 7A) every reader gets the engagement row (EngagementParts): the high-contrast monthly
 // activity overview - volunteers, cash collected and who served - and the gold-bordered Top 5 Volunteers Leaderboard.
+//
+// At the top (Sprint 7B) the council's Grand Knight, Deputy Grand Knight and Admins, and any Super Admin
+// (canReviewVolunteerQuarantine), get the Volunteer Time Quarantine Desk while feature_volunteer_quarantine is on.
 import { useState, type ReactNode } from 'react';
 import {
   BUDGET_WARNING_THRESHOLD_PERCENT,
   canReviewBudgetPerformance,
+  canReviewVolunteerQuarantine,
   canViewExecutiveAudits,
   currentFraternalYear,
   formatShiftWhen,
@@ -35,9 +39,10 @@ import { BudgetAlertTag, BudgetGauge, formatPercent } from '@/components/BudgetP
 import { CouncilSelect, RequireArea, useCouncilScope } from '@/components/CouncilScope';
 import { EngagementCards } from '@/components/EngagementParts';
 import { MissionTracking } from '@/components/MissionTracking';
+import { QuarantineDesk } from '@/components/QuarantineDesk';
 import { cx, Empty, Field, Notice, PageTitle, Panel, Pill, Select, Table, Td } from '@/components/ui';
 import { formatDecimalHours, formatFullDate, formatMoney, formatPersonName, formatPhone } from '@/lib/format';
-import { useUser } from '@/lib/session';
+import { useFeatureFlags, useUser } from '@/lib/session';
 import { useLoad } from '@/lib/use-load';
 import { db } from '@/services/db';
 
@@ -239,6 +244,7 @@ function AwaitingHours({ councilId }: { councilId: number }) {
 
 function Dashboard() {
   const user = useUser();
+  const flags = useFeatureFlags();
   const scope = useCouncilScope();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -280,6 +286,11 @@ function Dashboard() {
       >
         Executive Summary: {MONTHS[month - 1]} {year}
       </PageTitle>
+      {flags.feature_volunteer_quarantine && canReviewVolunteerQuarantine(user, scope.councilId) ? (
+        <div className="mb-4">
+          <QuarantineDesk actorId={user.memberId} councilId={scope.councilId} />
+        </div>
+      ) : null}
       {summary.error ? <Notice tone="error">{summary.error}</Notice> : null}
       {!s ? (
         <p className="text-sm text-muted">Loading the month…</p>

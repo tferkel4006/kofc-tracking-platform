@@ -500,6 +500,16 @@ import {
   cleanExpenseLedgerCoding,
   concludedRevenueLink,
   planConcludedRevenue,
+  assertFeatureEnabled,
+  assertMayReviewQuarantine,
+  assertQuarantinePending,
+  buildQuarantineDesk,
+  councilFeatureFlags,
+  HOURS_STEP,
+  isQuarantineExempt,
+  quarantineActivityKey,
+  quarantineReasons,
+  quarantineReasonText,
 } from '@kofc/shared';
 import type {
   CouncilCadenceConfig,
@@ -629,6 +639,8 @@ import type {
   CouncilMediaVault,
   EventPlanningTime,
   MediaSmartAlbums,
+  VolunteerQuarantine,
+  VolunteerQuarantineActivityType,
 } from '@kofc/shared';
 import { PRESENTATION_SEED_STATEMENTS, SCHEMA_STATEMENTS, SEED_STATEMENTS } from '../generated/schema.sqlite';
 import { sha256Hex } from '../password';
@@ -729,8 +741,19 @@ const DB_NAME = 'kofc.db';
  *     ExpenseReport.flag_missing_receipt and missing_receipt_reason - the Honor Voucher (Sprint 6S).
  * 59: MemberDevotionals, Member.flag_charter_member, Council.rank_threshold_hours and rank_threshold_events (Sprint 7A).
  * 60: MemberCouncilAffiliationLog - the multi-council membership trail (Sprint 7A Extension).
+ * 61: VolunteerQuarantine - time entries held for leadership review - and Council.feature_volunteer_quarantine (Sprint 7B).
  */
-const SCHEMA_VERSION = 60;
+const SCHEMA_VERSION = 61;
+
+/** A time entry the Sprint 7B guards judge (volunteer-quarantine.ts). */
+interface QuarantineEntry {
+  activityType: VolunteerQuarantineActivityType;
+  activityId: number;
+  date: string;
+  hours: number;
+  scheduledHours?: number;
+  ownsEvent?: boolean;
+}
 
 /** Where the device keeps the secret ballot key (Sprint 5Z-9), outside the database. */
 const BALLOT_SECRET_KEY = 'kofc.ballotSecret';
@@ -3591,6 +3614,7 @@ export class SqliteDataService implements DataService {
       assertValidHours(hours);
       const db = await this.ready();
       let timeId = 0;
+      let held: VolunteerQuarantine | null = null;
       await db.withTransactionAsync(async () => {
         const shift = await this.requireShift(db, shiftId);
         await this.requireMember(db, memberId);
@@ -3605,6 +3629,27 @@ export class SqliteDataService implements DataService {
             `Member ${memberId} never signed up for shift "${shift.ShiftName}" (id ${shiftId}), so no time can be logged against it.`,
             { memberId, shiftId },
           );
+        }
+        // A new report replaces the member's still-pending one for the shift (Sprint 7B).
+        await db.runAsync(
+          `DELETE FROM [VolunteerQuarantine]
+            WHERE [user_id] = ? AND [activity_type] = 'SHIFT' AND [activity_id] = ? AND [clearance_status] = 'PENDING'`,
+          [memberId, shiftId],
+        );
+        const owner = await db.getFirstAsync<{ OwnerID: number | null }>('SELECT [OwnerID] FROM [Event] WHERE [id] = ?', [shift.EventID]);
+        const scheduledHours = shiftDefaultLengthHours(shift);
+        const entry: QuarantineEntry = {
+          activityType: 'SHIFT',
+          activityId: shiftId,
+          date: shift.ShiftDate,
+          hours,
+          scheduledHours,
+          ownsEvent: owner?.OwnerID === memberId,
+        };
+        const reasons = await this.quarantineReasonsFor(db, memberId, entry);
+        if (reasons.length) {
+          held = await this.holdTime(db, memberId, { ...entry, notes, reasons });
+          return;
         }
         const existing = await db.getFirstAsync<{ id: number }>(
           'SELECT [id] FROM [EventTime] WHERE [ShiftID] = ? AND [MemberID] = ?',
@@ -3625,6 +3670,7 @@ export class SqliteDataService implements DataService {
           timeId = ins.lastInsertRowId;
         }
       });
+      if (held) return { quarantined: held };
       return (await db.getFirstAsync<EventTime>('SELECT * FROM [EventTime] WHERE [id] = ?', [timeId]))!;
     },
   };
@@ -3635,12 +3681,19 @@ export class SqliteDataService implements DataService {
       assertActivityDateAllowed(date, this.now());
       const db = await this.ready();
       let timeId = 0;
+      let held: VolunteerQuarantine | null = null;
       await db.withTransactionAsync(async () => {
         await this.requireMember(db, memberId);
         const activity = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Activities] WHERE [id] = ?', [
           activityId,
         ]);
         if (!activity) throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${activityId}.`, { activityId });
+        const entry: QuarantineEntry = { activityType: 'MANUAL', activityId, date, hours };
+        const reasons = await this.quarantineReasonsFor(db, memberId, entry);
+        if (reasons.length) {
+          held = await this.holdTime(db, memberId, { ...entry, notes, reasons });
+          return;
+        }
         const ins = await db.runAsync(
           `INSERT INTO [ActivityTime] ([MemberID], [ActivityID], [ActivityDate], [Hours], [ActivityNotes])
            VALUES (?, ?, ?, ?, ?)`,
@@ -3648,6 +3701,7 @@ export class SqliteDataService implements DataService {
         );
         timeId = ins.lastInsertRowId;
       });
+      if (held) return { quarantined: held };
       return (await db.getFirstAsync<ActivityTime>('SELECT * FROM [ActivityTime] WHERE [id] = ?', [timeId]))!;
     },
 
@@ -3655,12 +3709,34 @@ export class SqliteDataService implements DataService {
       assertActivityDateAllowed(date, this.now());
       const db = await this.ready();
       let timeId = 0;
+      let held: VolunteerQuarantine | null = null;
       await db.withTransactionAsync(async () => {
         await this.requireMember(db, memberId);
         const activity = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Activities] WHERE [id] = ?', [
           activityId,
         ]);
         if (!activity) throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${activityId}.`, { activityId });
+        // Sprint 7B: once the day's taps are held for review, later taps grow the held entry.
+        const pending = await db.getFirstAsync<{ id: number; hours_reported: number }>(
+          `SELECT [id], [hours_reported] FROM [VolunteerQuarantine]
+            WHERE [user_id] = ? AND [activity_type] = 'MANUAL' AND [activity_id] = ? AND [activity_date] = ? AND [clearance_status] = 'PENDING'
+            ORDER BY [id] DESC LIMIT 1`,
+          [memberId, activityId, date],
+        );
+        if (pending) {
+          await db.runAsync('UPDATE [VolunteerQuarantine] SET [hours_reported] = ? WHERE [id] = ?', [
+            nextQuarterHourTotal(pending.hours_reported),
+            pending.id,
+          ]);
+          held = (await db.getFirstAsync<VolunteerQuarantine>('SELECT * FROM [VolunteerQuarantine] WHERE [id] = ?', [pending.id]))!;
+          return;
+        }
+        const tap: QuarantineEntry = { activityType: 'MANUAL', activityId, date, hours: HOURS_STEP };
+        const reasons = await this.quarantineReasonsFor(db, memberId, tap);
+        if (reasons.length) {
+          held = await this.holdTime(db, memberId, { ...tap, reasons });
+          return;
+        }
         // The newest of the member's entries for the activity that day grows; there is normally just one.
         const entry = await db.getFirstAsync<{ id: number; Hours: number }>(
           `SELECT [id], [Hours] FROM [ActivityTime]
@@ -3679,6 +3755,7 @@ export class SqliteDataService implements DataService {
           timeId = ins.lastInsertRowId;
         }
       });
+      if (held) return { quarantined: held };
       return (await db.getFirstAsync<ActivityTime>('SELECT * FROM [ActivityTime] WHERE [id] = ?', [timeId]))!;
     },
 
@@ -3873,6 +3950,179 @@ export class SqliteDataService implements DataService {
       }),
     );
   }
+
+  // ---- volunteer time quarantine (Sprint 7B) --------------------------------
+
+  /**
+   * Why a time entry must be held for review (volunteer-quarantine.ts quarantineReasons), or [] to log it - always [] for
+   * an exempt member or while their council's feature_volunteer_quarantine flag is off.
+   */
+  private async quarantineReasonsFor(db: SQLite.SQLiteDatabase, memberId: number, entry: QuarantineEntry): Promise<string[]> {
+    const member = await db.getFirstAsync<{ memberType: string | null; flag: number | null }>(
+      `SELECT t.[Type] AS memberType, c.[feature_volunteer_quarantine] AS flag FROM [Member] m
+         LEFT JOIN [MemberType] t ON t.[id] = m.[MemberTypeID]
+         LEFT JOIN [Council] c ON c.[id] = m.[CouncilID]
+        WHERE m.[id] = ?`,
+      [memberId],
+    );
+    if (!councilFeatureFlags({ feature_volunteer_quarantine: member?.flag ?? undefined }).feature_volunteer_quarantine) return [];
+    const roles = await db.getAllAsync<{ Role: string }>(
+      'SELECT r.[Role] FROM [MemberRoles] mr JOIN [Role] r ON r.[id] = mr.[RoleID] WHERE mr.[MemberID] = ?',
+      [memberId],
+    );
+    if (isQuarantineExempt({ memberType: member?.memberType ?? undefined, roles: roles.map((r) => r.Role), ownsEvent: entry.ownsEvent })) return [];
+    const day = await db.getAllAsync<{ type: VolunteerQuarantineActivityType; activityId: number; hours: number }>(
+      `SELECT 'SHIFT' AS type, t.[ShiftID] AS activityId, 0 AS hours FROM [EventTime] t
+         JOIN [Shift] sh ON sh.[id] = t.[ShiftID]
+        WHERE t.[MemberID] = ? AND sh.[ShiftDate] = ?
+       UNION ALL
+       SELECT 'MANUAL', [ActivityID], [Hours] FROM [ActivityTime] WHERE [MemberID] = ? AND [ActivityDate] = ?
+       UNION ALL
+       SELECT [activity_type], [activity_id], [hours_reported] FROM [VolunteerQuarantine]
+        WHERE [user_id] = ? AND [activity_date] = ? AND [clearance_status] = 'PENDING'`,
+      [memberId, entry.date, memberId, entry.date, memberId, entry.date],
+    );
+    const dayActivityKeys = new Set(day.map((d) => quarantineActivityKey(d.type, d.activityId)));
+    const otherHoursSameActivity =
+      entry.activityType === 'MANUAL'
+        ? day.filter((d) => d.type === 'MANUAL' && d.activityId === entry.activityId).reduce((sum, d) => sum + d.hours, 0)
+        : 0;
+    return quarantineReasons({ ...entry, dayActivityKeys, otherHoursSameActivity });
+  }
+
+  /** Stores a held entry (PENDING) in place of the time row. */
+  private async holdTime(
+    db: SQLite.SQLiteDatabase,
+    memberId: number,
+    entry: QuarantineEntry & { notes?: string; reasons: string[] },
+  ): Promise<VolunteerQuarantine> {
+    const ins = await db.runAsync(
+      `INSERT INTO [VolunteerQuarantine]
+         ([council_id], [user_id], [activity_type], [activity_id], [activity_date], [hours_reported], [scheduled_hours], [notes],
+          [date_logged], [quarantine_reason], [clearance_status])
+       SELECT [CouncilID], [id], ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING' FROM [Member] WHERE [id] = ?`,
+      [
+        entry.activityType,
+        entry.activityId,
+        entry.date,
+        entry.hours,
+        entry.scheduledHours ?? null,
+        entry.notes ?? null,
+        toTimestamp(this.now()),
+        quarantineReasonText(entry.reasons),
+        memberId,
+      ],
+    );
+    return (await db.getFirstAsync<VolunteerQuarantine>('SELECT * FROM [VolunteerQuarantine] WHERE [id] = ?', [ins.lastInsertRowId]))!;
+  }
+
+  /** A desk decision's held row, after the reviewer, flag and PENDING checks; RECORD_NOT_FOUND for an unknown id. */
+  private async requireReviewableHold(db: SQLite.SQLiteDatabase, actorId: number, quarantineId: number): Promise<VolunteerQuarantine> {
+    const actor = await this.memberWriteActor(db, actorId);
+    const row = await db.getFirstAsync<VolunteerQuarantine>('SELECT * FROM [VolunteerQuarantine] WHERE [id] = ?', [quarantineId]);
+    if (!row) throw new BusinessRuleError('RECORD_NOT_FOUND', `No held time entry with id ${quarantineId}.`, { quarantineId });
+    assertMayReviewQuarantine(actor, row.council_id);
+    const council = await db.getFirstAsync<GateCouncil>('SELECT [id], [feature_volunteer_quarantine] FROM [Council] WHERE [id] = ?', [row.council_id]);
+    assertFeatureEnabled(row.council_id, 'feature_volunteer_quarantine', council);
+    assertQuarantinePending(row);
+    return row;
+  }
+
+  volunteerQuarantine: DataService['volunteerQuarantine'] = {
+    listPending: async (actorId, councilId) => {
+      const db = await this.ready();
+      const actor = await this.memberWriteActor(db, actorId);
+      const council = await db.getFirstAsync<GateCouncil>('SELECT [id], [feature_volunteer_quarantine] FROM [Council] WHERE [id] = ?', [councilId]);
+      if (!council) throw new BusinessRuleError('INVALID_INPUT', `No council with id ${councilId}.`, { councilId });
+      assertMayReviewQuarantine(actor, councilId);
+      assertFeatureEnabled(councilId, 'feature_volunteer_quarantine', council);
+      const rows = await db.getAllAsync<VolunteerQuarantine>(
+        `SELECT * FROM [VolunteerQuarantine] WHERE [council_id] = ? AND [clearance_status] = 'PENDING'`,
+        [councilId],
+      );
+      const members = await db.getAllAsync<{ id: number; MemberFirstName: string; MemberLastName: string }>(
+        `SELECT [id], [MemberFirstName], [MemberLastName] FROM [Member]
+          WHERE [id] IN (SELECT [user_id] FROM [VolunteerQuarantine] WHERE [council_id] = ? AND [clearance_status] = 'PENDING')`,
+        [councilId],
+      );
+      const shifts = await db.getAllAsync<{ id: number; ShiftName: string; EventName: string }>(
+        `SELECT sh.[id], sh.[ShiftName], e.[EventName] FROM [Shift] sh JOIN [Event] e ON e.[id] = sh.[EventID]
+          WHERE sh.[id] IN (SELECT [activity_id] FROM [VolunteerQuarantine]
+                             WHERE [council_id] = ? AND [clearance_status] = 'PENDING' AND [activity_type] = 'SHIFT')`,
+        [councilId],
+      );
+      const activities = await db.getAllAsync<{ id: number; ActivityName: string }>(
+        `SELECT [id], [ActivityName] FROM [Activities]
+          WHERE [id] IN (SELECT [activity_id] FROM [VolunteerQuarantine]
+                          WHERE [council_id] = ? AND [clearance_status] = 'PENDING' AND [activity_type] = 'MANUAL')`,
+        [councilId],
+      );
+      return buildQuarantineDesk(rows, {
+        members: new Map(members.map((m) => [m.id, m])),
+        shifts: new Map(shifts.map((sh) => [sh.id, sh])),
+        activities: new Map(activities.map((a) => [a.id, a])),
+      });
+    },
+
+    clear: async (actorId, quarantineId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        const row = await this.requireReviewableHold(db, actorId, quarantineId);
+        let timeId: number;
+        if (row.activity_type === 'SHIFT') {
+          await this.requireShift(db, row.activity_id);
+          const existing = await db.getFirstAsync<{ id: number }>(
+            'SELECT [id] FROM [EventTime] WHERE [ShiftID] = ? AND [MemberID] = ?',
+            [row.activity_id, row.user_id],
+          );
+          if (existing) {
+            await db.runAsync('UPDATE [EventTime] SET [Hours] = ?, [ShiftNotes] = ? WHERE [id] = ?', [
+              row.hours_reported,
+              row.notes ?? null,
+              existing.id,
+            ]);
+            timeId = existing.id;
+          } else {
+            const ins = await db.runAsync(
+              'INSERT INTO [EventTime] ([ShiftID], [MemberID], [Hours], [ShiftNotes]) VALUES (?, ?, ?, ?)',
+              [row.activity_id, row.user_id, row.hours_reported, row.notes ?? null],
+            );
+            timeId = ins.lastInsertRowId;
+          }
+        } else {
+          const activity = await db.getFirstAsync<{ id: number }>('SELECT [id] FROM [Activities] WHERE [id] = ?', [row.activity_id]);
+          if (!activity) {
+            throw new BusinessRuleError('ACTIVITY_NOT_FOUND', `No activity with id ${row.activity_id}.`, { activityId: row.activity_id });
+          }
+          const ins = await db.runAsync(
+            `INSERT INTO [ActivityTime] ([MemberID], [ActivityID], [ActivityDate], [Hours], [ActivityNotes])
+             VALUES (?, ?, ?, ?, ?)`,
+            [row.user_id, row.activity_id, row.activity_date, row.hours_reported, row.notes ?? null],
+          );
+          timeId = ins.lastInsertRowId;
+        }
+        await db.runAsync(
+          `UPDATE [VolunteerQuarantine]
+              SET [clearance_status] = 'APPROVED', [reviewed_by_member_id] = ?, [reviewed_at] = ?, [cleared_time_id] = ?
+            WHERE [id] = ?`,
+          [actorId, toTimestamp(this.now()), timeId, quarantineId],
+        );
+      });
+      return (await db.getFirstAsync<VolunteerQuarantine>('SELECT * FROM [VolunteerQuarantine] WHERE [id] = ?', [quarantineId]))!;
+    },
+
+    reject: async (actorId, quarantineId) => {
+      const db = await this.ready();
+      await db.withTransactionAsync(async () => {
+        await this.requireReviewableHold(db, actorId, quarantineId);
+        await db.runAsync(
+          `UPDATE [VolunteerQuarantine] SET [clearance_status] = 'REJECTED', [reviewed_by_member_id] = ?, [reviewed_at] = ? WHERE [id] = ?`,
+          [actorId, toTimestamp(this.now()), quarantineId],
+        );
+      });
+      return (await db.getFirstAsync<VolunteerQuarantine>('SELECT * FROM [VolunteerQuarantine] WHERE [id] = ?', [quarantineId]))!;
+    },
+  };
 
   private async requireShift(db: SQLite.SQLiteDatabase, shiftId: number): Promise<Shift> {
     const shift = await db.getFirstAsync<Shift>('SELECT * FROM [Shift] WHERE [id] = ?', [shiftId]);

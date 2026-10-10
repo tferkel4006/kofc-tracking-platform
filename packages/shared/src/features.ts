@@ -7,6 +7,7 @@
 // back on brings it all back.
 // Sprint 6R (schema 57) adds six 'feature_*' switches beside the five 'flag_*' ones, named as the user gave them: expense
 // reporting, the Faith Center, the Constitutional Advisor, the council bylaws, the council history and the live console.
+// Sprint 7B (schema 61) adds feature_volunteer_quarantine: off, members' time logs directly and the quarantine desk hides.
 // =========================================================================
 import type { PortalArea } from './permissions';
 import { assertValidHours, BusinessRuleError, HOURS_STEP } from './rules';
@@ -24,6 +25,7 @@ export const FEATURE_FLAG_NAMES = [
   'feature_council_bylaws',
   'feature_council_history',
   'feature_live_meeting_console',
+  'feature_volunteer_quarantine',
 ] as const;
 export type FeatureFlagName = (typeof FEATURE_FLAG_NAMES)[number];
 
@@ -43,6 +45,7 @@ export const ALL_FEATURES_ON: FeatureFlags = {
   feature_council_bylaws: true,
   feature_council_history: true,
   feature_live_meeting_console: true,
+  feature_volunteer_quarantine: true,
 };
 
 /** How the master admin portal names and explains each switch. */
@@ -67,6 +70,10 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagName, { label: string; hint:
   feature_council_bylaws: { label: 'Council bylaws', hint: "The council's constitutional bylaws page" },
   feature_council_history: { label: 'Council history', hint: 'The Team Legacy history page: annals, diary, oral histories and the In Memoriam roll' },
   feature_live_meeting_console: { label: 'Live meeting console', hint: 'The live meeting console: agenda, check-ins, secret ballots and hand tallies' },
+  feature_volunteer_quarantine: {
+    label: 'Volunteer time quarantine',
+    hint: "The 5/5 over-reporting and +1 hour shift padding guards, and the leadership dashboard's Volunteer Time Quarantine Desk",
+  },
 };
 
 /** The portal areas each flag hides when it is off. */
@@ -83,6 +90,8 @@ export const FEATURE_FLAG_AREAS: Record<FeatureFlagName, readonly PortalArea[]> 
   feature_council_bylaws: ['governance/bylaws'],
   feature_council_history: ['history'],
   feature_live_meeting_console: ['meetings/live'],
+  // The desk is a pane on the dashboard, not its own area; the dashboard reads the flag itself (Sprint 7B).
+  feature_volunteer_quarantine: [],
 };
 
 /** The phone app's tabs (route names under app/(app)) that a flag hides when it is off. */
@@ -102,6 +111,7 @@ export const FEATURE_FLAG_MOBILE_TABS: Record<FeatureFlagName, readonly MobileTa
   feature_council_bylaws: [],
   feature_council_history: [],
   feature_live_meeting_console: [],
+  feature_volunteer_quarantine: [],
 };
 
 /** A council row's flags; a missing or NULL column reads as on. */

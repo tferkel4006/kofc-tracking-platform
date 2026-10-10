@@ -310,6 +310,11 @@ export function createRemoteDataService(): DataService {
       getProgress: notImplemented('devotionals.getProgress'),
       record: notImplemented('devotionals.record'),
     },
+    volunteerQuarantine: {
+      listPending: notImplemented('volunteerQuarantine.listPending'),
+      clear: notImplemented('volunteerQuarantine.clear'),
+      reject: notImplemented('volunteerQuarantine.reject'),
+    },
     feedback: {
       submit: notImplemented('feedback.submit'),
       listInbox: notImplemented('feedback.listInbox'),

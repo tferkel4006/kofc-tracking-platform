@@ -150,6 +150,13 @@ export const canViewExecutiveDashboard = (u: Actor, councilId: number): boolean 
  */
 export const canViewExecutiveAudits = (u: Actor, councilId: number): boolean => canViewExecutiveDashboard(u, councilId);
 
+/**
+ * The Volunteer Time Quarantine Desk on the dashboard (Sprint 7B), mirroring assertMayReviewQuarantine (activity status is
+ * checked there): the council's Admins, Grand Knight and Deputy Grand Knight, and any Super Admin.
+ */
+export const canReviewVolunteerQuarantine = (u: Actor, councilId: number): boolean =>
+  isSuperAdmin(u) || (u.councilId === councilId && (isAdmin(u) || isExecutiveOfficer(u)));
+
 /** Every council's lessons learned are open to Admins and Super Admins; changing one follows canRecordLedger. */
 export const canBrowseLessonsRegistry = (u: Actor): boolean => isAdmin(u);
 
